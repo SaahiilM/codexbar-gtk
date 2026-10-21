@@ -25,6 +25,7 @@ from gi.repository import Adw, GLib, Gtk  # noqa: E402
 from codexbar_gtk.cli import CodexBarCLI  # noqa: E402
 from codexbar_gtk.controller import AppState  # noqa: E402
 from codexbar_gtk.data import provider_usage_from_payload, spend_from_payloads  # noqa: E402
+from codexbar_gtk.history import HistoryStore  # noqa: E402
 from codexbar_gtk.prefs import Preferences  # noqa: E402
 from codexbar_gtk.ui import style  # noqa: E402
 from codexbar_gtk.ui.cards import ProviderCard  # noqa: E402
@@ -120,8 +121,10 @@ def main() -> int:
     providers = [provider_usage_from_payload(p) for p in payloads]
     state = AppState(providers=providers, spend=spend_from_payloads(cli.cost()))
 
+    history = HistoryStore()
     card = ProviderCard(
         providers[0],
+        history=history,
         show_used=bool(prefs.get("usageBarsShowUsed")),
         reset_style=str(prefs.get("resetTimesOption")),
         show_pace=bool(prefs.get("paceVisible")),

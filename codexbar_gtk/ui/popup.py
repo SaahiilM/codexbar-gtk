@@ -115,6 +115,9 @@ class PopupContent(Gtk.Box):
         show_pace = bool(prefs.get("paceVisible", True))
         show_identity = not bool(prefs.get("hidePersonalInfo", False))
         thresholds = list(prefs.get("quotaWarningThresholds") or [80, 95])
+        work_days = int(prefs.get("weeklyProgressWorkDays") or 5)
+        tick_appearance = str(prefs.get("workdayTickAppearance") or "subtle")
+        burndown = bool(prefs.get("quotaBurndownEnabled", True))
 
         for provider in providers:
             self.cards_box.append(

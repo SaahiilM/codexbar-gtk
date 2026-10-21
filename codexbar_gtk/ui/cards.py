@@ -532,10 +532,13 @@ class ProviderCard(Gtk.Box):
         self.meters_box.set_margin_top(14)
         self.append(self.meters_box)
 
+        # The projection chip lives in its own row so the details rebuild
+        # below cannot wipe it.
+        self.burndown_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         self.burndown_chip = Chip(icon="utilities-system-monitor-symbolic")
         self.burndown_chip.set_visible(False)
-        self.extra_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
-        self.extra_box.append(self.burndown_chip)
+        self.burndown_box.append(self.burndown_chip)
+        self.append(self.burndown_box)
 
         self.charts_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
         self.append(self.charts_box)

@@ -20,6 +20,9 @@ def _candidate_paths() -> list[str]:
     here = os.path.dirname(os.path.abspath(__file__))
     roots = [
         os.path.join(here, "..", "..", ".deps"),
+        os.path.join(here, "..", "deps"),
+        os.path.join(here, "deps"),
+        os.path.expanduser("~/.local/share/codexbar-gtk/deps"),
         os.path.expanduser("~/.local/lib/codexbar-gtk/deps"),
     ]
     patterns = []
@@ -63,3 +66,4 @@ def ensure_cairo_support() -> bool:
 
 
 ensure_cairo_support()
+HAS_CAIRO = ensure_cairo_support()

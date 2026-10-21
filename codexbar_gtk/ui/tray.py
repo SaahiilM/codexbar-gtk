@@ -242,7 +242,9 @@ class _StatusNotifierItem(dbus.service.Object if HAVE_DBUS else object):  # type
                 ("codexbar-gtk", empty_pixmaps, "CodexBar", ""),
                 signature="sa(iiay)ss",
             ),
-            "ItemIsMenu": False,
+            # The host renders the dbusmenu when the icon is clicked, which is
+            # the closest equivalent of the macOS menu bar dropdown.
+            "ItemIsMenu": True,
             "Menu": dbus.ObjectPath(MENU_PATH),
             "IconThemePath": "",
             "AttentionIconName": "codexbar-gtk-9",

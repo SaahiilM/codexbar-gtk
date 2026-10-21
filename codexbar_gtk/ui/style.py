@@ -186,7 +186,7 @@ CSS = b"""
 
 
 def apply_theme() -> None:
-    """Install the application stylesheet."""
+    """Install the application stylesheet and follow the system colour scheme."""
     provider = Gtk.CssProvider()
     provider.load_from_data(CSS)
 
@@ -195,3 +195,22 @@ def apply_theme() -> None:
         Gtk.StyleContext.add_provider_for_display(
             display, provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
         )
+        _apply_color_scheme()
+
+
+def _apply_color_scheme() -> None:
+    """Mirror the desktop's dark/light preference into libadwaita."""
+    try:
+        from gi.repository import Adw, Gio
+
+        settings = Gio.Settings.new("org.gnome.desktop.interface")
+        dark = settings.get_string("color-scheme") == "prefer-dark"
+        manager = Adw.StyleManager.get_default()
+        manager.set_color_scheme(
+            Adw.ColorScheme.FORCE_DARK if dark else Adw.ColorScheme.DEFAULT
+        )
+        # libadwaita warns when the GTK setting is set; it is redundant here.
+        gtk_settings = Gtk.Settings.get_default()
+        gtk_settings.set_property("gtk-application-prefer-dark-theme", False)
+    except Exception:
+        pass

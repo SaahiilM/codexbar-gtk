@@ -290,6 +290,12 @@ class SettingsWindow(Adw.PreferencesWindow):
                 lambda value: self.prefs.set("limitResetNotificationsEnabled", value),
             )
         )
+
+        test_row = Adw.ActionRow(title="Send a test notification")
+        test_row.set_subtitle("Check that desktop notifications work")
+        test_row.set_activatable(True)
+        test_row.connect("activated", lambda _r: self._test_notification())
+        group.add(test_row)
         page.add(group)
         return page
 
@@ -443,6 +449,10 @@ class SettingsWindow(Adw.PreferencesWindow):
         window = self.get_application().main_window
         if window is not None:
             window.toast(message)
+
+    def _test_notification(self) -> None:
+        app = self.get_application()
+        app._notify("CodexBar", "This is a test notification from CodexBar.")
 
 
 def _spin_row(title: str, lower: int, upper: int, value: int, on_change) -> Adw.ActionRow:

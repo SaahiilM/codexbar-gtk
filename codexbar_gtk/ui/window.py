@@ -33,6 +33,9 @@ class MainWindow(Adw.ApplicationWindow):
         self.view_stack.set_vexpand(True)
 
         header = Adw.HeaderBar()
+        title = Adw.WindowTitle(title="CodexBar")
+        header.pack_start(title)
+
         self.refresh_button = Gtk.Button()
         self.refresh_button.set_tooltip_text("Refresh")
         self.refresh_spinner = Gtk.Spinner()

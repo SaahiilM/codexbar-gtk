@@ -58,9 +58,9 @@ cat > "${BIN_DIR}/codexbar-gtk" <<EOF
 #!/usr/bin/env bash
 # CodexBar (GTK) launcher
 export PYTHONPATH="${APP_DIR}\${PYTHONPATH:+:\$PYTHONPATH}"
-if [[ -d "${ROOT}/.deps/root/usr/lib/x86_64-linux-gnu/girepository-1.0" ]]; then
-  export GI_TYPELIB_PATH="${ROOT}/.deps/root/usr/lib/x86_64-linux-gnu/girepository-1.0\${GI_TYPELIB_PATH:+:\$GI_TYPELIB_PATH}"
-  export LD_LIBRARY_PATH="${ROOT}/.deps/root/usr/lib/x86_64-linux-gnu\${LD_LIBRARY_PATH:+:\$LD_LIBRARY_PATH}"
+if [[ -d "${APP_DIR}/deps/typelibs" ]]; then
+  export GI_TYPELIB_PATH="${APP_DIR}/deps/typelibs\${GI_TYPELIB_PATH:+:\$GI_TYPELIB_PATH}"
+  export LD_LIBRARY_PATH="${APP_DIR}/deps/lib\${LD_LIBRARY_PATH:+:\$LD_LIBRARY_PATH}"
 fi
 export GDK_BACKEND="\${GDK_BACKEND:-x11}"
 exec python3 -m codexbar_gtk "\$@"
@@ -71,6 +71,17 @@ chmod +x "${BIN_DIR}/codexbar-gtk"
 rm -rf "${APP_DIR}/codexbar_gtk"
 cp -r "${ROOT}/codexbar_gtk" "${APP_DIR}/codexbar_gtk"
 find "${APP_DIR}" -name '__pycache__' -type d -prune -exec rm -rf {} + 2>/dev/null || true
+
+# Private runtime dependencies (GTK4 typelibs, libadwaita, the cairo bridge)
+if [[ -d "${ROOT}/.deps/root/usr/lib/x86_64-linux-gnu" ]]; then
+  rm -rf "${APP_DIR}/deps"
+  mkdir -p "${APP_DIR}/deps/typelibs" "${APP_DIR}/deps/lib"
+  cp -a "${ROOT}/.deps/root/usr/lib/x86_64-linux-gnu/girepository-1.0/." "${APP_DIR}/deps/typelibs/" 2>/dev/null || true
+  cp -a "${ROOT}/.deps/root/usr/lib/x86_64-linux-gnu/"*.so* "${APP_DIR}/deps/lib/" 2>/dev/null || true
+  for so in "${ROOT}"/.deps/_gi_cairo*.so; do
+    if [[ -e "$so" ]]; then cp -a "$so" "${APP_DIR}/deps/"; fi
+  done
+fi
 
 # Icon ----------------------------------------------------------------------
 python3 - "$ICON_DIR" <<'PY'

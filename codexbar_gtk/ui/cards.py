@@ -59,6 +59,8 @@ class StatusDot(Gtk.DrawingArea):
         self.queue_draw()
 
     def _draw(self, area, cr, width: int, height: int) -> None:
+        if not cairo_support.HAS_CAIRO:
+            return
         radius = min(width, height) / 2
         if not self.filled:
             cr.set_source_rgba(*_parse_color(self.color))
@@ -75,7 +77,8 @@ class MeterBar(Gtk.DrawingArea):
     """A rounded quota meter drawn with Cairo.
 
     Using a drawing area instead of ``Gtk.ProgressBar`` gives us per-provider
-    accent colours, rounded caps and warning markers.
+    accent colours, rounded caps and warning markers. When PyGObject cannot
+    hand out Cairo contexts the widget falls back to a plain progress bar.
     """
 
     def __init__(self) -> None:
@@ -85,12 +88,22 @@ class MeterBar(Gtk.DrawingArea):
         self.fraction = 0.0
         self.color = "#6366F1"
         self.markers: list[float] = []
-        self.set_draw_func(self._draw)
+        if cairo_support.HAS_CAIRO:
+            self.set_draw_func(self._draw)
+        else:
+            self._fallback = Gtk.ProgressBar()
+            self._fallback.set_show_text(False)
+            self._fallback.set_valign(Gtk.Align.CENTER)
+            self._fallback.set_hexpand(True)
+            self.add_css_class("cb-meter")
+            self._fallback.set_parent(self)
 
     def set_meter(self, fraction: float, color: str, markers: list[float] | None = None) -> None:
         self.fraction = max(0.0, min(1.0, fraction))
         self.color = color
         self.markers = markers or []
+        if not cairo_support.HAS_CAIRO:
+            self._fallback.set_fraction(self.fraction)
         self.queue_draw()
 
     def _rounded_rect(self, cr, x: float, y: float, width: float, height: float, radius: float) -> None:
@@ -103,6 +116,8 @@ class MeterBar(Gtk.DrawingArea):
         cr.close_path()
 
     def _draw(self, area, cr, width: int, height: int) -> None:
+        if not cairo_support.HAS_CAIRO:
+            return
         if width <= 0 or height <= 0:
             return
 

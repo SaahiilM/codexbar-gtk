@@ -171,6 +171,7 @@ class CodexBarApp(Adw.Application):
             self.tray.set_menu(
                 [
                     (None, None),
+                    ("Show usage panel", self._toggle_popup),
                     ("Refresh", self._refresh_now),
                     ("Open Dashboard", self._open_dashboard),
                     ("Settings…", self._open_settings),
@@ -203,6 +204,7 @@ class CodexBarApp(Adw.Application):
             entries.append((f"{provider.display_name} — {summary}", self._open_dashboard))
         entries += [
             (None, None),
+            ("Show usage panel", self._toggle_popup),
             ("Refresh", self._refresh_now),
             ("Open Dashboard", self._open_dashboard),
             ("Settings…", self._open_settings),

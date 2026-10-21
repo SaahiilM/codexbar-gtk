@@ -174,6 +174,7 @@ class PopupWindow(Gtk.Window):
             on_refresh, on_open_dashboard, on_open_settings, on_quit
         )
         self.set_child(self.content)
+        self._was_active = False
 
         self.connect("notify::is-active", self._on_active_changed)
         self.connect("map", self._on_map)
@@ -181,8 +182,14 @@ class PopupWindow(Gtk.Window):
     # -- lifecycle --------------------------------------------------------
 
     def _on_active_changed(self, *_args) -> None:
-        # Dismiss the panel when the user clicks somewhere else.
-        if self.get_property("is-active") is False and self.get_visible():
+        # Dismiss the panel when the user clicks somewhere else. The window is
+        # only hidden once it actually had the focus, otherwise it would close
+        # itself right after being shown.
+        active = bool(self.get_property("is-active"))
+        if active:
+            self._was_active = True
+        elif self._was_active and self.get_visible():
+            self._was_active = False
             self.hide()
 
     def _on_map(self, *_args) -> None:

@@ -59,6 +59,7 @@ cd codexbar-gtk
 ./scripts/bootstrap-deps.sh     # only if Gtk-4.0/Adw-1 typelibs are missing
 ./run.sh                        # start the app
 ./run.sh --settings             # start it and open the settings window
+./run.sh --panel                # start it with the compact panel open
 ```
 
 Install it for your user account (launcher entry, icon, systemd user service and
@@ -115,7 +116,18 @@ Tools:
 GTK 4 removed `Gtk.StatusIcon`, so the tray presence is implemented directly on top
 of the **StatusNotifierItem** protocol plus a **dbusmenu** menu — the same mechanism
 Chromium, Electron and the upstream Linux app use. The menu is rendered by Plasma
-itself, right below the icon, and lists the live provider summaries.
+itself, right below the icon, and lists the live provider summaries:
+
+```
+Codex — Session 48% · Weekly 6%
+─────────────────────────────
+Show usage panel
+Refresh
+Open Dashboard
+Settings…
+─────────────────────────────
+Quit CodexBar
+```
 
 Plasma only shows tray items that were registered *before* its status-notifier host
 came up. The installer therefore ships a systemd user service ordered
@@ -123,6 +135,13 @@ came up. The installer therefore ships a systemd user service ordered
 start the app by hand while Plasma is already running, the icon may only appear in
 the panel's overflow (the little chevron) — restarting Plasma or logging out and back
 in makes it permanent. The app re-registers automatically when Plasma restarts.
+
+### Panel placement
+
+GTK 4 removed the window positioning API, so on pure Wayland the compositor decides
+where the compact panel appears. On X11/XWayland sessions the app moves the panel
+itself (plain X11 calls) and anchors it to the bottom-right corner, right above the
+panel — the same place the macOS menu bar popover appears.
 
 ## Preferences
 

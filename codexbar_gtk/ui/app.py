@@ -40,6 +40,7 @@ class CodexBarApp(Adw.Application):
         self._icon_levels: dict[int, str] = {}
         self._pending_refresh = False
         self.extra_args: list[str] = []
+        self._show_panel_when_ready = False
 
     # -- lifecycle --------------------------------------------------------
 
@@ -47,6 +48,8 @@ class CodexBarApp(Adw.Application):
         Adw.Application.do_startup(self)
         apply_theme()
         self._install_actions()
+        # This is a tray application: keep running even without a window.
+        self.hold()
 
         self.controller.subscribe(self._on_state)
         self.controller.start()
@@ -62,11 +65,16 @@ class CodexBarApp(Adw.Application):
         if "--settings" in self.extra_args:
             self._open_settings()
             return
+        if "--panel" in self.extra_args:
+            # Wait for the first refresh so the panel is shown with content.
+            self._show_panel_when_ready = True
+            return
         window = self._ensure_main_window()
         window.present()
 
     def do_shutdown(self) -> None:
         self.controller.stop()
+        self.release()
         Adw.Application.do_shutdown(self)
 
     # -- windows ----------------------------------------------------------
@@ -155,6 +163,9 @@ class CodexBarApp(Adw.Application):
         GLib.idle_add(lambda: (self._apply_state(state), False)[1])
 
     def _apply_state(self, state) -> None:
+        if self._show_panel_when_ready and state.providers:
+            self._show_panel_when_ready = False
+            self._toggle_popup()
         if self.popup is not None:
             self.popup.update(state, self.prefs)
         if self.main_window is not None:

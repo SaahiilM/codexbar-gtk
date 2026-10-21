@@ -9,11 +9,14 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Callable
 
-from gi.repository import Gdk, Gtk
+from gi.repository import Gdk, GLib, Gtk
 
 from ..controller import AppState
+from . import x11_position
 from .cards import ProviderCard
 from .util import iter_children
+
+PANEL_WINDOW_TITLE = "CodexBar-panel"
 
 
 class PopupContent(Gtk.Box):
@@ -164,11 +167,13 @@ class PopupWindow(Gtk.Window):
         on_quit: Callable[[], None],
     ) -> None:
         super().__init__()
-        self.set_title("CodexBar")
+        self.set_title(PANEL_WINDOW_TITLE)
         self.set_decorated(False)
         self.set_resizable(False)
         self.set_default_size(380, 320)
         self.set_hide_on_close(False)
+        # The panel should not steal focus, the way the macOS popover behaves.
+        self.set_focusable(False)
 
         self.content = PopupContent(
             on_refresh, on_open_dashboard, on_open_settings, on_quit
@@ -182,49 +187,42 @@ class PopupWindow(Gtk.Window):
     # -- lifecycle --------------------------------------------------------
 
     def _on_active_changed(self, *_args) -> None:
-        # Dismiss the panel when the user clicks somewhere else. The window is
-        # only hidden once it actually had the focus, otherwise it would close
-        # itself right after being shown.
-        active = bool(self.get_property("is-active"))
-        if active:
-            self._was_active = True
-        elif self._was_active and self.get_visible():
-            self._was_active = False
-            self.hide()
+        # The panel does not take focus (like the macOS popover), so focus
+        # notifications are ignored here; it is dismissed by toggling it.
+        return
 
     def _on_map(self, *_args) -> None:
         self._position()
 
     def _position(self) -> None:
-        """Anchor the panel to the top-right corner of the current monitor.
+        """Anchor the panel to a screen corner.
 
-        GTK4 removed the window positioning API, so this is best effort: it works
-        on X11/XWayland when the backend still exposes ``move`` and is a no-op on
-        pure Wayland, where the compositor decides.
+        GTK 4 removed the window positioning API, so on X11/XWayland we move
+        the window with plain X11 calls; on pure Wayland the compositor decides.
         """
         display = Gdk.Display.get_default()
-        if display is None:
-            return
-        monitor = display.get_primary_monitor()
-        if monitor is None:
-            monitors = display.get_monitors()
-            monitor = monitors[0] if monitors else None
-        if monitor is None:
-            return
-        geometry = monitor.get_geometry()
-        width, height = self.get_width(), self.get_height()
-        if width <= 1:
-            width = 380
-        if height <= 1:
-            height = 320
-        x = geometry.x + geometry.width - width - 12
-        y = geometry.y + 8
-        self.set_default_size(width, height)
-        if hasattr(self, "move"):
-            try:
-                self.move(x, y)
-            except Exception:
-                pass
+        if display is not None:
+            monitor = display.get_primary_monitor()
+            if monitor is None:
+                monitors = display.get_monitors()
+                monitor = monitors[0] if monitors else None
+            if monitor is not None:
+                geometry = monitor.get_geometry()
+                width, height = self.get_width(), self.get_height()
+                if width <= 1:
+                    width = 380
+                if height <= 1:
+                    height = 320
+                self.set_default_size(width, height)
+
+        self._move_with_x11()
+
+    def _move_with_x11(self) -> None:
+        def move() -> bool:
+            x11_position.move_window_to_corner(PANEL_WINDOW_TITLE, "bottom-right")
+            return False
+
+        GLib.timeout_add(120, move)
 
     def toggle(self) -> None:
         if self.get_visible():

@@ -404,6 +404,24 @@ def agent_sessions_from_payloads(payloads: list[Any]) -> list[AgentSession]:
 
 
 @dataclass
+class SpendProvider:
+    """Spend and token usage for one provider."""
+
+    provider: str
+    cost: float = 0.0
+    tokens: int = 0
+    session_tokens: int = 0
+    daily: list[dict[str, Any]] = field(default_factory=list)
+    projects: list[dict[str, Any]] = field(default_factory=list)
+    priced: bool = True
+    provenance: str = ""
+
+    @property
+    def display_name(self) -> str:
+        return provider_meta.display_name(self.provider)
+
+
+@dataclass
 class SpendSummary:
     """Aggregated local spend from ``codexbar cost``."""
 
@@ -423,6 +441,7 @@ class SpendSummary:
     last30_tokens: int = 0
     incomplete_requests: int = 0
     error: str | None = None
+    providers: list[SpendProvider] = field(default_factory=list)
 
 
 def spend_from_payloads(payloads: list[dict[str, Any]]) -> SpendSummary:
@@ -430,9 +449,11 @@ def spend_from_payloads(payloads: list[dict[str, Any]]) -> SpendSummary:
     for payload in payloads:
         if not isinstance(payload, dict):
             continue
+        entry = SpendProvider(provider=str(payload.get("provider") or "unknown"))
         if payload.get("error"):
             summary.error = str(payload["error"].get("message") if isinstance(payload["error"], dict) else payload["error"])
             continue
+        entry.provenance = str(payload.get("provenance") or "")
         summary.currency = payload.get("currencyCode") or summary.currency
         summary.provenance = payload.get("provenance") or summary.provenance
         coverage = payload.get("coverage")
@@ -443,8 +464,11 @@ def spend_from_payloads(payloads: list[dict[str, Any]]) -> SpendSummary:
         summary.history_label = payload.get("historyLabel") or summary.history_label
         summary.total_cost += float(payload.get("totalCost") or 0.0)
         summary.total_tokens += int(payload.get("totalTokens") or 0)
+        entry.cost += float(payload.get("totalCost") or 0.0)
+        entry.tokens += int(payload.get("totalTokens") or 0)
         summary.session_cost += float(payload.get("sessionCostUSD") or 0.0)
         summary.session_tokens += int(payload.get("sessionTokens") or 0)
+        entry.session_tokens += int(payload.get("sessionTokens") or 0)
         summary.last30_cost += float(payload.get("last30DaysCostUSD") or 0.0)
         summary.last30_tokens += int(payload.get("last30DaysTokens") or 0)
         summary.incomplete_requests += int(payload.get("incompleteRequestCount") or 0)
@@ -458,21 +482,32 @@ def spend_from_payloads(payloads: list[dict[str, Any]]) -> SpendSummary:
                     summary.coverage[key] = summary.coverage.get(key, 0) + int(value or 0)
             summary.total_cost += float(totals.get("totalCost") or 0.0)
             summary.total_tokens += int(totals.get("totalTokens") or 0)
+            entry.cost += float(totals.get("totalCost") or 0.0)
+            entry.tokens += int(totals.get("totalTokens") or 0)
+            totals_coverage = totals.get("coverage")
+            if isinstance(totals_coverage, dict):
+                entry.priced = bool(totals_coverage.get("priced"))
             summary.incomplete_requests += int(totals.get("incompleteRequestCount") or 0)
 
-        for entry in payload.get("daily") or []:
-            if isinstance(entry, dict):
-                summary.daily.append(entry)
-                for model in entry.get("modelBreakdowns") or []:
+        for day in payload.get("daily") or []:
+            if isinstance(day, dict):
+                summary.daily.append(day)
+                entry.daily.append(day)
+                for model in day.get("modelBreakdowns") or []:
                     if isinstance(model, dict):
                         summary.models.append(model)
-        for entry in payload.get("projects") or []:
-            if isinstance(entry, dict):
-                summary.projects.append(entry)
-        for entry in payload.get("models") or []:
-            if isinstance(entry, dict):
-                summary.models.append(entry)
+        for project in payload.get("projects") or []:
+            if isinstance(project, dict):
+                summary.projects.append(project)
+                entry.projects.append(project)
+        for model in payload.get("models") or []:
+            if isinstance(model, dict):
+                summary.models.append(model)
 
+        summary.providers.append(entry)
+
+    summary.providers = [p for p in summary.providers if p.tokens or p.cost]
+    summary.providers.sort(key=lambda p: (p.cost, p.tokens), reverse=True)
     summary.daily.sort(key=lambda e: e.get("date", ""))
     summary.projects.sort(key=lambda e: float(e.get("totalCost") or 0.0), reverse=True)
     summary.models.sort(key=lambda e: float(e.get("cost") or e.get("totalCost") or 0.0), reverse=True)

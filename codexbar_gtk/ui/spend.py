@@ -38,6 +38,10 @@ class SpendView(Gtk.Box):
         chart_box.append(self.chart)
         self.append(chart_box)
 
+        self.providers_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        self.providers_box.set_margin_top(16)
+        self.append(self.providers_box)
+
         self.projects_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         self.projects_box.set_margin_top(16)
         self.append(self.projects_box)
@@ -89,6 +93,8 @@ class SpendView(Gtk.Box):
             entries.append((date[5:] if len(date) >= 10 else date, float(day.get("totalCost") or 0.0)))
         self.chart.set_entries(entries)
 
+        self._rebuild_providers(spend)
+
         self._rebuild_list(
             self.projects_box,
             "Projects",
@@ -120,6 +126,44 @@ class SpendView(Gtk.Box):
         )
 
         self.empty_label.set_visible(not spend.daily and not spend.projects)
+
+    def _rebuild_providers(self, spend: SpendSummary) -> None:
+        """One row per provider that has local usage data."""
+        for child in list(iter_children(self.providers_box)):
+            self.providers_box.remove(child)
+        if not spend.providers:
+            return
+
+        label = Gtk.Label(label="By provider")
+        label.add_css_class("cb-section-label")
+        label.set_halign(Gtk.Align.START)
+        self.providers_box.append(label)
+
+        currency = spend.currency or "USD"
+        for entry in spend.providers:
+            row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+            row.add_css_class("cb-kv")
+
+            name = Gtk.Label(label=entry.display_name)
+            name.add_css_class("cb-kv-key")
+            name.set_halign(Gtk.Align.START)
+            name.set_hexpand(True)
+            row.append(name)
+
+            tokens = Gtk.Label(label=format_tokens(entry.tokens))
+            tokens.add_css_class("cb-kv-key")
+            tokens.set_halign(Gtk.Align.END)
+            row.append(tokens)
+
+            if entry.priced:
+                cost_text = format_currency(entry.cost, currency)
+            else:
+                cost_text = "unpriced"
+            cost = Gtk.Label(label=cost_text)
+            cost.add_css_class("cb-kv-value")
+            cost.set_halign(Gtk.Align.END)
+            row.append(cost)
+            self.providers_box.append(row)
 
     def _rebuild_list(self, box: Gtk.Box, title: str, rows: list[tuple[str, str, str]]) -> None:
         for child in list(iter_children(box)):

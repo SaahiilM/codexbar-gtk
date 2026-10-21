@@ -117,7 +117,7 @@ class Controller:
             spend: SpendSummary | None = None
             if self.prefs.get("costUsageEnabled", True):
                 try:
-                    spend = spend_from_payloads(self.cli.cost())
+                    spend = spend_from_payloads(self._scan_costs())
                 except CLIError:
                     spend = None
             try:
@@ -145,6 +145,22 @@ class Controller:
             self._notify()
 
         return self.state
+
+    def _scan_costs(self) -> list[dict]:
+        """Scan local transcripts for every provider that keeps them.
+
+        The CLI only scans providers that are enabled, so the ones the user
+        works with daily (Codex, Claude Code, OpenCode) are requested
+        explicitly.
+        """
+        providers = ["codex", "claude", "opencode"]
+        payloads: list[dict] = []
+        for provider in providers:
+            try:
+                payloads.extend(self.cli.cost(provider=provider))
+            except CLIError:
+                continue
+        return payloads
 
     def _record_history(self) -> None:
         """Store one sample per provider window so the app can show trends."""

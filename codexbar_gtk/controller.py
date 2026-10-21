@@ -174,20 +174,22 @@ class Controller:
             self._accounts_done.add(provider.provider_id)
 
     def _scan_costs(self) -> list[dict]:
-        """Scan local transcripts for every provider that keeps them.
+        """Scan the local transcripts of every provider that keeps them.
 
-        The CLI only scans providers that are enabled, so the ones the user
-        works with daily (Codex, Claude Code, OpenCode) are requested
-        explicitly.
+        The CLI only scans providers that are enabled, so Codex and Claude Code
+        are requested explicitly with the same "both" selector the upstream
+        desktop app uses.
         """
-        providers = ["codex", "claude", "opencode"]
-        payloads: list[dict] = []
-        for provider in providers:
-            try:
-                payloads.extend(self.cli.cost(provider=provider))
-            except CLIError:
-                continue
-        return payloads
+        try:
+            return self.cli.cost(provider="both")
+        except CLIError:
+            payloads: list[dict] = []
+            for provider in ("codex", "claude"):
+                try:
+                    payloads.extend(self.cli.cost(provider=provider))
+                except CLIError:
+                    continue
+            return payloads
 
     def _record_history(self) -> None:
         """Store one sample per provider window so the app can show trends."""

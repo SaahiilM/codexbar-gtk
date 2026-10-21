@@ -69,7 +69,7 @@ class CodexBarApp(Adw.Application):
         running in the tray.
         """
         argv = list(command_line.get_arguments())
-        self.extra_args = [arg for arg in argv[1:] if arg.startswith("--")]
+        self.extra_args = [arg for arg in argv[1:] if arg != "--"]
         self.activate()
         return 0
 
@@ -80,6 +80,13 @@ class CodexBarApp(Adw.Application):
         if "--panel" in self.extra_args:
             # Wait for the first refresh so the panel is shown with content.
             self._show_panel_when_ready = True
+            return
+        if "--page" in self.extra_args:
+            index = self.extra_args.index("--page")
+            page = self.extra_args[index + 1] if index + 1 < len(self.extra_args) else "usage"
+            window = self._ensure_main_window()
+            window.show_page(page)
+            window.present()
             return
         window = self._ensure_main_window()
         window.present()
@@ -93,7 +100,7 @@ class CodexBarApp(Adw.Application):
 
     def _ensure_main_window(self) -> MainWindow:
         if self.main_window is None:
-            self.main_window = MainWindow(self, self.prefs)
+            self.main_window = MainWindow(self, self.prefs, self.controller.history)
             self.main_window.connect("close-request", self._on_main_closed)
         return self.main_window
 
@@ -114,6 +121,7 @@ class CodexBarApp(Adw.Application):
                 on_open_dashboard=self._open_dashboard,
                 on_open_settings=self._open_settings,
                 on_quit=self._quit,
+                history=self.controller.history,
             )
         return self.popup
 

@@ -16,6 +16,7 @@ class SpendView(Gtk.Box):
     def __init__(self) -> None:
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         self.add_css_class("cb-dash-grid")
+        self.set_size_request(720, -1)
 
         tiles = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         tiles.set_homogeneous(True)

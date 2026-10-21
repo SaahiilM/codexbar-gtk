@@ -32,8 +32,10 @@ class PopupContent(Gtk.Box):
         on_open_dashboard: Callable[[], None],
         on_open_settings: Callable[[], None],
         on_quit: Callable[[], None],
+        history=None,
     ) -> None:
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        self.history = history
         self.add_css_class("cb-popup")
 
         header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
@@ -123,6 +125,7 @@ class PopupContent(Gtk.Box):
                     show_pace=show_pace,
                     thresholds=thresholds,
                     show_identity=show_identity,
+                    history=self.history,
                 )
             )
 
@@ -165,6 +168,7 @@ class PopupWindow(Gtk.Window):
         on_open_dashboard: Callable[[], None],
         on_open_settings: Callable[[], None],
         on_quit: Callable[[], None],
+        history=None,
     ) -> None:
         super().__init__()
         self.set_title(PANEL_WINDOW_TITLE)
@@ -176,7 +180,7 @@ class PopupWindow(Gtk.Window):
         self.set_focusable(False)
 
         self.content = PopupContent(
-            on_refresh, on_open_dashboard, on_open_settings, on_quit
+            on_refresh, on_open_dashboard, on_open_settings, on_quit, history=history
         )
         self.set_child(self.content)
         self._was_active = False

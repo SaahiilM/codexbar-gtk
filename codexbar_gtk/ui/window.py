@@ -7,21 +7,23 @@ from datetime import datetime, timezone
 from gi.repository import Adw, Gio, Gtk
 
 from ..controller import AppState
-from ..format import format_currency, format_percent
+from ..format import format_countdown, format_currency, format_percent, format_updated
 from .cards import ProviderCard, StatTile
+from .sessions import SessionsView
 from .spend import SpendView
 from .util import iter_children
 
 
 class MainWindow(Adw.ApplicationWindow):
-    """Usage dashboard plus the Usage & Spend view."""
+    """Usage dashboard, agent sessions and the Usage & Spend view."""
 
-    def __init__(self, application: Adw.Application, prefs) -> None:
+    def __init__(self, application: Adw.Application, prefs, history=None) -> None:
         super().__init__(application=application)
         self.prefs = prefs
+        self.history = history
         self.set_title("CodexBar")
-        self.set_default_size(920, 680)
-        self.set_size_request(520, 420)
+        self.set_default_size(980, 720)
+        self.set_size_request(560, 460)
 
         self.toasts = Adw.ToastOverlay()
         self.set_content(self.toasts)
@@ -61,49 +63,95 @@ class MainWindow(Adw.ApplicationWindow):
         usage_scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
         usage_content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         usage_content.set_vexpand(True)
+        usage_content.set_size_request(720, -1)
         usage_content.add_css_class("cb-dash-grid")
+
+        self.overview = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        self.overview.add_css_class("cb-overview")
+        self.overview_title = Gtk.Label(label="CodexBar")
+        self.overview_title.add_css_class("cb-overview-title")
+        self.overview_title.set_halign(Gtk.Align.START)
+        self.overview.append(self.overview_title)
+        self.overview_sub = Gtk.Label(label="Waiting for provider data…")
+        self.overview_sub.add_css_class("cb-overview-sub")
+        self.overview_sub.set_halign(Gtk.Align.START)
+        self.overview.append(self.overview_sub)
+        usage_content.append(self.overview)
 
         tiles = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         tiles.set_homogeneous(True)
-        self.providers_tile = StatTile("Providers")
-        self.highest_tile = StatTile("Highest usage")
-        self.credits_tile = StatTile("Credits")
-        self.spend_tile = StatTile("Local spend")
+        self.providers_tile = StatTile("Providers", icon="network-server-symbolic")
+        self.highest_tile = StatTile("Highest usage", icon="utilities-system-monitor-symbolic")
+        self.credits_tile = StatTile("Credits", icon="emblem-money-symbolic")
+        self.spend_tile = StatTile("Local spend", icon="document-open-recent-symbolic")
         for tile in (self.providers_tile, self.highest_tile, self.credits_tile, self.spend_tile):
             tiles.append(tile)
         usage_content.append(tiles)
 
-        self.flow = Gtk.FlowBox()
-        self.flow.set_selection_mode(Gtk.SelectionMode.NONE)
-        self.flow.set_homogeneous(True)
-        self.flow.set_column_spacing(10)
-        self.flow.set_row_spacing(10)
-        self.flow.set_min_children_per_line(1)
-        self.flow.set_max_children_per_line(3)
+        # A vertical list of full width cards reads better than a grid and
+        # matches the popover layout of the macOS app.
+        self.flow = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        self.flow.set_hexpand(True)
         self.flow.set_margin_top(14)
         usage_content.append(self.flow)
 
-        self.empty_label = Gtk.Label(label="No providers enabled.\nEnable one in Settings → Providers.")
+        self.empty_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        self.empty_box.set_margin_top(40)
+        self.empty_label = Gtk.Label(
+            label="No providers are enabled yet.\n"
+            "Turn one on in Settings → Providers to start tracking your quota."
+        )
         self.empty_label.add_css_class("cb-empty")
         self.empty_label.set_justify(Gtk.Justification.CENTER)
-        usage_content.append(self.empty_label)
+        self.empty_box.append(self.empty_label)
+        empty_button = Gtk.Button(label="Open Settings")
+        empty_button.add_css_class("suggested-action")
+        empty_button.set_halign(Gtk.Align.CENTER)
+        empty_button.connect("clicked", lambda _b: self.show_settings())
+        self.empty_box.append(empty_button)
+        usage_content.append(self.empty_box)
 
-        usage_scroller.set_child(usage_content)
+        usage_scroller.set_child(self._centered(usage_content))
         usage_page.append(usage_scroller)
         self.view_stack.add_titled(usage_page, "usage", "Usage")
+
+        # ---- sessions page ----------------------------------------------
+        self.sessions_view = SessionsView()
+        sessions_scroller = Gtk.ScrolledWindow()
+        sessions_scroller.set_vexpand(True)
+        sessions_scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        sessions_scroller.set_child(self._centered(self.sessions_view))
+        self.view_stack.add_titled(sessions_scroller, "sessions", "Sessions")
 
         # ---- spend page ------------------------------------------------
         self.spend_view = SpendView()
         spend_scroller = Gtk.ScrolledWindow()
+        spend_scroller.set_vexpand(True)
         spend_scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        spend_scroller.set_child(self.spend_view)
+        spend_scroller.set_child(self._centered(self.spend_view))
         self.view_stack.add_titled(spend_scroller, "spend", "Usage & Spend")
 
         toolbar.set_content(self.view_stack)
 
         self._refresh_requested = False
 
+    def _centered(self, child: Gtk.Widget) -> Gtk.Widget:
+        """Keep the content column readable instead of stretching it wide."""
+        wrapper = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        wrapper.set_halign(Gtk.Align.CENTER)
+        wrapper.set_hexpand(True)
+        child.set_halign(Gtk.Align.CENTER)
+        wrapper.append(child)
+        return wrapper
+
     # -- actions ----------------------------------------------------------
+
+    def show_page(self, name: str) -> None:
+        """Switch to one of the pages: usage, sessions or spend."""
+        try:
+            self.view_stack.set_visible_child_name(name)
+        except Exception:
+            pass
 
     def request_refresh(self) -> None:
         self._refresh_requested = True
@@ -134,7 +182,7 @@ class MainWindow(Adw.ApplicationWindow):
         thresholds = list(self.prefs.get("quotaWarningThresholds") or [80, 95])
 
         providers = state.providers
-        self.empty_label.set_visible(not providers)
+        self.empty_box.set_visible(not providers)
 
         for provider in providers:
             card = ProviderCard(
@@ -144,16 +192,17 @@ class MainWindow(Adw.ApplicationWindow):
                 show_pace=show_pace,
                 thresholds=thresholds,
                 show_identity=show_identity,
+                history=self.history,
             )
-            child = Gtk.FlowBoxChild()
-            child.set_child(card)
-            child.set_valign(Gtk.Align.START)
-            self.flow.append(child)
+            card.set_hexpand(True)
+            self.flow.append(card)
+
+        self._update_overview(state)
 
         highest = max((p.max_used_percent for p in providers), default=0.0)
         credits = sum(p.credits_remaining or 0.0 for p in providers if p.credits_remaining)
         self.providers_tile.set_value(str(len(providers)))
-        self.highest_tile.set_value(format_percent(highest))
+        self.highest_tile.set_value(format_percent(highest) if providers else "—")
         self.credits_tile.set_value(f"{credits:,.0f}" if credits else "—")
 
         spend = state.spend
@@ -166,6 +215,7 @@ class MainWindow(Adw.ApplicationWindow):
             self.spend_tile.set_value("—")
 
         self.spend_view.update(spend)
+        self.sessions_view.update(state.sessions)
 
         if state.refreshing:
             self.refresh_spinner.set_visible(True)
@@ -173,6 +223,47 @@ class MainWindow(Adw.ApplicationWindow):
         else:
             self.refresh_spinner.stop()
             self.refresh_spinner.set_visible(False)
+
+    def _update_overview(self, state: AppState) -> None:
+        """A one line summary of how the quota situation looks right now."""
+        now = datetime.now(timezone.utc)
+        providers = [p for p in state.providers if not p.has_error]
+
+        if not providers:
+            self.overview_title.set_text("Nothing to track yet")
+            self.overview_sub.set_text("Enable a provider in Settings → Providers")
+            return
+
+        highest = max(providers, key=lambda p: p.max_used_percent)
+        resets = []
+        for provider in providers:
+            for window in provider.windows:
+                if window.resets_at:
+                    resets.append((window.resets_at, provider.display_name, window.title))
+        resets.sort(key=lambda item: item[0])
+
+        thresholds = list(self.prefs.get("quotaWarningThresholds") or [80, 95])
+        critical = max(thresholds) if thresholds else 95
+        if highest.max_used_percent >= critical:
+            headline = f"{highest.display_name} is running low"
+        elif highest.max_used_percent >= (min(thresholds) if thresholds else 50):
+            headline = f"{highest.display_name} is picking up usage"
+        else:
+            headline = "Everything is within limits"
+
+        details = []
+        if resets:
+            when, provider_name, title = resets[0]
+            countdown = format_countdown(when, now)
+            if countdown:
+                details.append(f"next reset: {title.lower()} in {countdown}")
+        if state.last_updated:
+            stamp = datetime.fromtimestamp(state.last_updated, tz=timezone.utc)
+            updated = format_updated(stamp, now)
+            if updated:
+                details.append(f"updated {updated}")
+        self.overview_title.set_text(headline)
+        self.overview_sub.set_text(" · ".join(details))
 
     def tick(self) -> None:
         now = datetime.now(timezone.utc)

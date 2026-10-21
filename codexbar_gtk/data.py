@@ -363,6 +363,47 @@ def _plan_from(payload: dict[str, Any], identity: dict[str, Any]) -> str | None:
 
 
 @dataclass
+class AgentSession:
+    """A running or recent coding-agent session."""
+
+    id: str
+    provider: str = ""
+    state: str = ""
+    project_name: str = ""
+    cwd: str = ""
+    pid: int = 0
+    started_at: datetime | None = None
+    last_activity_at: datetime | None = None
+    host: str = ""
+
+    @property
+    def is_running(self) -> bool:
+        return self.state.lower() in {"running", "active", "live"}
+
+
+def agent_sessions_from_payloads(payloads: list[Any]) -> list[AgentSession]:
+    sessions: list[AgentSession] = []
+    for payload in payloads or []:
+        if not isinstance(payload, dict):
+            continue
+        sessions.append(
+            AgentSession(
+                id=str(payload.get("id", "")),
+                provider=str(payload.get("provider", "")),
+                state=str(payload.get("state", "")),
+                project_name=str(payload.get("projectName") or ""),
+                cwd=str(payload.get("cwd") or ""),
+                pid=int(payload.get("pid") or 0),
+                started_at=parse_timestamp(payload.get("startedAt")),
+                last_activity_at=parse_timestamp(payload.get("lastActivityAt")),
+                host=str(payload.get("host") or ""),
+            )
+        )
+    sessions.sort(key=lambda s: (not s.is_running, s.last_activity_at or datetime.min.replace(tzinfo=timezone.utc)), reverse=False)
+    return sessions
+
+
+@dataclass
 class SpendSummary:
     """Aggregated local spend from ``codexbar cost``."""
 

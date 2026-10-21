@@ -12,7 +12,15 @@ from dataclasses import dataclass, field
 from typing import Callable
 
 from .cli import CLIError, CodexBarCLI
-from .data import ProviderUsage, SpendSummary, provider_usage_from_payload, spend_from_payloads
+from .history import HistoryStore, Sample
+from .data import (
+    AgentSession,
+    ProviderUsage,
+    SpendSummary,
+    agent_sessions_from_payloads,
+    provider_usage_from_payload,
+    spend_from_payloads,
+)
 from .prefs import Preferences
 
 
@@ -20,6 +28,7 @@ from .prefs import Preferences
 class AppState:
     providers: list[ProviderUsage] = field(default_factory=list)
     spend: SpendSummary | None = None
+    sessions: list[AgentSession] = field(default_factory=list)
     last_updated: float | None = None
     last_error: str | None = None
     refreshing: bool = False
@@ -41,6 +50,7 @@ class Controller:
     def __init__(self, prefs: Preferences, cli: CodexBarCLI | None = None) -> None:
         self.prefs = prefs
         self.cli = cli or CodexBarCLI(path_from_prefs(prefs))
+        self.history = HistoryStore()
         self.state = AppState()
         self._listeners: list[Listener] = []
         self._lock = threading.RLock()
@@ -110,11 +120,17 @@ class Controller:
                     spend = spend_from_payloads(self.cli.cost())
                 except CLIError:
                     spend = None
+            try:
+                sessions = agent_sessions_from_payloads(self.cli.sessions())
+            except CLIError:
+                sessions = []
             with self._lock:
                 self.state.providers = self._ordered(providers)
                 self.state.spend = spend
+                self.state.sessions = sessions
                 self.state.last_updated = time.time()
                 self.state.last_error = None
+                self._record_history()
                 self.state.cli_version = self.cli.version()
         except CLIError as exc:
             with self._lock:
@@ -129,6 +145,25 @@ class Controller:
             self._notify()
 
         return self.state
+
+    def _record_history(self) -> None:
+        """Store one sample per provider window so the app can show trends."""
+        now = time.time()
+        samples: list[Sample] = []
+        for provider in self.state.providers:
+            for window in provider.windows:
+                samples.append(
+                    Sample(
+                        timestamp=now,
+                        provider=provider.provider_id,
+                        window=window.key,
+                        used_percent=window.used_percent,
+                    )
+                )
+        if samples:
+            self.history.append(samples)
+            if len(self.history.read_all()) > 20000:
+                self.history.prune()
 
     def _ordered(self, providers: list[ProviderUsage]) -> list[ProviderUsage]:
         order = list(self.prefs.get("providerOrder") or [])

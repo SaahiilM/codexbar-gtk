@@ -15,6 +15,10 @@ and no packaging of its own. It consumes the JSON the CodexBar CLI already emits
 
 ![The usage dashboard](docs/dashboard.png)
 
+| The compact panel | The spending page |
+| --- | --- |
+| ![The compact panel](docs/panel.png) | ![The spending page](docs/spending.png) |
+
 ## What it does
 
 - **A system tray meter** that fills with the provider's accent colour and turns

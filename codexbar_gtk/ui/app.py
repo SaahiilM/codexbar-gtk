@@ -27,7 +27,7 @@ class CodexBarApp(Adw.Application):
     def __init__(self) -> None:
         super().__init__(
             application_id=APP_ID,
-            flags=Gio.ApplicationFlags.FLAGS_NONE,
+            flags=Gio.ApplicationFlags.HANDLES_COMMAND_LINE,
         )
         self.prefs = Preferences()
         cli = CodexBarCLI(str(self.prefs.get("cliPath") or "") or None)
@@ -60,6 +60,18 @@ class CodexBarApp(Adw.Application):
             self._apply_state(self.controller.state)
 
         GLib.timeout_add_seconds(TICK_SECONDS, self._tick)
+
+    def do_command_line(self, command_line: Gio.ApplicationCommandLine) -> int:
+        """Handle our own flags.
+
+        ``Gio.Application`` forwards the command line to the primary instance,
+        so ``codexbar-gtk --settings`` also works while the app is already
+        running in the tray.
+        """
+        argv = list(command_line.get_arguments())
+        self.extra_args = [arg for arg in argv[1:] if arg.startswith("--")]
+        self.activate()
+        return 0
 
     def do_activate(self) -> None:
         if "--settings" in self.extra_args:
@@ -205,6 +217,8 @@ class CodexBarApp(Adw.Application):
             )
             for p in providers[:4]
         )
+        # Hosts read the properties once, when the item appears, so the
+        # tooltip has to be complete before the item is published.
         self.tray.update(icon_name, highest.display_name, body, pixmap)
 
         entries: list = []
@@ -251,10 +265,5 @@ class CodexBarApp(Adw.Application):
 
 def main(argv: list[str] | None = None) -> int:
     argv = list(argv if argv is not None else sys.argv)
-    # GApplication rejects unknown options, so our own flags are handled here.
-    extra = [arg for arg in argv[1:] if arg.startswith("--")]
-    argv = [arg for arg in argv if not arg.startswith("--")]
-
     app = CodexBarApp()
-    app.extra_args = extra
     return app.run(argv)

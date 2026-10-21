@@ -244,7 +244,7 @@ class _StatusNotifierItem(dbus.service.Object if HAVE_DBUS else object):  # type
             ),
             # The host renders the dbusmenu when the icon is clicked, which is
             # the closest equivalent of the macOS menu bar dropdown.
-            "ItemIsMenu": True,
+            "ItemIsMenu": False,
             "Menu": dbus.ObjectPath(MENU_PATH),
             "IconThemePath": "",
             "AttentionIconName": "codexbar-gtk-9",
@@ -291,18 +291,9 @@ class _StatusNotifierItem(dbus.service.Object if HAVE_DBUS else object):  # type
 
     @dbus.service.method(SNI_IFACE, in_signature="ii")
     def ContextMenu(self, x: int, y: int) -> None:
-        # The host asks us to show our menu; it renders the dbusmenu itself.
-        try:
-            self._bus.emit_signal(
-                "/StatusNotifierItem",
-                "org.freedesktop.DBus.Properties",
-                "PropertiesChanged",
-                SNI_IFACE,
-                {},
-                [],
-            )
-        except Exception:
-            pass
+        # Some hosts do not render the dbusmenu themselves; in that case show
+        # the compact panel so a right click is never a dead end.
+        self._callback()
 
     @dbus.service.method(SNI_IFACE, in_signature="iis")
     def Scroll(self, delta: int, orientation: str, _unused: int = 0) -> None:

@@ -150,3 +150,54 @@ def format_window_span(minutes: int | None) -> str | None:
 
 def next_refresh_delta(interval_seconds: int) -> timedelta:
     return timedelta(seconds=max(5, interval_seconds))
+
+
+def workday_progress_percent(
+    resets_at: datetime | None, now: datetime | None = None, work_days: int = 5
+) -> float | None:
+    """How far through the working days a weekly window is, in percent.
+
+    Mirrors the macOS app's weekly progress tick: with five work days only the
+    Monday to Friday stretch counts towards the expected burn.
+    """
+    if resets_at is None or work_days <= 0:
+        return None
+    now = now or datetime.now(timezone.utc)
+    week_start = resets_at - timedelta(days=7)
+    if now >= resets_at:
+        return 100.0
+
+    total_work = 0.0
+    elapsed_work = 0.0
+    cursor = week_start
+    while cursor < resets_at:
+        is_workday = cursor.weekday() < work_days
+        if is_workday:
+            total_work += 1
+            if cursor <= now:
+                elapsed_work += 1
+        cursor += timedelta(days=1)
+
+    if total_work <= 0:
+        return None
+    return max(0.0, min(100.0, (elapsed_work / total_work) * 100.0))
+
+
+def project_usage_at_reset(
+    used_percent: float,
+    samples: list[tuple[float, float]],
+    resets_at: datetime | None,
+    now: datetime | None = None,
+) -> float | None:
+    """Project the quota usage when the window resets, from recorded samples."""
+    if resets_at is None or len(samples) < 2:
+        return None
+    now = now or datetime.now(timezone.utc)
+    (first_t, first_v), (last_t, last_v) = samples[0], samples[-1]
+    span = last_t - first_t
+    if span <= 0:
+        return None
+    per_second = (last_v - first_v) / span
+    hours_left = max(0.0, (resets_at - now).total_seconds() / 3600.0)
+    projected = used_percent + per_second * hours_left * 3600.0
+    return max(0.0, min(200.0, projected))

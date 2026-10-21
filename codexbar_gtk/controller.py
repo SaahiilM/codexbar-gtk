@@ -128,6 +128,7 @@ class Controller:
                 self.state.providers = self._ordered(providers)
                 self.state.spend = spend
                 self.state.sessions = sessions
+                self._collect_accounts()
                 self.state.last_updated = time.time()
                 self.state.last_error = None
                 self._record_history()
@@ -145,6 +146,32 @@ class Controller:
             self._notify()
 
         return self.state
+
+    def _collect_accounts(self) -> None:
+        """Ask the CLI which accounts exist for every enabled provider."""
+        for provider in self.state.providers:
+            if provider.provider_id in getattr(self, "_accounts_done", set()):
+                continue
+            try:
+                payloads = self.cli.usage(provider.provider_id, all_accounts=True)
+            except CLIError:
+                continue
+            labels: list[str] = []
+            for payload in payloads:
+                identity = (payload.get("usage") or {}).get("identity") or {}
+                label = (
+                    identity.get("accountEmail")
+                    or payload.get("account")
+                    or identity.get("accountOrganization")
+                )
+                if label and label not in labels:
+                    labels.append(str(label))
+            if labels:
+                provider.accounts = labels
+                provider.selected_account = labels[0]
+            if not hasattr(self, "_accounts_done"):
+                self._accounts_done = set()
+            self._accounts_done.add(provider.provider_id)
 
     def _scan_costs(self) -> list[dict]:
         """Scan local transcripts for every provider that keeps them.

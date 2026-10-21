@@ -34,6 +34,12 @@ DEFAULTS: dict[str, Any] = {
     "cliPath": "",
     # Display
     "usageBarsShowUsed": True,
+    "menuBarIconStyle": "meter",
+    "unifiedIconSource": "highest",
+    "menuBarColorPace": True,
+    "switcherRowsOption": "progress",
+    "workdayTickAppearance": "subtle",
+    "quotaBurndownEnabled": True,
     "resetTimesOption": "countdown",
     "paceVisible": True,
     "quotaWarningMarkersVisible": True,

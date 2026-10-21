@@ -79,9 +79,12 @@ class SettingsWindow(Adw.PreferencesWindow):
 
         self.add(self._general_page())
         self.add(self._providers_page())
+        self.add(self._menu_bar_page())
         self.add(self._display_page())
         self.add(self._notifications_page())
         self.add(self._spend_page())
+        self.add(self._hooks_page())
+        self.add(self._plugins_page())
         self.add(self._advanced_page())
 
     # -- pages ------------------------------------------------------------
@@ -178,6 +181,21 @@ class SettingsWindow(Adw.PreferencesWindow):
             )
             row.add_row(source_row)
 
+            if entry.provider_id in ("claude", "codex"):
+                sign_in_row = Adw.ActionRow(
+                    title="Sign in with the provider CLI",
+                    subtitle=(
+                        "Run claude auth login --claudeai in a terminal"
+                        if entry.provider_id == "claude"
+                        else "Run codex login in a terminal"
+                    ),
+                )
+                sign_in_row.set_activatable(True)
+                sign_in_row.connect(
+                    "activated", lambda _r, pid=entry.provider_id: self._sign_in(pid)
+                )
+                row.add_row(sign_in_row)
+
             api_row = Adw.PasswordEntryRow(title="API key")
             api_row.set_show_apply_button(True)
             api_row.connect("apply", lambda r, pid=entry.provider_id: self._set_api_key(pid, r.get_text()))
@@ -186,6 +204,49 @@ class SettingsWindow(Adw.PreferencesWindow):
             group.add(row)
 
         page.add(group)
+        return page
+
+    def _menu_bar_page(self) -> Adw.PreferencesPage:
+        """Tray appearance — the equivalent of the macOS "Menu Bar" pane."""
+        page = Adw.PreferencesPage(title="Menu Bar", icon_name="view-continuous-symbolic")
+
+        icon_group = Adw.PreferencesGroup(title="Tray icon")
+        icon_group.add(
+            _combo_row(
+                "Icon style",
+                [("Usage meter", "meter"), ("Icon and percentage", "iconPercent")],
+                str(self.prefs.get("menuBarIconStyle")),
+                lambda value: self.prefs.set("menuBarIconStyle", value),
+            )
+        )
+        icon_group.add(
+            _combo_row(
+                "Icon shows",
+                [
+                    ("Provider with the highest usage", "highest"),
+                    ("First enabled provider", "first"),
+                ],
+                str(self.prefs.get("unifiedIconSource")),
+                lambda value: self.prefs.set("unifiedIconSource", value),
+            )
+        )
+        icon_group.add(
+            _combo_row(
+                "Provider rows in the menu",
+                [("Usage bar", "progress"), ("Quota details", "details")],
+                str(self.prefs.get("switcherRowsOption")),
+                lambda value: self.prefs.set("switcherRowsOption", value),
+            )
+        )
+        icon_group.add(
+            _switch_row(
+                "Show the tray icon",
+                "Display the usage meter in the system tray",
+                bool(self.prefs.get("showTray")),
+                lambda value: self.prefs.set("showTray", value),
+            )
+        )
+        page.add(icon_group)
         return page
 
     def _display_page(self) -> Adw.PreferencesPage:
@@ -225,6 +286,37 @@ class SettingsWindow(Adw.PreferencesWindow):
             )
         )
         page.add(usage)
+
+        weekly = Adw.PreferencesGroup(
+            title="Weekly window",
+            description="Show how far through the working days the weekly quota is.",
+        )
+        weekly.add(
+            _spin_row(
+                "Working days per week",
+                1,
+                7,
+                int(self.prefs.get("weeklyProgressWorkDays") or 5),
+                lambda value: self.prefs.set("weeklyProgressWorkDays", value),
+            )
+        )
+        weekly.add(
+            _combo_row(
+                "Workday tick",
+                [("Hidden", "hidden"), ("Subtle", "subtle"), ("High contrast", "highContrast")],
+                str(self.prefs.get("workdayTickAppearance")),
+                lambda value: self.prefs.set("workdayTickAppearance", value),
+            )
+        )
+        weekly.add(
+            _switch_row(
+                "Project the usage at reset",
+                "Extrapolate the burndown from the recorded history",
+                bool(self.prefs.get("quotaBurndownEnabled", True)),
+                lambda value: self.prefs.set("quotaBurndownEnabled", value),
+            )
+        )
+        page.add(weekly)
 
         warnings = Adw.PreferencesGroup(
             title="Quota warnings",
@@ -321,6 +413,130 @@ class SettingsWindow(Adw.PreferencesWindow):
         )
         page.add(group)
         return page
+
+    def _hooks_page(self) -> Adw.PreferencesPage:
+        """Hook rules — external commands run on quota events."""
+        page = Adw.PreferencesPage(title="Hooks", icon_name="application-x-executable-symbolic")
+
+        group = Adw.PreferencesGroup(
+            title="Hooks",
+            description=(
+                "Run your own commands when a quota event happens. "
+                "Rules live in the shared CodexBar config."
+            ),
+        )
+        try:
+            hooks = self.controller.cli.hooks()
+        except Exception:
+            hooks = {}
+        enabled = bool(hooks.get("enabled"))
+        group.add(
+            _switch_row(
+                "Enable hooks",
+                "Fire the configured rules on quota and provider events",
+                enabled,
+                self._toggle_hooks,
+            )
+        )
+        page.add(group)
+
+        rules = hooks.get("events") or []
+        rule_group = Adw.PreferencesGroup(title="Rules")
+        if not rules:
+            empty = Adw.ActionRow(title="No rules configured")
+            empty.set_subtitle(
+                "Add a rule to the shared CodexBar config to run a command on an event"
+            )
+            rule_group.add(empty)
+        else:
+            for rule in rules:
+                if not isinstance(rule, dict):
+                    continue
+                row = Adw.ActionRow(
+                    title=str(rule.get("event") or "event"),
+                    subtitle=str(rule.get("executable") or ""),
+                )
+                state = Gtk.Label(label="on" if rule.get("enabled") else "off")
+                state.add_css_class("cb-kv-key")
+                state.set_valign(Gtk.Align.CENTER)
+                row.add_suffix(state)
+                rule_group.add(row)
+        page.add(rule_group)
+        return page
+
+    def _plugins_page(self) -> Adw.PreferencesPage:
+        """User supplied provider plugins."""
+        page = Adw.PreferencesPage(title="Plugins", icon_name="application-x-addon-symbolic")
+
+        group = Adw.PreferencesGroup(
+            title="Plugins",
+            description="JavaScript plugins that add extra providers.",
+        )
+        try:
+            plugins = self.controller.cli.plugins()
+        except Exception:
+            plugins = []
+        if not plugins:
+            empty = Adw.ActionRow(title="No plugins installed")
+            empty.set_subtitle("Install plugins into the CodexBar plugin directory")
+            group.add(empty)
+        else:
+            for plugin in plugins:
+                if not isinstance(plugin, dict):
+                    continue
+                row = Adw.ActionRow(
+                    title=str(plugin.get("id") or plugin.get("name") or "plugin"),
+                    subtitle=str(plugin.get("version") or plugin.get("provider") or ""),
+                )
+                group.add(row)
+        page.add(group)
+        return page
+
+    def _sign_in(self, provider_id: str) -> None:
+        """Sign in to a provider.
+
+        Claude Code uses a browser flow, so the CLI runs in a pseudo terminal
+        inside a dialog — the same approach the macOS app takes.
+        """
+        if provider_id == "claude":
+            from .login_dialog import LoginDialog
+
+            app = self.get_application()
+            dialog = LoginDialog(app, provider_id)
+            dialog.start()
+            dialog.present()
+            return
+
+        self._open_terminal_login(provider_id)
+
+    def _open_terminal_login(self, provider_id: str) -> None:
+        """Open a terminal with the provider's login command."""
+        command = "claude auth login --claudeai" if provider_id == "claude" else "codex login"
+        terminal = None
+        for candidate in ("konsole", "gnome-terminal", "xterm", "kitty", "alacritty"):
+            from shutil import which
+
+            found = which(candidate)
+            if found:
+                terminal = found
+                break
+        if terminal is None:
+            self._notify(f"Run this in a terminal: {command}")
+            return
+        import subprocess
+
+        try:
+            subprocess.Popen([terminal, "-e", command], start_new_session=True)
+            self._notify(f"Started {command} in a terminal")
+        except OSError as exc:
+            self._notify(f"Could not open a terminal: {exc}")
+
+    def _toggle_hooks(self, value: bool) -> None:
+        try:
+            self.controller.cli.set_hooks_enabled(value)
+            self._notify(f"Hooks {'enabled' if value else 'disabled'}")
+        except Exception as exc:
+            self._notify(f"Could not change hooks: {exc}")
 
     def _advanced_page(self) -> Adw.PreferencesPage:
         page = Adw.PreferencesPage(title="Advanced", icon_name="applications-graphics-symbolic")

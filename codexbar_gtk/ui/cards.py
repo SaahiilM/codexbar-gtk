@@ -14,6 +14,8 @@ from gi.repository import Gtk
 from ..data import ProviderUsage, RateWindow
 from ..format import (
     format_credits,
+    project_usage_at_reset,
+    workday_progress_percent,
     format_currency,
     format_countdown,
     format_pace,
@@ -152,6 +154,8 @@ class MeterBar(Gtk.DrawingArea):
         self.fraction = 0.0
         self.color = "#6366F1"
         self.markers: list[float] = []
+        self.ticks: list[float] = []
+        self.tick_color = (1, 1, 1, 0.35)
         if cairo_support.HAS_CAIRO:
             self.set_draw_func(self._draw)
         else:
@@ -162,10 +166,24 @@ class MeterBar(Gtk.DrawingArea):
             self.add_css_class("cb-meter")
             self._fallback.set_parent(self)
 
-    def set_meter(self, fraction: float, color: str, markers: list[float] | None = None) -> None:
+    def set_meter(
+        self,
+        fraction: float,
+        color: str,
+        markers: list[float] | None = None,
+        ticks: list[float] | None = None,
+        tick_appearance: str = "subtle",
+    ) -> None:
         self.fraction = max(0.0, min(1.0, fraction))
         self.color = color
         self.markers = markers or []
+        self.ticks = ticks or []
+        if tick_appearance == "hidden":
+            self.ticks = []
+        elif tick_appearance == "highContrast":
+            self.tick_color = (1, 1, 1, 0.85)
+        else:
+            self.tick_color = (1, 1, 1, 0.35)
         if not cairo_support.HAS_CAIRO:
             self._fallback.set_fraction(self.fraction)
         self.queue_draw()
@@ -191,6 +209,13 @@ class MeterBar(Gtk.DrawingArea):
             if 0 < x < width - 1:
                 cr.set_source_rgba(1, 1, 1, 0.45)
                 cr.rectangle(x, 1, 1, height - 2)
+                cr.fill()
+
+        for tick in self.ticks:
+            x = width * (tick / 100.0)
+            if 0 < x < width - 1:
+                cr.set_source_rgba(*self.tick_color)
+                cr.rectangle(x, 0, 1, height)
                 cr.fill()
 
 
@@ -265,6 +290,50 @@ class Sparkline(Gtk.DrawingArea):
         cr.fill()
 
 
+class DetailChartView(Gtk.Box):
+    """Bar or line chart for a provider detail section (usage breakdown etc.)."""
+
+    def __init__(self, title: str | None = None, unit: str | None = None) -> None:
+        super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        self.add_css_class("cb-chart-block")
+        if title:
+            heading = Gtk.Label(label=title)
+            heading.add_css_class("cb-section-label")
+            heading.set_halign(Gtk.Align.START)
+            self.append(heading)
+        self.bars = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
+        self.bars.set_valign(Gtk.Align.END)
+        self.bars.set_hexpand(True)
+        self.append(self.bars)
+        self.unit = unit
+
+    def set_points(self, points: list[tuple[str, float]], color: str = "#10A37F") -> None:
+        for child in list(iter_children(self.bars)):
+            self.bars.remove(child)
+        if not points:
+            self.set_visible(False)
+            return
+        self.set_visible(True)
+        peak = max((value for _, value in points), default=0.0) or 1.0
+        for label, value in points[-24:]:
+            column = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=3)
+            column.set_valign(Gtk.Align.END)
+            column.set_hexpand(True)
+
+            bar = Gtk.Box()
+            bar.add_css_class("cb-chart-bar")
+            bar.set_size_request(-1, max(4, int(90 * (value / peak))))
+            bar.set_valign(Gtk.Align.END)
+            column.append(bar)
+
+            caption = Gtk.Label(label=label)
+            caption.add_css_class("cb-chart-label")
+            caption.set_halign(Gtk.Align.CENTER)
+            caption.set_ellipsize(3)
+            column.append(caption)
+            self.bars.append(column)
+
+
 class Chip(Gtk.Box):
     """A small rounded label, e.g. a reset countdown or a pace note."""
 
@@ -297,6 +366,8 @@ class MeterRow(Gtk.Box):
         show_pace: bool = True,
         thresholds: list[float] | None = None,
         accent_color: str = "#6366F1",
+        workday_ticks: list[float] | None = None,
+        tick_appearance: str = "subtle",
     ) -> None:
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         self.window = window
@@ -305,6 +376,8 @@ class MeterRow(Gtk.Box):
         self.show_pace = show_pace
         self.thresholds = thresholds or []
         self.accent_color = accent_color
+        self.workday_ticks = workday_ticks or []
+        self.tick_appearance = tick_appearance
 
         header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         self.title_label = Gtk.Label(label=window.title)
@@ -361,6 +434,7 @@ class MeterRow(Gtk.Box):
             min(1.0, max(0.0, used / 100.0)),
             _severity_color(severity, self.accent_color),
             self.thresholds,
+            self.workday_ticks,
         )
 
         reset_text = format_reset(window.resets_at, self.reset_style, now)
@@ -401,10 +475,16 @@ class ProviderCard(Gtk.Box):
         show_identity: bool = True,
         compact: bool = False,
         history=None,
+        work_days: int = 5,
+        tick_appearance: str = "subtle",
+        burndown: bool = True,
     ) -> None:
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         self.provider = provider
         self.history = history
+        self.work_days = work_days
+        self.tick_appearance = tick_appearance
+        self.burndown = burndown
         self.show_used = show_used
         self.reset_style = reset_style
         self.show_pace = show_pace
@@ -439,12 +519,26 @@ class ProviderCard(Gtk.Box):
         self.badge_label.add_css_class("cb-plan-badge")
         self.badge_label.set_valign(Gtk.Align.CENTER)
         self.header.append(self.badge_label)
+
+        self.account_label = Gtk.Label(label="")
+        self.account_label.add_css_class("cb-plan-badge")
+        self.account_label.set_valign(Gtk.Align.CENTER)
+        self.account_label.set_visible(False)
+        self.header.append(self.account_label)
         self.append(self.header)
 
         self.meters: list[MeterRow] = []
         self.meters_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
         self.meters_box.set_margin_top(14)
         self.append(self.meters_box)
+
+        self.burndown_chip = Chip(icon="utilities-system-monitor-symbolic")
+        self.burndown_chip.set_visible(False)
+        self.extra_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        self.extra_box.append(self.burndown_chip)
+
+        self.charts_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        self.append(self.charts_box)
 
         self.extra_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         self.append(self.extra_box)
@@ -473,12 +567,23 @@ class ProviderCard(Gtk.Box):
                 show_pace=self.show_pace,
                 thresholds=self._thresholds_for(window),
                 accent_color=self.provider.accent_color,
+                workday_ticks=self._workday_ticks_for(window),
+                tick_appearance=self.tick_appearance,
             )
             self.meters.append(row)
             self.meters_box.append(row)
 
     def _thresholds_for(self, window: RateWindow) -> list[float]:
         return self.thresholds
+
+    def _workday_ticks_for(self, window: RateWindow) -> list[float]:
+        """Weekly windows show a tick for the working-day progress."""
+        if window.key != "secondary" or self.work_days <= 0:
+            return []
+        percent = workday_progress_percent(window.resets_at, work_days=self.work_days)
+        if percent is None:
+            return []
+        return [percent]
 
     # -- updates ----------------------------------------------------------
 
@@ -507,6 +612,14 @@ class ProviderCard(Gtk.Box):
         self.badge_label.set_text(badge)
         self.badge_label.set_visible(bool(badge))
 
+        accounts = provider.accounts
+        if len(accounts) > 1:
+            self.account_label.set_text(f"{len(accounts)} accounts")
+            self.account_label.set_tooltip_text("\n".join(accounts))
+            self.account_label.set_visible(True)
+        else:
+            self.account_label.set_visible(False)
+
         for row in self.meters:
             row.update(now)
             if self.history is not None:
@@ -525,6 +638,8 @@ class ProviderCard(Gtk.Box):
             else:
                 row.set_pace(None)
 
+        self._rebuild_charts()
+        self._update_burndown(now)
         self._rebuild_extra(now)
 
         if provider.error:
@@ -532,6 +647,48 @@ class ProviderCard(Gtk.Box):
             self.error_label.set_visible(True)
         else:
             self.error_label.set_visible(False)
+
+    def _rebuild_charts(self) -> None:
+        """Render the charts the CLI attached to the provider details."""
+        for child in list(iter_children(self.charts_box)):
+            self.charts_box.remove(child)
+
+        for section in self.provider.details:
+            if section.chart is None or not section.chart.points:
+                continue
+            view = DetailChartView(section.chart.title, section.chart.unit)
+            view.set_points(section.chart.points, self.provider.accent_color)
+            self.charts_box.append(view)
+
+        if self.provider.credit_events:
+            view = DetailChartView("Credits used")
+            view.set_points(
+                [(event.date[5:] if len(event.date) >= 10 else event.date, event.used)
+                 for event in self.provider.credit_events[-24:]],
+                self.provider.accent_color,
+            )
+            self.charts_box.append(view)
+
+    def _update_burndown(self, now: datetime) -> None:
+        """Project the usage at reset time from the recorded history."""
+        if not self.burndown or self.history is None:
+            self.burndown_chip.set_visible(False)
+            return
+        window = self.provider.windows[0] if self.provider.windows else None
+        if window is None or window.resets_at is None:
+            self.burndown_chip.set_visible(False)
+            return
+        samples = self.history.series(self.provider.provider_id, window.key, hours=24.0)
+        projected = project_usage_at_reset(window.used_percent, samples, window.resets_at, now)
+        if projected is None:
+            self.burndown_chip.set_visible(False)
+            return
+        if projected >= 95:
+            text = f"projected {projected:.0f}% at reset — will run out"
+        else:
+            text = f"projected {projected:.0f}% at reset"
+        self.burndown_chip.set_text(text)
+        self.burndown_chip.set_visible(True)
 
     def _rebuild_extra(self, now: datetime) -> None:
         for child in list(iter_children(self.extra_box)):

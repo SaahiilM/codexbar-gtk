@@ -202,6 +202,57 @@ def render_meter_pixmap(level: int, accent: str = "#10A37F", size: int = 32):
     return size, size, bytes(out)
 
 
+def render_percent_pixmap(
+    percent: float,
+    accent: str = "#10A37F",
+    initial: str = "",
+    size: int = 32,
+):
+    """Render an icon that shows the usage percentage next to the brand letter."""
+    try:
+        import cairo
+    except Exception:
+        return None
+    try:
+        surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, size, size)
+    except Exception:
+        return None
+
+    cr = cairo.Context(surface)
+    cr.set_operator(cairo.OPERATOR_SOURCE)
+    cr.set_source_rgba(0, 0, 0, 0)
+    cr.paint()
+    cr.set_operator(cairo.OPERATOR_OVER)
+
+    r, g, b = _hex_to_rgb(accent)
+    cr.set_source_rgba(r, g, b, 1.0)
+    cr.select_font_face("Sans", 0, 1)
+    cr.set_font_size(size * 0.52)
+    extents = cr.text_extents(initial or "?")
+    x = (size - (extents[2] + extents[0])) / 2
+    y = (size - (extents[3] + extents[1])) / 2 + 1
+    cr.move_to(x, y)
+    cr.show_text(initial or "?")
+
+    cr.set_font_size(size * 0.30)
+    text = f"{percent:.0f}%"
+    extents = cr.text_extents(text)
+    cr.set_source_rgba(1, 1, 1, 0.95)
+    cr.move_to((size - (extents[2] + extents[0])) / 2, size - 1)
+    cr.show_text(text)
+
+    surface.flush()
+    stride = surface.get_stride()
+    raw = bytes(surface.get_data())
+    out = bytearray()
+    for row_index in range(size):
+        row = raw[row_index * stride : row_index * stride + size * 4]
+        for pixel in range(size):
+            blue, green, red, alpha = row[pixel * 4 : pixel * 4 + 4]
+            out += bytes((alpha, red, green, blue))
+    return size, size, bytes(out)
+
+
 def _hex_to_rgb(value: str) -> tuple[float, float, float]:
     text = value.strip().lstrip("#")
     if len(text) == 6:

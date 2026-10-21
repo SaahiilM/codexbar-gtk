@@ -126,6 +126,9 @@ class PopupContent(Gtk.Box):
                     thresholds=thresholds,
                     show_identity=show_identity,
                     history=self.history,
+                    work_days=work_days,
+                    tick_appearance=tick_appearance,
+                    burndown=burndown,
                 )
             )
 

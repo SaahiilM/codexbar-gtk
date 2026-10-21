@@ -115,7 +115,13 @@ class CodexBarCLI:
             return "unknown"
         return result.stdout.strip() or "unknown"
 
-    def usage(self, provider: str | None = None, timeout: int | None = None) -> list[dict[str, Any]]:
+    def usage(
+        self,
+        provider: str | None = None,
+        timeout: int | None = None,
+        account_index: int | None = None,
+        all_accounts: bool = False,
+    ) -> list[dict[str, Any]]:
         """Fetch usage.
 
         Without ``provider`` the CLI returns exactly the enabled providers, which is
@@ -124,6 +130,10 @@ class CodexBarCLI:
         args = ["usage", "--format", "json"]
         if provider:
             args += ["--provider", provider]
+        if all_accounts:
+            args += ["--all-accounts"]
+        if account_index is not None and account_index >= 0:
+            args += ["--account-index", str(account_index)]
         payload = self.run_json(args, timeout=timeout)
         if isinstance(payload, dict):
             return [payload]
@@ -190,6 +200,26 @@ class CodexBarCLI:
 
     def set_source(self, provider: str, source: str) -> CLIResult:
         return self.run(["config", "set-source", "--provider", provider, "--source", source])
+
+    def hooks(self) -> dict[str, Any]:
+        """The hook rules from the shared CodexBar config."""
+        try:
+            payload = self.run_json(["hooks", "list", "--format", "json"], timeout=30)
+        except CLIError:
+            return {"enabled": False, "events": []}
+        return payload if isinstance(payload, dict) else {"enabled": False, "events": []}
+
+    def set_hooks_enabled(self, enabled: bool) -> CLIResult:
+        return self.run(["hooks", "enable" if enabled else "disable"], timeout=30)
+
+    def plugins(self) -> list[dict[str, Any]]:
+        try:
+            payload = self.run_json(["plugins", "list"], timeout=60)
+        except CLIError:
+            return []
+        if isinstance(payload, dict):
+            return [payload]
+        return list(payload or [])
 
     def sessions(self) -> list[dict[str, Any]]:
         try:

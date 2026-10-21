@@ -76,13 +76,45 @@ Remove it again with `./scripts/install.sh --uninstall`.
 
 | Command | Used for |
 | --- | --- |
-| `codexbar usage --format json` | provider usage, credits, pace, status (enabled providers only) |
-| `codexbar cost --format json` | local spend history, project and model breakdown |
+| `codexbar usage --format json` | provider usage, credits, pace, status, detail sections and charts (enabled providers only) |
+| `codexbar usage --provider X --all-accounts` | the account list for a provider |
+| `codexbar cost --format json` / `--provider codex\|claude\|opencode` | local spend history, project and model breakdown |
+| `codexbar sessions --json-v2` | the running coding agents |
 | `codexbar config providers` | the provider list in Settings |
 | `codexbar config enable/disable/set-source/set-api-key` | provider management |
+| `codexbar hooks list --format json`, `hooks enable/disable` | the Hooks pane |
+| `codexbar plugins list` | the Plugins pane |
 
 Point the app at a different binary with `CODEXBAR_CLI=/path/to/codexbar` or in
 Settings → Advanced → CLI path.
+
+## Upstream feature parity
+
+The reference for this app is the upstream **macOS** app in the same repository
+(`Sources/CodexBar`); the upstream Linux/Qt app only covers part of it. This
+front-end maps the upstream feature set onto the CLI:
+
+| Upstream area | Upstream file | Here |
+| --- | --- | --- |
+| Menu bar item + merged icons | `StatusItemController*`, `IconRenderer` | StatusNotifierItem with a meter or an icon+percentage pixmap, merged source (highest usage / first provider) |
+| Provider cards, meters, reset countdowns | `UsageMenuCardView`, `MenuCardMetricRow` | `ui/cards.py` — meter rows, chips, pace, credits, spend |
+| Pace forecast | `UsagePace`, `UsagePaceText` | `format_pace` — "12% in reserve" / "in deficit" |
+| Quota burndown / projection | `QuotaBurndownModel` | projected usage at reset, extrapolated from the recorded history |
+| Weekly work-day progress | `weeklyProgressWorkDays`, `workdayTickAppearance` | workday tick on the weekly meter |
+| Provider detail charts | `UsageBreakdownChartMenuView` | charts from the CLI's `usage.details[].chart` |
+| Credits history chart | `CreditsHistoryChartMenuView` | chart from `credits.events` |
+| Cost history chart | `CostHistoryChartMenuView` | daily spend chart on Usage & Spend |
+| Provider status badges | `ProviderStatus` | status dot plus description per provider |
+| Provider accounts | `CodexAccountSwitcherView` | account list per provider (`--all-accounts`) |
+| Agent sessions | `AgentSession`, `StatusItemController+AgentSessions` | Sessions page |
+| Spend dashboard | `SpendDashboardController` | Usage & Spend page with per-provider breakdown |
+| Quota notifications | `PreferencesNotificationsPane` | Notifications pane, threshold events |
+| Hooks | `PreferencesHooksPane` | Hooks pane backed by `codexbar hooks` |
+| Plugins | `PreferencesPluginsPane` | Plugins pane backed by `codexbar plugins` |
+| Preferences (General, Providers, Menu, Menu Bar, Display, Notifications, Usage & Spend, Advanced) | `PreferencesView` | the same panes, using the upstream preference keys where they exist |
+
+Still macOS-only upstream and therefore not here: iCloud sync, managed macOS
+account profiles, browser credential import and the menu-bar layout editor.
 
 ## Project layout
 

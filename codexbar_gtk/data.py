@@ -120,6 +120,28 @@ class CostInfo:
 
 
 @dataclass
+class DetailChart:
+    """A chart attached to a provider detail section."""
+
+    kind: str = "bars"
+    title: str | None = None
+    unit: str | None = None
+    points: list[tuple[str, float]] = field(default_factory=list)
+
+    @property
+    def peak(self) -> float:
+        return max((value for _, value in self.points), default=0.0)
+
+
+@dataclass
+class CreditEvent:
+    id: str = ""
+    date: str = ""
+    service: str = ""
+    used: float = 0.0
+
+
+@dataclass
 class DetailRow:
     label: str
     value: str
@@ -132,6 +154,7 @@ class DetailRow:
 class DetailSection:
     title: str | None
     rows: list[DetailRow] = field(default_factory=list)
+    chart: DetailChart | None = None
 
 
 @dataclass
@@ -157,6 +180,9 @@ class ProviderUsage:
     error: str | None = None
     details: list[DetailSection] = field(default_factory=list)
     reset_credits_available: int = 0
+    credit_events: list[CreditEvent] = field(default_factory=list)
+    accounts: list[str] = field(default_factory=list)
+    selected_account: str | None = None
     accent_color: str = "#6366F1"
     raw: dict[str, Any] = field(default_factory=dict)
 
@@ -247,10 +273,32 @@ def _details_from(payload: Any) -> list[DetailSection]:
                     severity=str(raw_row.get("severity", "normal")),
                 )
             )
+        chart = None
+        raw_chart = raw_section.get("chart")
+        if isinstance(raw_chart, dict):
+            points = []
+            for point in raw_chart.get("points") or []:
+                if not isinstance(point, dict):
+                    continue
+                value = point.get("value")
+                points.append(
+                    (
+                        str(point.get("label", "")),
+                        float(value) if isinstance(value, (int, float)) else 0.0,
+                    )
+                )
+            chart = DetailChart(
+                kind=str(raw_chart.get("kind", "bars")),
+                title=raw_chart.get("title"),
+                unit=raw_chart.get("unit"),
+                points=points[:120],
+            )
+
         sections.append(
             DetailSection(
                 title=raw_section.get("title"),
                 rows=rows,
+                chart=chart,
             )
         )
     return sections
@@ -321,6 +369,20 @@ def provider_usage_from_payload(payload: dict[str, Any]) -> ProviderUsage:
     error = payload.get("error") or {}
     error_message = error.get("message") if isinstance(error, dict) else None
 
+    credit_events: list[CreditEvent] = []
+    for event in credits.get("events") or []:
+        if not isinstance(event, dict):
+            continue
+        used = event.get("creditsUsed")
+        credit_events.append(
+            CreditEvent(
+                id=str(event.get("id", "")),
+                date=str(event.get("date", "")),
+                service=str(event.get("service", "")),
+                used=float(used) if isinstance(used, (int, float)) else 0.0,
+            )
+        )
+
     reset_credits = usage.get("codexResetCredits") or {}
     reset_credits_available = reset_credits.get("availableCount") or 0
 
@@ -343,6 +405,7 @@ def provider_usage_from_payload(payload: dict[str, Any]) -> ProviderUsage:
         error=error_message,
         details=_details_from(usage.get("details")),
         reset_credits_available=int(reset_credits_available or 0),
+        credit_events=credit_events,
         accent_color=provider_meta.accent_color(provider_id),
         raw=payload,
     )

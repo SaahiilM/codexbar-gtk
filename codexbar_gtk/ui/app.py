@@ -213,12 +213,27 @@ class CodexBarApp(Adw.Application):
             self.tray.register()
             return
 
-        highest = max(providers, key=lambda p: p.max_used_percent)
+        source = str(self.prefs.get("unifiedIconSource") or "highest")
+        if source == "first":
+            chosen = providers[0]
+        else:
+            chosen = max(providers, key=lambda p: p.max_used_percent)
+        highest = chosen
         level = min(9, int(highest.max_used_percent / 10.0))
         accent = highest.accent_color
         levels = icons.write_icons(accent)
         icon_name = levels.get(level) or "codexbar-gtk"
-        pixmap = icons.render_meter_pixmap(level, accent)
+
+        style = str(self.prefs.get("menuBarIconStyle") or "meter")
+        if style == "iconPercent":
+            pixmap = icons.render_percent_pixmap(
+                highest.max_used_percent,
+                accent,
+                (highest.display_name or "?")[0],
+            )
+            icon_name = ""
+        else:
+            pixmap = icons.render_meter_pixmap(level, accent)
         body = "\n".join(
             f"{p.display_name}: " + ", ".join(
                 f"{w.title} {w.used_percent:.0f}%" for w in p.windows
@@ -229,11 +244,18 @@ class CodexBarApp(Adw.Application):
         # tooltip has to be complete before the item is published.
         self.tray.update(icon_name, highest.display_name, body, pixmap)
 
+        rows_option = str(self.prefs.get("switcherRowsOption") or "progress")
         entries: list = []
         for provider in providers:
-            summary = " · ".join(
-                f"{w.title} {w.used_percent:.0f}%" for w in provider.windows
-            )
+            if rows_option == "progress":
+                used = max((w.used_percent for w in provider.windows), default=0.0)
+                filled = int(round(used / 10))
+                bar = "▇" * filled + "░" * (10 - filled)
+                summary = f"{bar} {used:.0f}%"
+            else:
+                summary = " · ".join(
+                    f"{w.title} {w.used_percent:.0f}%" for w in provider.windows
+                )
             entries.append((f"{provider.display_name} — {summary}", self._open_dashboard))
         entries += [
             (None, None),

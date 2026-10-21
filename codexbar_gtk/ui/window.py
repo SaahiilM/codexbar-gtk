@@ -180,6 +180,9 @@ class MainWindow(Adw.ApplicationWindow):
         show_pace = bool(self.prefs.get("paceVisible", True))
         show_identity = not bool(self.prefs.get("hidePersonalInfo", False))
         thresholds = list(self.prefs.get("quotaWarningThresholds") or [80, 95])
+        work_days = int(self.prefs.get("weeklyProgressWorkDays") or 5)
+        tick_appearance = str(self.prefs.get("workdayTickAppearance") or "subtle")
+        burndown = bool(self.prefs.get("quotaBurndownEnabled", True))
 
         providers = state.providers
         self.empty_box.set_visible(not providers)
@@ -193,6 +196,9 @@ class MainWindow(Adw.ApplicationWindow):
                 thresholds=thresholds,
                 show_identity=show_identity,
                 history=self.history,
+                work_days=work_days,
+                tick_appearance=tick_appearance,
+                burndown=burndown,
             )
             card.set_hexpand(True)
             self.flow.append(card)

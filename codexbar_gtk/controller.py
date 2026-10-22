@@ -120,23 +120,33 @@ class Controller:
                 provider_usage_from_payload(payload)
                 for payload in self.cli.usage()
             ]
-            spend: SpendSummary | None = None
+            spend: SpendSummary | None = self.state.spend
+            spend_error: str | None = None
             if self.prefs.get("costUsageEnabled", True):
                 try:
-                    spend = spend_from_payloads(self._scan_costs())
-                except CLIError:
-                    spend = None
+                    payloads = self._scan_costs()
+                    fresh = spend_from_payloads(payloads)
+                    # A new CLI may know sources this installed version does
+                    # not, or one source may fail. Keep the last usable scan
+                    # rather than replace it with a fabricated empty total.
+                    if fresh.providers or not fresh.error:
+                        spend = fresh
+                    spend_error = fresh.error
+                except CLIError as exc:
+                    spend_error = f"Cost history unavailable: {exc}"
+            else:
+                spend = None
             try:
                 sessions = agent_sessions_from_payloads(self.cli.sessions())
             except CLIError:
-                sessions = []
+                sessions = self.state.sessions
             with self._lock:
                 self.state.providers = self._ordered(providers)
                 self.state.spend = spend
                 self.state.sessions = sessions
                 self._collect_accounts()
                 self.state.last_updated = time.time()
-                self.state.last_error = None
+                self.state.last_error = spend_error
                 self._record_history()
                 self.state.cli_version = self.cli.version()
         except CLIError as exc:
@@ -188,13 +198,18 @@ class Controller:
         """
         try:
             return self.cli.cost(provider="both")
-        except CLIError:
+        except CLIError as original_error:
             payloads: list[dict] = []
+            succeeded = False
             for provider in ("codex", "claude"):
                 try:
                     payloads.extend(self.cli.cost(provider=provider))
-                except CLIError:
+                    succeeded = True
+                except CLIError as exc:
+                    payloads.append({"provider": provider, "error": {"message": str(exc)}})
                     continue
+            if not succeeded:
+                raise original_error
             return payloads
 
     def _record_history(self) -> None:

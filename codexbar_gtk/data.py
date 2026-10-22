@@ -550,6 +550,7 @@ class SpendProvider:
     projects: list[dict[str, Any]] = field(default_factory=list)
     priced: bool = True
     provenance: str = ""
+    cost_known: bool = False
 
     @property
     def display_name(self) -> str:
@@ -561,6 +562,8 @@ class SpendSummary:
     """Aggregated local spend from ``codexbar cost``."""
 
     total_cost: float = 0.0
+    cost_known: bool = False
+    cost_partial: bool = False
     currency: str = "USD"
     total_tokens: int = 0
     coverage: dict[str, int] = field(default_factory=dict)
@@ -572,8 +575,11 @@ class SpendSummary:
     projects: list[dict[str, Any]] = field(default_factory=list)
     models: list[dict[str, Any]] = field(default_factory=list)
     session_cost: float = 0.0
+    session_cost_known: bool = False
     session_tokens: int = 0
     last30_cost: float = 0.0
+    last30_cost_known: bool = False
+    last30_cost_partial: bool = False
     last30_tokens: int = 0
     incomplete_requests: int = 0
     error: str | None = None
@@ -592,7 +598,11 @@ def spend_from_payloads(payloads: list[dict[str, Any]]) -> SpendSummary:
         entry.provenance = str(payload.get("provenance") or "")
         summary.currency = payload.get("currencyCode") or summary.currency
         summary.provenance = payload.get("provenance") or summary.provenance
+        totals = payload.get("totals")
+        totals = totals if isinstance(totals, dict) else {}
         coverage = payload.get("coverage")
+        if not isinstance(coverage, dict):
+            coverage = totals.get("coverage")
         if isinstance(coverage, dict):
             for key, value in coverage.items():
                 summary.coverage[key] = summary.coverage.get(key, 0) + int(value or 0)
@@ -600,31 +610,49 @@ def spend_from_payloads(payloads: list[dict[str, Any]]) -> SpendSummary:
         summary.history_label = payload.get("historyLabel") or summary.history_label
         if payload.get("historyCoverageIsEstablished") is False:
             summary.history_coverage_established = False
-        summary.total_cost += float(payload.get("totalCost") or 0.0)
-        summary.total_tokens += int(payload.get("totalTokens") or 0)
-        entry.cost += float(payload.get("totalCost") or 0.0)
-        entry.tokens += int(payload.get("totalTokens") or 0)
-        summary.session_cost += float(payload.get("sessionCostUSD") or 0.0)
+        # The CLI repeats totals at the top level on some versions. Choose one
+        # representation per provider; never sum two views of the same data.
+        raw_cost = payload.get("totalCost")
+        if raw_cost is None:
+            raw_cost = totals.get("totalCost")
+        cost = _optional_float(raw_cost)
+        if cost is not None:
+            summary.total_cost += cost
+            summary.cost_known = True
+            entry.cost = cost
+            entry.cost_known = True
+        raw_tokens = payload.get("totalTokens")
+        if raw_tokens is None:
+            raw_tokens = totals.get("totalTokens")
+        tokens = _optional_int(raw_tokens)
+        if tokens is not None:
+            summary.total_tokens += tokens
+            entry.tokens = tokens
+        session_cost = _optional_float(payload.get("sessionCostUSD"))
+        if session_cost is not None:
+            summary.session_cost += session_cost
+            summary.session_cost_known = True
         summary.session_tokens += int(payload.get("sessionTokens") or 0)
         entry.session_tokens += int(payload.get("sessionTokens") or 0)
-        summary.last30_cost += float(payload.get("last30DaysCostUSD") or 0.0)
+        last30_cost = _optional_float(payload.get("last30DaysCostUSD"))
+        if last30_cost is not None:
+            summary.last30_cost += last30_cost
+            summary.last30_cost_known = True
+        else:
+            summary.last30_cost_partial = True
         summary.last30_tokens += int(payload.get("last30DaysTokens") or 0)
         summary.incomplete_requests += int(payload.get("incompleteRequestCount") or 0)
 
-        totals = payload.get("totals") or {}
-        if isinstance(totals, dict):
-            summary.provenance = totals.get("provenance") or summary.provenance
-            totals_coverage = totals.get("coverage")
-            if isinstance(totals_coverage, dict):
-                for key, value in totals_coverage.items():
-                    summary.coverage[key] = summary.coverage.get(key, 0) + int(value or 0)
-            summary.total_cost += float(totals.get("totalCost") or 0.0)
-            summary.total_tokens += int(totals.get("totalTokens") or 0)
-            entry.cost += float(totals.get("totalCost") or 0.0)
-            entry.tokens += int(totals.get("totalTokens") or 0)
-            totals_coverage = totals.get("coverage")
-            if isinstance(totals_coverage, dict):
-                entry.priced = bool(totals_coverage.get("priced"))
+        summary.provenance = totals.get("provenance") or summary.provenance
+        entry.priced = entry.cost_known
+        summary.cost_partial |= (
+            not entry.cost_known
+            or not summary.history_coverage_established
+            or bool((coverage or {}).get("unpriced"))
+            or bool((coverage or {}).get("unmetered"))
+            or bool(payload.get("incompleteRequestCount") or totals.get("incompleteRequestCount"))
+        )
+        if payload.get("incompleteRequestCount") is None:
             summary.incomplete_requests += int(totals.get("incompleteRequestCount") or 0)
 
         for day in payload.get("daily") or []:
@@ -644,7 +672,8 @@ def spend_from_payloads(payloads: list[dict[str, Any]]) -> SpendSummary:
 
         summary.providers.append(entry)
 
-    summary.providers = [p for p in summary.providers if p.tokens or p.cost]
+    summary.cost_partial |= bool(summary.error)
+    summary.providers = [p for p in summary.providers if p.tokens or p.cost_known]
     summary.providers.sort(key=lambda p: (p.cost, p.tokens), reverse=True)
     summary.daily.sort(key=lambda e: e.get("date", ""))
     summary.projects.sort(key=lambda e: float(e.get("totalCost") or 0.0), reverse=True)

@@ -47,7 +47,7 @@ class SpendHeatmap(Gtk.Box):
         self._mode = "daily"
         self._hover_index: int | None = None
 
-        head = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        head = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
 
         titles = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
         titles.set_hexpand(True)
@@ -74,6 +74,7 @@ class SpendHeatmap(Gtk.Box):
                 button.set_group(group)
             button.connect("toggled", self._on_mode_toggled, mode)
             modes.append(button)
+        modes.set_halign(Gtk.Align.START)
         head.append(modes)
         self.append(head)
 
@@ -329,15 +330,20 @@ class SpendView(Gtk.Box):
         self.add_css_class("cb-dash-grid")
         self.set_size_request(720, -1)
 
-        tiles = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=16)
-        tiles.set_homogeneous(True)
+        tiles = Gtk.Grid(column_spacing=12, row_spacing=12, column_homogeneous=True)
         self.total_tile = StatTile("Total spend")
         self.session_tile = StatTile("This session")
         self.tokens_tile = StatTile("Tokens")
         self.coverage_tile = StatTile("Coverage")
-        for tile in (self.total_tile, self.session_tile, self.tokens_tile, self.coverage_tile):
-            tiles.append(tile)
+        for index, tile in enumerate((self.total_tile, self.session_tile, self.tokens_tile, self.coverage_tile)):
+            tiles.attach(tile, index % 2, index // 2, 1, 1)
         self.append(tiles)
+
+        self.notice_label = Gtk.Label(label="", xalign=0.0)
+        self.notice_label.add_css_class("cb-caption")
+        self.notice_label.set_wrap(True)
+        self.notice_label.set_visible(False)
+        self.append(self.notice_label)
 
         self.heatmap = SpendHeatmap()
         self.append(self.heatmap)
@@ -395,7 +401,7 @@ class SpendView(Gtk.Box):
 
     # -- updates ----------------------------------------------------------
 
-    def update(self, spend: SpendSummary | None) -> None:
+    def update(self, spend: SpendSummary | None, error: str | None = None) -> None:
         if spend is None:
             self.total_tile.set_value("—")
             self.session_tile.set_value("—")
@@ -404,28 +410,35 @@ class SpendView(Gtk.Box):
             self.chart.set_entries([])
             self.heatmap.set_entries([])
             self.empty_label.set_visible(True)
+            self.notice_label.set_text(error or "")
+            self.notice_label.set_visible(bool(error))
             return
 
         source = spend.currency or "USD"
         currency_code = self._display_currency(source)
+        partial = spend.cost_partial or bool(error)
         self.total_tile.set_value(
-            self._money(spend.total_cost, source),
-            spend.history_label or spend.reporting_period or "",
+            ("≥ " if partial else "") + self._money(spend.total_cost, source)
+            if spend.cost_known else "—",
+            "Known subtotal · some costs unavailable" if partial and spend.cost_known
+            else spend.history_label or spend.reporting_period or "",
         )
         self.session_tile.set_value(
-            self._money(spend.session_cost, source),
+            self._money(spend.session_cost, source) if spend.session_cost_known else "—",
             f"{format_tokens(spend.session_tokens)} tokens",
         )
         self.tokens_tile.set_value(
             format_tokens(spend.total_tokens),
-            f"{self._money(spend.last30_cost, source)} last 30 days",
+            (("≥ " if spend.last30_cost_partial else "")
+             + self._money(spend.last30_cost, source)
+             + " last 30 days") if spend.last30_cost_known else "cost unavailable",
         )
         priced = int(spend.coverage.get("priced", 0) or 0)
         unpriced = int(spend.coverage.get("unpriced", 0) or 0)
         if priced or unpriced:
             self.coverage_tile.set_value(
                 f"{priced}/{priced + unpriced}",
-                "days priced",
+                "priced entries",
             )
         else:
             self.coverage_tile.set_value(
@@ -481,6 +494,9 @@ class SpendView(Gtk.Box):
         )
 
         self.empty_label.set_visible(not spend.daily and not spend.projects)
+        notice = error or spend.error
+        self.notice_label.set_text(notice or "")
+        self.notice_label.set_visible(bool(notice))
 
     def _rebuild_providers(self, spend: SpendSummary, currency_code: str) -> None:
         """One row per provider that has local usage data."""
@@ -510,8 +526,9 @@ class SpendView(Gtk.Box):
             tokens.set_halign(Gtk.Align.END)
             row.append(tokens)
 
-            if entry.priced:
-                cost_text = self._money(entry.cost, source)
+            if entry.cost_known:
+                partial = any(day.get("totalCost") is None for day in entry.daily)
+                cost_text = ("≥ " if partial else "") + self._money(entry.cost, source)
             else:
                 cost_text = "unpriced"
             cost = Gtk.Label(label=cost_text)

@@ -298,7 +298,7 @@ class SpendParsingTests(unittest.TestCase):
             {
                 "provider": "claude",
                 "currencyCode": "USD",
-                "totals": {"totalCost": 0, "totalTokens": 900, "coverage": {"unpriced": 4}},
+                "totals": {"totalTokens": 900, "coverage": {"unpriced": 4}},
                 "daily": [{"date": "2026-10-21", "totalTokens": 900}],
             },
         ]
@@ -306,6 +306,9 @@ class SpendParsingTests(unittest.TestCase):
         self.assertEqual(len(summary.providers), 2)
         self.assertAlmostEqual(summary.total_cost, 47.2)
         self.assertEqual(summary.total_tokens, 1000)
+        self.assertEqual(summary.coverage, {"priced": 3, "unpriced": 4})
+        self.assertTrue(summary.cost_known)
+        self.assertTrue(summary.cost_partial)
         self.assertTrue(summary.history_coverage_established)
         codex = summary.providers[0]
         self.assertEqual(codex.provider, "codex")
@@ -313,6 +316,48 @@ class SpendParsingTests(unittest.TestCase):
         claude = summary.providers[1]
         self.assertEqual(claude.provider, "claude")
         self.assertFalse(claude.priced)
+
+    def test_old_and_new_cli_totals_are_not_double_counted(self):
+        for payload in (
+            {"provider": "codex", "totalCost": 9, "totalTokens": 100,
+             "coverage": {"priced": 3}, "totals": {"totalCost": 9,
+             "totalTokens": 100, "coverage": {"priced": 3}}},
+            {"provider": "codex", "totals": {"totalCost": 9,
+             "totalTokens": 100, "coverage": {"priced": 3}}},
+        ):
+            with self.subTest(payload=payload):
+                summary = spend_from_payloads([payload])
+                self.assertEqual(summary.total_cost, 9)
+                self.assertEqual(summary.total_tokens, 100)
+                self.assertEqual(summary.coverage, {"priced": 3})
+                self.assertFalse(summary.cost_partial)
+
+    def test_missing_cost_is_not_a_zero_dollar_day(self):
+        summary = spend_from_payloads([{"provider": "claude", "daily": [
+            {"date": "2026-10-21", "totalTokens": 900}
+        ], "totals": {"totalTokens": 900, "coverage": {"unpriced": 1}}}])
+        self.assertFalse(summary.cost_known)
+        self.assertTrue(summary.cost_partial)
+        self.assertFalse(summary.session_cost_known)
+        self.assertFalse(summary.last30_cost_known)
+        self.assertEqual(summary.coverage["unpriced"], 1)
+
+    def test_zero_cost_is_known_only_when_the_cli_reports_zero(self):
+        summary = spend_from_payloads([{"provider": "codex", "sessionCostUSD": 0,
+            "last30DaysCostUSD": 0, "totals": {"totalCost": 0, "totalTokens": 0}}])
+        self.assertTrue(summary.cost_known)
+        self.assertTrue(summary.session_cost_known)
+        self.assertTrue(summary.last30_cost_known)
+        self.assertFalse(summary.cost_partial)
+
+    def test_new_provider_error_does_not_remove_older_cost_data(self):
+        summary = spend_from_payloads([
+            {"provider": "codex", "totals": {"totalCost": 9, "totalTokens": 100}},
+            {"provider": "soniox", "error": {"message": "CLI update required"}},
+        ])
+        self.assertEqual(summary.total_cost, 9)
+        self.assertEqual(len(summary.providers), 1)
+        self.assertIn("CLI update required", summary.error or "")
 
     def test_incomplete_history_flag_is_preserved(self):
         summary = spend_from_payloads(
@@ -493,6 +538,104 @@ class ControllerTests(unittest.TestCase):
             self.assertEqual(len(state.providers), 1)
             self.assertEqual(state.providers[0].provider_id, "codex")
             self.assertIsNone(state.last_error)
+
+    def test_older_cli_without_new_provider_keeps_working(self):
+        with tempfile.TemporaryDirectory() as folder:
+            prefs = Preferences(os.path.join(folder, "settings.json"))
+
+            class OldCLI:
+                def usage(self, provider=None, all_accounts=False):
+                    return [] if all_accounts else [CODEX_PAYLOAD]
+
+                def cost(self, provider=None):
+                    return [{"provider": "codex", "totals": {
+                        "totalCost": 3, "totalTokens": 100, "coverage": {"priced": 1}
+                    }}]
+
+                def sessions(self):
+                    return []
+
+                def version(self):
+                    return "CodexBar 0.79.0"
+
+            controller = Controller(prefs, OldCLI())
+            with patch.object(controller, "_record_history"):
+                state = controller.refresh()
+            self.assertIsNone(state.last_error)
+            self.assertEqual(state.cli_version, "CodexBar 0.79.0")
+            self.assertEqual(state.spend.total_cost, 3)
+
+    def test_cost_command_failure_retains_previous_data_and_reports_error(self):
+        with tempfile.TemporaryDirectory() as folder:
+            prefs = Preferences(os.path.join(folder, "settings.json"))
+
+            class RecoveringCLI:
+                broken = False
+
+                def usage(self, provider=None, all_accounts=False):
+                    return [] if all_accounts else [CODEX_PAYLOAD]
+
+                def cost(self, provider=None):
+                    if self.broken:
+                        raise CLIError("cost unavailable")
+                    return [{"provider": "codex", "totals": {"totalCost": 3}}]
+
+                def sessions(self):
+                    return []
+
+                def version(self):
+                    return "CodexBar 0.79.0"
+
+            cli = RecoveringCLI()
+            controller = Controller(prefs, cli)
+            with patch.object(controller, "_record_history"):
+                previous = controller.refresh().spend
+                cli.broken = True
+                state = controller.refresh()
+            self.assertIs(state.spend, previous)
+            self.assertIn("Cost history unavailable", state.last_error or "")
+
+    def test_unsupported_new_provider_does_not_hide_known_providers(self):
+        with tempfile.TemporaryDirectory() as folder:
+            prefs = Preferences(os.path.join(folder, "settings.json"))
+
+            class PartialCLI:
+                def usage(self, provider=None, all_accounts=False):
+                    return [] if all_accounts else [CODEX_PAYLOAD]
+
+                def cost(self, provider=None):
+                    return [{"provider": "codex", "totals": {"totalCost": 3}},
+                            {"provider": "soniox", "error": {"message": "not supported"}}]
+
+                def sessions(self):
+                    return []
+
+                def version(self):
+                    return "CodexBar 0.79.0"
+
+            controller = Controller(prefs, PartialCLI())
+            with patch.object(controller, "_record_history"):
+                state = controller.refresh()
+            self.assertEqual(state.spend.total_cost, 3)
+            self.assertIn("not supported", state.last_error or "")
+
+    def test_old_cli_without_both_selector_keeps_partial_costs(self):
+        with tempfile.TemporaryDirectory() as folder:
+            prefs = Preferences(os.path.join(folder, "settings.json"))
+
+            class SplitOnlyCLI:
+                def cost(self, provider=None):
+                    if provider == "both":
+                        raise CLIError("unknown provider selector")
+                    if provider == "claude":
+                        raise CLIError("not supported")
+                    return [{"provider": "codex", "totals": {"totalCost": 3}}]
+
+            controller = Controller(prefs, SplitOnlyCLI())
+            summary = spend_from_payloads(controller._scan_costs())
+            self.assertEqual(summary.total_cost, 3)
+            self.assertTrue(summary.cost_partial)
+            self.assertIn("not supported", summary.error or "")
 
 
 class TraySelectionTests(unittest.TestCase):

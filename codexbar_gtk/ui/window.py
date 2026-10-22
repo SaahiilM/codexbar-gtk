@@ -235,14 +235,17 @@ class MainWindow(Adw.ApplicationWindow):
         spend = state.spend
         if spend is not None:
             amount, code = self._converted(spend.total_cost, spend.currency)
+            partial = spend.cost_partial or bool(state.last_error)
             self.spend_tile.set_value(
-                format_currency(amount, code),
-                spend.history_label or "",
+                ("≥ " if partial else "") + format_currency(amount, code)
+                if spend.cost_known else "—",
+                "Known subtotal" if partial and spend.cost_known
+                else spend.history_label or "",
             )
         else:
             self.spend_tile.set_value("—")
 
-        self.spend_view.update(spend)
+        self.spend_view.update(spend, state.last_error)
         self.sessions_view.update(state.sessions)
 
         if state.refreshing:

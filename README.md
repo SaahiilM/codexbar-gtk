@@ -85,6 +85,10 @@ Point the app at a different binary with `CODEXBAR_CLI=/path/to/codexbar` or in
 Settings → Advanced → CLI path.
 The provider catalog, fetching, and credential handling follow the installed
 CLI; new providers appear here when that CLI version supports them.
+The GTK client runs against 0.79.0 while 0.79.1 is unreleased: newer providers
+and quota fields are optional. Missing cost estimates display as unavailable,
+not zero; if a cost refresh fails, the previous totals remain visible as a
+marked known subtotal until a successful refresh.
 
 ## Feature parity with the macOS app
 

@@ -168,8 +168,8 @@ class CodexBarApp(Adw.Application):
 
     def _open_dashboard(self) -> None:
         window = self._ensure_main_window()
+        # GTK4's present() already raises the window; raise_() was removed.
         window.present()
-        window.raise_()
 
     def _open_settings(self) -> None:
         window = self._ensure_settings_window()

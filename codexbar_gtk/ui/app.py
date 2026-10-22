@@ -9,7 +9,7 @@ from gi.repository import Adw, Gio, GLib, Gtk
 
 from .. import APP_ID, __version__
 from ..cli import CodexBarCLI
-from ..controller import Controller
+from ..controller import Controller, automatic_tray_selection
 from ..prefs import Preferences
 from . import icons
 from .popup import PopupWindow
@@ -214,12 +214,19 @@ class CodexBarApp(Adw.Application):
             return
 
         source = str(self.prefs.get("unifiedIconSource") or "highest")
-        if source == "first":
-            chosen = providers[0]
+        tray_window = None
+        if source == "automatic":
+            automatic = automatic_tray_selection(providers)
+            if automatic is not None:
+                highest, tray_window = automatic
+            else:
+                highest = max(providers, key=lambda p: p.max_used_percent)
+        elif source == "first":
+            highest = providers[0]
         else:
-            chosen = max(providers, key=lambda p: p.max_used_percent)
-        highest = chosen
-        level = min(9, int(highest.max_used_percent / 10.0))
+            highest = max(providers, key=lambda p: p.max_used_percent)
+        used_percent = tray_window.used_percent if tray_window is not None else highest.max_used_percent
+        level = min(9, int(used_percent / 10.0))
         accent = highest.accent_color
         levels = icons.write_icons(accent)
         icon_name = levels.get(level) or "codexbar-gtk"
@@ -227,7 +234,7 @@ class CodexBarApp(Adw.Application):
         style = str(self.prefs.get("menuBarIconStyle") or "meter")
         if style == "iconPercent":
             pixmap = icons.render_percent_pixmap(
-                highest.max_used_percent,
+                used_percent,
                 accent,
                 (highest.display_name or "?")[0],
             )
@@ -273,12 +280,17 @@ class CodexBarApp(Adw.Application):
     def _check_notifications(self, state) -> None:
         for provider_id, window_key, used, message in self.controller.quota_events(state):
             self._notify("Quota warning", message)
+        for event in self.controller.predictive_pace_events(state):
+            self._notify(event["title"], event["body"], id=event["id"])
+        for event in self.controller.credit_expiry_events(state):
+            self._notify(event["title"], event["body"], id=event["id"])
 
-    def _notify(self, title: str, message: str) -> None:
+    def _notify(self, title: str, message: str, id: str | None = None) -> None:
         notification = Gio.Notification.new(title)
         notification.set_body(message)
         notification.set_priority(Gio.NOTIFICATION_PRIORITY_NORMAL)
-        self.send_notification(f"codexbar-{abs(hash(message)) % 100000}", notification)
+        key = id or f"{abs(hash(message)) % 100000}"
+        self.send_notification(f"codexbar-{key}", notification)
 
     # -- ticker -----------------------------------------------------------
 

@@ -6,16 +6,20 @@ Pure Python (no GTK imports) so it can be exercised head-less.
 
 from __future__ import annotations
 
+import math
 import threading
 import time
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 from typing import Callable
 
 from .cli import CLIError, CodexBarCLI
+from .format import format_countdown
 from .history import HistoryStore, Sample
 from .data import (
     AgentSession,
     ProviderUsage,
+    RateWindow,
     SpendSummary,
     agent_sessions_from_payloads,
     provider_usage_from_payload,
@@ -59,6 +63,8 @@ class Controller:
         self._refreshing = threading.Event()
         self._notified_windows: dict[tuple[str, str], float] = {}
         self._last_reset_seen: dict[tuple[str, str], float] = {}
+        self._pace_notified: dict[tuple[str, str], tuple[int | None, float]] = {}
+        self._credit_expiry_seen: set[tuple] = set()
 
     # -- listeners --------------------------------------------------------
 
@@ -270,6 +276,208 @@ class Controller:
                         self._notified_windows[marker] = used
 
         return events
+
+    # -- pace and reset-credit events ------------------------------------
+
+    def predictive_pace_events(self, state: AppState, now: datetime | None = None) -> list[dict[str, str]]:
+        """Warn when pace says a quota may not last until its reset.
+
+        Mirrors the macOS ``PredictivePaceWarnings`` logic: only Codex and
+        Claude, only once per reset cycle, only when the pace forecast says
+        the quota depletes before the window resets.
+        """
+        events: list[dict[str, str]] = []
+        if not self.prefs.get("predictivePaceNotificationsEnabled", True):
+            return events
+
+        now = now or datetime.now(timezone.utc)
+        for provider in state.providers:
+            if provider.provider_id not in ("codex", "claude"):
+                continue
+            for window in provider.windows:
+                if window.resets_at is None:
+                    continue
+                key = (
+                    provider.provider_id,
+                    provider.account_email or "",
+                    window.key,
+                )
+                pace = provider.pace.get(window.key)
+                if pace is None or pace.will_last_to_reset:
+                    self._pace_notified.pop(key, None)
+                    continue
+
+                eta = pace.eta_seconds
+                try:
+                    eta = float(eta) if eta is not None else None
+                except (TypeError, ValueError):
+                    eta = None
+                probability = _pace_probability(pace)
+                if (
+                    eta is None
+                    or not math.isfinite(eta)
+                    or eta <= 0.0
+                    or probability < 0.5
+                ):
+                    continue
+
+                cycle = (window.window_minutes, window.resets_at.timestamp())
+                previous = self._pace_notified.get(key)
+                if previous is not None and _same_cycle(previous, cycle):
+                    # Already warned during this reset cycle.
+                    continue
+
+                self._pace_notified[key] = cycle
+                countdown = format_countdown(now + timedelta(seconds=eta), now) or "—"
+                title = f"{provider.display_name} {window.title} pace warning"
+                body = "At the current pace, this quota may run out in {duration}, before it resets.".format(
+                    duration=countdown
+                )
+                if provider.account_email:
+                    body = f"Account {provider.account_email}. {body}"
+                events.append(
+                    {
+                        "id": f"predictive-pace-{provider.provider_id}-{window.key}",
+                        "title": title,
+                        "body": body,
+                    }
+                )
+
+        return events
+
+    def credit_expiry_events(self, state: AppState, now: datetime | None = None) -> list[dict[str, str]]:
+        """Alert when rate-limit reset credits are about to expire.
+
+        Mirrors the macOS ``CodexResetCreditExpiryNotifier``: a 3-day window
+        and a fingerprint per inventory so each change alerts only once.
+        """
+        events: list[dict[str, str]] = []
+        if not self.prefs.get("limitResetNotificationsEnabled", True):
+            return events
+
+        now = now or datetime.now(timezone.utc)
+        window = timedelta(days=3)
+        for provider in state.providers:
+            if not provider.reset_credits:
+                continue
+            expiring = sorted(
+                credit["expires_at"]
+                for credit in provider.reset_credits
+                if credit.get("expires_at") is not None
+                and 0 < (credit["expires_at"] - now).total_seconds() <= window.total_seconds()
+            )
+            if not expiring:
+                continue
+
+            fingerprint = (provider.provider_id, tuple(expiring))
+            if fingerprint in self._credit_expiry_seen:
+                continue
+            self._credit_expiry_seen.add(fingerprint)
+
+            first = format_countdown(expiring[0], now) or "soon"
+            if len(expiring) == 1:
+                body = f"{provider.display_name} rate limit reset expires in {first}."
+            else:
+                body = (
+                    f"{len(expiring)} {provider.display_name} rate limit resets expire within 3 days — "
+                    f"the first one in {first}."
+                )
+            events.append(
+                {
+                    "id": f"reset-credit-expiry-{provider.provider_id}",
+                    "title": "Reset credit expiring",
+                    "body": body,
+                }
+            )
+
+        return events
+
+
+def _pace_probability(pace) -> float:
+    """The CLI omits ``runOutProbability`` (schema parity only); macOS defaults it to 1."""
+    probability = getattr(pace, "run_out_probability", None)
+    try:
+        return float(probability) if probability is not None else 1.0
+    except (TypeError, ValueError):
+        return 1.0
+
+
+def _same_cycle(previous: tuple[int | None, float], current: tuple[int | None, float]) -> bool:
+    """Whether two reset windows belong to the same cycle.
+
+    Mirrors macOS ``belongsToSameCycle``: the same window length and reset
+    times within half a window (at least five minutes) of each other count as
+    one cycle, so small provider reset-time corrections do not re-alert.
+    """
+    previous_minutes, previous_reset = previous
+    current_minutes, current_reset = current
+    if previous_minutes != current_minutes:
+        return False
+    tolerance = max((previous_minutes or 0) * 30.0, 300.0)
+    return abs(current_reset - previous_reset) < tolerance
+
+
+def automatic_tray_selection(
+    providers: list[ProviderUsage], now: datetime | None = None
+) -> tuple[ProviderUsage, RateWindow] | None:
+    """Pick the quota the tray should represent, like the macOS Auto lane.
+
+    The ranking mirrors ``AutomaticQuotaSelection``: a fully depleted window
+    outranks everything, then a window forecast to deplete before its reset
+    outranks one that lasts, then the smallest ETA, then the highest usage.
+    """
+    now = now or datetime.now(timezone.utc)
+    candidates: list[tuple[ProviderUsage, RateWindow, float | None]] = []
+    for provider in providers:
+        for window in provider.windows:
+            if window.is_placeholder:
+                continue
+            if not math.isfinite(window.used_percent) or window.used_percent < 0:
+                continue
+            candidates.append((provider, window, _window_eta(provider, window, now)))
+
+    best: tuple[ProviderUsage, RateWindow, float | None] | None = None
+    for candidate in candidates:
+        if best is None or _quota_outranks(best, candidate):
+            best = candidate
+    if best is None:
+        return None
+    return (best[0], best[1])
+
+
+def _window_eta(provider: ProviderUsage, window: RateWindow, now: datetime) -> float | None:
+    """Seconds until the window depletes, when the forecast is trustworthy."""
+    pace = provider.pace.get(window.key)
+    if pace is None or window.window_minutes is None or window.resets_at is None:
+        return None
+    expected = pace.expected_used_percent
+    if expected is None or expected < 3.0:
+        return None
+    eta = pace.eta_seconds
+    if eta is None or not math.isfinite(float(eta)) or eta <= 0:
+        return None
+    until_reset = (window.resets_at - now).total_seconds()
+    if eta >= until_reset:
+        return None
+    return float(eta)
+
+
+def _quota_outranks(
+    best: tuple[ProviderUsage, RateWindow, float | None],
+    candidate: tuple[ProviderUsage, RateWindow, float | None],
+) -> bool:
+    """Whether ``candidate`` should replace ``best``, mirroring macOS ``precedes``."""
+    _, best_window, best_eta = best
+    _, candidate_window, candidate_eta = candidate
+    best_full = best_window.used_percent >= 100
+    candidate_full = candidate_window.used_percent >= 100
+    if best_full != candidate_full:
+        return candidate_full
+    if (best_eta is None) != (candidate_eta is None):
+        return candidate_eta is not None
+    if best_eta is not None and candidate_eta is not None and best_eta != candidate_eta:
+        return candidate_eta < best_eta
+    return candidate_window.used_percent > best_window.used_percent
 
 
 def path_from_prefs(prefs: Preferences) -> str | None:

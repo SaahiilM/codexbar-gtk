@@ -15,14 +15,21 @@ import os
 import sys
 import tempfile
 import unittest
+from datetime import datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from codexbar_gtk import format as fmt
 from codexbar_gtk import providers as provider_meta
 from codexbar_gtk.cli import CLIError, CodexBarCLI
-from codexbar_gtk.controller import Controller
+from codexbar_gtk.controller import (
+    AppState,
+    Controller,
+    automatic_tray_selection,
+)
 from codexbar_gtk.data import (
+    Pace,
+    RateWindow,
     agent_sessions_from_payloads,
     provider_usage_from_payload,
     spend_from_payloads,
@@ -375,6 +382,284 @@ class ControllerTests(unittest.TestCase):
             self.assertEqual(len(state.providers), 1)
             self.assertEqual(state.providers[0].provider_id, "codex")
             self.assertIsNone(state.last_error)
+
+
+class TraySelectionTests(unittest.TestCase):
+    """The tray's automatic lane, mirroring macOS AutomaticQuotaSelection."""
+
+    NOW = datetime(2026, 10, 22, 12, 0, tzinfo=timezone.utc)
+
+    @staticmethod
+    def _provider(provider_id, windows, pace=None):
+        provider = provider_usage_from_payload({"provider": provider_id, "usage": {}})
+        provider.windows = windows
+        provider.pace = pace or {}
+        return provider
+
+    @staticmethod
+    def _window(key, used, minutes=None, resets=None):
+        return RateWindow(key=key, title=key.title(), used_percent=used, window_minutes=minutes, resets_at=resets)
+
+    @staticmethod
+    def _depleting(eta_seconds):
+        return Pace(
+            stage="behind",
+            delta_percent=4.0,
+            expected_used_percent=10.0,
+            will_last_to_reset=False,
+            eta_seconds=eta_seconds,
+            summary="4% in deficit",
+        )
+
+    def _hours(self, value):
+        return self.NOW + timedelta(hours=value)
+
+    def test_a_quota_at_100_owns_the_tray(self):
+        full = self._provider("codex", [self._window("primary", 100)])
+        idle = self._provider("claude", [self._window("primary", 40)])
+        chosen = automatic_tray_selection([idle, full], now=self.NOW)
+        self.assertEqual(chosen[0].provider_id, "codex")
+
+    def test_the_soonest_eta_wins(self):
+        fast = self._provider(
+            "codex",
+            [self._window("primary", 45, minutes=300, resets=self._hours(24))],
+            {"primary": self._depleting(2 * 3600)},
+        )
+        slow = self._provider(
+            "claude",
+            [self._window("primary", 70, minutes=300, resets=self._hours(24))],
+            {"primary": self._depleting(5 * 3600)},
+        )
+        chosen = automatic_tray_selection([slow, fast], now=self.NOW)
+        self.assertEqual(chosen[0].provider_id, "codex")
+        self.assertEqual(chosen[1].used_percent, 45)
+
+    def test_a_quota_within_forecast_outranks_a_higher_one(self):
+        forecast = self._provider(
+            "codex",
+            [self._window("primary", 45, minutes=300, resets=self._hours(24))],
+            {"primary": self._depleting(3 * 3600)},
+        )
+        plain = self._provider("claude", [self._window("primary", 90)])
+        chosen = automatic_tray_selection([plain, forecast], now=self.NOW)
+        self.assertEqual(chosen[0].provider_id, "codex")
+
+    def test_sketchy_forecasts_fall_back_to_usage(self):
+        low_expectation = self._provider(
+            "codex",
+            [self._window("primary", 20, minutes=300, resets=self._hours(24))],
+            {
+                "primary": Pace(
+                    stage="behind",
+                    delta_percent=1.0,
+                    expected_used_percent=2.0,
+                    will_last_to_reset=False,
+                    eta_seconds=600.0,
+                )
+            },
+        )
+        plain = self._provider("claude", [self._window("primary", 80)])
+        chosen = automatic_tray_selection([low_expectation, plain], now=self.NOW)
+        self.assertEqual(chosen[0].provider_id, "claude")
+
+    def test_placeholder_windows_are_ignored(self):
+        placeholder = self._window("primary", 90)
+        placeholder.is_placeholder = True
+        healthy = self._provider("codex", [self._window("primary", 10)])
+        chosen = automatic_tray_selection(
+            [self._provider("claude", [placeholder]), healthy], now=self.NOW
+        )
+        self.assertEqual(chosen[0].provider_id, "codex")
+
+    def test_without_usable_windows_there_is_no_selection(self):
+        self.assertIsNone(automatic_tray_selection([], now=self.NOW))
+
+
+class PaceWarningTests(unittest.TestCase):
+    """Predictive pace notifications, mirroring macOS PredictivePaceWarnings."""
+
+    NOW = datetime(2026, 10, 22, 12, 0, tzinfo=timezone.utc)
+
+    def _controller(self, folder):
+        prefs = Preferences(os.path.join(folder, "settings.json"))
+        return Controller(prefs, CodexBarCLI())
+
+    @staticmethod
+    def _provider(provider_id, will_last, eta=7200.0, resets_at=None):
+        provider = provider_usage_from_payload({"provider": provider_id, "usage": {}})
+        provider.windows = [RateWindow(key="primary", title="Session", used_percent=20, resets_at=resets_at)]
+        provider.pace = {
+            "primary": Pace(
+                stage="behind",
+                delta_percent=4.0,
+                expected_used_percent=10.0,
+                will_last_to_reset=will_last,
+                eta_seconds=eta,
+            )
+        }
+        return provider
+
+    @staticmethod
+    def _state(providers):
+        state = AppState()
+        state.providers = providers
+        return state
+
+    def _window_at(self, hours=24):
+        return self.NOW + timedelta(hours=hours)
+
+    def test_a_depleting_quota_warns_once_per_cycle(self):
+        with tempfile.TemporaryDirectory() as folder:
+            controller = self._controller(folder)
+            provider = self._provider("codex", will_last=False, resets_at=self._window_at())
+            state = self._state([provider])
+
+            events = controller.predictive_pace_events(state, now=self.NOW)
+            self.assertEqual(len(events), 1)
+            self.assertTrue(events[0]["title"].startswith("Codex Session"))
+            self.assertIn("may run out in 2h 0m", events[0]["body"])
+            self.assertEqual(controller.predictive_pace_events(state, now=self.NOW), [])
+
+    def test_a_recovered_pace_can_warn_again(self):
+        with tempfile.TemporaryDirectory() as folder:
+            controller = self._controller(folder)
+            state = self._state([self._provider("codex", will_last=False, resets_at=self._window_at())])
+            controller.predictive_pace_events(state, now=self.NOW)
+            state.providers[0].pace["primary"].will_last_to_reset = True
+            controller.predictive_pace_events(state, now=self.NOW)
+            state.providers[0].pace["primary"].will_last_to_reset = False
+            events = controller.predictive_pace_events(state, now=self.NOW)
+            self.assertEqual(len(events), 1)
+
+    def test_a_new_reset_cycle_warns_again(self):
+        with tempfile.TemporaryDirectory() as folder:
+            controller = self._controller(folder)
+            state = self._state([self._provider("codex", will_last=False, resets_at=self._window_at())])
+            controller.predictive_pace_events(state, now=self.NOW)
+            state.providers[0].windows[0].resets_at = self._window_at(hours=24 + 400)
+            events = controller.predictive_pace_events(state, now=self.NOW)
+            self.assertEqual(len(events), 1)
+
+    def test_only_supported_providers_warn(self):
+        with tempfile.TemporaryDirectory() as folder:
+            controller = self._controller(folder)
+            state = self._state([self._provider("grok", will_last=False)])
+            self.assertEqual(controller.predictive_pace_events(state, now=self.NOW), [])
+
+    def test_the_filter_can_be_disabled(self):
+        with tempfile.TemporaryDirectory() as folder:
+            controller = self._controller(folder)
+            controller.prefs.set("predictivePaceNotificationsEnabled", False)
+            state = self._state([self._provider("codex", will_last=False)])
+            self.assertEqual(controller.predictive_pace_events(state, now=self.NOW), [])
+
+    def test_without_eta_there_is_no_warning(self):
+        with tempfile.TemporaryDirectory() as folder:
+            controller = self._controller(folder)
+            provider = provider_usage_from_payload({"provider": "codex", "usage": {}})
+            provider.windows = [RateWindow(key="primary", title="Session", used_percent=20)]
+            provider.pace = {
+                "primary": Pace(stage="behind", delta_percent=4.0, expected_used_percent=10.0,
+                                will_last_to_reset=False, eta_seconds=None)
+            }
+            state = self._state([provider])
+            self.assertEqual(controller.predictive_pace_events(state, now=self.NOW), [])
+
+
+class CreditExpiryTests(unittest.TestCase):
+    """Expiring reset-credit alerts, mirroring the macOS 3-day notifier."""
+
+    NOW = datetime(2026, 10, 22, 12, 0, tzinfo=timezone.utc)
+
+    def _controller(self, folder):
+        prefs = Preferences(os.path.join(folder, "settings.json"))
+        return Controller(prefs, CodexBarCLI())
+
+    @staticmethod
+    def _provider(provider_id, credits):
+        provider = provider_usage_from_payload({"provider": provider_id, "usage": {}})
+        provider.reset_credits = credits
+        return provider
+
+    def _state(self, credits):
+        state = AppState()
+        state.providers = [self._provider("codex", credits)]
+        return state
+
+    @staticmethod
+    def _credit(hours):
+        return {"title": "Full reset", "expires_at": datetime(2026, 10, 22, 12, 0, tzinfo=timezone.utc) + timedelta(hours=hours)}
+
+    def test_expiring_credits_alert_once(self):
+        with tempfile.TemporaryDirectory() as folder:
+            controller = self._controller(folder)
+            state = self._state([self._credit(48), self._credit(240)])
+            events = controller.credit_expiry_events(state, now=self.NOW)
+            self.assertEqual(len(events), 1)
+            self.assertIn("expires in 2d 0h", events[0]["body"])
+            self.assertEqual(controller.credit_expiry_events(state, now=self.NOW), [])
+
+    def test_credits_further_out_do_not_alert(self):
+        with tempfile.TemporaryDirectory() as folder:
+            controller = self._controller(folder)
+            state = self._state([self._credit(24 * 5)])
+            self.assertEqual(controller.credit_expiry_events(state, now=self.NOW), [])
+
+    def test_the_toggle_gates_the_alert(self):
+        with tempfile.TemporaryDirectory() as folder:
+            controller = self._controller(folder)
+            controller.prefs.set("limitResetNotificationsEnabled", False)
+            state = self._state([self._credit(48)])
+            self.assertEqual(controller.credit_expiry_events(state, now=self.NOW), [])
+
+
+class ResetCreditPresentationTests(unittest.TestCase):
+    NOW = datetime(2026, 10, 22, 12, 0, tzinfo=timezone.utc)
+
+    def _hours(self, value):
+        return self.NOW + timedelta(hours=value)
+
+    def test_countdown_style(self):
+        presentation = fmt.format_reset_credits(
+            [self._hours(4.5), self._hours(7 * 24), None], style="countdown", now=self.NOW
+        )
+        self.assertEqual(presentation[0], "3 available")
+        self.assertEqual(presentation[1], "4h 30m · 7d 0h · No expiry")
+        self.assertEqual(presentation[2], ["Expires 4h 30m", "Expires 7d 0h", "No expiry"])
+
+    def test_more_than_four_roll_up(self):
+        expirations = [self._hours(index + 1) for index in range(6)]
+        presentation = fmt.format_reset_credits(expirations, style="countdown", now=self.NOW)
+        self.assertEqual(presentation[0], "6 available")
+        self.assertTrue(presentation[1].endswith("+2"))
+        self.assertEqual(len(presentation[1].split(" · ")), 5)
+
+    def test_absolute_style_uses_times(self):
+        presentation = fmt.format_reset_credits([self._hours(4.5)], style="absolute", now=self.NOW)
+        self.assertEqual(presentation[2], ["Expires 16:30"])
+
+    def test_empty_inventory_shows_nothing(self):
+        self.assertIsNone(fmt.format_reset_credits([], style="countdown", now=self.NOW))
+
+    def test_payload_parsing_keeps_available_credits(self):
+        payload = dict(CODEX_PAYLOAD)
+        usage = dict(payload["usage"])
+        usage["codexResetCredits"] = {
+            "availableCount": 2,
+            "credits": [
+                {"status": "available", "title": "Full reset", "expires_at": "2026-10-26T12:00:00Z"},
+                {"status": "used", "title": "Full reset", "expires_at": "2026-10-24T12:00:00Z"},
+                {"status": "available", "title": "Full reset", "expires_at": None},
+            ],
+        }
+        payload["usage"] = usage
+        provider = provider_usage_from_payload(payload)
+        self.assertEqual(provider.reset_credits_available, 2)
+        self.assertEqual(len(provider.reset_credits), 2)
+        self.assertEqual(provider.reset_credits[0]["title"], "Full reset")
+        self.assertIsNotNone(provider.reset_credits[0]["expires_at"])
+        self.assertIsNone(provider.reset_credits[1]["expires_at"])
 
 
 if __name__ == "__main__":

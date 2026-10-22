@@ -223,6 +223,7 @@ class SettingsWindow(Adw.PreferencesWindow):
             _combo_row(
                 "Icon shows",
                 [
+                    ("The quota running out soonest", "automatic"),
                     ("Provider with the highest usage", "highest"),
                     ("First enabled provider", "first"),
                 ],
@@ -377,9 +378,17 @@ class SettingsWindow(Adw.PreferencesWindow):
         group.add(
             _switch_row(
                 "Limit reset notifications",
-                "Notify when a window resets",
+                "Notify when a window resets and when a reset credit is about to expire",
                 bool(self.prefs.get("limitResetNotificationsEnabled")),
                 lambda value: self.prefs.set("limitResetNotificationsEnabled", value),
+            )
+        )
+        group.add(
+            _switch_row(
+                "Pace warnings",
+                "Warn for Codex and Claude when the current pace may run out before the reset",
+                bool(self.prefs.get("predictivePaceNotificationsEnabled")),
+                lambda value: self.prefs.set("predictivePaceNotificationsEnabled", value),
             )
         )
 

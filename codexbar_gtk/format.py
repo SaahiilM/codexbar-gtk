@@ -124,6 +124,41 @@ def format_updated(target: datetime | None, now: datetime | None = None) -> str 
     return f"{seconds // 86400}d ago"
 
 
+def format_reset_credits(
+    expirations: list[datetime | None],
+    style: str = "countdown",
+    now: datetime | None = None,
+) -> tuple[str, str, list[str]] | None:
+    """Present the expiring reset-credit inventory like the macOS app.
+
+    Returns ``(count_text, compact_text, help_items)`` where ``compact_text``
+    lists the first four expirations ("4h 39m · 7d 2h …", or times with the
+    absolute style) and ``help_items`` one line per credit. ``None`` when
+    there is nothing to show.
+    """
+    if not expirations:
+        return None
+    now = now or datetime.now(timezone.utc)
+    count_text = "1 available" if len(expirations) == 1 else f"{len(expirations)} available"
+
+    def expiry_item(expires_at: datetime | None) -> tuple[str, str]:
+        if expires_at is None:
+            return ("No expiry", "No expiry")
+        countdown = format_countdown(expires_at, now)
+        if style == "countdown" and countdown:
+            compact = countdown
+        else:
+            compact = format_absolute(expires_at, now) or "No expiry"
+        return (f"Expires {compact}", compact)
+
+    items = [expiry_item(expires_at) for expires_at in expirations]
+    visible = [compact for _, compact in items[:4]]
+    hidden = len(items) - len(visible)
+    if hidden > 0:
+        visible.append(f"+{hidden}")
+    return (count_text, " · ".join(visible), [line for line, _ in items])
+
+
 def format_pace(pace) -> str:
     """Compact pace text, matching the macOS app's wording."""
     delta = pace.delta_percent

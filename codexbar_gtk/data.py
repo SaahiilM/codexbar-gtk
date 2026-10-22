@@ -180,6 +180,7 @@ class ProviderUsage:
     error: str | None = None
     details: list[DetailSection] = field(default_factory=list)
     reset_credits_available: int = 0
+    reset_credits: list[dict[str, Any]] = field(default_factory=list)
     credit_events: list[CreditEvent] = field(default_factory=list)
     accounts: list[str] = field(default_factory=list)
     selected_account: str | None = None
@@ -304,6 +305,32 @@ def _details_from(payload: Any) -> list[DetailSection]:
     return sections
 
 
+def _reset_credits_from(payload: Any) -> list[dict[str, Any]]:
+    """The available rate-limit reset credits, with their expirations.
+
+    Mirrors the macOS ``LimitResetCreditsPresentation`` source data: only
+    credits that are still available are listed, each with an optional
+    ``expires_at``.
+    """
+    credits: list[dict[str, Any]] = []
+    if not isinstance(payload, dict):
+        return credits
+    for raw in payload.get("credits") or []:
+        if not isinstance(raw, dict):
+            continue
+        if str(raw.get("status") or "available") != "available":
+            continue
+        credits.append(
+            {
+                "title": raw.get("title"),
+                "granted_at": parse_timestamp(raw.get("grantedAt") or raw.get("granted_at")),
+                "expires_at": parse_timestamp(raw.get("expiresAt") or raw.get("expires_at")),
+                "description": raw.get("description"),
+            }
+        )
+    return credits
+
+
 def provider_usage_from_payload(payload: dict[str, Any]) -> ProviderUsage:
     """Convert one CLI ``ProviderPayload`` into a :class:`ProviderUsage`."""
     provider_id = str(payload.get("provider") or "unknown")
@@ -387,6 +414,7 @@ def provider_usage_from_payload(payload: dict[str, Any]) -> ProviderUsage:
     reset_credits_available = reset_credits.get("availableCount") or 0
 
     return ProviderUsage(
+        reset_credits=_reset_credits_from(reset_credits),
         provider_id=provider_id,
         display_name=provider_meta.display_name(provider_id),
         source=payload.get("source"),

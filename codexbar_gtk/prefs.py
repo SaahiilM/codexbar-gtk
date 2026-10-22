@@ -59,6 +59,7 @@ DEFAULTS: dict[str, Any] = {
     "sessionQuotaNotificationsEnabled": True,
     "quotaWarningNotificationsEnabled": True,
     "limitResetNotificationsEnabled": True,
+    "predictivePaceNotificationsEnabled": True,
     "statusChecksEnabled": True,
     # Spend
     "costUsageEnabled": True,

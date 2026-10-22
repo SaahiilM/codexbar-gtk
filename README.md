@@ -31,7 +31,9 @@ and no packaging of its own. It consumes the JSON the CodexBar CLI already emits
   a Usage & Spend page with a daily chart and a per-provider breakdown.
 - **A preferences window** covering the refresh interval, providers, display
   options, quota notifications, spending and the tray.
-- **Desktop notifications** when a provider crosses a warning threshold.
+- **Desktop notifications** when a provider crosses a warning threshold, when the
+  current pace depletes a quota before its reset, and when a rate limit reset
+  credit is about to expire.
 
 ## Requirements
 
@@ -87,10 +89,13 @@ Settings → Advanced → CLI path.
 | Upstream area | Here |
 | --- | --- |
 | Menu bar item, merged icons, icon styles | StatusNotifierItem with a meter or an icon+percentage pixmap |
+| Automatic quota lane | Tray option "the quota running out soonest", ranked like the macOS Auto lane: a fully depleted quota first, then the smallest forecast ETA |
 | Provider cards, meters, reset countdowns | One card per provider with a meter per window, countdown chip and pace chip |
 | Pace forecast | "12% in reserve" / "in deficit" chips, colour coded |
+| Predictive pace warnings | Desktop notification when the current pace depletes a Codex or Claude quota before its reset — once per reset cycle |
 | Quota burndown | Projected usage at reset, extrapolated from the recorded history |
 | Weekly work-day progress | Work-day tick on the weekly meter |
+| Limit Reset Credits | A "3 available · 4h 39m · 7d 2h" badge with every credit's expiry on hover, and an alert when a credit expires within 3 days |
 | Usage breakdown / credits history charts | Rendered from the CLI's `usage.details[].chart` and `credits.events` |
 | Cost history / spend dashboard | Usage & Spend page with daily chart, projects, models and a per-provider breakdown |
 | Provider status badges | Status dot and description per provider |

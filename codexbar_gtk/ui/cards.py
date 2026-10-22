@@ -22,6 +22,7 @@ from ..format import (
     format_percent,
     format_remaining,
     format_reset,
+    format_reset_credits,
     format_updated,
 )
 from . import cairo_support  # noqa: F401  (enables cairo drawing)
@@ -608,11 +609,26 @@ class ProviderCard(Gtk.Box):
         self.subtitle_label.set_text(" · ".join(subtitle_parts))
 
         badge = ""
+        badge_help = ""
         if provider.status_level:
             badge = str(provider.status_level).replace("_", " ").title()
+        elif provider.reset_credits:
+            presentation = format_reset_credits(
+                [credit["expires_at"] for credit in provider.reset_credits],
+                style=str(self.reset_style or "countdown"),
+                now=now,
+            )
+            if presentation is not None:
+                count_text, compact, help_items = presentation
+                badge = f"{count_text} · {compact}" if compact else count_text
+                header = provider.reset_credits[0].get("title") or "Rate limit resets"
+                badge_help = "\n".join([header, ""] + [
+                    f"{index + 1}. {item}" for index, item in enumerate(help_items)
+                ])
         elif provider.reset_credits_available:
             badge = f"{provider.reset_credits_available} resets"
         self.badge_label.set_text(badge)
+        self.badge_label.set_tooltip_text(badge_help or None)
         self.badge_label.set_visible(bool(badge))
 
         accounts = provider.accounts

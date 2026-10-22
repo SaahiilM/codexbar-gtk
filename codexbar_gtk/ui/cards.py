@@ -9,27 +9,27 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+import cairo  # noqa: F401  (registers the cairo foreign-struct converter)
 from gi.repository import Gtk
 
 from .. import currency
 from ..data import ProviderUsage, RateWindow
 from ..format import (
-    format_credits,
-    project_usage_at_reset,
-    workday_progress_percent,
-    format_currency,
     format_countdown,
+    format_credits,
+    format_currency,
     format_pace,
     format_percent,
     format_remaining,
     format_reset,
     format_reset_credits,
     format_updated,
+    project_usage_at_reset,
+    workday_progress_percent,
 )
+from ..pace import format_monthly_cost_target, format_window_target
 from . import cairo_support  # noqa: F401  (enables cairo drawing)
 from .util import iter_children
-
-import cairo  # noqa: F401  (registers the cairo foreign-struct converter)
 
 
 def _severity_color(severity: str, accent: str) -> str:
@@ -421,6 +421,13 @@ class MeterRow(Gtk.Box):
         meta.append(spacer)
         self.append(meta)
 
+        # Monthly allowances also answer "how much can I use per day".
+        self.target_label = Gtk.Label(label="")
+        self.target_label.add_css_class("cb-daily-target")
+        self.target_label.set_xalign(0)
+        self.target_label.set_visible(False)
+        self.append(self.target_label)
+
     def update(self, now: datetime | None = None) -> None:
         now = now or datetime.now(timezone.utc)
         window = self.window
@@ -448,6 +455,10 @@ class MeterRow(Gtk.Box):
     def set_trend(self, points: list[tuple[float, float]], color: str) -> None:
         self.sparkline.set_points(points, color)
         self.trend_label.set_visible(len(points) >= 3)
+
+    def set_target(self, target_text: str | None) -> None:
+        self.target_label.set_text(target_text or "")
+        self.target_label.set_visible(bool(target_text))
 
     def set_pace(self, pace_text: str | None, severity: str = "ok") -> None:
         if not pace_text or not self.show_pace:
@@ -659,6 +670,11 @@ class ProviderCard(Gtk.Box):
                 row.set_pace(format_pace(pace), severity)
             else:
                 row.set_pace(None)
+            row.set_target(
+                format_window_target(row.window, self.preferred_currency, now)
+                if self.show_pace and not self.compact
+                else None
+            )
 
         self._rebuild_charts()
         self._update_burndown(now)
@@ -737,17 +753,26 @@ class ProviderCard(Gtk.Box):
             rows.append(("Credits", f"{format_credits(provider.credits_remaining)} remaining", ""))
 
         cost = provider.cost
+        cost_target = None
         if cost is not None and (cost.used or cost.limit or cost.balance is not None):
             if cost.has_limit:
                 text = (
                     f"{self._money(cost.used, cost.currency)} of "
                     f"{self._money(cost.limit, cost.currency)}"
                 )
+                rows.append(("Spend", text, cost.period or ""))
+                if cost.balance is not None and provider.credits_remaining is None:
+                    rows.append(("Balance", self._money(cost.balance, cost.currency), ""))
             elif cost.balance is not None:
                 text = f"{self._money(cost.balance, cost.currency)} balance"
+                rows.append(("Spend", text, cost.period or ""))
             else:
                 text = f"{self._money(cost.used, cost.currency)} spent"
-            rows.append(("Spend", text, cost.period or ""))
+                rows.append(("Spend", text, cost.period or ""))
+
+            cost_target = format_monthly_cost_target(
+                cost, self.preferred_currency, now
+            )
 
         for section in provider.details[:3]:
             for row in section.rows[:4]:
@@ -783,6 +808,13 @@ class ProviderCard(Gtk.Box):
                 row.append(hint_label)
             grid.append(row)
         self.extra_box.append(grid)
+
+        if cost_target:
+            target_label = Gtk.Label(label=cost_target)
+            target_label.add_css_class("cb-daily-target")
+            target_label.set_xalign(0)
+            target_label.set_wrap(True)
+            self.extra_box.append(target_label)
 
     # -- helpers ----------------------------------------------------------
 
@@ -866,7 +898,7 @@ class MiniBarChart(Gtk.DrawingArea):
         self.set_content_height(self.HEIGHT)
         self.set_hexpand(True)
         self.set_has_tooltip(True)
-        self.entries: list[tuple[str, float]] = []
+        self.entries: list[tuple[str, float | None]] = []
         self.currency = "USD"
         self._hover_index: int | None = None
         self.set_draw_func(self._draw)
@@ -876,7 +908,9 @@ class MiniBarChart(Gtk.DrawingArea):
         motion.connect("leave", self._on_leave)
         self.add_controller(motion)
 
-    def set_entries(self, entries: list[tuple[str, float]], currency: str = "USD") -> None:
+    def set_entries(
+        self, entries: list[tuple[str, float | None]], currency: str = "USD"
+    ) -> None:
         self.entries = list(entries or [])
         self.currency = currency or "USD"
         self._hover_index = None
@@ -902,7 +936,10 @@ class MiniBarChart(Gtk.DrawingArea):
         bar_width = max(2.0, min(24.0, pitch * 0.58))
         plot_bottom = height - self.BOTTOM
         plot_height = max(1.0, plot_bottom - self.TOP)
-        peak = max((value for _label, value in self.entries), default=0.0) or 1.0
+        peak = max(
+            (value for _label, value in self.entries if value is not None),
+            default=0.0,
+        ) or 1.0
 
         cr.select_font_face("Sans", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_NORMAL)
         cr.set_font_size(10.0)
@@ -912,6 +949,20 @@ class MiniBarChart(Gtk.DrawingArea):
 
         for index, (label, value) in enumerate(self.entries):
             centre = pitch * index + pitch / 2
+            if value is None:
+                cr.save()
+                cr.set_source_rgba(0.62, 0.62, 0.62, 0.35)
+                cr.set_line_width(1.0)
+                cr.set_dash([2.0, 2.0])
+                cr.move_to(centre, self.TOP)
+                cr.line_to(centre, plot_bottom)
+                cr.stroke()
+                cr.restore()
+                if index % every == 0 or index == len(self.entries) - 1:
+                    _draw_centred_text(
+                        cr, label, centre, height - 4, 9.0, (0.55, 0.55, 0.55)
+                    )
+                continue
             bar_height = plot_height * (max(0.0, value) / peak)
             bar_height = max(2.0, bar_height)
             x = centre - bar_width / 2
@@ -954,7 +1005,10 @@ class MiniBarChart(Gtk.DrawingArea):
         if index is None:
             return False
         label, value = self.entries[index]
-        tooltip.set_text(f"{label} · {format_currency(value, self.currency)}")
+        if value is None:
+            tooltip.set_text(f"{label} · cost unavailable")
+        else:
+            tooltip.set_text(f"{label} · {format_currency(value, self.currency)}")
         return True
 
 
@@ -964,5 +1018,3 @@ def _draw_centred_text(cr, text: str, x: float, baseline: float, size: float, co
     cr.set_source_rgba(*color)
     cr.move_to(x - extents.width / 2 - extents.x_bearing, baseline)
     cr.show_text(text)
-
-

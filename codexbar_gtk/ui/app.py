@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-import os
 import sys
 
-from gi.repository import Adw, Gio, GLib, Gtk
+from gi.repository import Adw, Gdk, Gio, GLib, Gtk
 
 from .. import APP_ID, currency, display_string
 from ..cli import CodexBarCLI
 from ..controller import Controller, automatic_tray_selection
 from ..prefs import Preferences
+from ..startup import wait_for_display
 from . import icons
 from .popup import PopupWindow
 from .settings import SettingsWindow
@@ -321,7 +321,31 @@ class CodexBarApp(Adw.Application):
         return True
 
 
+DISPLAY_WAIT_SECONDS = 30.0
+
+
+def ensure_display(timeout: float = DISPLAY_WAIT_SECONDS) -> bool:
+    """Wait for the graphical session, then report whether GTK can start.
+
+    The systemd unit deliberately starts before plasmashell so the tray item is
+    registered in time. At login the Wayland/X11 display can still be a moment
+    away, so retry instead of raising ``Gtk couldn't be initialized``.
+    """
+    def display_is_ready() -> bool:
+        # In GTK4, init_check() may succeed even when Gdk has no display
+        # connection, so check the actual default display as well.
+        return Gtk.init_check() and Gdk.Display.get_default() is not None
+
+    return wait_for_display(display_is_ready, timeout=timeout)
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = list(argv if argv is not None else sys.argv)
+    if not ensure_display():
+        print(
+            "codexbar-gtk: no graphical display found; start it inside a desktop session",
+            file=sys.stderr,
+        )
+        return 1
     app = CodexBarApp()
     return app.run(argv)

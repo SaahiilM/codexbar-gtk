@@ -219,6 +219,11 @@ CSS = b"""
   color: alpha(currentColor, 0.4);
 }
 
+.cb-daily-target {
+  font-size: 0.72rem;
+  color: alpha(currentColor, 0.55);
+}
+
 .cb-error {
   color: #e05252;
   font-size: 0.76rem;
@@ -288,8 +293,5 @@ def _apply_color_scheme() -> None:
         manager.set_color_scheme(
             Adw.ColorScheme.FORCE_DARK if dark else Adw.ColorScheme.DEFAULT
         )
-        # libadwaita warns when the GTK setting is set; it is redundant here.
-        gtk_settings = Gtk.Settings.get_default()
-        gtk_settings.set_property("gtk-application-prefer-dark-theme", False)
     except Exception:
         pass

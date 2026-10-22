@@ -16,6 +16,7 @@ import sys
 import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -28,6 +29,7 @@ from codexbar_gtk.controller import (
     automatic_tray_selection,
 )
 from codexbar_gtk.data import (
+    CostInfo,
     Pace,
     RateWindow,
     agent_sessions_from_payloads,
@@ -121,6 +123,10 @@ class ProviderTableTests(unittest.TestCase):
         self.assertEqual(provider_meta.display_name("nope"), "Nope")
         self.assertTrue(provider_meta.accent_color("nope").startswith("#"))
 
+    def test_latest_upstream_soniox_provider_is_registered(self):
+        self.assertEqual(provider_meta.display_name("soniox"), "Soniox")
+        self.assertEqual(provider_meta.accent_color("soniox"), "#253772")
+
 
 class UsageParsingTests(unittest.TestCase):
     def setUp(self):
@@ -159,6 +165,104 @@ class UsageParsingTests(unittest.TestCase):
         self.assertEqual(chart.points, [("10-20", 3.0), ("10-21", 8.0)])
         self.assertEqual(chart.peak, 8.0)
 
+    def test_monthly_quota_metadata_is_parsed(self):
+        usage = provider_usage_from_payload(
+            {
+                "provider": "claude",
+                "usage": {
+                    "primary": {
+                        "usedPercent": 25,
+                        "windowMinutes": 43200,
+                        "quotaLimit": 200,
+                        "quotaUnit": "credits",
+                        "resetsAt": "2026-11-01T00:00:00Z",
+                    }
+                },
+            }
+        )
+        window = usage.windows[0]
+        self.assertEqual(window.quota_limit, 200)
+        self.assertEqual(window.quota_unit, "credits")
+
+    def test_quota_metadata_ignores_invalid_values(self):
+        usage = provider_usage_from_payload(
+            {
+                "provider": "claude",
+                "usage": {
+                    "primary": {
+                        "usedPercent": 25,
+                        "quotaLimit": "not a number",
+                        "quotaUnit": "credits",
+                    }
+                },
+            }
+        )
+        self.assertIsNone(usage.windows[0].quota_limit)
+
+    def test_extra_window_monthly_metadata_and_usage_state_are_parsed(self):
+        usage = provider_usage_from_payload(
+            {
+                "provider": "claude",
+                "usage": {
+                    "extraRateWindows": [
+                        {
+                            "id": "monthly",
+                            "title": "Monthly allowance",
+                            "usageKnown": False,
+                            "window": {
+                                "usedPercent": 0,
+                                "windowMinutes": 43200,
+                                "quotaLimit": 500,
+                                "quotaUnit": "requests",
+                                "nextRegenPercent": 1.5,
+                            },
+                        }
+                    ]
+                },
+            }
+        )
+        window = usage.windows[0]
+        self.assertFalse(window.usage_known)
+        self.assertEqual(window.quota_limit, 500)
+        self.assertEqual(window.quota_unit, "requests")
+        self.assertEqual(window.next_regen_percent, 1.5)
+
+    def test_soniox_balance_and_monthly_budget_payload_is_parsed(self):
+        usage = provider_usage_from_payload(
+            {
+                "provider": "soniox",
+                "rateWindowLabels": {"primary": "Monthly budget"},
+                "usage": {
+                    "primary": {
+                        "usedPercent": 6,
+                        "resetsAt": "2026-11-01T00:00:00Z",
+                        "resetDescription": "$6.00 / $100.00",
+                    },
+                    "providerCost": {
+                        "used": 6,
+                        "limit": 100,
+                        "currencyCode": "USD",
+                        "period": "This month",
+                        "resetsAt": "2026-11-01T00:00:00Z",
+                        "balance": 18.5,
+                    },
+                    "details": [
+                        {
+                            "title": "Billing",
+                            "rows": [{"label": "Prepaid", "value": "USD"}],
+                        }
+                    ],
+                },
+            }
+        )
+        self.assertEqual(usage.display_name, "Soniox")
+        self.assertEqual(usage.primary_window.title, "Monthly budget")
+        assert usage.cost is not None
+        self.assertEqual(usage.cost.balance, 18.5)
+        self.assertEqual(usage.cost.used, 6)
+        self.assertEqual(usage.cost.limit, 100)
+        self.assertEqual(usage.cost.period, "This month")
+
     def test_provider_errors_are_surfaced(self):
         usage = provider_usage_from_payload(CLAUDE_ERROR_PAYLOAD)
         self.assertTrue(usage.has_error)
@@ -195,19 +299,26 @@ class SpendParsingTests(unittest.TestCase):
                 "provider": "claude",
                 "currencyCode": "USD",
                 "totals": {"totalCost": 0, "totalTokens": 900, "coverage": {"unpriced": 4}},
-                "daily": [{"date": "2026-10-21", "totalCost": 0, "totalTokens": 900}],
+                "daily": [{"date": "2026-10-21", "totalTokens": 900}],
             },
         ]
         summary = spend_from_payloads(payloads)
         self.assertEqual(len(summary.providers), 2)
         self.assertAlmostEqual(summary.total_cost, 47.2)
         self.assertEqual(summary.total_tokens, 1000)
+        self.assertTrue(summary.history_coverage_established)
         codex = summary.providers[0]
         self.assertEqual(codex.provider, "codex")
         self.assertTrue(codex.priced)
         claude = summary.providers[1]
         self.assertEqual(claude.provider, "claude")
         self.assertFalse(claude.priced)
+
+    def test_incomplete_history_flag_is_preserved(self):
+        summary = spend_from_payloads(
+            [{"provider": "codex", "historyCoverageIsEstablished": False}]
+        )
+        self.assertFalse(summary.history_coverage_established)
 
 
 class FormatTests(unittest.TestCase):
@@ -693,7 +804,6 @@ class ActivityHeatmapTests(unittest.TestCase):
         from datetime import date
 
         from codexbar_gtk.activity import (
-            DAY_COUNT,
             WEEK_COUNT,
             align_start,
             cumulative_totals,
@@ -714,12 +824,283 @@ class ActivityHeatmapTests(unittest.TestCase):
     def test_today_is_never_counted_twice(self):
         from datetime import date
 
-        from codexbar_gtk.activity import DAY_COUNT, align_start, weekly_totals
+        from codexbar_gtk.activity import DAY_COUNT, align_start
 
         today = date(2026, 10, 22)
         start = align_start(today)
         self.assertEqual((today - start).days % DAY_COUNT, (today.weekday() + 1) % DAY_COUNT)
         self.assertLessEqual(start, today)
+
+
+class MonthlyDailyTargetTests(unittest.TestCase):
+    @staticmethod
+    def _local(*args):
+        return datetime(*args, tzinfo=datetime.now().astimezone().tzinfo)
+
+    def test_only_month_long_windows_count(self):
+        from codexbar_gtk.pace import is_monthly_window
+
+        self.assertTrue(is_monthly_window(28 * 1440))
+        self.assertTrue(is_monthly_window(31 * 1440))
+        self.assertFalse(is_monthly_window(7 * 1440))
+        self.assertFalse(is_monthly_window(5 * 60))
+        self.assertFalse(is_monthly_window(None))
+        self.assertFalse(is_monthly_window(0))
+
+    def test_today_and_the_reset_day_count(self):
+        from codexbar_gtk.pace import daily_target
+
+        now = self._local(2026, 7, 1, 12)
+        reset = self._local(2026, 7, 11, 12)  # eleven calendar days, today included
+        target = daily_target(300, reset, now)
+        assert target is not None
+        self.assertAlmostEqual(target, 300 / 11, places=6)
+
+    def test_midnight_reset_starts_the_next_allowance(self):
+        from codexbar_gtk.pace import daily_target
+
+        now = self._local(2026, 7, 1, 12)
+        reset = self._local(2026, 7, 11, 0)  # reset day is not part of this allowance
+        target = daily_target(300, reset, now)
+        assert target is not None
+        self.assertAlmostEqual(target, 30.0, places=6)
+
+    def test_unknown_and_expired_resets_have_no_target(self):
+        from codexbar_gtk.pace import daily_target
+
+        now = self._local(2026, 7, 1, 12)
+        self.assertIsNone(daily_target(300, None, now))
+        self.assertIsNone(daily_target(300, self._local(2026, 7, 1, 11), now))
+        self.assertIsNone(daily_target(None, self._local(2026, 7, 11, 12), now))
+        self.assertIsNone(daily_target(float("nan"), self._local(2026, 7, 11, 12), now))
+        self.assertIsNone(daily_target(-1, self._local(2026, 7, 11, 12), now))
+
+    def test_percent_credits_and_currency_units(self):
+        from codexbar_gtk.pace import format_daily_target
+
+        self.assertEqual(
+            format_daily_target(42.0, None),
+            "≈ 42% / day to last until reset",
+        )
+        self.assertEqual(
+            format_daily_target(12.5, "credits"),
+            "≈ 12.5 credits / day to last until reset",
+        )
+        self.assertEqual(
+            format_daily_target(9, "requests"),
+            "≈ 9 requests / day to last until reset",
+        )
+        with patch("codexbar_gtk.pace.currency.convert", return_value=9.2) as convert:
+            self.assertEqual(
+                format_daily_target(10, "USD", "EUR"),
+                "≈ €9.20 / day to last until reset",
+            )
+            convert.assert_called_once_with(10, "USD", "EUR")
+        self.assertIsNone(format_daily_target(10, "widgets"))
+        self.assertIsNone(format_daily_target(None, "%"))
+
+    def test_window_target_uses_the_quota_limit(self):
+        from codexbar_gtk.pace import format_window_target, window_daily_target
+
+        now = self._local(2026, 7, 1, 12)
+        window = RateWindow(
+            key="monthly",
+            title="Monthly",
+            used_percent=25,
+            resets_at=self._local(2026, 7, 11, 12),
+            window_minutes=30 * 1440,
+            quota_limit=200,
+            quota_unit="credits",
+        )
+        target = window_daily_target(window, now)
+        assert target is not None
+        self.assertAlmostEqual(target, 150 / 11, places=6)
+        self.assertEqual(
+            format_window_target(window, now=now),
+            "≈ 13.64 credits / day to last until reset",
+        )
+
+        unlabelled_quota = RateWindow(
+            key="monthly",
+            title="Monthly",
+            used_percent=25,
+            resets_at=window.resets_at,
+            window_minutes=30 * 1440,
+            quota_limit=200,
+        )
+        self.assertIsNone(format_window_target(unlabelled_quota, now=now))
+
+        percent_quota = RateWindow(
+            key="monthly",
+            title="Monthly",
+            used_percent=25,
+            resets_at=window.resets_at,
+            window_minutes=30 * 1440,
+        )
+        self.assertEqual(
+            format_window_target(percent_quota, now=now),
+            "≈ 6.82% / day to last until reset",
+        )
+
+        placeholder = RateWindow(
+            key="monthly",
+            title="Monthly",
+            used_percent=25,
+            resets_at=window.resets_at,
+            window_minutes=30 * 1440,
+            is_placeholder=True,
+        )
+        self.assertIsNone(window_daily_target(placeholder, now))
+
+        unknown = RateWindow(
+            key="monthly",
+            title="Monthly",
+            used_percent=0,
+            resets_at=window.resets_at,
+            window_minutes=30 * 1440,
+            usage_known=False,
+        )
+        self.assertIsNone(window_daily_target(unknown, now))
+
+        weekly = RateWindow(
+            key="secondary",
+            title="Weekly",
+            used_percent=25,
+            resets_at=window.resets_at,
+            window_minutes=7 * 1440,
+        )
+        self.assertIsNone(window_daily_target(weekly, now))
+
+    def test_monthly_cost_target_requires_a_known_monthly_cap(self):
+        from codexbar_gtk.pace import format_monthly_cost_target
+
+        now = self._local(2026, 7, 1, 12)
+        cost = CostInfo(
+            used=20,
+            limit=80,
+            currency="USD",
+            period="Monthly",
+            resets_at=self._local(2026, 7, 11, 12),
+        )
+        with patch("codexbar_gtk.pace.currency.convert", return_value=5.02):
+            self.assertEqual(
+                format_monthly_cost_target(cost, "EUR", now),
+                "≈ €5.02 / day to last until reset",
+            )
+        self.assertIsNone(
+            format_monthly_cost_target(
+                CostInfo(used=20, limit=80, period="Extra usage", resets_at=cost.resets_at),
+                now=now,
+            )
+        )
+        self.assertIsNone(
+            format_monthly_cost_target(
+                CostInfo(used=20, limit=80, period="Monthly", resets_at=None),
+                now=now,
+            )
+        )
+        self.assertIsNone(
+            format_monthly_cost_target(
+                CostInfo(
+                    used=float("nan"),
+                    limit=80,
+                    currency="USD",
+                    period="Monthly",
+                    resets_at=cost.resets_at,
+                ),
+                now=now,
+            )
+        )
+
+
+class SpendSeriesTests(unittest.TestCase):
+    def test_missing_days_are_kept_as_zero(self):
+        from datetime import date
+
+        from codexbar_gtk.activity import daily_series
+
+        series = daily_series(
+            [
+                {"date": "2026-07-01", "totalCost": 1},
+                {"date": "2026-07-04", "totalCost": 3},
+            ]
+        )
+        self.assertEqual([day for day, _ in series], [date(2026, 7, d) for d in range(1, 5)])
+        self.assertEqual([value for _, value in series], [1.0, 0.0, 0.0, 3.0])
+
+    def test_unpriced_and_incomplete_days_are_not_reported_as_zero(self):
+        from datetime import date
+
+        from codexbar_gtk.activity import daily_series
+
+        series = daily_series(
+            [
+                {"date": "2026-07-01", "totalCost": 1},
+                {"date": "2026-07-02", "totalTokens": 900},
+                {"date": "2026-07-03", "incompleteRequestCount": 1},
+                {"date": "2026-07-04", "totalCost": 3},
+            ]
+        )
+        self.assertEqual(
+            series,
+            [
+                (date(2026, 7, 1), 1.0),
+                (date(2026, 7, 2), None),
+                (date(2026, 7, 3), None),
+                (date(2026, 7, 4), 3.0),
+            ],
+        )
+
+    def test_unestablished_history_does_not_fill_gaps_as_zero(self):
+        from datetime import date
+
+        from codexbar_gtk.activity import daily_series
+
+        series = daily_series(
+            [
+                {"date": "2026-07-01", "totalCost": 1},
+                {"date": "2026-07-03", "totalCost": 3},
+            ],
+            history_coverage_established=False,
+        )
+        self.assertEqual(
+            series,
+            [
+                (date(2026, 7, 1), 1.0),
+                (date(2026, 7, 2), None),
+                (date(2026, 7, 3), 3.0),
+            ],
+        )
+
+    def test_duplicate_days_are_merged_and_bad_dates_skipped(self):
+        from datetime import date
+
+        from codexbar_gtk.activity import daily_series
+
+        series = daily_series(
+            [
+                {"date": "2026-07-01", "totalCost": 1},
+                {"date": "2026-07-01", "totalCost": 2},
+                {"date": "not-a-date", "totalCost": 9},
+            ]
+        )
+        self.assertEqual(series, [(date(2026, 7, 1), 3.0)])
+        self.assertEqual(daily_series([]), [])
+
+    def test_the_series_is_capped_to_the_requested_window(self):
+        from datetime import date, timedelta
+
+        from codexbar_gtk.activity import daily_series
+
+        start = date(2026, 6, 1)
+        entries = [
+            {"date": (start + timedelta(days=index)).isoformat(), "totalCost": index}
+            for index in range(45)
+        ]
+        series = daily_series(entries, days=30)
+        self.assertEqual(len(series), 30)
+        self.assertEqual(series[0][0], date(2026, 6, 16))
+        self.assertEqual(series[-1][0], date(2026, 7, 15))
 
 
 class CurrencyConversionTests(unittest.TestCase):
@@ -752,3 +1133,75 @@ class CLITimeZoneTests(unittest.TestCase):
             cli = CodexBarCLI(script, timezone="Asia/Tokyo")
             result = cli.run(["--version"])
             self.assertEqual(result.stdout.strip(), "Asia/Tokyo")
+
+
+class StartupTests(unittest.TestCase):
+    def test_display_ready_immediately_does_not_sleep(self):
+        from codexbar_gtk.startup import wait_for_display
+
+        self.assertTrue(
+            wait_for_display(
+                lambda: True,
+                sleep=lambda _seconds: self.fail("unexpected startup delay"),
+            )
+        )
+
+    def test_display_startup_retries_transient_failures(self):
+        from codexbar_gtk.startup import wait_for_display
+
+        clock = [0.0]
+        results = iter([False, False, True])
+        self.assertTrue(
+            wait_for_display(
+                lambda: next(results),
+                timeout=2.0,
+                interval=0.25,
+                monotonic=lambda: clock[0],
+                sleep=lambda delay: clock.__setitem__(0, clock[0] + delay),
+            )
+        )
+        self.assertAlmostEqual(clock[0], 0.5)
+
+    def test_display_startup_times_out_without_busy_waiting(self):
+        from codexbar_gtk.startup import wait_for_display
+
+        clock = [0.0]
+        attempts = [0]
+
+        def unavailable():
+            attempts[0] += 1
+            return False
+
+        self.assertFalse(
+            wait_for_display(
+                unavailable,
+                timeout=0.9,
+                interval=0.4,
+                monotonic=lambda: clock[0],
+                sleep=lambda delay: clock.__setitem__(0, clock[0] + delay),
+            )
+        )
+        self.assertEqual(attempts[0], 4)
+        self.assertAlmostEqual(clock[0], 0.9)
+
+    def test_display_check_exceptions_are_retried(self):
+        from codexbar_gtk.startup import wait_for_display
+
+        clock = [0.0]
+        attempts = [0]
+
+        def flaky():
+            attempts[0] += 1
+            if attempts[0] == 1:
+                raise RuntimeError("display not ready")
+            return True
+
+        self.assertTrue(
+            wait_for_display(
+                flaky,
+                timeout=1.0,
+                monotonic=lambda: clock[0],
+                sleep=lambda delay: clock.__setitem__(0, clock[0] + delay),
+            )
+        )
+        self.assertEqual(attempts[0], 2)

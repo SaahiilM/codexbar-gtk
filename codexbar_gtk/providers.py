@@ -92,6 +92,7 @@ PROVIDERS: dict[str, tuple[str, str, str]] = {
     "sailresearch": ("Sail Research", "Sail", "#2563EB"),
     "sakana": ("Sakana AI", "Sakana", "#0F766E"),
     "sofya": ("Sofya", "Sofya", "#EC4899"),
+    "soniox": ("Soniox", "Soniox", "#253772"),
     "stepfun": ("StepFun", "StepFun", "#2563EB"),
     "sub2api": ("sub2api", "sub2api", "#64748B"),
     "synthetic": ("Synthetic", "Synthetic", "#6366F1"),

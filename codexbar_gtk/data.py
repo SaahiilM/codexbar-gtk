@@ -8,6 +8,7 @@ provider specific detail sections.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
@@ -32,6 +33,28 @@ def parse_timestamp(value: Any) -> datetime | None:
     return parsed.astimezone(timezone.utc)
 
 
+def _optional_float(value: Any) -> float | None:
+    """A finite JSON number, ignoring booleans and non-numeric strings."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    try:
+        number = float(value)
+    except (OverflowError, ValueError):
+        return None
+    return number if math.isfinite(number) else None
+
+
+def _optional_int(value: Any) -> int | None:
+    """An integral JSON number, rejecting booleans and malformed durations."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    try:
+        number = float(value)
+    except (OverflowError, ValueError):
+        return None
+    return int(number) if math.isfinite(number) and number.is_integer() else None
+
+
 @dataclass
 class RateWindow:
     """One quota window (session, weekly, ...)."""
@@ -44,6 +67,9 @@ class RateWindow:
     window_minutes: int | None = None
     next_regen_percent: float | None = None
     is_placeholder: bool = False
+    quota_limit: float | None = None
+    quota_unit: str | None = None
+    usage_known: bool = True
 
     @property
     def remaining_percent(self) -> float:
@@ -223,15 +249,21 @@ def _window_from(payload: dict[str, Any], key: str, title: str) -> RateWindow | 
     if not isinstance(raw, dict):
         return None
     used = raw.get("usedPercent")
+    used_percent = _optional_float(used)
     return RateWindow(
         key=key,
         title=title or key.title(),
-        used_percent=float(used) if isinstance(used, (int, float)) else 0.0,
+        used_percent=used_percent if used_percent is not None else 0.0,
         resets_at=parse_timestamp(raw.get("resetsAt")),
         reset_description=raw.get("resetDescription"),
-        window_minutes=raw.get("windowMinutes"),
-        next_regen_percent=raw.get("nextRegenPercent"),
+        window_minutes=_optional_int(raw.get("windowMinutes")),
+        next_regen_percent=_optional_float(raw.get("nextRegenPercent")),
         is_placeholder=bool(raw.get("isSyntheticPlaceholder")),
+        quota_limit=_optional_float(raw.get("quotaLimit")),
+        quota_unit=(
+            raw.get("quotaUnit") if isinstance(raw.get("quotaUnit"), str) else None
+        ),
+        usage_known=used_percent is not None,
     )
 
 
@@ -352,15 +384,27 @@ def provider_usage_from_payload(payload: dict[str, Any]) -> ProviderUsage:
             if not isinstance(inner, dict):
                 continue
             used = inner.get("usedPercent")
+            used_percent = _optional_float(used)
             windows.append(
                 RateWindow(
                     key=str(item.get("id") or "extra"),
                     title=str(item.get("title") or item.get("id") or "Extra"),
-                    used_percent=float(used) if isinstance(used, (int, float)) else 0.0,
+                    used_percent=used_percent if used_percent is not None else 0.0,
                     resets_at=parse_timestamp(inner.get("resetsAt")),
                     reset_description=inner.get("resetDescription"),
-                    window_minutes=inner.get("windowMinutes"),
+                    window_minutes=_optional_int(inner.get("windowMinutes")),
+                    next_regen_percent=_optional_float(inner.get("nextRegenPercent")),
                     is_placeholder=bool(inner.get("isSyntheticPlaceholder")),
+                    quota_limit=_optional_float(inner.get("quotaLimit")),
+                    quota_unit=(
+                        inner.get("quotaUnit")
+                        if isinstance(inner.get("quotaUnit"), str)
+                        else None
+                    ),
+                    usage_known=(
+                        item.get("usageKnown", used_percent is not None) is not False
+                        and used_percent is not None
+                    ),
                 )
             )
 
@@ -523,6 +567,7 @@ class SpendSummary:
     provenance: str = "unknown"
     reporting_period: str | None = None
     history_label: str | None = None
+    history_coverage_established: bool = True
     daily: list[dict[str, Any]] = field(default_factory=list)
     projects: list[dict[str, Any]] = field(default_factory=list)
     models: list[dict[str, Any]] = field(default_factory=list)
@@ -553,6 +598,8 @@ def spend_from_payloads(payloads: list[dict[str, Any]]) -> SpendSummary:
                 summary.coverage[key] = summary.coverage.get(key, 0) + int(value or 0)
         summary.reporting_period = payload.get("reportingPeriod") or summary.reporting_period
         summary.history_label = payload.get("historyLabel") or summary.history_label
+        if payload.get("historyCoverageIsEstablished") is False:
+            summary.history_coverage_established = False
         summary.total_cost += float(payload.get("totalCost") or 0.0)
         summary.total_tokens += int(payload.get("totalTokens") or 0)
         entry.cost += float(payload.get("totalCost") or 0.0)

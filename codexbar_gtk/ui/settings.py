@@ -43,8 +43,14 @@ SOURCE_LABELS = [
 ]
 
 
-def _combo_row(title: str, options: list[tuple[str, str]], current: str, on_change) -> Adw.ComboRow:
-    row = Adw.ComboRow(title=title)
+def _combo_row(
+    title: str,
+    options: list[tuple[str, str]],
+    current: str,
+    on_change,
+    subtitle: str | None = None,
+) -> Adw.ComboRow:
+    row = Adw.ComboRow(title=title, subtitle=subtitle or "")
     model = Gtk.StringList()
     for label, _value in options:
         model.append(label)
@@ -237,6 +243,10 @@ class SettingsWindow(Adw.PreferencesWindow):
                 ],
                 str(self.prefs.get("unifiedIconSource")),
                 lambda value: self.prefs.set("unifiedIconSource", value),
+                subtitle=(
+                    "Highest usage compares quota percentages. For a provider "
+                    "without a quota, choose First enabled provider."
+                ),
             )
         )
         icon_group.add(

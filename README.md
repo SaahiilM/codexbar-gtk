@@ -83,6 +83,8 @@ Uninstall with `./scripts/install.sh --uninstall`.
 
 Point the app at a different binary with `CODEXBAR_CLI=/path/to/codexbar` or in
 Settings → Advanced → CLI path.
+The provider catalog, fetching, and credential handling follow the installed
+CLI; new providers appear here when that CLI version supports them.
 
 ## Feature parity with the macOS app
 
@@ -92,6 +94,7 @@ Settings → Advanced → CLI path.
 | Automatic quota lane | Tray option "the quota running out soonest", ranked like the macOS Auto lane: a fully depleted quota first, then the smallest forecast ETA |
 | Provider cards, meters, reset countdowns | One card per provider with a meter per window, countdown chip and pace chip |
 | Pace forecast | "12% in reserve" / "in deficit" chips, colour coded |
+| Monthly allowance target | Daily-use target in the quota's own units, divided across remaining local calendar days |
 | Predictive pace warnings | Desktop notification when the current pace depletes a Codex or Claude quota before its reset — once per reset cycle |
 | Quota burndown | Projected usage at reset, extrapolated from the recorded history |
 | Weekly work-day progress | Work-day tick on the weekly meter |

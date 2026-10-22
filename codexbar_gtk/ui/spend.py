@@ -15,6 +15,7 @@ from ..activity import (
     activity_levels,
     align_start,
     cumulative_totals,
+    daily_series,
     weekly_totals,
 )
 from ..data import SpendSummary
@@ -434,20 +435,16 @@ class SpendView(Gtk.Box):
 
         self.heatmap.set_entries(spend.daily)
 
-        daily_totals: dict[str, float] = {}
-        for day in spend.daily:
-            day_date = str(day.get("date", ""))
-            if not day_date:
-                continue
-            daily_totals[day_date] = daily_totals.get(day_date, 0.0) + float(
-                day.get("totalCost") or 0.0
-            )
         entries = [
             (
-                day_date[5:] if len(day_date) >= 10 else day_date,
-                self._convert_value(value, source),
+                day.isoformat()[5:],
+                self._convert_value(value, source) if value is not None else None,
             )
-            for day_date, value in sorted(daily_totals.items())[-30:]
+            for day, value in daily_series(
+                spend.daily,
+                days=30,
+                history_coverage_established=spend.history_coverage_established,
+            )
         ]
         self.chart.set_entries(entries, currency_code)
 

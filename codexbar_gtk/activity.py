@@ -6,6 +6,7 @@ Kept free of GTK so the behaviour can be tested head-less, exactly like the
 
 from __future__ import annotations
 
+import math
 from datetime import date, timedelta
 
 WEEK_COUNT = 53
@@ -54,6 +55,58 @@ def cumulative_totals(values: list[int]) -> list[int]:
         total += max(0, value)
         running.append(total)
     return running
+
+
+def daily_series(
+    entries: list[dict],
+    days: int = 30,
+    history_coverage_established: bool = True,
+) -> list[tuple[date, float | None]]:
+    """Daily cost series with missing interior calendar days kept as zero.
+
+    Providers that omit known zero-usage days used to compress the spend chart;
+    filling those gaps keeps the x-axis proportional. Explicitly unpriced or
+    incomplete days remain unknown, as do gaps before history coverage is
+    established. Days outside the reported range stay absent.
+    """
+    totals: dict[date, float] = {}
+    unknown: set[date] = set()
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        raw = str(entry.get("date") or "")
+        try:
+            day = date.fromisoformat(raw[:10])
+        except ValueError:
+            continue
+        raw_cost = entry.get("totalCost")
+        if raw_cost is None:
+            unknown.add(day)
+            continue
+        try:
+            cost = float(raw_cost)
+        except (OverflowError, TypeError, ValueError):
+            unknown.add(day)
+            continue
+        if not math.isfinite(cost) or cost < 0:
+            unknown.add(day)
+            continue
+        totals[day] = totals.get(day, 0.0) + cost
+    if not totals and not unknown:
+        return []
+
+    observed_days = totals.keys() | unknown
+    last = max(observed_days)
+    first = max(min(observed_days), last - timedelta(days=max(1, days) - 1))
+    return [
+        (
+            day,
+            None
+            if day in unknown or (day not in totals and not history_coverage_established)
+            else totals.get(day, 0.0),
+        )
+        for day in (first + timedelta(days=offset) for offset in range((last - first).days + 1))
+    ]
 
 
 def align_start(today: date) -> date:

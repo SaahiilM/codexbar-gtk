@@ -31,6 +31,7 @@ DEFAULTS: dict[str, Any] = {
     "refreshAllProvidersOnMenuOpen": True,
     "launchAtLogin": False,
     "preferredCurrencyCode": "auto",
+    "costUsageBucketTimeZone": "",
     "cliPath": "",
     # Display
     "usageBarsShowUsed": True,

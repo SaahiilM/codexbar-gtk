@@ -17,7 +17,7 @@ CSS = b"""
 }
 
 .cb-popup-header {
-  padding: 12px 14px 8px 14px;
+  padding: 14px 16px 10px 16px;
   border-bottom: 1px solid alpha(currentColor, 0.08);
 }
 
@@ -27,7 +27,7 @@ CSS = b"""
 }
 
 .cb-popup-scroll {
-  padding: 10px 10px 4px 10px;
+  padding: 12px 12px 6px 12px;
 }
 
 /* ---------- cards ---------- */
@@ -35,8 +35,8 @@ CSS = b"""
   background: alpha(currentColor, 0.05);
   border: 1px solid alpha(currentColor, 0.10);
   border-radius: 14px;
-  padding: 14px 16px;
-  margin-bottom: 10px;
+  padding: 16px 18px;
+  margin-bottom: 16px;
 }
 
 .cb-card:last-child {
@@ -134,14 +134,14 @@ CSS = b"""
 
 /* ---------- dashboard ---------- */
 .cb-dash-grid {
-  padding: 14px 16px 20px 16px;
+  padding: 18px 20px 24px 20px;
 }
 
 .cb-tile {
   background: alpha(currentColor, 0.05);
   border: 1px solid alpha(currentColor, 0.10);
   border-radius: 14px;
-  padding: 12px 14px;
+  padding: 14px 16px;
 }
 
 .cb-tile-value {
@@ -165,6 +165,42 @@ CSS = b"""
   color: alpha(currentColor, 0.55);
 }
 
+.cb-caption {
+  font-size: 0.72rem;
+  color: alpha(currentColor, 0.50);
+}
+
+.cb-heat-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.cb-heat-swatch {
+  min-width: 11px;
+  min-height: 11px;
+  border-radius: 3px;
+}
+
+.cb-heat-0 {
+  background: alpha(currentColor, 0.12);
+}
+
+.cb-heat-1 {
+  background: alpha(#10A37F, 0.25);
+}
+
+.cb-heat-2 {
+  background: alpha(#10A37F, 0.45);
+}
+
+.cb-heat-3 {
+  background: alpha(#10A37F, 0.70);
+}
+
+.cb-heat-4 {
+  background: #10A37F;
+}
+
 .cb-section-label {
   font-size: 0.70rem;
   font-weight: 700;
@@ -173,27 +209,9 @@ CSS = b"""
   color: alpha(currentColor, 0.50);
 }
 
-.cb-chart-bar {
-  background: #10A37F;
-  border-radius: 6px 6px 3px 3px;
-  min-height: 4px;
-  margin: 0 2px;
-}
-
-.cb-chart-value {
-  font-size: 0.66rem;
-  color: alpha(currentColor, 0.55);
-  font-feature-settings: "tnum";
-}
-
-.cb-chart-label {
-  font-size: 0.66rem;
-  color: alpha(currentColor, 0.45);
-}
-
 .cb-empty {
   color: alpha(currentColor, 0.5);
-  padding: 18px 8px;
+  padding: 24px 8px;
 }
 
 .cb-trend-label {
@@ -211,8 +229,8 @@ CSS = b"""
   background: alpha(@accent_color, 0.10);
   border: 1px solid alpha(@accent_color, 0.22);
   border-radius: 14px;
-  padding: 12px 16px;
-  margin-bottom: 14px;
+  padding: 14px 18px;
+  margin-bottom: 18px;
 }
 
 .cb-overview-title {

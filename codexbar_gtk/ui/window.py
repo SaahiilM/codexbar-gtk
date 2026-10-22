@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from gi.repository import Adw, Gio, Gtk
+from gi.repository import Adw, Gtk
 
+from .. import currency
 from ..controller import AppState
 from ..format import format_countdown, format_currency, format_percent, format_updated
+from . import icon_names
 from .cards import ProviderCard, StatTile
 from .sessions import SessionsView
 from .spend import SpendView
@@ -40,9 +42,12 @@ class MainWindow(Adw.ApplicationWindow):
 
         self.refresh_button = Gtk.Button()
         self.refresh_button.set_tooltip_text("Refresh")
+        self.refresh_icon = Gtk.Image.new_from_icon_name(
+            icon_names.themed_icon(*icon_names.REFRESH)
+        )
         self.refresh_spinner = Gtk.Spinner()
         self.refresh_spinner.set_visible(False)
-        self.refresh_button.set_child(self.refresh_spinner)
+        self.refresh_button.set_child(self.refresh_icon)
         self.refresh_button.connect("clicked", lambda _b: self.request_refresh())
         header.pack_end(self.refresh_button)
 
@@ -56,17 +61,17 @@ class MainWindow(Adw.ApplicationWindow):
         toolbar.add_top_bar(header)
 
         # ---- usage page ------------------------------------------------
-        usage_page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        usage_page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=20)
         usage_page.set_vexpand(True)
         usage_scroller = Gtk.ScrolledWindow()
         usage_scroller.set_vexpand(True)
         usage_scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        usage_content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        usage_content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=18)
         usage_content.set_vexpand(True)
         usage_content.set_size_request(720, -1)
         usage_content.add_css_class("cb-dash-grid")
 
-        self.overview = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        self.overview = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         self.overview.add_css_class("cb-overview")
         self.overview_title = Gtk.Label(label="CodexBar")
         self.overview_title.add_css_class("cb-overview-title")
@@ -78,21 +83,29 @@ class MainWindow(Adw.ApplicationWindow):
         self.overview.append(self.overview_sub)
         usage_content.append(self.overview)
 
-        tiles = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        tiles = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=16)
         tiles.set_homogeneous(True)
-        self.providers_tile = StatTile("Providers", icon="network-server-symbolic")
-        self.highest_tile = StatTile("Highest usage", icon="utilities-system-monitor-symbolic")
-        self.credits_tile = StatTile("Credits", icon="emblem-money-symbolic")
-        self.spend_tile = StatTile("Local spend", icon="document-open-recent-symbolic")
+        self.providers_tile = StatTile(
+            "Providers", icon=icon_names.themed_icon(*icon_names.PROVIDERS)
+        )
+        self.highest_tile = StatTile(
+            "Highest usage", icon=icon_names.themed_icon(*icon_names.HIGHEST)
+        )
+        self.credits_tile = StatTile(
+            "Credits", icon=icon_names.themed_icon(*icon_names.CREDITS)
+        )
+        self.spend_tile = StatTile(
+            "Local spend", icon=icon_names.themed_icon(*icon_names.SPEND)
+        )
         for tile in (self.providers_tile, self.highest_tile, self.credits_tile, self.spend_tile):
             tiles.append(tile)
         usage_content.append(tiles)
 
         # A vertical list of full width cards reads better than a grid and
         # matches the popover layout of the macOS app.
-        self.flow = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        self.flow = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=16)
         self.flow.set_hexpand(True)
-        self.flow.set_margin_top(14)
+        self.flow.set_margin_top(24)
         usage_content.append(self.flow)
 
         self.empty_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
@@ -113,7 +126,9 @@ class MainWindow(Adw.ApplicationWindow):
 
         usage_scroller.set_child(self._centered(usage_content))
         usage_page.append(usage_scroller)
-        self.view_stack.add_titled(usage_page, "usage", "Usage")
+        self.view_stack.add_titled_with_icon(
+            usage_page, "usage", "Usage", icon_names.themed_icon(*icon_names.USAGE)
+        )
 
         # ---- sessions page ----------------------------------------------
         self.sessions_view = SessionsView()
@@ -121,15 +136,19 @@ class MainWindow(Adw.ApplicationWindow):
         sessions_scroller.set_vexpand(True)
         sessions_scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
         sessions_scroller.set_child(self._centered(self.sessions_view))
-        self.view_stack.add_titled(sessions_scroller, "sessions", "Sessions")
+        self.view_stack.add_titled_with_icon(
+            sessions_scroller, "sessions", "Sessions", icon_names.themed_icon(*icon_names.SESSIONS)
+        )
 
         # ---- spend page ------------------------------------------------
-        self.spend_view = SpendView()
+        self.spend_view = SpendView(prefs)
         spend_scroller = Gtk.ScrolledWindow()
         spend_scroller.set_vexpand(True)
         spend_scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
         spend_scroller.set_child(self._centered(self.spend_view))
-        self.view_stack.add_titled(spend_scroller, "spend", "Usage & Spend")
+        self.view_stack.add_titled_with_icon(
+            spend_scroller, "spend", "Usage & Spend", icon_names.themed_icon(*icon_names.SPEND)
+        )
 
         toolbar.set_content(self.view_stack)
 
@@ -137,12 +156,11 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _centered(self, child: Gtk.Widget) -> Gtk.Widget:
         """Keep the content column readable instead of stretching it wide."""
-        wrapper = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
-        wrapper.set_halign(Gtk.Align.CENTER)
-        wrapper.set_hexpand(True)
-        child.set_halign(Gtk.Align.CENTER)
-        wrapper.append(child)
-        return wrapper
+        clamp = Adw.Clamp()
+        clamp.set_maximum_size(720)
+        clamp.set_tightening_threshold(560)
+        clamp.set_child(child)
+        return clamp
 
     # -- actions ----------------------------------------------------------
 
@@ -199,6 +217,9 @@ class MainWindow(Adw.ApplicationWindow):
                 work_days=work_days,
                 tick_appearance=tick_appearance,
                 burndown=burndown,
+                preferred_currency=str(
+                    self.prefs.get("preferredCurrencyCode") or "auto"
+                ),
             )
             card.set_hexpand(True)
             self.flow.append(card)
@@ -213,8 +234,9 @@ class MainWindow(Adw.ApplicationWindow):
 
         spend = state.spend
         if spend is not None:
+            amount, code = self._converted(spend.total_cost, spend.currency)
             self.spend_tile.set_value(
-                format_currency(spend.total_cost, spend.currency),
+                format_currency(amount, code),
                 spend.history_label or "",
             )
         else:
@@ -224,11 +246,22 @@ class MainWindow(Adw.ApplicationWindow):
         self.sessions_view.update(state.sessions)
 
         if state.refreshing:
+            self.refresh_icon.set_visible(False)
             self.refresh_spinner.set_visible(True)
             self.refresh_spinner.start()
         else:
             self.refresh_spinner.stop()
             self.refresh_spinner.set_visible(False)
+            self.refresh_icon.set_visible(True)
+
+    def _converted(self, amount: float, source: str | None) -> tuple[float, str]:
+        """Apply the preferred display currency, falling back to the source unit."""
+        source = (source or "USD").upper()
+        preferred = str(self.prefs.get("preferredCurrencyCode") or "auto").strip().upper()
+        if preferred in ("", "AUTO") or preferred == source or not currency.requires_live_rates(preferred):
+            return amount, source
+        converted = currency.convert(amount, source, preferred)
+        return (converted, preferred) if converted is not None else (amount, source)
 
     def _update_overview(self, state: AppState) -> None:
         """A one line summary of how the quota situation looks right now."""
@@ -274,6 +307,5 @@ class MainWindow(Adw.ApplicationWindow):
     def tick(self) -> None:
         now = datetime.now(timezone.utc)
         for child in iter_children(self.flow):
-            card = child.get_child()
-            if isinstance(card, ProviderCard):
-                card.refresh(now)
+            if isinstance(child, ProviderCard):
+                child.refresh(now)

@@ -68,14 +68,26 @@ def default_cli_path() -> str:
 class CodexBarCLI:
     """Runs codexbar subcommands and parses their JSON payloads."""
 
-    def __init__(self, executable: str | None = None, timeout: int = 180) -> None:
+    def __init__(
+        self,
+        executable: str | None = None,
+        timeout: int = 180,
+        timezone: str | None = None,
+    ) -> None:
         self.executable = executable or default_cli_path()
         self.timeout = timeout
+        # ``TZ`` shifts the CLI's day buckets, matching the macOS statistics
+        # time zone preference. An empty value means "use the system zone".
+        self.timezone = timezone or None
 
     # -- plumbing ---------------------------------------------------------
 
     def run(self, args: list[str], timeout: int | None = None) -> CLIResult:
         cmd = [self.executable, *args]
+        env = None
+        if self.timezone:
+            env = os.environ.copy()
+            env["TZ"] = self.timezone
         try:
             proc = subprocess.run(
                 cmd,
@@ -83,6 +95,7 @@ class CodexBarCLI:
                 text=True,
                 timeout=timeout or self.timeout,
                 check=False,
+                env=env,
             )
         except FileNotFoundError as exc:
             raise CLIError(

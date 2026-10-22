@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 
 from gi.repository import Gtk
 
+from .. import currency
 from ..data import ProviderUsage, RateWindow
 from ..format import (
     format_credits,
@@ -479,9 +480,11 @@ class ProviderCard(Gtk.Box):
         work_days: int = 5,
         tick_appearance: str = "subtle",
         burndown: bool = True,
+        preferred_currency: str = "auto",
     ) -> None:
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         self.provider = provider
+        self.preferred_currency = (preferred_currency or "auto").upper()
         self.history = history
         self.work_days = work_days
         self.tick_appearance = tick_appearance
@@ -709,6 +712,20 @@ class ProviderCard(Gtk.Box):
         self.burndown_chip.set_text(text)
         self.burndown_chip.set_visible(True)
 
+    def _money(self, amount: float, code: str) -> str:
+        """Format a provider cost in the preferred display currency."""
+        source = (code or "USD").upper()
+        if (
+            self.preferred_currency in ("", "AUTO")
+            or self.preferred_currency == source
+            or not currency.requires_live_rates(self.preferred_currency)
+        ):
+            return format_currency(amount, code)
+        converted = currency.convert(amount, source, self.preferred_currency)
+        if converted is None:
+            return format_currency(amount, code)
+        return format_currency(converted, self.preferred_currency)
+
     def _rebuild_extra(self, now: datetime) -> None:
         for child in list(iter_children(self.extra_box)):
             self.extra_box.remove(child)
@@ -723,13 +740,13 @@ class ProviderCard(Gtk.Box):
         if cost is not None and (cost.used or cost.limit or cost.balance is not None):
             if cost.has_limit:
                 text = (
-                    f"{format_currency(cost.used, cost.currency)} of "
-                    f"{format_currency(cost.limit, cost.currency)}"
+                    f"{self._money(cost.used, cost.currency)} of "
+                    f"{self._money(cost.limit, cost.currency)}"
                 )
             elif cost.balance is not None:
-                text = f"{format_currency(cost.balance, cost.currency)} balance"
+                text = f"{self._money(cost.balance, cost.currency)} balance"
             else:
-                text = f"{format_currency(cost.used, cost.currency)} spent"
+                text = f"{self._money(cost.used, cost.currency)} spent"
             rows.append(("Spend", text, cost.period or ""))
 
         for section in provider.details[:3]:
@@ -831,40 +848,121 @@ class StatTile(Gtk.Box):
             self.caption_widget.set_visible(bool(caption))
 
 
-class MiniBarChart(Gtk.Box):
-    """Bar chart for daily spend, with a value label on top of each bar."""
+class MiniBarChart(Gtk.DrawingArea):
+    """Compact bar chart for daily spend.
+
+    Drawing with Cairo keeps thirty day columns from forcing the page wider
+    than its 720 px content column; value labels appear only where they fit and
+    date labels are thinned out instead of colliding.
+    """
+
+    HEIGHT = 168
+    TOP = 22
+    BOTTOM = 20
 
     def __init__(self) -> None:
-        super().__init__(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        super().__init__()
         self.add_css_class("cb-chart")
-        self.set_valign(Gtk.Align.END)
+        self.set_content_height(self.HEIGHT)
         self.set_hexpand(True)
+        self.set_has_tooltip(True)
+        self.entries: list[tuple[str, float]] = []
+        self.currency = "USD"
+        self._hover_index: int | None = None
+        self.set_draw_func(self._draw)
+        self.connect("query-tooltip", self._on_query_tooltip)
+        motion = Gtk.EventControllerMotion()
+        motion.connect("motion", self._on_motion)
+        motion.connect("leave", self._on_leave)
+        self.add_controller(motion)
 
     def set_entries(self, entries: list[tuple[str, float]], currency: str = "USD") -> None:
-        for child in list(iter_children(self)):
-            self.remove(child)
-        if not entries:
+        self.entries = list(entries or [])
+        self.currency = currency or "USD"
+        self._hover_index = None
+        self.queue_draw()
+
+    # -- geometry ---------------------------------------------------------
+
+    def _pitch(self, width: float) -> float:
+        return width / len(self.entries) if self.entries else 0.0
+
+    def _index_at(self, x: float, width: float) -> int | None:
+        pitch = self._pitch(width)
+        if pitch <= 0 or not self.entries:
+            return None
+        return max(0, min(len(self.entries) - 1, int(x // pitch)))
+
+    # -- drawing ----------------------------------------------------------
+
+    def _draw(self, area: Gtk.DrawingArea, cr, width: int, height: int) -> None:
+        if not cairo_support.HAS_CAIRO or not self.entries or width <= 0:
             return
-        peak = max((value for _, value in entries), default=0.0) or 1.0
-        for label, value in entries:
-            column = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
-            column.set_valign(Gtk.Align.END)
-            column.set_hexpand(True)
+        pitch = width / len(self.entries)
+        bar_width = max(2.0, min(24.0, pitch * 0.58))
+        plot_bottom = height - self.BOTTOM
+        plot_height = max(1.0, plot_bottom - self.TOP)
+        peak = max((value for _label, value in self.entries), default=0.0) or 1.0
 
-            value_label = Gtk.Label(label=format_currency(value, currency, compact=True))
-            value_label.add_css_class("cb-chart-value")
-            value_label.set_halign(Gtk.Align.CENTER)
-            column.append(value_label)
+        cr.select_font_face("Sans", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_NORMAL)
+        cr.set_font_size(10.0)
 
-            bar = Gtk.Box()
-            bar.add_css_class("cb-chart-bar")
-            height = max(4, int(120 * (value / peak)))
-            bar.set_size_request(-1, height)
-            bar.set_valign(Gtk.Align.END)
-            column.append(bar)
+        # Show dates sparsely so they never collide.
+        every = max(1, int(round(44.0 / pitch))) if pitch > 0 else 1
 
-            caption = Gtk.Label(label=label)
-            caption.add_css_class("cb-chart-label")
-            caption.set_halign(Gtk.Align.CENTER)
-            column.append(caption)
-            self.append(column)
+        for index, (label, value) in enumerate(self.entries):
+            centre = pitch * index + pitch / 2
+            bar_height = plot_height * (max(0.0, value) / peak)
+            bar_height = max(2.0, bar_height)
+            x = centre - bar_width / 2
+            y = plot_bottom - bar_height
+
+            if value <= 0:
+                cr.set_source_rgba(0.55, 0.55, 0.55, 0.18)
+            elif self._hover_index == index:
+                cr.set_source_rgba(0.13, 0.76, 0.60, 1.0)
+            else:
+                cr.set_source_rgba(0.063, 0.64, 0.50, 0.92)
+            _rounded_rect(cr, x, y, bar_width, bar_height, min(5.0, bar_width / 3))
+            cr.fill()
+
+            # Value above the bar when the columns have room.
+            if value > 0 and pitch >= 34:
+                text = format_currency(value, self.currency, compact=True)
+                _draw_centred_text(cr, text, centre, y - 6, 10.0, (0.67, 0.67, 0.67))
+
+            if index % every == 0 or index == len(self.entries) - 1:
+                _draw_centred_text(
+                    cr, label, centre, height - 4, 9.0, (0.55, 0.55, 0.55)
+                )
+
+    # -- interaction ------------------------------------------------------
+
+    def _on_motion(self, controller: Gtk.EventControllerMotion, x: float, y: float) -> None:
+        index = self._index_at(x, self.get_width())
+        if index != self._hover_index:
+            self._hover_index = index
+            self.queue_draw()
+
+    def _on_leave(self, controller: Gtk.EventControllerMotion) -> None:
+        if self._hover_index is not None:
+            self._hover_index = None
+            self.queue_draw()
+
+    def _on_query_tooltip(self, widget, x: int, y: int, keyboard: bool, tooltip: Gtk.Tooltip) -> bool:
+        index = self._index_at(x, self.get_width())
+        if index is None:
+            return False
+        label, value = self.entries[index]
+        tooltip.set_text(f"{label} · {format_currency(value, self.currency)}")
+        return True
+
+
+def _draw_centred_text(cr, text: str, x: float, baseline: float, size: float, color) -> None:
+    cr.set_font_size(size)
+    extents = cr.text_extents(text)
+    cr.set_source_rgba(*color)
+    cr.move_to(x - extents.width / 2 - extents.x_bearing, baseline)
+    cr.show_text(text)
+
+

@@ -98,14 +98,34 @@ Settings → Advanced → CLI path.
 | Limit Reset Credits | A "3 available · 4h 39m · 7d 2h" badge with every credit's expiry on hover, and an alert when a credit expires within 3 days |
 | Usage breakdown / credits history charts | Rendered from the CLI's `usage.details[].chart` and `credits.events` |
 | Cost history / spend dashboard | Usage & Spend page with daily chart, projects, models and a per-provider breakdown |
+| Token activity heatmap | A 12-month daily/weekly/cumulative heatmap built from `cost --json` daily token totals, with per-day tooltips |
+| Preferred currency | Converts spend totals with daily exchange rates (cached 24 h) and offline fallbacks; "Automatic" keeps the reported currency |
+| Statistics time zone | "Daily buckets" picker passes `TZ` to the CLI so day boundaries move with the chosen zone |
+| Usage history sparkline | The recorded quota history over the last 24 h on each card (macOS live tokens-per-minute requires OpenAI's live API and is not fetched) |
 | Provider status badges | Status dot and description per provider |
 | Provider accounts | Account list per provider via `--all-accounts` |
 | Agent sessions | Sessions page listing the running coding agents |
 | Quota notifications, hooks, plugins | Notifications pane, Hooks pane and Plugins pane backed by the CLI |
-| Preferences panes | General, Providers, Menu Bar, Display, Notifications, Usage & Spend, Hooks, Plugins, Advanced |
+| Preferences panes | General, Providers, Menu Bar, Display, Notifications, Usage & Spend, Hooks, Plugins, Advanced, About |
 
-Still macOS-only upstream and therefore absent here: iCloud sync, managed account
-profiles, browser credential import and the menu-bar layout editor.
+Still macOS-only upstream and therefore absent here: iCloud fleet sync, widgets,
+window-focus for sessions, managed account profiles, browser credential import,
+the menu-bar layout editor, remote sessions over Tailscale/SSH and the
+`codexbar serve` HTTP backend (this front-end reads local CLI JSON directly).
+
+## Versioning
+
+The GTK front-end uses the same version pair as the macOS bundle:
+
+* `MARKETING_VERSION` in [`VERSION`](VERSION) is the upstream CodexBar release
+  this client is feature-compatible with (`0.79.0`).
+* `CURRENT_PROJECT_VERSION` is the build number of the Linux front-end.
+* `codexbar_gtk/version.py` turns the pair into the macOS-style
+  `"0.79.0 (1)"` string shown under Settings → About, in the tray menu and by
+  `./run.sh --about`.
+
+Bump both files together when cutting a release; the test suite fails if they
+drift apart.
 
 ## Development
 

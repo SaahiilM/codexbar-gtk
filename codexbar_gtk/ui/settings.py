@@ -9,9 +9,11 @@ from __future__ import annotations
 import os
 import sys
 
-from gi.repository import Adw, Gio, GLib, Gtk
+from gi.repository import Adw, Gdk, Gio, GLib, Gtk
 
+from .. import currency, display_string
 from .. import providers as provider_meta
+from . import icon_names
 
 AUTOSTART_DIR = os.path.expanduser("~/.config/autostart")
 AUTOSTART_FILE = os.path.join(AUTOSTART_DIR, "codexbar-gtk.desktop")
@@ -73,7 +75,7 @@ class SettingsWindow(Adw.PreferencesWindow):
         self.prefs = prefs
         self.controller = controller
         self.set_title("CodexBar Settings")
-        self.set_default_size(760, 640)
+        self.set_default_size(1000, 720)
         self.set_modal(False)
         self.search_enabled = True
 
@@ -86,6 +88,8 @@ class SettingsWindow(Adw.PreferencesWindow):
         self.add(self._hooks_page())
         self.add(self._plugins_page())
         self.add(self._advanced_page())
+        self.about_page = self._about_page()
+        self.add(self.about_page)
 
     # -- pages ------------------------------------------------------------
 
@@ -139,18 +143,22 @@ class SettingsWindow(Adw.PreferencesWindow):
         page.add(startup)
 
         general = Adw.PreferencesGroup(title="General")
+        currency_options = [("Automatic (as reported)", "auto")]
+        currency_options += [
+            (currency.picker_label(code), code) for code in currency.SUPPORTED
+        ]
         currency_row = _combo_row(
             "Preferred currency",
-            [("Automatic", "auto"), ("USD", "USD"), ("EUR", "EUR"), ("GBP", "GBP"), ("INR", "INR"), ("JPY", "JPY")],
+            currency_options,
             str(self.prefs.get("preferredCurrencyCode")),
-            lambda value: self.prefs.set("preferredCurrencyCode", value),
+            self._set_currency,
         )
         general.add(currency_row)
         page.add(general)
         return page
 
     def _providers_page(self) -> Adw.PreferencesPage:
-        page = Adw.PreferencesPage(title="Providers", icon_name="network-server-symbolic")
+        page = Adw.PreferencesPage(title="Providers", icon_name=icon_names.themed_icon(*icon_names.PROVIDERS))
 
         group = Adw.PreferencesGroup(
             title="Providers",
@@ -208,7 +216,7 @@ class SettingsWindow(Adw.PreferencesWindow):
 
     def _menu_bar_page(self) -> Adw.PreferencesPage:
         """Tray appearance — the equivalent of the macOS "Menu Bar" pane."""
-        page = Adw.PreferencesPage(title="Menu Bar", icon_name="view-continuous-symbolic")
+        page = Adw.PreferencesPage(title="Menu Bar", icon_name=icon_names.themed_icon(*icon_names.MENU_BAR))
 
         icon_group = Adw.PreferencesGroup(title="Tray icon")
         icon_group.add(
@@ -251,7 +259,7 @@ class SettingsWindow(Adw.PreferencesWindow):
         return page
 
     def _display_page(self) -> Adw.PreferencesPage:
-        page = Adw.PreferencesPage(title="Display", icon_name="video-display-symbolic")
+        page = Adw.PreferencesPage(title="Display", icon_name=icon_names.themed_icon(*icon_names.DISPLAY))
 
         usage = Adw.PreferencesGroup(title="Usage")
         usage.add(
@@ -356,7 +364,7 @@ class SettingsWindow(Adw.PreferencesWindow):
         return page
 
     def _notifications_page(self) -> Adw.PreferencesPage:
-        page = Adw.PreferencesPage(title="Notifications", icon_name="preferences-system-notifications-symbolic")
+        page = Adw.PreferencesPage(title="Notifications", icon_name=icon_names.themed_icon(*icon_names.NOTIFICATIONS))
 
         group = Adw.PreferencesGroup(title="Quota notifications")
         group.add(
@@ -401,7 +409,7 @@ class SettingsWindow(Adw.PreferencesWindow):
         return page
 
     def _spend_page(self) -> Adw.PreferencesPage:
-        page = Adw.PreferencesPage(title="Usage & Spend", icon_name="document-open-recent-symbolic")
+        page = Adw.PreferencesPage(title="Usage & Spend", icon_name=icon_names.themed_icon(*icon_names.SPEND))
 
         group = Adw.PreferencesGroup(title="Local cost scanning")
         group.add(
@@ -421,11 +429,28 @@ class SettingsWindow(Adw.PreferencesWindow):
             )
         )
         page.add(group)
+
+        zone_group = Adw.PreferencesGroup(
+            title="Daily buckets",
+            description=(
+                "Daily usage uses a fixed time zone. Changing it may move usage "
+                "to a different day."
+            ),
+        )
+        zone_group.add(
+            _combo_row(
+                "Statistics time zone",
+                self._time_zone_options(),
+                str(self.prefs.get("costUsageBucketTimeZone") or ""),
+                self._set_time_zone,
+            )
+        )
+        page.add(zone_group)
         return page
 
     def _hooks_page(self) -> Adw.PreferencesPage:
         """Hook rules — external commands run on quota events."""
-        page = Adw.PreferencesPage(title="Hooks", icon_name="application-x-executable-symbolic")
+        page = Adw.PreferencesPage(title="Hooks", icon_name=icon_names.themed_icon(*icon_names.HOOKS))
 
         group = Adw.PreferencesGroup(
             title="Hooks",
@@ -475,7 +500,7 @@ class SettingsWindow(Adw.PreferencesWindow):
 
     def _plugins_page(self) -> Adw.PreferencesPage:
         """User supplied provider plugins."""
-        page = Adw.PreferencesPage(title="Plugins", icon_name="application-x-addon-symbolic")
+        page = Adw.PreferencesPage(title="Plugins", icon_name=icon_names.themed_icon(*icon_names.PLUGINS))
 
         group = Adw.PreferencesGroup(
             title="Plugins",
@@ -548,7 +573,7 @@ class SettingsWindow(Adw.PreferencesWindow):
             self._notify(f"Could not change hooks: {exc}")
 
     def _advanced_page(self) -> Adw.PreferencesPage:
-        page = Adw.PreferencesPage(title="Advanced", icon_name="applications-graphics-symbolic")
+        page = Adw.PreferencesPage(title="Advanced", icon_name=icon_names.themed_icon(*icon_names.ADVANCED))
 
         cli_group = Adw.PreferencesGroup(
             title="CodexBar CLI",
@@ -582,10 +607,81 @@ class SettingsWindow(Adw.PreferencesWindow):
         page.add(data_group)
         return page
 
+    def _about_page(self) -> Adw.PreferencesPage:
+        page = Adw.PreferencesPage(
+            title="About", icon_name=icon_names.themed_icon(*icon_names.ABOUT)
+        )
+
+        app_group = Adw.PreferencesGroup(title="CodexBar GTK")
+        version_row = Adw.ActionRow(title="Version")
+        version_row.set_subtitle(display_string())
+        app_group.add(version_row)
+
+        toolkit_row = Adw.ActionRow(title="Toolkit")
+        toolkit_row.set_subtitle("GTK4 / libadwaita")
+        app_group.add(toolkit_row)
+
+        cli_row = Adw.ActionRow(title="CodexBar CLI")
+        cli_row.set_subtitle(self.controller.cli.version())
+        app_group.add(cli_row)
+        page.add(app_group)
+
+        link_group = Adw.PreferencesGroup(title="Project")
+        project_row = Adw.ActionRow(
+            title="Source code",
+            subtitle="github.com/SaahiilM/codexbar-gtk",
+        )
+        project_row.set_activatable(True)
+        project_row.connect(
+            "activated",
+            lambda _r: Gtk.show_uri(
+                self, "https://github.com/SaahiilM/codexbar-gtk", Gdk.CURRENT_TIME
+            ),
+        )
+        link_group.add(project_row)
+        page.add(link_group)
+        return page
+
+    def show_about(self) -> None:
+        """Present the window with the About page selected."""
+        self.present()
+        try:
+            self.set_visible_page(self.about_page)
+        except Exception:
+            pass
+
     # -- handlers ---------------------------------------------------------
 
     def _set_refresh(self, value: str) -> None:
         self.prefs.set("refreshFrequency", value)
+
+    def _set_currency(self, value: str) -> None:
+        self.prefs.set("preferredCurrencyCode", value)
+        currency.shared().ensure_rates(value)
+        self._request_refresh()
+
+    @staticmethod
+    def _time_zone_options() -> list[tuple[str, str]]:
+        options = [("System local time", "")]
+        try:
+            from zoneinfo import available_timezones
+
+            zones = sorted(available_timezones())
+        except Exception:
+            zones = ["UTC"]
+        options.extend((zone, zone) for zone in zones)
+        return options
+
+    def _set_time_zone(self, value: str) -> None:
+        self.prefs.set("costUsageBucketTimeZone", value)
+        self.controller.cli.timezone = value or None
+        self._request_refresh()
+
+    def _request_refresh(self) -> None:
+        app = self.get_application()
+        window = getattr(app, "main_window", None) if app is not None else None
+        if window is not None:
+            window.request_refresh()
 
     def _set_threshold(self, key: str, index: int, value: int) -> None:
         thresholds = list(self.prefs.get(key) or [80, 95])

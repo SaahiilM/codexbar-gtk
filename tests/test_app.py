@@ -664,3 +664,91 @@ class ResetCreditPresentationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class VersionMetadataTests(unittest.TestCase):
+    def test_display_string_matches_version_file(self):
+        import codexbar_gtk
+        from codexbar_gtk.version import BUILD, SHORT_VERSION
+
+        self.assertEqual(codexbar_gtk.display_string(), f"{SHORT_VERSION} ({BUILD})")
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        with open(os.path.join(root, "VERSION"), encoding="utf-8") as handle:
+            values = dict(
+                line.strip().split("=", 1) for line in handle if "=" in line
+            )
+        self.assertEqual(values["MARKETING_VERSION"], SHORT_VERSION)
+        self.assertEqual(int(values["CURRENT_PROJECT_VERSION"]), BUILD)
+
+
+class ActivityHeatmapTests(unittest.TestCase):
+    def test_levels_match_macos_thresholds(self):
+        from codexbar_gtk.activity import activity_levels
+
+        self.assertEqual(activity_levels([0, 1, 5, 10, 20]), [0, 1, 1, 2, 4])
+        self.assertEqual(activity_levels([]), [])
+        self.assertEqual(activity_levels([0, 0]), [0, 0])
+
+    def test_weekly_and_cumulative_aggregation(self):
+        from datetime import date
+
+        from codexbar_gtk.activity import (
+            DAY_COUNT,
+            WEEK_COUNT,
+            align_start,
+            cumulative_totals,
+            weekly_totals,
+        )
+
+        today = date(2026, 1, 12)  # Monday
+        start = align_start(today)
+        self.assertEqual(start.weekday(), 6)  # Sunday-first rows
+        values = {start: 10, start + timedelta(days=1): 5, start + timedelta(days=7): 7}
+        weekly = weekly_totals(start, values, today)
+        self.assertEqual(len(weekly), WEEK_COUNT)
+        self.assertEqual(weekly[0], 15)
+        self.assertEqual(weekly[1], 7)
+        self.assertEqual(sum(weekly), 22)
+        self.assertEqual(cumulative_totals([1, 2, 0, 3]), [1, 3, 3, 6])
+
+    def test_today_is_never_counted_twice(self):
+        from datetime import date
+
+        from codexbar_gtk.activity import DAY_COUNT, align_start, weekly_totals
+
+        today = date(2026, 10, 22)
+        start = align_start(today)
+        self.assertEqual((today - start).days % DAY_COUNT, (today.weekday() + 1) % DAY_COUNT)
+        self.assertLessEqual(start, today)
+
+
+class CurrencyConversionTests(unittest.TestCase):
+    def test_offline_conversion_pivots_through_usd(self):
+        from codexbar_gtk import currency
+
+        with tempfile.TemporaryDirectory() as tmp:
+            converter = currency.CurrencyConverter(os.path.join(tmp, "rates.json"))
+            self.assertAlmostEqual(converter.convert(100, "USD", "EUR"), 92.0, places=4)
+            self.assertAlmostEqual(converter.convert(92, "EUR", "USD"), 100.0, places=4)
+            self.assertEqual(converter.convert(10, "EUR", "EUR"), 10)
+            self.assertIsNone(converter.convert(1, "USD", "XYZ"))
+
+    def test_live_rates_only_needed_for_supported_targets(self):
+        from codexbar_gtk import currency
+
+        self.assertTrue(currency.requires_live_rates("EUR"))
+        self.assertFalse(currency.requires_live_rates("auto"))
+        self.assertFalse(currency.requires_live_rates("USD"))
+        self.assertEqual(currency.picker_label("INR"), "INR (₹)")
+
+
+class CLITimeZoneTests(unittest.TestCase):
+    def test_timezone_is_exported_to_the_cli(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            script = os.path.join(tmp, "fake-cli")
+            with open(script, "w", encoding="utf-8") as handle:
+                handle.write('#!/bin/sh\nprintf "%s" "$TZ"\n')
+            os.chmod(script, 0o755)
+            cli = CodexBarCLI(script, timezone="Asia/Tokyo")
+            result = cli.run(["--version"])
+            self.assertEqual(result.stdout.strip(), "Asia/Tokyo")

@@ -79,10 +79,10 @@ class PopupContent(Gtk.Box):
         self.append(self.empty_label)
 
         footer = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        footer.set_margin_top(2)
-        footer.set_margin_bottom(6)
-        footer.set_margin_start(10)
-        footer.set_margin_end(10)
+        footer.set_margin_top(6)
+        footer.set_margin_bottom(10)
+        footer.set_margin_start(12)
+        footer.set_margin_end(12)
 
         settings_button = Gtk.Button(label="Settings")
         settings_button.add_css_class("flat")
@@ -132,6 +132,9 @@ class PopupContent(Gtk.Box):
                     work_days=work_days,
                     tick_appearance=tick_appearance,
                     burndown=burndown,
+                    preferred_currency=str(
+                        prefs.get("preferredCurrencyCode") or "auto"
+                    ),
                 )
             )
 
@@ -180,7 +183,7 @@ class PopupWindow(Gtk.Window):
         self.set_title(PANEL_WINDOW_TITLE)
         self.set_decorated(False)
         self.set_resizable(False)
-        self.set_default_size(380, 320)
+        self.set_default_size(400, 520)
         self.set_hide_on_close(False)
         # The panel should not steal focus, the way the macOS popover behaves.
         self.set_focusable(False)
@@ -212,17 +215,22 @@ class PopupWindow(Gtk.Window):
         """
         display = Gdk.Display.get_default()
         if display is not None:
-            monitor = display.get_primary_monitor()
-            if monitor is None:
+            # GTK4 removed get_primary_monitor(); the monitor list model is the
+            # only portable API (and it exists on both X11 and Wayland).
+            monitor = None
+            try:
                 monitors = display.get_monitors()
-                monitor = monitors[0] if monitors else None
+                if monitors is not None and monitors.get_n_items() > 0:
+                    monitor = monitors.get_item(0)
+            except Exception:
+                monitor = None
             if monitor is not None:
                 geometry = monitor.get_geometry()
                 width, height = self.get_width(), self.get_height()
                 if width <= 1:
-                    width = 380
+                    width = 400
                 if height <= 1:
-                    height = 320
+                    height = 520
                 self.set_default_size(width, height)
 
         self._move_with_x11()
@@ -245,6 +253,24 @@ class PopupWindow(Gtk.Window):
 
     def update(self, state: AppState, prefs) -> None:
         self.content.update(state, prefs)
+        GLib.idle_add(self._fit_to_content)
+
+    def _fit_to_content(self) -> bool:
+        """Grow the panel with its cards, up to the scroll cap.
+
+        ``Gtk.Window`` keeps the size it was first mapped with, so the compact
+        panel has to ask for its natural height after each rebuild.
+        """
+        if not self.get_visible():
+            return False
+        width = max(self.get_width(), 400)
+        _minimum, natural, _min_baseline, _nat_baseline = self.content.measure(
+            Gtk.Orientation.VERTICAL, width
+        )
+        target = max(280, min(natural, 560))
+        if abs(self.get_height() - target) > 12:
+            self.set_default_size(width, target)
+        return False
 
     def tick(self) -> None:
         self.content.tick()

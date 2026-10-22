@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
+from .currency import CURRENCIES
+
 RESET_STYLES = ("countdown", "absolute", "both")
 
 
@@ -75,7 +77,7 @@ def format_reset(
 def format_currency(value: float | None, currency: str = "USD", compact: bool = False) -> str:
     if value is None:
         return "—"
-    symbol = {"USD": "$", "EUR": "€", "GBP": "£", "JPY": "¥", "INR": "₹"}.get(currency.upper(), "")
+    symbol = {code: glyph for code, glyph, _rate in CURRENCIES}.get(currency.upper(), "")
     prefix = symbol if symbol else ""
     suffix = "" if symbol else f" {currency}"
     if compact and abs(value) >= 1000:

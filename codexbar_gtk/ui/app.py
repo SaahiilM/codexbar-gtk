@@ -7,7 +7,7 @@ import sys
 
 from gi.repository import Adw, Gio, GLib, Gtk
 
-from .. import APP_ID, __version__
+from .. import APP_ID, currency, display_string
 from ..cli import CodexBarCLI
 from ..controller import Controller, automatic_tray_selection
 from ..prefs import Preferences
@@ -30,8 +30,13 @@ class CodexBarApp(Adw.Application):
             flags=Gio.ApplicationFlags.HANDLES_COMMAND_LINE,
         )
         self.prefs = Preferences()
-        cli = CodexBarCLI(str(self.prefs.get("cliPath") or "") or None)
+        cli = CodexBarCLI(
+            str(self.prefs.get("cliPath") or "") or None,
+            timezone=str(self.prefs.get("costUsageBucketTimeZone") or "") or None,
+        )
         self.controller = Controller(self.prefs, cli)
+        # Mirrors the macOS bundle: "0.79.0 (1)".
+        self.set_version(display_string())
 
         self.main_window: MainWindow | None = None
         self.settings_window: SettingsWindow | None = None
@@ -53,6 +58,9 @@ class CodexBarApp(Adw.Application):
 
         self.controller.subscribe(self._on_state)
         self.controller.start()
+        currency.shared().ensure_rates(
+            str(self.prefs.get("preferredCurrencyCode") or "auto")
+        )
 
         if self.prefs.get("showTray", True):
             self.tray.start()
@@ -76,6 +84,9 @@ class CodexBarApp(Adw.Application):
     def do_activate(self) -> None:
         if "--settings" in self.extra_args:
             self._open_settings()
+            return
+        if "--about" in self.extra_args:
+            self._open_about()
             return
         if "--panel" in self.extra_args:
             # Wait for the first refresh so the panel is shown with content.
@@ -163,6 +174,10 @@ class CodexBarApp(Adw.Application):
     def _open_settings(self) -> None:
         window = self._ensure_settings_window()
         window.present()
+
+    def _open_about(self) -> None:
+        window = self._ensure_settings_window()
+        window.show_about()
 
     def _toggle_popup(self) -> None:
         popup = self._ensure_popup()
@@ -270,6 +285,7 @@ class CodexBarApp(Adw.Application):
             ("Refresh", self._refresh_now),
             ("Open Dashboard", self._open_dashboard),
             ("Settings…", self._open_settings),
+            (f"About CodexBar GTK {display_string()}", self._open_about),
             (None, None),
             ("Quit CodexBar", self._quit),
         ]
@@ -288,7 +304,7 @@ class CodexBarApp(Adw.Application):
     def _notify(self, title: str, message: str, id: str | None = None) -> None:
         notification = Gio.Notification.new(title)
         notification.set_body(message)
-        notification.set_priority(Gio.NOTIFICATION_PRIORITY_NORMAL)
+        notification.set_priority(Gio.NotificationPriority.NORMAL)
         key = id or f"{abs(hash(message)) % 100000}"
         self.send_notification(f"codexbar-{key}", notification)
 

@@ -3,6 +3,7 @@
 #
 #   ./run.sh              start the app
 #   ./run.sh --settings   start it and open the settings window
+#   ./run.sh --about      start it and show version information
 #
 # The script also wires up the private typelib prefix created by
 # scripts/bootstrap-deps.sh when the system does not provide Gtk-4.0 / Adw-1.

@@ -141,7 +141,7 @@ class MainWindow(Adw.ApplicationWindow):
         )
 
         # ---- spend page ------------------------------------------------
-        self.spend_view = SpendView(prefs)
+        self.spend_view = SpendView(prefs, refresh=self.request_refresh)
         spend_scroller = Gtk.ScrolledWindow()
         spend_scroller.set_vexpand(True)
         spend_scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)

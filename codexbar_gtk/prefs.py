@@ -67,6 +67,7 @@ DEFAULTS: dict[str, Any] = {
     "costSummaryDisplayStyle": "both",
     "costReportingPeriod": "month-to-date",
     "costComparisonPeriodsEnabled": True,
+    "spendTimeRange": "30d",
     # Advanced
     "showTray": True,
     "showPopupOnStart": False,

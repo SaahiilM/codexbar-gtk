@@ -99,7 +99,9 @@ class Controller:
             self.refresh()
             interval = self.prefs.refresh_seconds
             if interval <= 0:
-                interval = 60  # manual mode: keep the tray alive but poll rarely
+                # Manual mode: never auto-refresh; refresh only on user action,
+                # matching the macOS app. Keep the loop alive to respond to quit.
+                interval = 24 * 60 * 60
             # Wake up often enough to notice a changed interval or a quit request.
             deadline = time.monotonic() + interval
             while not self._stop.is_set() and time.monotonic() < deadline:

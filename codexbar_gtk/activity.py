@@ -97,7 +97,10 @@ def daily_series(
 
     observed_days = totals.keys() | unknown
     last = max(observed_days)
-    first = max(min(observed_days), last - timedelta(days=max(1, days) - 1))
+    if days is None:
+        first = min(observed_days)
+    else:
+        first = max(min(observed_days), last - timedelta(days=max(1, days) - 1))
     return [
         (
             day,

@@ -1245,6 +1245,21 @@ class SpendSeriesTests(unittest.TestCase):
         self.assertEqual(series[0][0], date(2026, 6, 16))
         self.assertEqual(series[-1][0], date(2026, 7, 15))
 
+    def test_all_days_keeps_every_observed_day(self):
+        from datetime import date, timedelta
+
+        from codexbar_gtk.activity import daily_series
+
+        start = date(2026, 6, 1)
+        entries = [
+            {"date": (start + timedelta(days=index)).isoformat(), "totalCost": index}
+            for index in range(45)
+        ]
+        series = daily_series(entries, days=None)
+        self.assertEqual(len(series), 45)
+        self.assertEqual(series[0][0], date(2026, 6, 1))
+        self.assertEqual(series[-1][0], date(2026, 7, 15))
+
 
 class CurrencyConversionTests(unittest.TestCase):
     def test_offline_conversion_pivots_through_usd(self):

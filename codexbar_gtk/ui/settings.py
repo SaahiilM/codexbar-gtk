@@ -94,6 +94,8 @@ class SettingsWindow(Adw.PreferencesWindow):
         self.add(self._hooks_page())
         self.add(self._plugins_page())
         self.add(self._advanced_page())
+        self.acknowledgements_page = self._acknowledgements_page()
+        self.add(self.acknowledgements_page)
         self.about_page = self._about_page()
         self.add(self.about_page)
 
@@ -615,6 +617,47 @@ class SettingsWindow(Adw.PreferencesWindow):
         reset_row.connect("activated", lambda _r: self._reset_preferences())
         data_group.add(reset_row)
         page.add(data_group)
+        return page
+
+    def _acknowledgements_page(self) -> Adw.PreferencesPage:
+        page = Adw.PreferencesPage(
+            title="Acknowledgements", icon_name=icon_names.themed_icon(*icon_names.ABOUT)
+        )
+
+        group = Adw.PreferencesGroup(title="Third-party software")
+
+        dependencies = [
+            ("GTK4", "GIMP Tool Kit", "LGPL 2.1+"),
+            ("libadwaita", "Adwaita library", "LGPL 2.1+"),
+            ("PyGObject", "GObject introspection bindings for Python", "LGPL 2.1+"),
+            ("Python", "Programming language", "Python Software Foundation License"),
+            ("Cairo", "2D vector graphics library", "MPL 1.1 / LGPL 2.1+"),
+            ("GLib", "Core application library", "LGPL 2.1+"),
+            ("dbus-python", "D-Bus bindings for Python", "MIT"),
+        ]
+        for name, description, licence in dependencies:
+            row = Adw.ActionRow(title=name, subtitle=description)
+            licence_label = Gtk.Label(label=licence)
+            licence_label.add_css_class("caption")
+            licence_label.set_xalign(1)
+            licence_label.set_hexpand(True)
+            row.add_suffix(licence_label)
+            group.add(row)
+
+        page.add(group)
+
+        notes = Adw.ActionRow(
+            title="Source code",
+            subtitle="github.com/SaahiilM/codexbar-gtk",
+        )
+        notes.set_activatable(True)
+        notes.connect(
+            "activated",
+            lambda _r: Gtk.show_uri(
+                self, "https://github.com/SaahiilM/codexbar-gtk", Gdk.CURRENT_TIME
+            ),
+        )
+        group.add(notes)
         return page
 
     def _about_page(self) -> Adw.PreferencesPage:

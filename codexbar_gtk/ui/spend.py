@@ -324,9 +324,10 @@ def _rounded_rect(cr, x: float, y: float, width: float, height: float, radius: f
 class SpendView(Gtk.Box):
     """Local spend summary: totals, activity heatmap, daily chart, projects and models."""
 
-    def __init__(self, prefs=None) -> None:
+    def __init__(self, prefs=None, refresh=None) -> None:
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=18)
         self.prefs = prefs
+        self._refresh = refresh
         self.add_css_class("cb-dash-grid")
         self.set_size_request(720, -1)
 
@@ -337,6 +338,26 @@ class SpendView(Gtk.Box):
         self.coverage_tile = StatTile("Coverage")
         for index, tile in enumerate((self.total_tile, self.session_tile, self.tokens_tile, self.coverage_tile)):
             tiles.attach(tile, index % 2, index // 2, 1, 1)
+
+        range_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        range_box.set_margin_top(4)
+        range_label = Gtk.Label(label="Cost history")
+        range_label.add_css_class("cb-caption")
+        range_label.set_xalign(0)
+        range_box.append(range_label)
+        self.time_range = Gtk.ComboBoxText()
+        self._range_days = {
+            "7 days": 7,
+            "30 days": 30,
+            "90 days": 90,
+            "All": None,
+        }
+        for label in self._range_days:
+            self.time_range.append_text(label)
+        self.time_range.connect("changed", self._on_time_range_changed)
+        range_box.append(self.time_range)
+        self._select_time_range(str(self.prefs.get("spendTimeRange") or "30 days"))
+        self.append(range_box)
         self.append(tiles)
 
         self.notice_label = Gtk.Label(label="", xalign=0.0)
@@ -370,6 +391,30 @@ class SpendView(Gtk.Box):
         self.empty_label.add_css_class("cb-empty")
         self.empty_label.set_visible(False)
         self.append(self.empty_label)
+
+    def _select_time_range(self, label: str) -> None:
+        """Select the combo entry for ``label`` (e.g. ``"30 days"``)."""
+        model = self.time_range.get_model()
+        iterator = model.get_iter_first()
+        index = 0
+        while iterator is not None:
+            if model.get_value(iterator, 0) == label:
+                self.time_range.set_active(index)
+                return
+            iterator = model.iter_next(iterator)
+            index += 1
+
+    def _time_range_days(self) -> int | None:
+        """Days of history to show, or ``None`` for all available days."""
+        label = self.time_range.get_active_text() or "30 days"
+        return self._range_days.get(label, 30)
+
+    def _on_time_range_changed(self, combo) -> None:
+        label = combo.get_active_text() or "30 days"
+        if self.prefs is not None:
+            self.prefs.set("spendTimeRange", label)
+        if self._refresh is not None:
+            self._refresh()
 
     # -- currency ---------------------------------------------------------
 
@@ -455,7 +500,7 @@ class SpendView(Gtk.Box):
             )
             for day, value in daily_series(
                 spend.daily,
-                days=30,
+                days=self._time_range_days(),
                 history_coverage_established=spend.history_coverage_established,
             )
         ]

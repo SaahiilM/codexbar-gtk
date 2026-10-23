@@ -129,7 +129,7 @@ def main() -> int:
     render(sessions, os.path.join(outdir, "sessions.png"), 900, 420)
 
     # The spending page.
-    spend = SpendView()
+    spend = SpendView(prefs)
     spend.update(state.spend)
     render(spend, os.path.join(outdir, "spend.png"), 900, 560)
 

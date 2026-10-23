@@ -113,7 +113,7 @@ marked known subtotal until a successful refresh.
 | Provider accounts | Account list per provider via `--all-accounts` |
 | Agent sessions | Sessions page listing the running coding agents |
 | Quota notifications, hooks, plugins | Notifications pane, Hooks pane and Plugins pane backed by the CLI |
-| Preferences panes | General, Providers, Menu Bar, Display, Notifications, Usage & Spend, Hooks, Plugins, Advanced, About |
+| Preferences panes | General, Providers, Menu Bar, Display, Notifications, Usage & Spend, Hooks, Plugins, Acknowledgements, Advanced, About |
 
 Still macOS-only upstream and therefore absent here: iCloud fleet sync, widgets,
 window-focus for sessions, managed account profiles, browser credential import,

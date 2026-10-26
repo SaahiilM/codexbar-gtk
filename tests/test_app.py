@@ -127,6 +127,33 @@ class ProviderTableTests(unittest.TestCase):
         self.assertEqual(provider_meta.display_name("soniox"), "Soniox")
         self.assertEqual(provider_meta.accent_color("soniox"), "#253772")
 
+    def test_upstream_0_81_0_providers_are_registered(self):
+        # abliteration.ai, Chatbox AI (0.81.0) and Trae CN (0.80.0).
+        self.assertEqual(provider_meta.display_name("abliteration"), "abliteration.ai")
+        self.assertEqual(provider_meta.accent_color("abliteration"), "#1B1B1B")
+        self.assertEqual(provider_meta.display_name("chatbox"), "Chatbox AI")
+        self.assertEqual(provider_meta.accent_color("chatbox"), "#228BE6")
+        self.assertEqual(provider_meta.display_name("traecn"), "Trae CN")
+        self.assertEqual(provider_meta.accent_color("traecn"), "#4D7CFE")
+
+
+class CompactWindowLabelTests(unittest.TestCase):
+    """The compact tray labels for automatic selections, mirroring #4743/#4750."""
+
+    def test_session_windows_use_the_window_length(self):
+        self.assertEqual(fmt.compact_window_label("Session", 300), "5h")
+        self.assertEqual(fmt.compact_window_label("Current session", 90), "90m")
+        self.assertEqual(fmt.compact_window_label("Session", None), "S")
+
+    def test_weekly_and_named_windows_use_an_initial(self):
+        self.assertEqual(fmt.compact_window_label("Weekly", None), "W")
+        self.assertEqual(fmt.compact_window_label("Semiweekly", None), "S")
+        self.assertEqual(fmt.compact_window_label("Credits", 43200), "C")
+
+    def test_blank_titles_stay_unlabelled(self):
+        self.assertIsNone(fmt.compact_window_label("", None))
+        self.assertIsNone(fmt.compact_window_label(None, 300))
+
 
 class UsageParsingTests(unittest.TestCase):
     def setUp(self):

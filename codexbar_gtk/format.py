@@ -9,6 +9,27 @@ from .currency import CURRENCIES
 RESET_STYLES = ("countdown", "absolute", "both")
 
 
+def compact_window_label(title: str | None, window_minutes: int | None) -> str | None:
+    """Short label identifying a quota window, mirroring macOS ``windowPrefix``.
+
+    Session windows render as ``5h``/``90m`` from the window length, weekly and
+    other named windows as an uppercased initial (``W``), like the automatic
+    menu-bar tokens use (#4743).
+    """
+    text = (title or "").strip()
+    if not text:
+        return None
+    lower = text.lower()
+    if "session" in lower:
+        minutes = window_minutes
+        if minutes and minutes > 0:
+            if minutes % 60 == 0:
+                return f"{minutes // 60}h"
+            return f"{minutes}m"
+        return "S"
+    return text[:1].upper()
+
+
 def format_percent(value: float | None, decimals: int = 0) -> str:
     if value is None:
         return "—"

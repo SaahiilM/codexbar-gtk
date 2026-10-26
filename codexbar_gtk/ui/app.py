@@ -9,6 +9,7 @@ from gi.repository import Adw, Gdk, Gio, GLib, Gtk
 from .. import APP_ID, currency, display_string
 from ..cli import CodexBarCLI
 from ..controller import Controller, automatic_tray_selection
+from ..format import compact_window_label
 from ..prefs import Preferences
 from ..startup import wait_for_display
 from . import icons
@@ -241,6 +242,16 @@ class CodexBarApp(Adw.Application):
         else:
             highest = max(providers, key=lambda p: p.max_used_percent)
         used_percent = tray_window.used_percent if tray_window is not None else highest.max_used_percent
+        tray_title = highest.display_name
+        if tray_window is not None:
+            # Auto tokens identify the selected window once several exist (#4743):
+            # "Codex 5h 84%" instead of a bare "Codex" that could mean any lane.
+            same_title = [
+                w for w in highest.windows if w.title == tray_window.title and not w.is_placeholder
+            ]
+            if len(same_title) == 1:
+                if label := compact_window_label(tray_window.title, tray_window.window_minutes):
+                    tray_title = f"{highest.display_name} {label}"
         level = min(9, int(used_percent / 10.0))
         accent = highest.accent_color
         levels = icons.write_icons(accent)
@@ -264,16 +275,32 @@ class CodexBarApp(Adw.Application):
         )
         # Hosts read the properties once, when the item appears, so the
         # tooltip has to be complete before the item is published.
-        self.tray.update(icon_name, highest.display_name, body, pixmap)
+        self.tray.update(icon_name, tray_title, body, pixmap)
 
         rows_option = str(self.prefs.get("switcherRowsOption") or "progress")
         entries: list = []
         for provider in providers:
             if rows_option == "progress":
                 used = max((w.used_percent for w in provider.windows), default=0.0)
+                windows_at_used = [w for w in provider.windows if w.used_percent == used]
+                used_window = next(
+                    (w for w in windows_at_used if not w.is_placeholder),
+                    windows_at_used[0] if windows_at_used else None,
+                )
                 filled = int(round(used / 10))
                 bar = "▇" * filled + "░" * (10 - filled)
                 summary = f"{bar} {used:.0f}%"
+                if used_window is not None:
+                    # A bare bar does not reveal whether it tracks the session or
+                    # the weekly lane, so name the window once several exist.
+                    same_title = [
+                        w for w in provider.windows if w.title == used_window.title and not w.is_placeholder
+                    ]
+                    if len(same_title) == 1:
+                        if label := compact_window_label(
+                            used_window.title, used_window.window_minutes
+                        ):
+                            summary = f"{bar} {label} {used:.0f}%"
             else:
                 summary = " · ".join(
                     f"{w.title} {w.used_percent:.0f}%" for w in provider.windows

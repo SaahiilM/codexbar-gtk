@@ -9,6 +9,7 @@ from __future__ import annotations
 # provider id -> (display name, short label, accent color)
 PROVIDERS: dict[str, tuple[str, str, str]] = {
     "abacus": ("Abacus AI", "Abacus", "#2563EB"),
+    "abliteration": ("abliteration.ai", "abliteration.ai", "#1B1B1B"),
     "aerostack": ("Aerostack", "Aerostack", "#0EA5E9"),
     "aiand": ("ai&", "ai&", "#111111"),
     "aixy": ("Aixy", "Aixy", "#0EA5E9"),
@@ -21,6 +22,7 @@ PROVIDERS: dict[str, tuple[str, str, str]] = {
     "azureopenai": ("Azure Open AI", "Azure", "#0078D4"),
     "bedrock": ("AWS Bedrock", "Bedrock", "#FF9900"),
     "bifrost": ("Bifrost", "Bifrost", "#8B5CF6"),
+    "chatbox": ("Chatbox AI", "Chatbox AI", "#228BE6"),
     "chutes": ("Chutes", "Chutes", "#7C3AED"),
     "claude": ("Claude", "Claude", "#D97757"),
     "claudeplatform": ("Claude Platform", "Claude Plat", "#D97757"),
@@ -99,6 +101,7 @@ PROVIDERS: dict[str, tuple[str, str, str]] = {
     "t3chat": ("T3 Chat", "T3", "#EC4899"),
     "tavily": ("Tavily", "Tavily", "#2563EB"),
     "tinyapi": ("TinyApi", "TinyApi", "#64748B"),
+    "traecn": ("Trae CN", "Trae CN", "#4D7CFE"),
     "typesafe": ("TypeSafe", "TypeSafe", "#2563EB"),
     "v0": ("v0", "v0", "#000000"),
     "venice": ("Venice", "Venice", "#111111"),

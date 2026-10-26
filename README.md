@@ -39,7 +39,7 @@ and no packaging of its own. It consumes the JSON the CodexBar CLI already emits
 
 - Linux with a Wayland or X11 session (developed against KDE Plasma 6 / Wayland)
 - Python 3.10+, GTK 4 and libadwaita 1.4+
-- The `codexbar` CLI (0.80 or newer)
+- The `codexbar` CLI (0.81 or newer)
 
 ## Install
 
@@ -125,14 +125,16 @@ the menu-bar layout editor, remote sessions over Tailscale/SSH and the
 The GTK front-end uses the same version pair as the macOS bundle:
 
 * `MARKETING_VERSION` in [`VERSION`](VERSION) is the upstream CodexBar release
-  this client is feature-compatible with (`0.80.0`).
+  this client is feature-compatible with (`0.81.0`).
 * `CURRENT_PROJECT_VERSION` is the build number of the Linux front-end.
 * `codexbar_gtk/version.py` turns the pair into the macOS-style
-  `"0.80.0 (2)"` string shown under Settings → About, in the tray menu and by
+  `"0.81.0 (3)"` string shown under Settings → About, in the tray menu and by
   `./run.sh --about`.
 
 Bump both files together when cutting a release; the test suite fails if they
-drift apart.
+drift apart. [`CHANGELOG.md`](CHANGELOG.md) records, per build, the upstream
+release it tracks and exactly which features and new providers arrived in that
+build (and which upstream features stay CLI-gated).
 
 ## Development
 

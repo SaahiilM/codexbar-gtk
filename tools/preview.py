@@ -95,7 +95,15 @@ def main() -> int:
         render(card, os.path.join(outdir, "card.png"), 420, 260)
 
     # The compact panel.
-    popup = PopupContent(lambda: None, lambda: None, lambda: None, lambda: None, history=history)
+    popup = PopupContent(
+        lambda: None,
+        lambda: None,
+        lambda: None,
+        lambda: None,
+        history=history,
+        on_check_updates=lambda: None,
+        on_restart=lambda: None,
+    )
     popup.update(state, prefs)
     render(popup, os.path.join(outdir, "popup.png"), 400, 520)
 

@@ -47,7 +47,10 @@ class CodexBarApp(Adw.Application):
         self.main_window: MainWindow | None = None
         self.settings_window: SettingsWindow | None = None
         self.popup: PopupWindow | None = None
-        self.tray = TrayIcon(on_activate=self._on_tray_activate)
+        self.tray = TrayIcon(
+            on_activate=self._on_tray_activate,
+            on_context_menu=self._show_tray_context_menu,
+        )
         self._icon_levels: dict[int, str] = {}
         self._pending_refresh = False
         self.extra_args: list[str] = []
@@ -117,7 +120,12 @@ class CodexBarApp(Adw.Application):
 
     def _ensure_main_window(self) -> MainWindow:
         if self.main_window is None:
-            self.main_window = MainWindow(self, self.prefs, self.controller.history)
+            self.main_window = MainWindow(
+                self,
+                self.prefs,
+                self.controller.history,
+                on_open_settings=self._open_settings,
+            )
             self.main_window.connect("close-request", self._on_main_closed)
         return self.main_window
 
@@ -139,6 +147,8 @@ class CodexBarApp(Adw.Application):
                 on_open_settings=self._open_settings,
                 on_quit=self._quit,
                 history=self.controller.history,
+                on_check_updates=self._check_for_updates,
+                on_restart=self._restart,
             )
         return self.popup
 
@@ -173,6 +183,8 @@ class CodexBarApp(Adw.Application):
         return False
 
     def _open_dashboard(self) -> None:
+        if self.popup is not None:
+            self.popup.hide()
         window = self._ensure_main_window()
         # GTK4's present() already raises the window; raise_() was removed.
         window.present()
@@ -193,6 +205,14 @@ class CodexBarApp(Adw.Application):
 
     def _on_tray_activate(self) -> None:
         self._toggle_popup()
+
+    def _show_tray_context_menu(self) -> None:
+        """Show the action panel for SNI hosts that delegate ContextMenu to apps."""
+        popup = self._ensure_popup()
+        if not popup.get_visible():
+            popup.toggle()
+        if self.prefs.get("refreshAllProvidersOnMenuOpen", True):
+            self._refresh_now()
 
     def _quit(self) -> None:
         self.controller.stop()

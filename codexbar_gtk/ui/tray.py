@@ -226,11 +226,18 @@ class _DBusMenu(dbus.service.Object if HAVE_DBUS else object):  # type: ignore[m
 class _StatusNotifierItem(dbus.service.Object if HAVE_DBUS else object):  # type: ignore[misc]
     """Exports one StatusNotifierItem on the session bus."""
 
-    def __init__(self, bus, service_name: str, callback: Callable[[], None]) -> None:
+    def __init__(
+        self,
+        bus,
+        service_name: str,
+        callback: Callable[[], None],
+        context_callback: Callable[[], None],
+    ) -> None:
         super().__init__(bus, "/StatusNotifierItem")
         self._bus = bus
         self._service_name = service_name
         self._callback = callback
+        self._context_callback = context_callback
         empty_pixmaps = dbus.Array([], signature="(iiay)")
         self._properties: dict[str, object] = {
             "Category": "ApplicationStatus",
@@ -242,8 +249,8 @@ class _StatusNotifierItem(dbus.service.Object if HAVE_DBUS else object):  # type
                 ("codexbar-gtk", empty_pixmaps, "CodexBar", ""),
                 signature="sa(iiay)ss",
             ),
-            # The host renders the dbusmenu when the icon is clicked, which is
-            # the closest equivalent of the macOS menu bar dropdown.
+            # Export dbusmenu for hosts that render it themselves. Hosts that
+            # delegate ContextMenu to the item use the app's action panel.
             "ItemIsMenu": False,
             "Menu": dbus.ObjectPath(MENU_PATH),
             "IconThemePath": "",
@@ -287,14 +294,13 @@ class _StatusNotifierItem(dbus.service.Object if HAVE_DBUS else object):  # type
 
     @dbus.service.method(SNI_IFACE, in_signature="ii")
     def SecondaryActivate(self, x: int, y: int) -> None:
-        self._callback()
+        self._context_callback()
 
     @dbus.service.method(SNI_IFACE, in_signature="ii")
     def ContextMenu(self, x: int, y: int) -> None:
-        # When the host supports dbusmenu, it renders the Menu property itself.
-        # Do not toggle the usage popup here: that steals the right-click action
-        # from the host and makes the tray context menu appear broken.
-        return None
+        # Some SNI hosts delegate the context menu to the item instead of
+        # rendering its dbusmenu property. Show our action panel for those hosts.
+        self._context_callback()
 
     @dbus.service.method(SNI_IFACE, in_signature="iis")
     def Scroll(self, delta: int, orientation: str, _unused: int = 0) -> None:
@@ -346,8 +352,13 @@ class _StatusNotifierItem(dbus.service.Object if HAVE_DBUS else object):  # type
 class TrayIcon:
     """Registers a StatusNotifierItem (and its dbusmenu) with the session bus."""
 
-    def __init__(self, on_activate: Callable[[], None]) -> None:
+    def __init__(
+        self,
+        on_activate: Callable[[], None],
+        on_context_menu: Callable[[], None] | None = None,
+    ) -> None:
         self.on_activate = on_activate
+        self.on_context_menu = on_context_menu or on_activate
         self.available = False
         self._item: _StatusNotifierItem | None = None
         self._menu: _DBusMenu | None = None
@@ -370,7 +381,9 @@ class TrayIcon:
                 if os.environ.get("CODEXBAR_TRAY_PID_NAME")
                 else SERVICE_NAME
             )
-            self._item = _StatusNotifierItem(self._bus, service_name, self._on_activate)
+            self._item = _StatusNotifierItem(
+                self._bus, service_name, self._on_activate, self._on_context_menu
+            )
             reply = self._bus.request_name(service_name)
             if int(reply) not in (1, 4):  # PRIMARY_OWNER or ALREADY_OWNER
                 self._item = None
@@ -423,6 +436,12 @@ class TrayIcon:
     def _on_activate(self) -> None:
         try:
             self.on_activate()
+        except Exception:
+            pass
+
+    def _on_context_menu(self) -> None:
+        try:
+            self.on_context_menu()
         except Exception:
             pass
 

@@ -17,8 +17,16 @@ short version tracks, so "which version has what" maps cleanly onto both trees.
 - Tray hover now identifies the client, selected provider and each quota window,
   and includes the actual icon pixmap for hosts that cannot resolve the local
   themed icon name.
-- Right-click no longer opens the usage popup in place of the host-rendered
-  StatusNotifierItem context menu.
+- Right-click and secondary activation now open an action panel with Settings,
+  update check, restart and quit controls on hosts that delegate context menus
+  to the item.
+- Dashboard: Open Dashboard closes the compact tray panel first, and Settings
+  buttons now create/open the Settings window even when it has not been opened
+  yet.
+- Provider initials now render in a theme-contrasting color rather than blending
+  into the brand-colored avatar ring.
+- Usage sparklines use elapsed-time spacing and a fixed 0–100% quota scale, so
+  small changes no longer appear as full-height spikes.
 
 ## 0.81.0 (3) — 2026-10-26
 

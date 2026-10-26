@@ -13,6 +13,7 @@ import cairo  # noqa: F401  (registers the cairo foreign-struct converter)
 from gi.repository import Gtk
 
 from .. import currency
+from ..charts import sparkline_coordinates
 from ..data import ProviderUsage, RateWindow
 from ..format import (
     format_countdown,
@@ -106,8 +107,8 @@ class StatusDot(Gtk.DrawingArea):
         cr.fill()
 
 
-class ProviderAvatar(Gtk.DrawingArea):
-    """A rounded badge with the provider's initial, in its brand colour."""
+class ProviderAvatar(Gtk.Overlay):
+    """A brand-tinted badge with a theme-contrasting provider initial."""
 
     def __init__(self, name: str, color: str, size: int = 34) -> None:
         super().__init__()
@@ -115,12 +116,21 @@ class ProviderAvatar(Gtk.DrawingArea):
         self.set_valign(Gtk.Align.CENTER)
         self.name = name
         self.color = color
-        self.set_draw_func(self._draw)
+        canvas = Gtk.DrawingArea()
+        canvas.set_content_width(size)
+        canvas.set_content_height(size)
+        canvas.set_draw_func(self._draw_background)
+        self.set_child(canvas)
 
-    def _draw(self, area, cr, width: int, height: int) -> None:
+        initial = Gtk.Label(label=(name or "?")[0].upper())
+        initial.add_css_class("cb-provider-avatar-letter")
+        initial.set_halign(Gtk.Align.CENTER)
+        initial.set_valign(Gtk.Align.CENTER)
+        self.add_overlay(initial)
+
+    def _draw_background(self, area, cr, width: int, height: int) -> None:
         if not cairo_support.HAS_CAIRO:
             return
-        radius = min(width, height) * 0.28
         r, g, b, _a = _parse_color(self.color)
         cr.set_source_rgba(r, g, b, 0.22)
         cr.arc(width / 2, height / 2, min(width, height) / 2 - 1, 0, 6.2831853)
@@ -129,16 +139,6 @@ class ProviderAvatar(Gtk.DrawingArea):
         cr.set_line_width(1.4)
         cr.arc(width / 2, height / 2, min(width, height) / 2 - 1, 0, 6.2831853)
         cr.stroke()
-
-        initial = (self.name or "?")[0].upper()
-        cr.set_source_rgba(r, g, b, 1.0)
-        cr.select_font_face("Sans", 0, 1)  # normal slant, bold weight
-        cr.set_font_size(min(width, height) * 0.46)
-        extents = cr.text_extents(initial)
-        x = width / 2 - (extents[2] / 2 + extents[0])
-        y = height / 2 + (extents[3] / 2 + extents[1])
-        cr.move_to(x, y)
-        cr.show_text(initial)
 
 
 class MeterBar(Gtk.DrawingArea):
@@ -251,23 +251,18 @@ class Sparkline(Gtk.DrawingArea):
     def _draw(self, area, cr, width: int, height: int) -> None:
         if not cairo_support.HAS_CAIRO or len(self.points) < 2 or width <= 0:
             return
-        values = [value for _, value in self.points]
-        low = min(values)
-        high = max(values)
-        span = max(high - low, 5.0)
-        count = len(self.points)
-        step = width / max(count - 1, 1)
+        coords = sparkline_coordinates(self.points, width, height)
+        if len(coords) < 2:
+            return
 
         r, g, b, _a = _parse_color(self.color)
 
         # Filled area under the line.
         cr.set_source_rgba(r, g, b, 0.16)
-        cr.move_to(0, height)
-        for index, (_, value) in enumerate(self.points):
-            x = index * step
-            y = height - ((value - low) / span) * (height - 4) - 2
+        cr.move_to(coords[0][0], height)
+        for x, y in coords:
             cr.line_to(x, y)
-        cr.line_to(width, height)
+        cr.line_to(coords[-1][0], height)
         cr.close_path()
         cr.fill()
 
@@ -275,18 +270,13 @@ class Sparkline(Gtk.DrawingArea):
         cr.set_source_rgba(r, g, b, 0.85)
         cr.set_line_width(1.6)
         cr.set_line_join(cairo.LINE_JOIN_ROUND)
-        for index, (_, value) in enumerate(self.points):
-            x = index * step
-            y = height - ((value - low) / span) * (height - 4) - 2
-            if index == 0:
-                cr.move_to(x, y)
-            else:
-                cr.line_to(x, y)
+        cr.move_to(*coords[0])
+        for point in coords[1:]:
+            cr.line_to(*point)
         cr.stroke()
 
         # Current value marker.
-        last_x = (count - 1) * step
-        last_y = height - ((values[-1] - low) / span) * (height - 4) - 2
+        last_x, last_y = coords[-1]
         cr.set_source_rgba(r, g, b, 1.0)
         cr.arc(last_x, last_y, 2.4, 0, 6.2831853)
         cr.fill()

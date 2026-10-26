@@ -24,7 +24,8 @@ and no packaging of its own. It consumes the JSON the CodexBar CLI already emits
 - **A system tray meter** that fills with the provider's accent colour and turns
   amber or red near the limits, plus a host-rendered menu with the live usage of
   every provider. Hover shows the selected provider and its named quota windows;
-  the right-click menu includes refresh, update check, restart, Settings and quit.
+  right-click opens an action panel with refresh, update check, restart, Settings
+  and quit.
 - **A compact panel** anchored above the panel, with one card per provider:
   quota meters per window (session / weekly / …), reset countdowns, pace
   ("12% in reserve"), credits and spend.

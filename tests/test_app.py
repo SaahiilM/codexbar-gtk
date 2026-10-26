@@ -23,6 +23,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from codexbar_gtk import format as fmt
 from codexbar_gtk import providers as provider_meta
 from codexbar_gtk.cli import CLIError, CodexBarCLI
+from codexbar_gtk.charts import sparkline_coordinates
 from codexbar_gtk.controller import (
     AppState,
     Controller,
@@ -981,6 +982,29 @@ class UpdateCheckTests(unittest.TestCase):
     def test_versions_compare_numerically_then_by_build(self):
         self.assertGreater(version_key("0.81.0", 1), version_key("0.80.99", 99))
         self.assertGreater(version_key("0.81.0", 4), version_key("0.81.0", 3))
+
+
+class SparklineGeometryTests(unittest.TestCase):
+    def test_percentage_scale_does_not_amplify_small_usage_changes(self):
+        points = sparkline_coordinates([(0.0, 0.0), (10.0, 10.0)], 100, 20)
+        self.assertEqual(points[0], (0.0, 18.0))
+        self.assertAlmostEqual(points[-1][1], 16.4)
+
+    def test_x_axis_uses_elapsed_time(self):
+        points = sparkline_coordinates(
+            [(0.0, 10.0), (90.0, 20.0), (100.0, 30.0)], 101, 30
+        )
+        self.assertEqual(points[0][0], 0.0)
+        self.assertEqual(points[1][0], 90.0)
+        self.assertEqual(points[-1][0], 100.0)
+
+    def test_unreasonable_values_are_clamped_and_nonfinite_values_ignored(self):
+        points = sparkline_coordinates(
+            [(0.0, -10.0), (1.0, float("nan")), (2.0, 120.0)], 50, 20
+        )
+        self.assertEqual(len(points), 2)
+        self.assertEqual(points[0][1], 18.0)
+        self.assertEqual(points[-1][1], 2.0)
 
 
 class ActivityHeatmapTests(unittest.TestCase):

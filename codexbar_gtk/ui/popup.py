@@ -33,6 +33,8 @@ class PopupContent(Gtk.Box):
         on_open_settings: Callable[[], None],
         on_quit: Callable[[], None],
         history=None,
+        on_check_updates: Callable[[], None] | None = None,
+        on_restart: Callable[[], None] | None = None,
     ) -> None:
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         self.history = history
@@ -88,6 +90,20 @@ class PopupContent(Gtk.Box):
         settings_button.add_css_class("flat")
         settings_button.connect("clicked", lambda _b: on_open_settings())
         footer.append(settings_button)
+
+        if on_check_updates is not None:
+            updates_button = Gtk.Button(label="Updates")
+            updates_button.add_css_class("flat")
+            updates_button.set_tooltip_text("Check for updates")
+            updates_button.connect("clicked", lambda _b: on_check_updates())
+            footer.append(updates_button)
+
+        if on_restart is not None:
+            restart_button = Gtk.Button(label="Restart")
+            restart_button.add_css_class("flat")
+            restart_button.set_tooltip_text("Restart CodexBar")
+            restart_button.connect("clicked", lambda _b: on_restart())
+            footer.append(restart_button)
 
         spacer = Gtk.Box()
         spacer.set_hexpand(True)
@@ -178,6 +194,8 @@ class PopupWindow(Gtk.Window):
         on_open_settings: Callable[[], None],
         on_quit: Callable[[], None],
         history=None,
+        on_check_updates: Callable[[], None] | None = None,
+        on_restart: Callable[[], None] | None = None,
     ) -> None:
         super().__init__()
         self.set_title(PANEL_WINDOW_TITLE)
@@ -189,7 +207,13 @@ class PopupWindow(Gtk.Window):
         self.set_focusable(False)
 
         self.content = PopupContent(
-            on_refresh, on_open_dashboard, on_open_settings, on_quit, history=history
+            on_refresh,
+            on_open_dashboard,
+            on_open_settings,
+            on_quit,
+            history=history,
+            on_check_updates=on_check_updates,
+            on_restart=on_restart,
         )
         self.set_child(self.content)
         self._was_active = False

@@ -52,6 +52,12 @@ CSS = b"""
   font-size: 1rem;
 }
 
+.cb-provider-avatar-letter {
+  color: @window_fg_color;
+  font-weight: 800;
+  font-size: 0.86rem;
+}
+
 .cb-provider-subtitle {
   font-size: 0.76rem;
   color: alpha(currentColor, 0.55);

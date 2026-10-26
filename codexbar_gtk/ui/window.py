@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from typing import Callable
 
 from gi.repository import Adw, Gtk
 
@@ -19,10 +20,17 @@ from .util import iter_children
 class MainWindow(Adw.ApplicationWindow):
     """Usage dashboard, agent sessions and the Usage & Spend view."""
 
-    def __init__(self, application: Adw.Application, prefs, history=None) -> None:
+    def __init__(
+        self,
+        application: Adw.Application,
+        prefs,
+        history=None,
+        on_open_settings: Callable[[], None] | None = None,
+    ) -> None:
         super().__init__(application=application)
         self.prefs = prefs
         self.history = history
+        self._on_open_settings = on_open_settings
         self.set_title("CodexBar")
         self.set_default_size(980, 720)
         self.set_size_request(560, 460)
@@ -180,9 +188,8 @@ class MainWindow(Adw.ApplicationWindow):
         return requested
 
     def show_settings(self) -> None:
-        window = self.get_application().settings_window
-        if window is not None:
-            window.present()
+        if self._on_open_settings is not None:
+            self._on_open_settings()
 
     def toast(self, message: str) -> None:
         self.toasts.add_toast(Adw.Toast.new(message))

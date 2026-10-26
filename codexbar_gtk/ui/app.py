@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import os
+import subprocess
 import sys
+import threading
 
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk
 
@@ -12,6 +15,8 @@ from ..controller import Controller, automatic_tray_selection
 from ..format import compact_window_label
 from ..prefs import Preferences
 from ..startup import wait_for_display
+from ..updates import PROJECT_URL, check_latest_version, version_key
+from ..version import BUILD, SHORT_VERSION
 from . import icons
 from .popup import PopupWindow
 from .settings import SettingsWindow
@@ -36,7 +41,7 @@ class CodexBarApp(Adw.Application):
             timezone=str(self.prefs.get("costUsageBucketTimeZone") or "") or None,
         )
         self.controller = Controller(self.prefs, cli)
-        # Mirrors the macOS bundle: "0.79.0 (1)".
+        # Mirrors the macOS bundle's marketing version and build pair.
         self.set_version(display_string())
 
         self.main_window: MainWindow | None = None
@@ -193,6 +198,80 @@ class CodexBarApp(Adw.Application):
         self.controller.stop()
         self.quit()
 
+    def _restart(self) -> None:
+        """Restart through the installed user unit, or re-exec in dev runs."""
+        if os.environ.get("INVOCATION_ID"):
+            try:
+                subprocess.Popen(
+                    ["systemctl", "--user", "restart", "codexbar-gtk"],
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    start_new_session=True,
+                )
+                return
+            except OSError:
+                pass
+        self.controller.stop()
+        os.execv(sys.executable, [sys.executable, "-m", "codexbar_gtk", *sys.argv[1:]])
+
+    def _check_for_updates(self) -> None:
+        """Compare this build with the public VERSION marker without blocking GTK."""
+        parent = self.get_active_window() or self.main_window or self.settings_window
+        dialog = Adw.MessageDialog.new(parent, "Checking for updates…", "Contacting GitHub…")
+        dialog.add_response("open", "Open project")
+        dialog.add_response("close", "Close")
+        dialog.set_response_appearance("open", Adw.ResponseAppearance.SUGGESTED)
+        dialog.set_default_response("close")
+        dialog.connect("response", self._on_update_check_response)
+        dialog.present()
+
+        def check() -> None:
+            try:
+                latest = check_latest_version()
+                result: tuple[str, tuple[str, int] | str] = ("ok", latest)
+            except Exception as error:
+                result = ("error", str(error))
+            GLib.idle_add(self._finish_update_check, dialog, result)
+
+        threading.Thread(target=check, name="codexbar-update-check", daemon=True).start()
+
+    def _finish_update_check(self, dialog, result: tuple[str, tuple[str, int] | str]) -> bool:
+        status, value = result
+        if status != "ok" or not isinstance(value, tuple):
+            error = value if isinstance(value, str) else "unexpected update-check response"
+            dialog.set_heading("Couldn’t check for updates")
+            dialog.set_body(
+                f"The update check failed: {error}\n\n"
+                "You can still open the project page and check manually."
+            )
+        else:
+            latest_version, latest_build = value
+            current_key = version_key(SHORT_VERSION, BUILD)
+            latest_key = version_key(latest_version, latest_build)
+            current_display = display_string()
+            latest_display = f"{latest_version} ({latest_build})"
+            if latest_key > current_key:
+                dialog.set_heading(f"Update available: {latest_display}")
+                dialog.set_body(
+                    f"You have {current_display}. This client is distributed as source; "
+                    "pull the latest changes in your checkout, run "
+                    "./scripts/install.sh --no-autostart, then restart the app."
+                )
+            elif latest_key < current_key:
+                dialog.set_heading("This build is newer than the public version")
+                dialog.set_body(f"Installed: {current_display}\nPublic main: {latest_display}")
+            else:
+                dialog.set_heading("You’re up to date")
+                dialog.set_body(f"CodexBar GTK {current_display} is the latest public build.")
+        return False
+
+    @staticmethod
+    def _on_update_check_response(dialog, response: str) -> None:
+        if response == "open":
+            Gtk.show_uri(dialog, PROJECT_URL, Gdk.CURRENT_TIME)
+        dialog.close()
+
     # -- state ------------------------------------------------------------
 
     def _on_state(self, state) -> None:
@@ -214,13 +293,19 @@ class CodexBarApp(Adw.Application):
             return
         providers = [p for p in state.providers if not p.has_error]
         if not providers:
-            self.tray.update("codexbar-gtk", "CodexBar", "No provider data")
+            self.tray.update(
+                "codexbar-gtk",
+                "CodexBar GTK",
+                "Provider data unavailable\nUse Refresh to check again.",
+            )
             self.tray.set_menu(
                 [
-                    (None, None),
                     ("Show usage panel", self._toggle_popup),
                     ("Refresh", self._refresh_now),
                     ("Open Dashboard", self._open_dashboard),
+                    (None, None),
+                    ("Check for updates…", self._check_for_updates),
+                    ("Restart CodexBar", self._restart),
                     ("Settings…", self._open_settings),
                     (None, None),
                     ("Quit CodexBar", self._quit),
@@ -267,12 +352,26 @@ class CodexBarApp(Adw.Application):
             icon_name = ""
         else:
             pixmap = icons.render_meter_pixmap(level, accent)
-        body = "\n".join(
-            f"{p.display_name}: " + ", ".join(
-                f"{w.title} {w.used_percent:.0f}%" for w in p.windows
-            )
-            for p in providers[:4]
-        )
+        tooltip_rows = [f"Provider: {highest.display_name}"]
+        for provider in providers[:4]:
+            if provider.windows:
+                values = " · ".join(
+                    f"{window.title}: {window.used_percent:.0f}%"
+                    if window.usage_known
+                    else f"{window.title}: unavailable"
+                    for window in provider.windows
+                )
+                tooltip_rows.append(
+                    values if provider is highest else f"{provider.display_name}: {values}"
+                )
+            elif provider is highest:
+                tooltip_rows.append("Usage unavailable")
+            else:
+                tooltip_rows.append(f"{provider.display_name}: unavailable")
+        if len(providers) > 4:
+            tooltip_rows.append(f"+ {len(providers) - 4} more providers")
+        body = "\n".join(tooltip_rows)
+        tray_title = f"CodexBar GTK · {tray_title}"
         # Hosts read the properties once, when the item appears, so the
         # tooltip has to be complete before the item is published.
         self.tray.update(icon_name, tray_title, body, pixmap)
@@ -311,6 +410,9 @@ class CodexBarApp(Adw.Application):
             ("Show usage panel", self._toggle_popup),
             ("Refresh", self._refresh_now),
             ("Open Dashboard", self._open_dashboard),
+            (None, None),
+            ("Check for updates…", self._check_for_updates),
+            ("Restart CodexBar", self._restart),
             ("Settings…", self._open_settings),
             (f"About CodexBar GTK {display_string()}", self._open_about),
             (None, None),

@@ -23,7 +23,8 @@ and no packaging of its own. It consumes the JSON the CodexBar CLI already emits
 
 - **A system tray meter** that fills with the provider's accent colour and turns
   amber or red near the limits, plus a host-rendered menu with the live usage of
-  every provider.
+  every provider. Hover shows the selected provider and its named quota windows;
+  the right-click menu includes refresh, update check, restart, Settings and quit.
 - **A compact panel** anchored above the panel, with one card per provider:
   quota meters per window (session / weekly / …), reset countdowns, pace
   ("12% in reserve"), credits and spend.
@@ -39,7 +40,7 @@ and no packaging of its own. It consumes the JSON the CodexBar CLI already emits
 
 - Linux with a Wayland or X11 session (developed against KDE Plasma 6 / Wayland)
 - Python 3.10+, GTK 4 and libadwaita 1.4+
-- The `codexbar` CLI (0.81 or newer)
+- The `codexbar` CLI (0.79 or newer; newer provider data is optional)
 
 ## Install
 
@@ -85,16 +86,18 @@ Point the app at a different binary with `CODEXBAR_CLI=/path/to/codexbar` or in
 Settings → Advanced → CLI path.
 The provider catalog, fetching, and credential handling follow the installed
 CLI; new providers appear here when that CLI version supports them.
-The GTK client runs against 0.79.0 while 0.79.1 is unreleased: newer providers
-and quota fields are optional. Missing cost estimates display as unavailable,
-not zero; if a cost refresh fails, the previous totals remain visible as a
-marked known subtotal until a successful refresh.
+The GTK client supports older CLI releases; newer providers and quota fields
+are optional. Missing cost estimates display as unavailable, not zero; if a
+cost refresh fails, the previous totals remain visible as a marked known
+subtotal until a successful refresh. The tray's update check fetches only the
+public client `VERSION` marker from GitHub; it does not install or download code.
 
 ## Feature parity with the macOS app
 
 | Upstream area | Here |
 | --- | --- |
 | Menu bar item, merged icons, icon styles | StatusNotifierItem with a meter or an icon+percentage pixmap |
+| Tray hover and context menu | Explicit client/provider/window tooltip; right-click actions for refresh, update check, restart, Settings and quit |
 | Automatic quota lane | Tray option "the quota running out soonest", ranked like the macOS Auto lane: a fully depleted quota first, then the smallest forecast ETA |
 | Provider cards, meters, reset countdowns | One card per provider with a meter per window, countdown chip and pace chip |
 | Pace forecast | "12% in reserve" / "in deficit" chips, colour coded |

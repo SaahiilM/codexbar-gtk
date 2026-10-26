@@ -4,6 +4,22 @@ Client-side changelog for the CodexBar GTK front-end. Each entry keys a build
 number (`CURRENT_PROJECT_VERSION`) to the upstream macOS CodexBar release its
 short version tracks, so "which version has what" maps cleanly onto both trees.
 
+## Unreleased
+
+### Added
+
+- Tray context menu: add **Check for updates**, **Restart**, **Settings** and
+  **Quit** actions; the update check compares the public client version marker
+  and never downloads or installs code.
+
+### Fixed
+
+- Tray hover now identifies the client, selected provider and each quota window,
+  and includes the actual icon pixmap for hosts that cannot resolve the local
+  themed icon name.
+- Right-click no longer opens the usage popup in place of the host-rendered
+  StatusNotifierItem context menu.
+
 ## 0.81.0 (3) — 2026-10-26
 
 Tracks upstream CodexBar 0.81.0 (released 2026-10-24, provider total 110).

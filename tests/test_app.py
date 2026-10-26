@@ -38,6 +38,7 @@ from codexbar_gtk.data import (
 )
 from codexbar_gtk.history import HistoryStore, Sample
 from codexbar_gtk.prefs import Preferences
+from codexbar_gtk.updates import parse_version_file, version_key
 
 FIXTURES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures")
 
@@ -960,6 +961,26 @@ class VersionMetadataTests(unittest.TestCase):
             )
         self.assertEqual(values["MARKETING_VERSION"], SHORT_VERSION)
         self.assertEqual(int(values["CURRENT_PROJECT_VERSION"]), BUILD)
+
+
+class UpdateCheckTests(unittest.TestCase):
+    def test_parse_public_version_marker(self):
+        self.assertEqual(
+            parse_version_file(
+                "MARKETING_VERSION=0.82.0\nCURRENT_PROJECT_VERSION=4\n"
+            ),
+            ("0.82.0", 4),
+        )
+
+    def test_rejects_incomplete_or_invalid_version_markers(self):
+        with self.assertRaises(ValueError):
+            parse_version_file("MARKETING_VERSION=0.82.0\n")
+        with self.assertRaises(ValueError):
+            parse_version_file("MARKETING_VERSION=next\nCURRENT_PROJECT_VERSION=4\n")
+
+    def test_versions_compare_numerically_then_by_build(self):
+        self.assertGreater(version_key("0.81.0", 1), version_key("0.80.99", 99))
+        self.assertGreater(version_key("0.81.0", 4), version_key("0.81.0", 3))
 
 
 class ActivityHeatmapTests(unittest.TestCase):

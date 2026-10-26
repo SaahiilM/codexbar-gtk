@@ -291,9 +291,10 @@ class _StatusNotifierItem(dbus.service.Object if HAVE_DBUS else object):  # type
 
     @dbus.service.method(SNI_IFACE, in_signature="ii")
     def ContextMenu(self, x: int, y: int) -> None:
-        # Some hosts do not render the dbusmenu themselves; in that case show
-        # the compact panel so a right click is never a dead end.
-        self._callback()
+        # When the host supports dbusmenu, it renders the Menu property itself.
+        # Do not toggle the usage popup here: that steals the right-click action
+        # from the host and makes the tray context menu appear broken.
+        return None
 
     @dbus.service.method(SNI_IFACE, in_signature="iis")
     def Scroll(self, delta: int, orientation: str, _unused: int = 0) -> None:
@@ -483,10 +484,27 @@ class TrayIcon:
     ) -> None:
         if self._item is None:
             return
+        tooltip_pixmaps = dbus.Array([], signature="(iiay)")
+        tooltip_icon_name = icon_name
+        if pixmap is not None:
+            width, height, data = pixmap
+            tooltip_pixmaps = dbus.Array(
+                [
+                    dbus.Struct(
+                        (dbus.Int32(width), dbus.Int32(height), dbus.ByteArray(data)),
+                        signature="iiay",
+                    )
+                ],
+                signature="(iiay)",
+            )
+            # The custom meter/percentage icon is not installed in icon themes;
+            # include its pixmap in the tooltip instead of advertising a name
+            # that tray hosts cannot resolve.
+            tooltip_icon_name = ""
         tooltip = dbus.Struct(
             (
-                icon_name,
-                dbus.Array([], signature="(iiay)"),
+                tooltip_icon_name,
+                tooltip_pixmaps,
                 tooltip_title,
                 tooltip_body,
             ),

@@ -21,4 +21,4 @@ cargo clippy --manifest-path rust-core/Cargo.toml --all-targets --all-features -
 
 There is no separate Rust-core release version. Cargo's required package version is internal crate metadata and is not bumped per PR. Each merged project PR increments the GTK build number in the root `VERSION` file and `codexbar_gtk/version.py`; keep both in sync and record the build in the root `CHANGELOG.md`. `MARKETING_VERSION` continues to track the upstream CodexBar release and only changes when the supported upstream version changes.
 
-Current parallel ports: `codexbar_gtk/format.py` → `src/formatting.rs` and `codexbar_gtk/providers.py` → `src/providers.rs`. No Python callers have been switched yet.
+Current parallel ports: `codexbar_gtk/format.py` → `src/formatting.rs`, `codexbar_gtk/providers.py` → `src/providers.rs`, and `codexbar_gtk/activity.py` → `src/activity.rs`. No Python callers have been switched yet.

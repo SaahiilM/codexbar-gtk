@@ -43,6 +43,18 @@ short version tracks, so "which version has what" maps cleanly onto both trees.
   curated Codex mark), with accent-tinted monochrome icons and initials only as
   fallback. The full dashboard keeps its existing avatar treatment.
 
+## 0.81.0 (6) — 2026-10-28
+
+Tracks upstream CodexBar 0.81.0. This build continues the incremental Rust
+logic migration while preserving the Python implementation as the production
+path.
+
+### Added
+
+- Port the activity heatmap's level bucketing, weekly/cumulative aggregation,
+  daily spend series, and Sunday-aligned window helpers from
+  `codexbar_gtk/activity.py` into Rust; Python callers are unchanged.
+
 ## 0.81.0 (5) — 2026-10-28
 
 Tracks upstream CodexBar 0.81.0. This build continues the incremental Rust

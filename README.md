@@ -15,9 +15,9 @@ and no packaging of its own. It consumes the JSON the CodexBar CLI already emits
 
 ![The usage dashboard](docs/dashboard.png)
 
-| The compact panel | The spending page |
+| Compact tray panel with provider branding | The spending page |
 | --- | --- |
-| ![The compact panel](docs/panel.png) | ![The spending page](docs/spending.png) |
+| ![Compact tray panel showing the Codex logo](docs/panel.png) | ![The spending page](docs/spending.png) |
 
 ## What it does
 

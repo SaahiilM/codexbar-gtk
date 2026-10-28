@@ -1,0 +1,15 @@
+[package]
+name = "codexbar-core"
+version = "0.1.0"
+edition = "2021"
+description = "Rust business-logic core for codexbar-gtk"
+
+[lib]
+name = "codexbar_core"
+path = "src/lib.rs"
+
+[dependencies]
+chrono = { version = "0.4", features = ["clock"] }
+
+[dev-dependencies]
+

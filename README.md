@@ -13,7 +13,7 @@ and no packaging of its own. It consumes the JSON the CodexBar CLI already emits
 [COSMIC applet](https://github.com/andrew-verde/codexbar-cosmic-applet), the
 [Plasma widgets](https://github.com/psimaker/codexbar-plasmoid), …).
 
-![The usage dashboard](docs/dashboard.png)
+![CodexBar dashboard with provider usage and summary cards](docs/dashboard.png)
 
 | Compact tray panel with provider branding | The spending page |
 | --- | --- |

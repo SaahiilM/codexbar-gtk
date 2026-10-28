@@ -19,6 +19,6 @@ cargo clippy --manifest-path rust-core/Cargo.toml --all-targets --all-features -
 
 ## Versioning
 
-The Rust core has an independent SemVer version in `Cargo.toml`; it does not change the GTK application's `VERSION`. Every migration PR that merges must bump the Rust package version and update `Cargo.lock` plus `CHANGELOG.md`. While below 1.0, additive module ports use a minor bump; fixes use a patch bump. Breaking Rust API changes use a major bump once the crate reaches 1.0. The initial migration release in this PR is `0.1.0`.
+There is no separate Rust-core release version. Cargo's required package version is internal crate metadata and is not bumped per PR. Each merged project PR increments the GTK build number in the root `VERSION` file and `codexbar_gtk/version.py`; keep both in sync and record the build in the root `CHANGELOG.md`. `MARKETING_VERSION` continues to track the upstream CodexBar release and only changes when the supported upstream version changes.
 
-Current parity port: `codexbar_gtk/format.py` → `src/formatting.rs`. No Python callers have been switched yet.
+Current parallel port: `codexbar_gtk/format.py` → `src/formatting.rs`. No Python callers have been switched yet.

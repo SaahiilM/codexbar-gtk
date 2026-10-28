@@ -134,13 +134,13 @@ The GTK front-end uses the same version pair as the macOS bundle:
   this client is feature-compatible with (`0.81.0`).
 * `CURRENT_PROJECT_VERSION` is the build number of the Linux front-end.
 * `codexbar_gtk/version.py` turns the pair into the macOS-style
-  `"0.81.0 (3)"` string shown under Settings → About, in the tray menu and by
+  `"0.81.0 (4)"` string shown under Settings → About, in the tray menu and by
   `./run.sh --about`.
 
-Bump both files together when cutting a release; the test suite fails if they
-drift apart. [`CHANGELOG.md`](CHANGELOG.md) records, per build, the upstream
-release it tracks and exactly which features and new providers arrived in that
-build (and which upstream features stay CLI-gated).
+Increment `CURRENT_PROJECT_VERSION` for each merged PR and keep it in sync with
+`BUILD` in `codexbar_gtk/version.py`; the test suite fails if the two drift.
+`MARKETING_VERSION` only changes when the supported upstream CodexBar release
+changes. [`CHANGELOG.md`](CHANGELOG.md) records the changes in each build.
 
 ## Development
 

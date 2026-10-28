@@ -27,6 +27,21 @@ short version tracks, so "which version has what" maps cleanly onto both trees.
   into the brand-colored avatar ring.
 - Usage sparklines use elapsed-time spacing and a fixed 0–100% quota scale, so
   small changes no longer appear as full-height spikes.
+- Manual refresh and CLI-backed Settings loading/actions now run outside GTK's
+  main loop; CLI details appear when background loading completes.
+- Session quota notifications now fire once when a primary quota becomes
+  exhausted, and reset when it recovers. Unsupported status-check and spend
+  comparison controls were removed rather than left as no-op controls; their
+  preference keys remain available for portable settings round-trips.
+- Tray visibility applies immediately, and the startup popover preference is
+  honored after the first refresh.
+- Terminal login commands now pass the executable and arguments separately,
+  including the GNOME Terminal command separator.
+- Tray panel uses a compact quota-card layout: less secondary detail, no tiny
+  trend plots, condensed reset badges, and secondary actions grouped under More.
+- Compact tray cards now use CodexBar's bundled provider logos (including the
+  curated Codex mark), with accent-tinted monochrome icons and initials only as
+  fallback. The full dashboard keeps its existing avatar treatment.
 
 ## 0.81.0 (3) — 2026-10-26
 

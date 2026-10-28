@@ -9,8 +9,8 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-import cairo  # noqa: F401  (registers the cairo foreign-struct converter)
-from gi.repository import Gtk
+import cairo  # registers the cairo foreign-struct converter
+from gi.repository import GdkPixbuf, GLib, Gtk
 
 from .. import currency
 from ..charts import sparkline_coordinates
@@ -29,7 +29,8 @@ from ..format import (
     workday_progress_percent,
 )
 from ..pace import format_monthly_cost_target, format_window_target
-from . import cairo_support  # noqa: F401  (enables cairo drawing)
+from ..provider_icons import provider_icon_path
+from . import cairo_support  # enables cairo drawing
 from .util import iter_children
 
 
@@ -108,9 +109,15 @@ class StatusDot(Gtk.DrawingArea):
 
 
 class ProviderAvatar(Gtk.Overlay):
-    """A brand-tinted badge with a theme-contrasting provider initial."""
+    """A brand-tinted badge with upstream provider artwork or an initial fallback."""
 
-    def __init__(self, name: str, color: str, size: int = 34) -> None:
+    def __init__(
+        self,
+        name: str,
+        color: str,
+        provider_id: str | None = None,
+        size: int = 34,
+    ) -> None:
         super().__init__()
         self.set_size_request(size, size)
         self.set_valign(Gtk.Align.CENTER)
@@ -127,6 +134,57 @@ class ProviderAvatar(Gtk.Overlay):
         initial.set_halign(Gtk.Align.CENTER)
         initial.set_valign(Gtk.Align.CENTER)
         self.add_overlay(initial)
+
+        logo_path = provider_icon_path(provider_id or "")
+        if logo_path is not None:
+            try:
+                icon_size = max(20, size - 4)
+                pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_size(
+                    str(logo_path), icon_size, icon_size
+                )
+                if logo_path.name.startswith("ProviderIcon-"):
+                    pixbuf = self._tint_logo(pixbuf, color)
+                logo = Gtk.Image.new_from_pixbuf(pixbuf)
+                logo.set_size_request(icon_size, icon_size)
+                logo.set_halign(Gtk.Align.CENTER)
+                logo.set_valign(Gtk.Align.CENTER)
+                self.add_overlay(logo)
+                initial.set_visible(False)
+            except (GLib.Error, TypeError, ValueError):
+                # Missing or unsupported artwork must not hide the usable fallback.
+                pass
+
+    @staticmethod
+    def _tint_logo(pixbuf: GdkPixbuf.Pixbuf, color: str) -> GdkPixbuf.Pixbuf:
+        """Render an upstream monochrome logo as a single-color alpha mask."""
+        if not pixbuf.get_has_alpha():
+            pixbuf = pixbuf.add_alpha(False, 0, 0, 0)
+
+        red, green, blue, _alpha = _parse_color(color)
+        red, green, blue = (round(channel * 255) for channel in (red, green, blue))
+        width = pixbuf.get_width()
+        height = pixbuf.get_height()
+        rowstride = pixbuf.get_rowstride()
+        channels = pixbuf.get_n_channels()
+        source = pixbuf.get_pixels()
+        tinted = bytearray(source)
+        for y in range(height):
+            row = y * rowstride
+            for x in range(width):
+                offset = row + x * channels
+                tinted[offset] = red
+                tinted[offset + 1] = green
+                tinted[offset + 2] = blue
+
+        return GdkPixbuf.Pixbuf.new_from_bytes(
+            GLib.Bytes.new(bytes(tinted)),
+            pixbuf.get_colorspace(),
+            True,
+            pixbuf.get_bits_per_sample(),
+            width,
+            height,
+            rowstride,
+        )
 
     def _draw_background(self, area, cr, width: int, height: int) -> None:
         if not cairo_support.HAS_CAIRO:
@@ -360,12 +418,14 @@ class MeterRow(Gtk.Box):
         accent_color: str = "#6366F1",
         workday_ticks: list[float] | None = None,
         tick_appearance: str = "subtle",
+        compact: bool = False,
     ) -> None:
-        super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=5 if compact else 6)
         self.window = window
         self.show_used = show_used
         self.reset_style = reset_style
         self.show_pace = show_pace
+        self.compact = compact
         self.thresholds = thresholds or []
         self.accent_color = accent_color
         self.workday_ticks = workday_ticks or []
@@ -396,6 +456,7 @@ class MeterRow(Gtk.Box):
         self.trend_label.add_css_class("cb-trend-label")
         self.trend_label.set_valign(Gtk.Align.CENTER)
         trend_row.append(self.trend_label)
+        trend_row.set_visible(not compact)
         self.append(trend_row)
 
         meta = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
@@ -497,11 +558,22 @@ class ProviderCard(Gtk.Box):
         self.show_identity = show_identity
         self.compact = compact
         self.add_css_class("cb-card")
+        if compact:
+            self.add_css_class("cb-card-compact")
 
-        self.header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        self.header = Gtk.Box(
+            orientation=Gtk.Orientation.HORIZONTAL, spacing=8 if compact else 12
+        )
         self.add_css_class("cb-card-header")
 
-        self.avatar = ProviderAvatar(provider.display_name, provider.accent_color)
+        self.avatar = ProviderAvatar(
+            provider.display_name,
+            provider.accent_color,
+            # Keep the full dashboard's established avatar treatment unchanged;
+            # provider artwork is part of the compact tray card refinement.
+            provider_id=provider.provider_id if compact else None,
+            size=30 if compact else 34,
+        )
         self.header.append(self.avatar)
 
         title_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=1)
@@ -533,8 +605,10 @@ class ProviderCard(Gtk.Box):
         self.append(self.header)
 
         self.meters: list[MeterRow] = []
-        self.meters_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
-        self.meters_box.set_margin_top(14)
+        self.meters_box = Gtk.Box(
+            orientation=Gtk.Orientation.VERTICAL, spacing=11 if compact else 14
+        )
+        self.meters_box.set_margin_top(10 if compact else 14)
         self.append(self.meters_box)
 
         # The projection chip lives in its own row so the details rebuild
@@ -577,6 +651,7 @@ class ProviderCard(Gtk.Box):
                 accent_color=self.provider.accent_color,
                 workday_ticks=self._workday_ticks_for(window),
                 tick_appearance=self.tick_appearance,
+                compact=self.compact,
             )
             self.meters.append(row)
             self.meters_box.append(row)
@@ -608,9 +683,13 @@ class ProviderCard(Gtk.Box):
         if not subtitle_parts and provider.source:
             subtitle_parts.append(provider.source)
         updated = format_updated(provider.updated_at, now)
-        if updated:
+        if updated and not self.compact:
             subtitle_parts.append(f"updated {updated}")
         self.subtitle_label.set_text(" · ".join(subtitle_parts))
+        tooltip_parts = list(subtitle_parts)
+        if updated and self.compact:
+            tooltip_parts.append(f"updated {updated}")
+        self.subtitle_label.set_tooltip_text(" · ".join(tooltip_parts) or None)
 
         badge = ""
         badge_help = ""
@@ -633,13 +712,15 @@ class ProviderCard(Gtk.Box):
             badge = f"{provider.reset_credits_available} resets"
         self.badge_label.set_text(badge)
         self.badge_label.set_tooltip_text(badge_help or None)
+        if self.compact and provider.reset_credits:
+            self.badge_label.set_text(f"{len(provider.reset_credits)} resets")
         self.badge_label.set_visible(bool(badge))
 
         accounts = provider.accounts
         if len(accounts) > 1:
             self.account_label.set_text(f"{len(accounts)} accounts")
             self.account_label.set_tooltip_text("\n".join(accounts))
-            self.account_label.set_visible(True)
+            self.account_label.set_visible(not self.compact)
         else:
             self.account_label.set_visible(False)
 
@@ -681,6 +762,9 @@ class ProviderCard(Gtk.Box):
         for child in list(iter_children(self.charts_box)):
             self.charts_box.remove(child)
 
+        if self.compact:
+            return
+
         for section in self.provider.details:
             if section.chart is None or not section.chart.points:
                 continue
@@ -699,7 +783,7 @@ class ProviderCard(Gtk.Box):
 
     def _update_burndown(self, now: datetime) -> None:
         """Project the usage at reset time from the recorded history."""
-        if not self.burndown or self.history is None:
+        if self.compact or not self.burndown or self.history is None:
             self.burndown_chip.set_visible(False)
             return
         window = self.provider.windows[0] if self.provider.windows else None
@@ -764,12 +848,13 @@ class ProviderCard(Gtk.Box):
                 cost, self.preferred_currency, now
             )
 
-        for section in provider.details[:3]:
-            for row in section.rows[:4]:
-                value = row.value
-                if row.secondary_value:
-                    value = f"{value} · {row.secondary_value}"
-                rows.append((row.label, value, ""))
+        if not self.compact:
+            for section in provider.details[:3]:
+                for row in section.rows[:4]:
+                    value = row.value
+                    if row.secondary_value:
+                        value = f"{value} · {row.secondary_value}"
+                    rows.append((row.label, value, ""))
 
         if not rows:
             return
@@ -792,14 +877,14 @@ class ProviderCard(Gtk.Box):
             value_label.set_halign(Gtk.Align.END)
             value_label.set_ellipsize(3)
             row.append(value_label)
-            if hint:
+            if hint and not self.compact:
                 hint_label = Gtk.Label(label=hint)
                 hint_label.add_css_class("cb-kv-key")
                 row.append(hint_label)
             grid.append(row)
         self.extra_box.append(grid)
 
-        if cost_target:
+        if cost_target and not self.compact:
             target_label = Gtk.Label(label=cost_target)
             target_label.add_css_class("cb-daily-target")
             target_label.set_xalign(0)
@@ -935,7 +1020,7 @@ class MiniBarChart(Gtk.DrawingArea):
         cr.set_font_size(10.0)
 
         # Show dates sparsely so they never collide.
-        every = max(1, int(round(44.0 / pitch))) if pitch > 0 else 1
+        every = max(1, round(44.0 / pitch)) if pitch > 0 else 1
 
         for index, (label, value) in enumerate(self.entries):
             centre = pitch * index + pitch / 2

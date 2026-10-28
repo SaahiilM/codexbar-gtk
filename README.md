@@ -28,7 +28,8 @@ and no packaging of its own. It consumes the JSON the CodexBar CLI already emits
   and quit.
 - **A compact panel** anchored above the panel, with one card per provider:
   quota meters per window (session / weekly / …), reset countdowns, pace
-  ("12% in reserve"), credits and spend.
+  ("12% in reserve"), credits and spend. Compact cards use the upstream
+  CodexBar artwork, with a readable initial fallback when a logo is unavailable.
 - **A dashboard** with a summary strip, provider cards, an agent-sessions page and
   a Usage & Spend page with a daily chart and a per-provider breakdown.
 - **A preferences window** covering the refresh interval, providers, display

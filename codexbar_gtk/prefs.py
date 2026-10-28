@@ -61,11 +61,14 @@ DEFAULTS: dict[str, Any] = {
     "quotaWarningNotificationsEnabled": True,
     "limitResetNotificationsEnabled": True,
     "predictivePaceNotificationsEnabled": True,
+    # Kept for portable preference round-trips; the GTK UI does not expose
+    # status polling until the CLI provides a supported control for it.
     "statusChecksEnabled": True,
     # Spend
     "costUsageEnabled": True,
     "costSummaryDisplayStyle": "both",
     "costReportingPeriod": "month-to-date",
+    # Preserved for compatibility with the shared preferences document.
     "costComparisonPeriodsEnabled": True,
     "spendTimeRange": "30d",
     # Advanced

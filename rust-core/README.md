@@ -17,4 +17,8 @@ cargo clippy --manifest-path rust-core/Cargo.toml --all-targets --all-features -
 3. Integrate one service/caller at a time in a follow-up change, with fallback behavior until the Rust path is verified.
 4. Remove Python logic only after all callers have migrated and regression tests cover the Rust path.
 
+## Versioning
+
+The Rust core has an independent SemVer version in `Cargo.toml`; it does not change the GTK application's `VERSION`. Every migration PR that merges must bump the Rust package version and update `Cargo.lock` plus `CHANGELOG.md`. While below 1.0, additive module ports use a minor bump; fixes use a patch bump. Breaking Rust API changes use a major bump once the crate reaches 1.0. The initial migration release in this PR is `0.1.0`.
+
 Current parity port: `codexbar_gtk/format.py` → `src/formatting.rs`. No Python callers have been switched yet.

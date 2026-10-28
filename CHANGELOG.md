@@ -43,6 +43,17 @@ short version tracks, so "which version has what" maps cleanly onto both trees.
   curated Codex mark), with accent-tinted monochrome icons and initials only as
   fallback. The full dashboard keeps its existing avatar treatment.
 
+## 0.81.0 (8) — 2026-10-28
+
+Tracks upstream CodexBar 0.81.0. This build continues the incremental Rust
+logic migration while preserving the Python implementation as the production
+path.
+
+### Added
+
+- Port the quota history JSON-lines store, caching, querying, and retention
+  pruning from `codexbar_gtk/history.py` into Rust; Python callers are unchanged.
+
 ## 0.81.0 (7) — 2026-10-28
 
 Tracks upstream CodexBar 0.81.0. This build continues the incremental Rust

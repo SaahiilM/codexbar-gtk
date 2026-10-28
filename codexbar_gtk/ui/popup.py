@@ -81,6 +81,7 @@ class PopupContent(Gtk.Box):
         self.append(self.empty_label)
 
         footer = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        footer.add_css_class("cb-popup-footer")
         footer.set_margin_top(6)
         footer.set_margin_bottom(10)
         footer.set_margin_start(12)
@@ -91,23 +92,33 @@ class PopupContent(Gtk.Box):
         settings_button.connect("clicked", lambda _b: on_open_settings())
         footer.append(settings_button)
 
-        if on_check_updates is not None:
-            updates_button = Gtk.Button(label="Updates")
-            updates_button.add_css_class("flat")
-            updates_button.set_tooltip_text("Check for updates")
-            updates_button.connect("clicked", lambda _b: on_check_updates())
-            footer.append(updates_button)
-
-        if on_restart is not None:
-            restart_button = Gtk.Button(label="Restart")
-            restart_button.add_css_class("flat")
-            restart_button.set_tooltip_text("Restart CodexBar")
-            restart_button.connect("clicked", lambda _b: on_restart())
-            footer.append(restart_button)
-
         spacer = Gtk.Box()
         spacer.set_hexpand(True)
         footer.append(spacer)
+
+        if on_check_updates is not None or on_restart is not None:
+            more_button = Gtk.MenuButton(label="More")
+            more_button.add_css_class("flat")
+            more_button.set_tooltip_text("More actions")
+            actions = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+            actions.set_margin_top(6)
+            actions.set_margin_bottom(6)
+            actions.set_margin_start(6)
+            actions.set_margin_end(6)
+            if on_check_updates is not None:
+                updates_button = Gtk.Button(label="Check for updates")
+                updates_button.add_css_class("flat")
+                updates_button.connect("clicked", lambda _b: on_check_updates())
+                actions.append(updates_button)
+            if on_restart is not None:
+                restart_button = Gtk.Button(label="Restart CodexBar")
+                restart_button.add_css_class("flat")
+                restart_button.connect("clicked", lambda _b: on_restart())
+                actions.append(restart_button)
+            popover = Gtk.Popover()
+            popover.set_child(actions)
+            more_button.set_popover(popover)
+            footer.append(more_button)
 
         quit_button = Gtk.Button(label="Quit")
         quit_button.add_css_class("flat")
@@ -145,6 +156,7 @@ class PopupContent(Gtk.Box):
                     thresholds=thresholds,
                     show_identity=show_identity,
                     history=self.history,
+                    compact=True,
                     work_days=work_days,
                     tick_appearance=tick_appearance,
                     burndown=burndown,
@@ -201,7 +213,7 @@ class PopupWindow(Gtk.Window):
         self.set_title(PANEL_WINDOW_TITLE)
         self.set_decorated(False)
         self.set_resizable(False)
-        self.set_default_size(400, 520)
+        self.set_default_size(420, 520)
         self.set_hide_on_close(False)
         # The panel should not steal focus, the way the macOS popover behaves.
         self.set_focusable(False)
@@ -252,7 +264,7 @@ class PopupWindow(Gtk.Window):
                 geometry = monitor.get_geometry()
                 width, height = self.get_width(), self.get_height()
                 if width <= 1:
-                    width = 400
+                    width = 420
                 if height <= 1:
                     height = 520
                 self.set_default_size(width, height)
@@ -287,7 +299,7 @@ class PopupWindow(Gtk.Window):
         """
         if not self.get_visible():
             return False
-        width = max(self.get_width(), 400)
+        width = max(self.get_width(), 420)
         _minimum, natural, _min_baseline, _nat_baseline = self.content.measure(
             Gtk.Orientation.VERTICAL, width
         )

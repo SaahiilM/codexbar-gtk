@@ -37,6 +37,11 @@ short version tracks, so "which version has what" maps cleanly onto both trees.
   honored after the first refresh.
 - Terminal login commands now pass the executable and arguments separately,
   including the GNOME Terminal command separator.
+- Tray panel uses a compact quota-card layout: less secondary detail, no tiny
+  trend plots, condensed reset badges, and secondary actions grouped under More.
+- Compact tray cards now use CodexBar's bundled provider logos (including the
+  curated Codex mark), with accent-tinted monochrome icons and initials only as
+  fallback. The full dashboard keeps its existing avatar treatment.
 
 ## 0.81.0 (3) — 2026-10-26
 

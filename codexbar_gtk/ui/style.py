@@ -17,7 +17,7 @@ CSS = b"""
 }
 
 .cb-popup-header {
-  padding: 14px 16px 10px 16px;
+  padding: 12px 14px 10px 14px;
   border-bottom: 1px solid alpha(currentColor, 0.08);
 }
 
@@ -27,7 +27,12 @@ CSS = b"""
 }
 
 .cb-popup-scroll {
-  padding: 12px 12px 6px 12px;
+  padding: 10px 10px 4px 10px;
+}
+
+.cb-popup-footer {
+  border-top: 1px solid alpha(currentColor, 0.08);
+  padding-top: 6px;
 }
 
 /* ---------- cards ---------- */
@@ -41,6 +46,11 @@ CSS = b"""
 
 .cb-card:last-child {
   margin-bottom: 0;
+}
+
+.cb-card-compact {
+  padding: 12px 14px;
+  margin-bottom: 10px;
 }
 
 .cb-card-header {

@@ -105,7 +105,7 @@ def main() -> int:
         on_restart=lambda: None,
     )
     popup.update(state, prefs)
-    render(popup, os.path.join(outdir, "popup.png"), 400, 520)
+    render(popup, os.path.join(outdir, "popup.png"), 420, 400)
 
     # A dashboard-like composition.
     dashboard = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)

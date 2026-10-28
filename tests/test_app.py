@@ -14,6 +14,7 @@ import json
 import os
 import sys
 import tempfile
+import threading
 import unittest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
@@ -22,8 +23,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from codexbar_gtk import format as fmt
 from codexbar_gtk import providers as provider_meta
-from codexbar_gtk.cli import CLIError, CodexBarCLI
 from codexbar_gtk.charts import sparkline_coordinates
+from codexbar_gtk.cli import CLIError, CodexBarCLI
 from codexbar_gtk.controller import (
     AppState,
     Controller,
@@ -38,6 +39,7 @@ from codexbar_gtk.data import (
     spend_from_payloads,
 )
 from codexbar_gtk.history import HistoryStore, Sample
+from codexbar_gtk.login import terminal_command_argv
 from codexbar_gtk.prefs import Preferences
 from codexbar_gtk.updates import parse_version_file, version_key
 
@@ -568,6 +570,47 @@ class ControllerTests(unittest.TestCase):
             self.assertEqual(state.providers[0].provider_id, "codex")
             self.assertIsNone(state.last_error)
 
+    def test_forced_refresh_is_queued_while_another_refresh_is_running(self):
+        with tempfile.TemporaryDirectory() as folder:
+            prefs = Preferences(os.path.join(folder, "settings.json"))
+            prefs.set("costUsageEnabled", False)
+            first_started = threading.Event()
+            allow_first = threading.Event()
+            second_started = threading.Event()
+            calls = 0
+            calls_lock = threading.Lock()
+
+            class BlockingCLI:
+                def usage(self, provider=None, all_accounts=False):
+                    nonlocal calls
+                    if provider is not None:
+                        return []
+                    with calls_lock:
+                        calls += 1
+                        call = calls
+                    if call == 1:
+                        first_started.set()
+                        allow_first.wait(2)
+                    elif call == 2:
+                        second_started.set()
+                    return []
+
+                def sessions(self):
+                    return []
+
+                def version(self):
+                    return "test-cli"
+
+            controller = Controller(prefs, BlockingCLI())
+            initial = threading.Thread(target=controller.refresh, daemon=True)
+            initial.start()
+            self.assertTrue(first_started.wait(1))
+            controller.refresh(force=True)
+            allow_first.set()
+            self.assertTrue(second_started.wait(2))
+            initial.join(2)
+            self.assertFalse(initial.is_alive())
+
     def test_older_cli_without_new_provider_keeps_working(self):
         with tempfile.TemporaryDirectory() as folder:
             prefs = Preferences(os.path.join(folder, "settings.json"))
@@ -665,6 +708,62 @@ class ControllerTests(unittest.TestCase):
             self.assertEqual(summary.total_cost, 3)
             self.assertTrue(summary.cost_partial)
             self.assertIn("not supported", summary.error or "")
+
+
+class SessionQuotaNotificationTests(unittest.TestCase):
+    def test_notifies_once_when_primary_quota_becomes_exhausted(self):
+        with tempfile.TemporaryDirectory() as folder:
+            controller = Controller(
+                Preferences(os.path.join(folder, "settings.json")), CodexBarCLI()
+            )
+            provider = provider_usage_from_payload(CODEX_PAYLOAD)
+            provider.windows = [RateWindow(key="primary", title="Session", used_percent=99)]
+            state = AppState(providers=[provider])
+
+            self.assertEqual(controller.session_quota_events(state), [])
+            provider.windows[0].used_percent = 100
+            self.assertEqual(
+                controller.session_quota_events(state),
+                [
+                    (
+                        "Session quota exhausted",
+                        "Codex (user@example.com) Session is exhausted.",
+                    )
+                ],
+            )
+            self.assertEqual(controller.session_quota_events(state), [])
+
+            provider.windows[0].used_percent = 99
+            self.assertEqual(controller.session_quota_events(state), [])
+            provider.windows[0].used_percent = 100
+            self.assertEqual(len(controller.session_quota_events(state)), 1)
+
+    def test_disabled_notification_still_tracks_current_exhaustion(self):
+        with tempfile.TemporaryDirectory() as folder:
+            prefs = Preferences(os.path.join(folder, "settings.json"))
+            prefs.set("sessionQuotaNotificationsEnabled", False)
+            controller = Controller(prefs, CodexBarCLI())
+            provider = provider_usage_from_payload(CODEX_PAYLOAD)
+            provider.windows = [RateWindow(key="primary", title="Session", used_percent=100)]
+            state = AppState(providers=[provider])
+
+            self.assertEqual(controller.session_quota_events(state), [])
+            prefs.set("sessionQuotaNotificationsEnabled", True)
+            self.assertEqual(controller.session_quota_events(state), [])
+
+
+class TerminalLoginCommandTests(unittest.TestCase):
+    def test_terminal_receives_command_and_arguments_separately(self):
+        self.assertEqual(
+            terminal_command_argv("/usr/bin/konsole", ["codex", "login"]),
+            ["/usr/bin/konsole", "-e", "codex", "login"],
+        )
+
+    def test_gnome_terminal_uses_command_separator(self):
+        self.assertEqual(
+            terminal_command_argv("/usr/bin/gnome-terminal", ["codex", "login"]),
+            ["/usr/bin/gnome-terminal", "--", "codex", "login"],
+        )
 
 
 class TraySelectionTests(unittest.TestCase):

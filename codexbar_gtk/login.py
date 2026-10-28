@@ -37,6 +37,13 @@ PROMPT_MARKERS = (
 )
 
 
+def terminal_command_argv(terminal: str, command: list[str]) -> list[str]:
+    """Build argv for a terminal emulator without shell-splitting commands."""
+    terminal_name = os.path.basename(terminal)
+    separator = "--" if terminal_name == "gnome-terminal" else "-e"
+    return [terminal, separator, *command]
+
+
 @dataclass
 class LoginResult:
     success: bool = False

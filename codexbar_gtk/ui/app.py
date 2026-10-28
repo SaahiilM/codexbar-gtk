@@ -108,6 +108,10 @@ class CodexBarApp(Adw.Application):
             window.show_page(page)
             window.present()
             return
+        if self.prefs.get("showPopupOnStart", False):
+            self._show_panel_when_ready = True
+            self._apply_state(self.controller.state)
+            return
         window = self._ensure_main_window()
         window.present()
 
@@ -131,7 +135,12 @@ class CodexBarApp(Adw.Application):
 
     def _ensure_settings_window(self) -> SettingsWindow:
         if self.settings_window is None:
-            self.settings_window = SettingsWindow(self, self.prefs, self.controller)
+            self.settings_window = SettingsWindow(
+                self,
+                self.prefs,
+                self.controller,
+                on_show_tray_changed=self._set_tray_visible,
+            )
         return self.settings_window
 
     def _on_main_closed(self, *_args) -> bool:
@@ -179,7 +188,12 @@ class CodexBarApp(Adw.Application):
 
     def _do_refresh(self) -> bool:
         self._pending_refresh = False
-        GLib.idle_add(lambda: (self.controller.refresh(), False)[1])
+        threading.Thread(
+            target=self.controller.refresh,
+            kwargs={"force": True},
+            name="codexbar-user-refresh",
+            daemon=True,
+        ).start()
         return False
 
     def _open_dashboard(self) -> None:
@@ -192,6 +206,17 @@ class CodexBarApp(Adw.Application):
     def _open_settings(self) -> None:
         window = self._ensure_settings_window()
         window.present()
+
+    def _set_tray_visible(self, visible: bool) -> None:
+        """Apply the tray visibility preference immediately."""
+        if visible:
+            if not self.tray.available:
+                self.tray.start()
+            if self.tray.available:
+                self.tray.set_status("Active")
+                self._apply_state(self.controller.state)
+        else:
+            self.tray.set_status("Passive")
 
     def _open_about(self) -> None:
         window = self._ensure_settings_window()
@@ -298,7 +323,11 @@ class CodexBarApp(Adw.Application):
         GLib.idle_add(lambda: (self._apply_state(state), False)[1])
 
     def _apply_state(self, state) -> None:
-        if self._show_panel_when_ready and state.providers:
+        if (
+            self._show_panel_when_ready
+            and not state.refreshing
+            and (state.last_updated is not None or state.last_error is not None)
+        ):
             self._show_panel_when_ready = False
             self._toggle_popup()
         if self.popup is not None:
@@ -443,6 +472,8 @@ class CodexBarApp(Adw.Application):
         self.tray.register()
 
     def _check_notifications(self, state) -> None:
+        for title, message in self.controller.session_quota_events(state):
+            self._notify(title, message)
         for provider_id, window_key, used, message in self.controller.quota_events(state):
             self._notify("Quota warning", message)
         for event in self.controller.predictive_pace_events(state):

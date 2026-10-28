@@ -8,11 +8,15 @@ from __future__ import annotations
 
 import os
 import sys
+import threading
+from collections.abc import Callable
 
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk
 
 from .. import currency, display_string
 from .. import providers as provider_meta
+from ..cli import default_cli_path
+from ..login import terminal_command_argv
 from . import icon_names
 
 AUTOSTART_DIR = os.path.expanduser("~/.config/autostart")
@@ -73,13 +77,35 @@ def _switch_row(title: str, subtitle: str, active: bool, on_change) -> Adw.Actio
     return row
 
 
+def _replace_rows(
+    group: Adw.PreferencesGroup,
+    old_rows: list[Gtk.Widget],
+    rows: list[Gtk.Widget],
+) -> None:
+    for row in old_rows:
+        group.remove(row)
+    old_rows.clear()
+    for row in rows:
+        group.add(row)
+        old_rows.append(row)
+
+
 class SettingsWindow(Adw.PreferencesWindow):
     """The preferences window of the Linux app."""
 
-    def __init__(self, application: Adw.Application, prefs, controller) -> None:
+    def __init__(
+        self,
+        application: Adw.Application,
+        prefs,
+        controller,
+        on_show_tray_changed: Callable[[bool], None] | None = None,
+    ) -> None:
         super().__init__(application=application)
         self.prefs = prefs
         self.controller = controller
+        self._on_show_tray_changed = on_show_tray_changed
+        self._cli_load_generation = 0
+        self._version_rows: list[Adw.ActionRow] = []
         self.set_title("CodexBar Settings")
         self.set_default_size(1000, 720)
         self.set_modal(False)
@@ -98,6 +124,7 @@ class SettingsWindow(Adw.PreferencesWindow):
         self.add(self.acknowledgements_page)
         self.about_page = self._about_page()
         self.add(self.about_page)
+        self._reload_cli_settings()
 
     # -- pages ------------------------------------------------------------
 
@@ -119,14 +146,6 @@ class SettingsWindow(Adw.PreferencesWindow):
                 "Fetch fresh data every time the panel is shown",
                 bool(self.prefs.get("refreshAllProvidersOnMenuOpen")),
                 lambda value: self.prefs.set("refreshAllProvidersOnMenuOpen", value),
-            )
-        )
-        refresh_group.add(
-            _switch_row(
-                "Provider status checks",
-                "Poll provider status pages for incident badges",
-                bool(self.prefs.get("statusChecksEnabled")),
-                lambda value: self.prefs.set("statusChecksEnabled", value),
             )
         )
         page.add(refresh_group)
@@ -173,27 +192,43 @@ class SettingsWindow(Adw.PreferencesWindow):
             description="Enable the providers you use. Credentials are managed by the codexbar CLI.",
         )
 
-        entries = []
-        try:
-            entries = self.controller.cli.config_providers()
-        except Exception:
-            entries = []
+        self._providers_group = group
+        self._providers_loading = Adw.ActionRow(title="Loading providers…")
+        group.add(self._providers_loading)
+        self._provider_rows = [self._providers_loading]
+        page.add(group)
+        return page
 
-        for entry in entries:
+    def _populate_providers(self, entries, error: str | None = None) -> None:
+        rows: list[Gtk.Widget] = []
+        if error:
+            row = Adw.ActionRow(title="Could not load providers")
+            row.set_subtitle(error)
+            rows.append(row)
+        elif not entries:
+            rows.append(Adw.ActionRow(title="No providers found"))
+        for entry in ([] if error else entries):
             name = entry.display_name or provider_meta.display_name(entry.provider_id)
             # Adwaita rows interpret their title as markup.
             name = GLib.markup_escape_text(name)
             row = Adw.ExpanderRow(title=name, subtitle=entry.provider_id)
             switch = Gtk.Switch(valign=Gtk.Align.CENTER)
             switch.set_active(entry.enabled)
-            switch.connect("notify::active", lambda s, _p, pid=entry.provider_id: self._toggle_provider(pid, s.get_active()))
+            switch.connect(
+                "notify::active",
+                lambda s, _p, pid=entry.provider_id: self._toggle_provider(
+                    pid, s.get_active()
+                ),
+            )
             row.add_suffix(switch)
 
             source_row = _combo_row(
                 "Source",
                 SOURCE_LABELS,
                 "auto",
-                lambda value, pid=entry.provider_id: self._set_provider_source(pid, value),
+                lambda value, pid=entry.provider_id: self._set_provider_source(
+                    pid, value
+                ),
             )
             row.add_row(source_row)
 
@@ -214,13 +249,14 @@ class SettingsWindow(Adw.PreferencesWindow):
 
             api_row = Adw.PasswordEntryRow(title="API key")
             api_row.set_show_apply_button(True)
-            api_row.connect("apply", lambda r, pid=entry.provider_id: self._set_api_key(pid, r.get_text()))
+            api_row.connect(
+                "apply",
+                lambda r, pid=entry.provider_id: self._set_api_key(pid, r.get_text()),
+            )
             row.add_row(api_row)
 
-            group.add(row)
-
-        page.add(group)
-        return page
+            rows.append(row)
+        _replace_rows(self._providers_group, self._provider_rows, rows)
 
     def _menu_bar_page(self) -> Adw.PreferencesPage:
         """Tray appearance — the equivalent of the macOS "Menu Bar" pane."""
@@ -264,7 +300,7 @@ class SettingsWindow(Adw.PreferencesWindow):
                 "Show the tray icon",
                 "Display the usage meter in the system tray",
                 bool(self.prefs.get("showTray")),
-                lambda value: self.prefs.set("showTray", value),
+                self._set_show_tray,
             )
         )
         page.add(icon_group)
@@ -363,16 +399,6 @@ class SettingsWindow(Adw.PreferencesWindow):
         )
         page.add(warnings)
 
-        tray = Adw.PreferencesGroup(title="Tray")
-        tray.add(
-            _switch_row(
-                "Show the tray icon",
-                "Display the usage meter in the system tray",
-                bool(self.prefs.get("showTray")),
-                lambda value: self.prefs.set("showTray", value),
-            )
-        )
-        page.add(tray)
         return page
 
     def _notifications_page(self) -> Adw.PreferencesPage:
@@ -432,14 +458,6 @@ class SettingsWindow(Adw.PreferencesWindow):
                 lambda value: self.prefs.set("costUsageEnabled", value),
             )
         )
-        group.add(
-            _switch_row(
-                "Show comparison periods",
-                "Compare the current period against the previous one",
-                bool(self.prefs.get("costComparisonPeriodsEnabled")),
-                lambda value: self.prefs.set("costComparisonPeriodsEnabled", value),
-            )
-        )
         page.add(group)
 
         zone_group = Adw.PreferencesGroup(
@@ -471,29 +489,36 @@ class SettingsWindow(Adw.PreferencesWindow):
                 "Rules live in the shared CodexBar config."
             ),
         )
-        try:
-            hooks = self.controller.cli.hooks()
-        except Exception:
-            hooks = {}
-        enabled = bool(hooks.get("enabled"))
-        group.add(
-            _switch_row(
-                "Enable hooks",
-                "Fire the configured rules on quota and provider events",
-                enabled,
-                self._toggle_hooks,
-            )
-        )
+        self._hooks_group = group
+        hooks_loading = Adw.ActionRow(title="Loading hooks…")
+        group.add(hooks_loading)
+        self._hooks_rows = [hooks_loading]
         page.add(group)
 
+        self._hooks_rules_group = Adw.PreferencesGroup(title="Rules")
+        rules_loading = Adw.ActionRow(title="Loading rules…")
+        self._hooks_rules_group.add(rules_loading)
+        self._hooks_rule_rows = [rules_loading]
+        page.add(self._hooks_rules_group)
+        return page
+
+    def _populate_hooks(self, hooks: dict) -> None:
+        enabled = bool(hooks.get("enabled"))
+        hook_row = _switch_row(
+            "Enable hooks",
+            "Fire the configured rules on quota and provider events",
+            enabled,
+            self._toggle_hooks,
+        )
+        rule_rows: list[Gtk.Widget] = []
+
         rules = hooks.get("events") or []
-        rule_group = Adw.PreferencesGroup(title="Rules")
         if not rules:
             empty = Adw.ActionRow(title="No rules configured")
             empty.set_subtitle(
                 "Add a rule to the shared CodexBar config to run a command on an event"
             )
-            rule_group.add(empty)
+            rule_rows.append(empty)
         else:
             for rule in rules:
                 if not isinstance(rule, dict):
@@ -506,9 +531,9 @@ class SettingsWindow(Adw.PreferencesWindow):
                 state.add_css_class("cb-kv-key")
                 state.set_valign(Gtk.Align.CENTER)
                 row.add_suffix(state)
-                rule_group.add(row)
-        page.add(rule_group)
-        return page
+                rule_rows.append(row)
+        _replace_rows(self._hooks_group, self._hooks_rows, [hook_row])
+        _replace_rows(self._hooks_rules_group, self._hooks_rule_rows, rule_rows)
 
     def _plugins_page(self) -> Adw.PreferencesPage:
         """User supplied provider plugins."""
@@ -518,14 +543,19 @@ class SettingsWindow(Adw.PreferencesWindow):
             title="Plugins",
             description="JavaScript plugins that add extra providers.",
         )
-        try:
-            plugins = self.controller.cli.plugins()
-        except Exception:
-            plugins = []
+        self._plugins_group = group
+        plugins_loading = Adw.ActionRow(title="Loading plugins…")
+        group.add(plugins_loading)
+        self._plugin_rows = [plugins_loading]
+        page.add(group)
+        return page
+
+    def _populate_plugins(self, plugins: list[dict]) -> None:
+        rows: list[Gtk.Widget] = []
         if not plugins:
             empty = Adw.ActionRow(title="No plugins installed")
             empty.set_subtitle("Install plugins into the CodexBar plugin directory")
-            group.add(empty)
+            rows.append(empty)
         else:
             for plugin in plugins:
                 if not isinstance(plugin, dict):
@@ -534,9 +564,56 @@ class SettingsWindow(Adw.PreferencesWindow):
                     title=str(plugin.get("id") or plugin.get("name") or "plugin"),
                     subtitle=str(plugin.get("version") or plugin.get("provider") or ""),
                 )
-                group.add(row)
-        page.add(group)
-        return page
+                rows.append(row)
+        _replace_rows(self._plugins_group, self._plugin_rows, rows)
+
+    def _reload_cli_settings(self) -> None:
+        """Load CLI-backed preferences data without blocking GTK construction."""
+        self._cli_load_generation += 1
+        generation = self._cli_load_generation
+
+        def load() -> None:
+            providers = []
+            provider_error = None
+            try:
+                providers = self.controller.cli.config_providers()
+            except Exception as exc:
+                provider_error = str(exc)
+            try:
+                hooks = self.controller.cli.hooks()
+            except Exception:
+                hooks = {}
+            try:
+                plugins = self.controller.cli.plugins()
+            except Exception:
+                plugins = []
+            try:
+                version = self.controller.cli.version()
+            except Exception:
+                version = "unknown"
+            GLib.idle_add(
+                self._apply_cli_settings,
+                generation,
+                providers,
+                provider_error,
+                hooks,
+                plugins,
+                version,
+            )
+
+        threading.Thread(target=load, name="codexbar-settings-load", daemon=True).start()
+
+    def _apply_cli_settings(
+        self, generation: int, providers, provider_error, hooks, plugins, version
+    ) -> bool:
+        if generation != self._cli_load_generation:
+            return False
+        self._populate_providers(providers, provider_error)
+        self._populate_hooks(hooks)
+        self._populate_plugins(plugins)
+        for row in self._version_rows:
+            row.set_subtitle(version or "unknown")
+        return False
 
     def _sign_in(self, provider_id: str) -> None:
         """Sign in to a provider.
@@ -557,7 +634,11 @@ class SettingsWindow(Adw.PreferencesWindow):
 
     def _open_terminal_login(self, provider_id: str) -> None:
         """Open a terminal with the provider's login command."""
-        command = "claude auth login --claudeai" if provider_id == "claude" else "codex login"
+        command = (
+            ["claude", "auth", "login", "--claudeai"]
+            if provider_id == "claude"
+            else ["codex", "login"]
+        )
         terminal = None
         for candidate in ("konsole", "gnome-terminal", "xterm", "kitty", "alacritty"):
             from shutil import which
@@ -567,22 +648,25 @@ class SettingsWindow(Adw.PreferencesWindow):
                 terminal = found
                 break
         if terminal is None:
-            self._notify(f"Run this in a terminal: {command}")
+            self._notify(f"Run this in a terminal: {' '.join(command)}")
             return
         import subprocess
 
         try:
-            subprocess.Popen([terminal, "-e", command], start_new_session=True)
-            self._notify(f"Started {command} in a terminal")
+            subprocess.Popen(
+                terminal_command_argv(terminal, command), start_new_session=True
+            )
+            self._notify(f"Started {' '.join(command)} in a terminal")
         except OSError as exc:
             self._notify(f"Could not open a terminal: {exc}")
 
     def _toggle_hooks(self, value: bool) -> None:
-        try:
-            self.controller.cli.set_hooks_enabled(value)
-            self._notify(f"Hooks {'enabled' if value else 'disabled'}")
-        except Exception as exc:
-            self._notify(f"Could not change hooks: {exc}")
+        self._run_cli_action(
+            lambda: self.controller.cli.set_hooks_enabled(value),
+            f"Hooks {'enabled' if value else 'disabled'}",
+            "Could not change hooks",
+            on_success=self._reload_cli_settings,
+        )
 
     def _advanced_page(self) -> Adw.PreferencesPage:
         page = Adw.PreferencesPage(title="Advanced", icon_name=icon_names.themed_icon(*icon_names.ADVANCED))
@@ -593,11 +677,12 @@ class SettingsWindow(Adw.PreferencesWindow):
         )
         cli_row = Adw.EntryRow(title="CLI path")
         cli_row.set_text(str(self.prefs.get("cliPath") or ""))
-        cli_row.connect("apply", lambda row: self.prefs.set("cliPath", row.get_text().strip()))
+        cli_row.connect("apply", lambda row: self._set_cli_path(row.get_text().strip()))
         cli_group.add(cli_row)
 
         version_row = Adw.ActionRow(title="CLI version")
-        version_row.set_subtitle(self.controller.cli.version())
+        version_row.set_subtitle("Loading…")
+        self._version_rows.append(version_row)
         cli_group.add(version_row)
         page.add(cli_group)
 
@@ -675,7 +760,8 @@ class SettingsWindow(Adw.PreferencesWindow):
         app_group.add(toolkit_row)
 
         cli_row = Adw.ActionRow(title="CodexBar CLI")
-        cli_row.set_subtitle(self.controller.cli.version())
+        cli_row.set_subtitle("Loading…")
+        self._version_rows.append(cli_row)
         app_group.add(cli_row)
         page.add(app_group)
 
@@ -730,11 +816,22 @@ class SettingsWindow(Adw.PreferencesWindow):
         self.controller.cli.timezone = value or None
         self._request_refresh()
 
+    def _set_cli_path(self, value: str) -> None:
+        value = value.strip()
+        self.prefs.set("cliPath", value)
+        self.controller.cli.executable = value or default_cli_path()
+        self._reload_cli_settings()
+        self._request_refresh()
+
+    def _set_show_tray(self, value: bool) -> None:
+        self.prefs.set("showTray", value)
+        if self._on_show_tray_changed is not None:
+            self._on_show_tray_changed(value)
+
     def _request_refresh(self) -> None:
         app = self.get_application()
-        window = getattr(app, "main_window", None) if app is not None else None
-        if window is not None:
-            window.request_refresh()
+        if app is not None and hasattr(app, "_refresh_now"):
+            app._refresh_now()
 
     def _set_threshold(self, key: str, index: int, value: int) -> None:
         thresholds = list(self.prefs.get(key) or [80, 95])
@@ -764,30 +861,75 @@ class SettingsWindow(Adw.PreferencesWindow):
             pass
 
     def _toggle_provider(self, provider_id: str, enabled: bool) -> None:
-        try:
-            if enabled:
-                self.controller.cli.enable_provider(provider_id)
-            else:
-                self.controller.cli.disable_provider(provider_id)
-        except Exception as exc:
-            self._notify(f"Could not update {provider_id}: {exc}")
+        action = (
+            self.controller.cli.enable_provider
+            if enabled
+            else self.controller.cli.disable_provider
+        )
+        self._run_cli_action(
+            lambda: action(provider_id),
+            f"{provider_id} {'enabled' if enabled else 'disabled'}",
+            f"Could not update {provider_id}",
+            on_success=self._request_refresh,
+        )
 
     def _set_provider_source(self, provider_id: str, source: str) -> None:
-        try:
-            self.controller.cli.set_source(provider_id, source)
-            self._notify(f"{provider_id} source set to {source}")
-        except Exception as exc:
-            self._notify(f"Could not set source: {exc}")
+        self._run_cli_action(
+            lambda: self.controller.cli.set_source(provider_id, source),
+            f"{provider_id} source set to {source}",
+            "Could not set source",
+            on_success=self._request_refresh,
+        )
 
     def _set_api_key(self, provider_id: str, key: str) -> None:
         key = (key or "").strip()
         if not key:
             return
-        try:
-            self.controller.cli.set_api_key(provider_id, key)
-            self._notify(f"API key saved for {provider_id}")
-        except Exception as exc:
-            self._notify(f"Could not save API key: {exc}")
+        self._run_cli_action(
+            lambda: self.controller.cli.set_api_key(provider_id, key),
+            f"API key saved for {provider_id}",
+            "Could not save API key",
+            on_success=self._request_refresh,
+        )
+
+    def _run_cli_action(
+        self,
+        action: Callable[[], object],
+        success_message: str,
+        failure_message: str,
+        on_success: Callable[[], None] | None = None,
+    ) -> None:
+        """Run a CLI mutation away from the UI thread and report its result."""
+        def run() -> None:
+            try:
+                action()
+                error = None
+            except Exception as exc:
+                error = str(exc)
+            GLib.idle_add(
+                self._finish_cli_action,
+                success_message,
+                failure_message,
+                error,
+                on_success,
+            )
+
+        threading.Thread(target=run, name="codexbar-settings-action", daemon=True).start()
+
+    def _finish_cli_action(
+        self,
+        success_message: str,
+        failure_message: str,
+        error: str | None,
+        on_success: Callable[[], None] | None,
+    ) -> bool:
+        if error is None:
+            self._notify(success_message)
+            if on_success is not None:
+                on_success()
+        else:
+            self._notify(f"{failure_message}: {error}")
+        return False
 
     def _export_preferences(self) -> None:
         import json

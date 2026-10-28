@@ -61,7 +61,10 @@ class Controller:
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._refreshing = threading.Event()
+        self._refresh_guard = threading.Lock()
+        self._queued_refresh = False
         self._notified_windows: dict[tuple[str, str], float] = {}
+        self._session_quota_seen: dict[tuple[str, str, str], bool] = {}
         self._last_reset_seen: dict[tuple[str, str], float] = {}
         self._pace_notified: dict[tuple[str, str], tuple[int | None, float]] = {}
         self._credit_expiry_seen: set[tuple] = set()
@@ -110,9 +113,12 @@ class Controller:
     # -- refreshing -------------------------------------------------------
 
     def refresh(self, force: bool = False) -> AppState:
-        if self._refreshing.is_set():
-            return self.state
-        self._refreshing.set()
+        with self._refresh_guard:
+            if self._refreshing.is_set():
+                if force:
+                    self._queued_refresh = True
+                return self.state
+            self._refreshing.set()
         with self._lock:
             self.state.refreshing = True
         self._notify()
@@ -160,8 +166,19 @@ class Controller:
         finally:
             with self._lock:
                 self.state.refreshing = False
-            self._refreshing.clear()
+            with self._refresh_guard:
+                self._refreshing.clear()
+                run_queued = self._queued_refresh
+                self._queued_refresh = False
             self._notify()
+
+        if run_queued and not self._stop.is_set():
+            threading.Thread(
+                target=self.refresh,
+                kwargs={"force": True},
+                name="codexbar-queued-refresh",
+                daemon=True,
+            ).start()
 
         return self.state
 
@@ -292,6 +309,33 @@ class Controller:
                     if previous is not None and used < previous:
                         self._notified_windows[marker] = used
 
+        return events
+
+    def session_quota_events(self, state: AppState) -> list[tuple[str, str]]:
+        """Return newly exhausted primary quota windows, once per exhaustion."""
+        events: list[tuple[str, str]] = []
+        enabled = bool(self.prefs.get("sessionQuotaNotificationsEnabled", True))
+        seen: set[tuple[str, str, str]] = set()
+        for provider in state.providers:
+            for window in provider.windows:
+                if window.key != "primary":
+                    continue
+                key = (provider.provider_id, provider.account_email or "", window.key)
+                exhausted = window.used_percent >= 100.0
+                was_exhausted = self._session_quota_seen.get(key, False)
+                self._session_quota_seen[key] = exhausted
+                seen.add(key)
+                if enabled and exhausted and not was_exhausted:
+                    account = f" ({provider.account_email})" if provider.account_email else ""
+                    events.append(
+                        (
+                            "Session quota exhausted",
+                            f"{provider.display_name}{account} {window.title} is exhausted.",
+                        )
+                    )
+        # Drop disappeared accounts/providers so a later appearance can notify again.
+        for key in self._session_quota_seen.keys() - seen:
+            self._session_quota_seen.pop(key, None)
         return events
 
     # -- pace and reset-credit events ------------------------------------

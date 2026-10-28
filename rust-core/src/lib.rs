@@ -5,4 +5,5 @@
 
 pub mod activity;
 pub mod formatting;
+pub mod pace;
 pub mod providers;

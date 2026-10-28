@@ -21,6 +21,6 @@ jobs:
       - name: Run tests
         run: cargo test --manifest-path rust-core/Cargo.toml --locked
       - name: Check provider catalog parity
-        run: python3 -m unittest discover -s tests -p 'test_rust_provider_catalog.py' -v
+        run: python3 -m unittest discover -s tests -p 'test_rust_catalog_parity.py' -v
       - name: Run Clippy
         run: cargo clippy --manifest-path rust-core/Cargo.toml --all-targets --all-features -- -D warnings

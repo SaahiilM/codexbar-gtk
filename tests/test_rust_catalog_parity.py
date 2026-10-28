@@ -6,10 +6,12 @@ import re
 import unittest
 from pathlib import Path
 
+from codexbar_gtk.currency import CURRENCIES
 from codexbar_gtk.providers import ALIASES, PROVIDERS
 
 ROOT = Path(__file__).resolve().parents[1]
 RUST_PROVIDERS = ROOT / "rust-core" / "src" / "providers.rs"
+RUST_PACE = ROOT / "rust-core" / "src" / "pace.rs"
 
 
 class RustProviderCatalogParityTests(unittest.TestCase):
@@ -34,6 +36,14 @@ class RustProviderCatalogParityTests(unittest.TestCase):
         end = self.source.index("];", start)
         pairs = re.findall(r'\("([^"]+)", "([^"]+)"\)', self.source[start:end])
         self.assertEqual(dict(pairs), ALIASES)
+
+    def test_currency_codes_match_python_catalog(self) -> None:
+        pace_source = RUST_PACE.read_text(encoding="utf-8")
+        start = pace_source.index("pub const CURRENCY_CODES:")
+        end = pace_source.index("];", start)
+        rust_codes = re.findall(r'"([A-Z]{3})"', pace_source[start:end])
+        python_codes = [code for code, _symbol, _rate in CURRENCIES]
+        self.assertEqual(rust_codes, python_codes)
 
 
 if __name__ == "__main__":

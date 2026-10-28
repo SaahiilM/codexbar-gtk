@@ -4,3 +4,4 @@
 //! until each Rust module has parity tests and an explicit integration step.
 
 pub mod formatting;
+pub mod providers;

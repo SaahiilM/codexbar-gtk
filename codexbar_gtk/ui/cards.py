@@ -569,9 +569,7 @@ class ProviderCard(Gtk.Box):
         self.avatar = ProviderAvatar(
             provider.display_name,
             provider.accent_color,
-            # Keep the full dashboard's established avatar treatment unchanged;
-            # provider artwork is part of the compact tray card refinement.
-            provider_id=provider.provider_id if compact else None,
+            provider_id=provider.provider_id,
             size=30 if compact else 34,
         )
         self.header.append(self.avatar)

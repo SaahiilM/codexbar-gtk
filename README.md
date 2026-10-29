@@ -13,11 +13,19 @@ and no packaging of its own. It consumes the JSON the CodexBar CLI already emits
 [COSMIC applet](https://github.com/andrew-verde/codexbar-cosmic-applet), the
 [Plasma widgets](https://github.com/psimaker/codexbar-plasmoid), …).
 
-![CodexBar dashboard with provider usage and summary cards](docs/dashboard.png)
+## Screenshots
 
-| Compact tray panel with provider branding | The spending page |
+![Usage dashboard with provider quotas and summary cards](docs/dashboard.png)
+
+| Compact tray panel | Usage & Spend |
 | --- | --- |
-| ![Compact tray panel showing the Codex logo](docs/panel.png) | ![The spending page](docs/spending.png) |
+| ![Compact tray panel with provider quota cards](docs/panel.png) | ![Spend totals, token activity heatmap and daily cost chart](docs/spending.png) |
+
+| Agent sessions | Provider settings |
+| --- | --- |
+| ![Running coding-agent sessions](docs/sessions.png) | ![Enabled provider list in Settings](docs/settings-providers.png) |
+
+Screenshots use synthetic fixture data and do not show real account information.
 
 ## What it does
 
@@ -95,6 +103,29 @@ cost refresh fails, the previous totals remain visible as a marked known
 subtotal until a successful refresh. The tray's update check fetches only the
 public client `VERSION` marker from GitHub; it does not install or download code.
 
+## Incremental Rust port
+
+The application remains primarily Python. The Rust core is being integrated one
+module at a time behind an opt-in PyO3 extension. The live Rust paths currently
+cover provider metadata (canonical IDs, names and colors) and the Usage & Spend
+activity helpers (daily cost series and heatmap calculations). Formatting,
+monthly pace and quota-history ports exist in Rust but are not yet used at
+runtime. GTK rendering and CLI/provider fetching remain in Python/the CodexBar
+CLI.
+
+Build the extension and opt in for the app process with:
+
+```sh
+./scripts/build-rust-core.sh
+CODEXBAR_RUST_CORE=1 ./run.sh
+```
+
+Python remains the default when the environment flag is absent. Explicitly
+setting the flag fails fast if the extension is unavailable. See the
+[Rust-core migration notes](rust-core/README.md) for implementation and test
+details. The screenshots above were captured from the Rust-enabled UI with
+fixture CLI data.
+
 ## Feature parity with the macOS app
 
 | Upstream area | Here |
@@ -134,7 +165,7 @@ The GTK front-end uses the same version pair as the macOS bundle:
   this client is feature-compatible with (`0.81.0`).
 * `CURRENT_PROJECT_VERSION` is the build number of the Linux front-end.
 * `codexbar_gtk/version.py` turns the pair into the macOS-style
-  `"0.81.0 (10)"` string shown under Settings → About, in the tray menu and by
+  `"0.81.0 (11)"` string shown under Settings → About, in the tray menu and by
   `./run.sh --about`.
 
 Increment `CURRENT_PROJECT_VERSION` for each merged PR and keep it in sync with
@@ -150,16 +181,16 @@ python3 -m unittest discover -s tests -v  # the test suite
 ./tools/preview.py /tmp/preview           # render the UI to PNG files
 ```
 
-To exercise the first Rust-backed application path (provider metadata), build
-its optional PyO3 extension and opt in for that process:
+To exercise the Rust-backed paths, build the optional PyO3 extension and run
+the test suite with both implementations:
 
 ```sh
 ./scripts/build-rust-core.sh
-CODEXBAR_RUST_CORE=1 ./run.sh
+python3 -m unittest discover -s tests -v
+CODEXBAR_RUST_CORE=1 python3 -m unittest discover -s tests -v
 ```
 
-Without the environment flag, the app continues to use Python. With the flag,
-startup fails clearly if the extension was not built.
+The Rust backend is opt-in; without the flag, the app continues to use Python.
 
 The tests never touch a real provider account: the CLI is faked and the payloads
 are recorded fixtures.

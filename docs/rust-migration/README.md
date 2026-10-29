@@ -1,0 +1,156 @@
+# Native Rust migration
+
+**Approved destination:** a Rust GTK4/libadwaita application with no Python
+runtime, PyO3 bridge, or PyGObject dependency in the shipped application.
+**Sequence:** complete the backend first, then migrate the UI, then remove the
+legacy runtime. The upstream `codexbar` CLI remains an external dependency;
+reimplementing provider fetching or credential storage is not part of this plan.
+
+Start with the [current handoff and checklist](TASKS.md), then read the
+[decision and audit log](AUDIT.md). Root [`AGENTS.md`](../../AGENTS.md) instructs
+future coding agents to follow these documents.
+
+## Actual starting point
+
+Code baseline: `46f44d0` (PR #17), GTK build `0.81.0 (16)`. The initial planning
+PR increments the build to `0.81.0 (17)` without changing runtime behavior.
+
+The application still starts with `python3 -m codexbar_gtk`. Python is the default
+backend. `CODEXBAR_RUST_CORE=1` enables six module integrations through
+`rust-python/`; it does **not** select a complete Rust backend. The six existing
+ports are provider metadata, activity, formatting, monthly pace, history, and
+sparkline geometry. Some Python edge-input/timezone fallbacks remain.
+
+The file inventory and named functions below were inspected, not just inferred
+from filenames. Test results and limitations are recorded separately in AUDIT.
+
+## Architecture and dependency direction
+
+```text
+Transitional application                   Final application
+Python GTK widgets                        Rust GTK4/libadwaita widgets
+  -> thin Python compatibility adapters      -> Rust backend service API
+    -> rust-python (temporary PyO3)             -> Rust domain/services
+      -> Rust domain/services                    -> external codexbar CLI
+```
+
+- Extend `rust-core/` for typed models and deterministic domain policies. It
+  already contains local history storage; retaining that module avoids churn.
+  No GTK/Python types or implicit GUI-main-loop dependency in backend APIs.
+- Plan a `rust-backend/` service crate for subprocess execution, preferences,
+  HTTP/cache services, login sessions, and refresh/event orchestration. This
+  crate does **not** exist yet. Choose its runtime, process/HTTP/PTY dependencies,
+  and shutdown contract in B00; document any adjustment here and in AUDIT.
+- Keep `rust-python/` a temporary, thin adapter over those APIs. Python dataclass
+  construction is allowed during transition, but it must not conceal duplicated
+  policy, fetching, scheduling, aggregation, or notification state.
+- Plan a `rust-gtk/` binary after gate BG. It must consume the same backend API
+  directly, not embed Python or invoke a Python backend process. This crate
+  also does **not** exist yet. A workspace layout can be introduced separately.
+- The backend produces snapshots/events; the frontend marshals them to its GUI
+  thread. Do not call GTK callbacks under backend locks or block the GUI on I/O.
+- Inject clocks, subprocess/HTTP/browser adapters, paths, and cancellation where
+  needed for deterministic tests. Prove the backend works headlessly without
+  an interpreter before starting native UI implementation.
+
+## Remaining source inventory
+
+| Area / evidence in current Python | Backend responsibility / target |
+| --- | --- |
+| `data.py`: `parse_timestamp`, numeric helpers, dataclasses and derived properties | Typed domain contracts and validated timestamp/numeric handling (B01) |
+| `data.py`: `provider_usage_from_payload`, detail/pace/reset-credit/plan helpers | Provider envelope normalization, windows, identity, errors and credits (B02) |
+| `data.py`: `agent_sessions_from_payloads` | Session normalization and sorting (B03) |
+| `data.py`: `spend_from_payloads` | Spend aggregation, provenance, coverage and known/partial states (B04) |
+| `prefs.py`: `Preferences`, `DEFAULTS`, refresh intervals | Settings defaults, persistence, portable import/export and derived settings (B05) |
+| `currency.py`: `CurrencyConverter`, shared converter | Rate catalog/conversion, HTTP refresh, TTL/cache, offline fallback (B06) |
+| `cli.py`: `default_cli_path`, `CodexBarCLI` | Discovery, argv, TZ, timeouts, outputs/errors and all command wrappers (B07) |
+| `controller.py`: quota/session/pace/credit events, cycle tracking | Stateful event policies and deduplication; not OS notification delivery (B08) |
+| `controller.py`: `_ordered`, `automatic_tray_selection` and ETA/ranking helpers | Provider visibility/order and tray-quota selection (B09) |
+| `controller.py`: `Controller`, `AppState` | Polling, queued refresh, cancellation, account collection, fallback scans, snapshots and recording (B10) |
+| `login.py`: terminal argv, browser helpers, `ClaudeLoginSession`, auth status | PTY/process lifecycle, streamed parsing, input, cancellation, status and results (B11) |
+| `updates.py`: version parsing/comparison and read-only HTTP check | Client-version service; never download/install executable code (B12) |
+| `ui/spend.py`: model grouping, currency/time-range/coverage rules; `ui/app.py`: tray summaries; `ui/settings.py`: CLI workers and launch-at-login action | Extract non-widget policy/service actions still embedded in UI (B13) |
+| Existing six Rust modules and Python adapters | Resolve native contract gaps/edge fallbacks, catalog drift and Rust-only behavior coverage (B15) |
+| `startup.py`, `provider_icons.py`, `version.py`, `__main__.py`, remaining `ui/*.py` | Native bootstrap, assets, metadata, desktop/platform integration and widgets in phase U |
+| `run.sh`, `scripts/install.sh`, `scripts/bootstrap-deps.sh`, `tools/*.py`, CI and tests | Native build/install/dev tooling and final removal of Python dependencies in phase C |
+
+Do not mark backend completion just because top-level non-UI modules are ported:
+B13 explicitly searches `ui/` for leftover backend decisions and workers.
+
+## Compatibility and safety requirements
+
+- Preserve unknown/unavailable versus known zero usage/cost, partial subtotals,
+  scan provenance, and retained previous data on partial refresh failures.
+- Preserve old/new CLI envelopes without double-counting repeated totals.
+  Raw provider fields needed by detail sections must survive normalization.
+- Freeze timestamp acceptance, UTC/local-calendar behavior, DST/reset boundaries,
+  finite-number rules, booleans versus numbers, large integers, rounding,
+  stable ordering, and invalid-input behavior with parity fixtures. Do not
+  silently turn a fallback into a Rust error or fabricated zero.
+- Preserve `~/.config/codexbar-gtk/settings.json`, history JSON-lines, currency
+  cache format, portable preference documents, command-line flags, environment
+  overrides, external CLI discovery, account identity and provider ordering.
+  Use isolated copies to test changes; never run migration tests on real data.
+- Keep argv boundaries; never shell-concatenate credentials or commands. Ensure
+  timeout/cancel reaps processes and closes PTYs/pipes. No secrets in tracing.
+  Test login with fake processes, not actual browser authorization.
+- Preserve the user-facing application identity and service paths unless an
+  explicit compatibility decision and migration test approve a change.
+- UI phase must retain the Settings-to-dashboard action, tray signal signatures
+  and live updates (PR #15), host re-registration, settings actions and all
+  existing pages. A backend task must not redesign the screens.
+
+## Definition of done for an implementation slice
+
+1. Record stable task ID, scope, dependencies, branch, and policy decisions.
+2. Add characterization/parity fixtures before changing behavior; write native
+   Rust tests, including errors/cancellation/concurrency where applicable.
+3. Route the current application caller through Rust in opt-in mode, keeping
+   only a thin compatibility adapter. A parallel Rust file alone is not done.
+4. Pass both backend suites and Rust checks. Add required tests to CI; report
+   skipped tests and missing dependencies, not just a passing process status.
+5. Exercise the affected path in the actual GTK app with synthetic data. Record
+   what was inspected and what was not; do not imply exhaustive interaction or
+   real-provider testing from a screenshot.
+6. Update TASKS handoff, append AUDIT evidence, update README/status, increment
+   the GTK build in both locations and record the build in CHANGELOG.
+7. Push a focused PR, observe CI, merge, and verify `main`. A checked task requires
+   merged evidence; use `active` or `verified, PR pending` until then. Never
+   predict a merge in the committed audit entry; its PR link is authoritative.
+
+## Validation commands available today
+
+From the repository root (source `~/.cargo/env` if Cargo is not on PATH):
+
+```sh
+cargo fmt --manifest-path rust-core/Cargo.toml -- --check
+cargo fmt --manifest-path rust-python/Cargo.toml -- --check
+cargo test --manifest-path rust-core/Cargo.toml --locked
+cargo clippy --manifest-path rust-core/Cargo.toml --all-targets --all-features -- -D warnings
+cargo clippy --manifest-path rust-python/Cargo.toml --all-targets --all-features -- -D warnings
+./scripts/build-rust-core.sh
+python3 -m unittest discover -s tests -v
+CODEXBAR_RUST_CORE=1 python3 -m unittest discover -s tests -v
+python3 -m unittest discover -s tests -p test_tray_signals.py -v
+git diff --check
+```
+
+The tray suite requires `dbus-run-session`, dbus-python and PyGObject. CI runs a
+separate dependency-equipped job. Some other environments skip it; record that.
+The extension build helper must retain atomic replacement for running apps.
+Add the corresponding format/test/Clippy commands for each new crate to this
+list and CI when that crate is introduced; no workspace commands are assumed.
+
+## Stage gates
+
+- **BG — backend complete:** B00–B15 accepted; Rust-only headless end-to-end
+  tests cover fake CLI/HTTP/PTY flows without Python, GTK, or PyO3. Existing GTK
+  app consumes the Rust backend in opt-in mode with fixture smoke evidence.
+  No hidden Python policy/service work remains. This gate is currently open.
+- **UG — native UI complete:** all U tasks accepted against the same backend;
+  functional/visual parity and Wayland/X11/D-Bus behavior verified. Preserve the
+  old app until this gate is passed. This gate is currently blocked by BG.
+- **CG — cutover complete:** native release/install works without Python,
+  PyGObject or `_rust_core.so`; preferences/history survive the switch; native
+  CI and packaging are proven. Remove bridge, fallback implementations, Python
+  UI and obsolete Python tooling only with rollback documentation and tests.

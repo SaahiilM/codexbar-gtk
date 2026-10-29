@@ -112,7 +112,20 @@ activity helpers, display formatting, monthly allowance daily targets, quota
 history storage and queries, and sparkline geometry. GTK rendering and
 CLI/provider fetching remain in Python/the CodexBar CLI.
 
-### Rust module checklist
+### Native Rust migration roadmap
+
+The approved destination is a **fully native Rust GTK4/libadwaita app**, with the
+remaining backend migrated **before** the UI. The PyO3 bridge and Python shell
+are temporary. Backend work is not complete, and native UI work has not started.
+
+- [Architecture, source inventory and stage gates](docs/rust-migration/README.md)
+- [Task checklist and current model handoff](docs/rust-migration/TASKS.md)
+- [Decisions, verification evidence and audit trail](docs/rust-migration/AUDIT.md)
+
+Future coding agents should start with [`AGENTS.md`](AGENTS.md). The next task
+is the backend API/test seam (B00), followed by data-model parsing (B01).
+
+### Existing opt-in module integrations
 
 - [x] `providers.py` metadata — Rust-backed in opt-in mode.
 - [x] `activity.py` — spend series and heatmap calculations, Rust-backed in
@@ -127,9 +140,10 @@ CLI/provider fetching remain in Python/the CodexBar CLI.
 - [x] `charts.py` — time-spaced sparkline coordinates and fixed quota axes,
   Rust-backed in opt-in mode; GTK/Cairo drawing remains in Python.
 
-All six Rust ports now have opt-in runtime integrations. Python implementations
-remain available while regression coverage and further module ports continue;
-the application is not yet entirely Rust.
+All six existing Rust ports have opt-in runtime integrations. This checklist
+is not the full backend/native migration checklist above. Python implementations
+remain available as parity references until the backend, native UI and cutover
+gates are passed; the application is not yet entirely Rust.
 
 Build the extension and opt in for the app process with:
 
@@ -183,7 +197,7 @@ The GTK front-end uses the same version pair as the macOS bundle:
   this client is feature-compatible with (`0.81.0`).
 * `CURRENT_PROJECT_VERSION` is the build number of the Linux front-end.
 * `codexbar_gtk/version.py` turns the pair into the macOS-style
-  `"0.81.0 (16)"` string shown under Settings → About, in the tray menu and by
+  `"0.81.0 (17)"` string shown under Settings → About, in the tray menu and by
   `./run.sh --about`.
 
 Increment `CURRENT_PROJECT_VERSION` for each merged PR and keep it in sync with

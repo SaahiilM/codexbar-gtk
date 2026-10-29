@@ -6,6 +6,21 @@ short version tracks, so "which version has what" maps cleanly onto both trees.
 
 ## Unreleased
 
+## 0.81.0 (17) — 2026-10-29
+
+Tracks upstream CodexBar 0.81.0. This build records the backend-first plan for a
+fully native Rust GTK4/libadwaita application; runtime behavior is unchanged.
+
+### Added
+
+- Audit the remaining Python backend and policies embedded in UI modules;
+  distinguish the six opt-in integrations from full backend completion.
+- Add a dependency-ordered backend/UI/cutover checklist, explicit completion
+  gates, current handoff, decision log and append-only verification trail under
+  `docs/rust-migration/`.
+- Add root `AGENTS.md` instructions so future models read the migration records,
+  claim tasks, retain evidence and update the handoff before moving on.
+
 ## 0.81.0 (16) — 2026-10-29
 
 Tracks upstream CodexBar 0.81.0. This build ports sparkline geometry to Rust.

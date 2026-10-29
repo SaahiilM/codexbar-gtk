@@ -80,6 +80,23 @@ reproducible commands; report artifact limitations honestly.
   stream risks stale UI state and unbounded memory. These were rejected for
   backend orchestration; domain transformations remain synchronous/pure.
 
+### D005 — 2026-10-29: first B01 primitive compatibility boundary
+
+- Rust timestamp parsing accepts common RFC 3339 timestamps, `Z`, date-only,
+  naive UTC, fractions and whitespace trimming. Inputs unsupported by the Rust
+  parser fall back to Python's broader `datetime.fromisoformat` grammar during
+  migration; Python remains default outside opt-in. Thus no valid Python-only
+  form is rejected in the transitional caller.
+- Numeric helpers continue to reject booleans, strings, overflow and non-finite
+  values. Rust's quota duration contract is `i64`; values outside that range
+  fall through to Python's existing float-then-int behavior. Preserve this
+  compatibility fallback until Rust domain models support the full desired
+  numeric range or an explicit behavior change is approved.
+- A missing/invalid used percentage remains distinguishable from a known 0% in
+  the source parser (`usage_known`); the new Rust `RateWindow` carries this bit.
+  Remaining percentage continues to clamp at zero; duration labels match current
+  Python logic. Other domain models and payload normalization remain pending.
+
 ## Evidence log
 
 ### E001 — 2026-10-29: inherited implementation baseline
@@ -215,6 +232,44 @@ reproducible commands; report artifact limitations honestly.
   checked live. Do not mark B00 complete until merge is observed.
 - **Next:** observe PR checks/merge, then start B01's timestamp/numeric/
   `RateWindow` characterization and Rust model implementation.
+
+### E006 — 2026-10-29: B00 merge verified
+
+- **PR/merge:** [PR #19](https://github.com/SaahiilM/codexbar-gtk/pull/19)
+  merged at `956ffd3b3631ce4541ab9cc382023bc9cc803fd7`; `test` and `tray-dbus`
+  checks both succeeded. Main was fast-forwarded and clean at verification.
+- **Result:** B00 is checked in TASKS. Build `0.81.0 (18)`. This is backend
+  contract infrastructure only, not provider fetching or a complete backend.
+- **Next:** B01a, timestamp/numeric primitives and `RateWindow`; no native UI.
+
+### E007 — 2026-10-29: B01a primitive implementation, pre-PR verification
+
+- **Owner/branch/base:** current coding-agent session;
+  `backend/b01-domain-foundation`, based on merged `956ffd3` (PR #19).
+- **Changed scope:** `rust-core/src/domain.rs` adds UTC timestamp parsing,
+  JSON finite-number helpers, an i64 `RateWindow` contract and derived values;
+  `rust-python/src/lib.rs` exposes PyO3 calls; `codexbar_gtk/data.py` routes
+  timestamp, numeric and derived-property callers through Rust when opt-in while
+  retaining Python fallbacks; `tests/test_rust_domain_integration.py` adds
+  cross-mode fixtures. `Pace`, `CostInfo`, remaining payload model contracts and
+  provider/session/spend normalization are not included.
+- **Behavior boundary:** see D005. Rust supports common ISO forms; less common
+  valid Python forms are intentionally handled by Python fallback. Out-of-i64
+  integer durations also fallback rather than truncating.
+- **Checks actually run:** rustfmt, 33 core and 3 backend tests, Clippy on all
+  three Rust crates, extension build, 135 Python tests in default mode and 135
+  in Rust mode, plus 3 private-D-Bus tray tests; all passed, no skips reported.
+- **UI smoke:** attempted `GDK_BACKEND=offscreen CODEXBAR_RUST_CORE=1
+  python3 tools/preview.py` with a fake CLI returning synthetic provider data
+  and isolated `HOME`. It could not start because GTK4 typelib `Gtk` 4.0 is not
+  installed in either the default or `/usr/bin/python3` environment. No real
+  provider data was requested. This is an environment blocker, not a passing UI
+  check; retry when GTK4 dependencies are available.
+- **PR/status:** [PR #20](https://github.com/SaahiilM/codexbar-gtk/pull/20),
+  commit `5a776b9`; open when this handoff was recorded. CI/merge must be checked
+  live. Build metadata is `0.81.0 (19)`.
+- **Next:** observe PR CI/merge, report missing GTK4 smoke as a limitation, then
+  continue B01b (remaining data model contracts).
 
 ## Append a record for each task change or handoff
 

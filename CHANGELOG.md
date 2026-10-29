@@ -6,6 +6,23 @@ short version tracks, so "which version has what" maps cleanly onto both trees.
 
 ## Unreleased
 
+## 0.81.0 (19) — 2026-10-29
+
+Tracks upstream CodexBar 0.81.0.
+
+### Added
+
+- Begin B01a by porting UTC timestamp parsing, finite numeric validation and
+  `RateWindow` derived properties to Rust, with opt-in PyO3 routing and Python
+  compatibility fallbacks for unsupported timestamp forms and out-of-range
+  integers.
+- Add Rust/Python parity coverage for timezone offsets, naive/date-only/fractional
+  timestamps, booleans, large values, unknown usage and quota-window labels.
+
+### Validation
+
+- See `docs/rust-migration/AUDIT.md` for current B01a test and smoke evidence.
+
 ## 0.81.0 (18) — 2026-10-29
 
 Tracks upstream CodexBar 0.81.0.

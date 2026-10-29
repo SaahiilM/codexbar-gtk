@@ -1,5 +1,5 @@
-use chrono::NaiveDate;
-use codexbar_core::{activity, providers};
+use chrono::{DateTime, NaiveDate, Utc};
+use codexbar_core::{activity, formatting, providers};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use serde_json::Value;
@@ -36,6 +36,135 @@ fn all_provider_ids() -> Vec<String> {
 #[pyfunction]
 fn backend_name() -> &'static str {
     "rust"
+}
+
+#[pyfunction]
+fn compact_window_label(title: Option<String>, window_minutes: Option<i64>) -> Option<String> {
+    formatting::compact_window_label(title.as_deref(), window_minutes)
+}
+
+#[pyfunction]
+fn format_percent(value: Option<f64>, decimals: usize) -> String {
+    formatting::format_percent(value, decimals)
+}
+
+#[pyfunction]
+fn format_remaining(used_percent: Option<f64>, decimals: usize) -> String {
+    formatting::format_remaining(used_percent, decimals)
+}
+
+#[pyfunction]
+fn format_countdown(target: Option<String>, now: &str) -> PyResult<Option<String>> {
+    Ok(formatting::format_countdown(
+        parse_datetime(target.as_deref())?,
+        parse_datetime(Some(now))?.expect("now is required"),
+    ))
+}
+
+#[pyfunction]
+fn format_absolute(target: Option<String>, now: &str) -> PyResult<Option<String>> {
+    Ok(formatting::format_absolute(
+        parse_datetime(target.as_deref())?,
+        parse_datetime(Some(now))?.expect("now is required"),
+    ))
+}
+
+#[pyfunction]
+fn format_reset(target: Option<String>, style: &str, now: &str) -> PyResult<Option<String>> {
+    Ok(formatting::format_reset(
+        parse_datetime(target.as_deref())?,
+        style,
+        parse_datetime(Some(now))?.expect("now is required"),
+    ))
+}
+
+#[pyfunction]
+fn format_currency(value: Option<f64>, currency: &str, compact: bool) -> String {
+    formatting::format_currency(value, currency, compact)
+}
+
+#[pyfunction]
+fn format_credits(value: Option<f64>) -> String {
+    formatting::format_credits(value)
+}
+
+#[pyfunction]
+fn format_tokens(value: Option<u64>) -> String {
+    formatting::format_tokens(value)
+}
+
+#[pyfunction]
+fn format_updated(target: Option<String>, now: &str) -> PyResult<Option<String>> {
+    Ok(formatting::format_updated(
+        parse_datetime(target.as_deref())?,
+        parse_datetime(Some(now))?.expect("now is required"),
+    ))
+}
+
+#[pyfunction]
+fn format_reset_credits(
+    expirations: Vec<Option<String>>,
+    style: &str,
+    now: &str,
+) -> PyResult<Option<(String, String, Vec<String>)>> {
+    let expirations = expirations
+        .iter()
+        .map(|value| parse_datetime(value.as_deref()))
+        .collect::<PyResult<Vec<_>>>()?;
+    Ok(formatting::format_reset_credits(
+        &expirations,
+        style,
+        parse_datetime(Some(now))?.expect("now is required"),
+    ))
+}
+
+#[pyfunction]
+fn format_pace(
+    stage: &str,
+    delta_percent: Option<f64>,
+    in_deficit: bool,
+    in_reserve: bool,
+    stage_label: &str,
+) -> String {
+    formatting::format_pace(stage, delta_percent, in_deficit, in_reserve, stage_label)
+}
+
+#[pyfunction]
+fn format_window_span(minutes: Option<i64>) -> Option<String> {
+    formatting::format_window_span(minutes)
+}
+
+#[pyfunction]
+fn next_refresh_seconds(interval_seconds: i64) -> i64 {
+    formatting::next_refresh_seconds(interval_seconds)
+}
+
+#[pyfunction]
+fn workday_progress_percent(
+    resets_at: Option<String>,
+    now: &str,
+    work_days: u32,
+) -> PyResult<Option<f64>> {
+    Ok(formatting::workday_progress_percent(
+        parse_datetime(resets_at.as_deref())?,
+        parse_datetime(Some(now))?.expect("now is required"),
+        work_days,
+    ))
+}
+
+#[pyfunction]
+fn project_usage_at_reset(
+    used_percent: f64,
+    samples: Vec<(f64, f64)>,
+    resets_at: Option<String>,
+    now: &str,
+) -> PyResult<Option<f64>> {
+    Ok(formatting::project_usage_at_reset(
+        used_percent,
+        &samples,
+        parse_datetime(resets_at.as_deref())?,
+        parse_datetime(Some(now))?.expect("now is required"),
+    ))
 }
 
 #[pyfunction]
@@ -95,6 +224,18 @@ fn align_start(today: &str) -> PyResult<String> {
     Ok(activity::align_start(parse_date(today)?).to_string())
 }
 
+fn parse_datetime(value: Option<&str>) -> PyResult<Option<DateTime<Utc>>> {
+    value
+        .map(|value| {
+            DateTime::parse_from_rfc3339(value)
+                .map(|datetime| datetime.with_timezone(&Utc))
+                .map_err(|error| {
+                    PyValueError::new_err(format!("invalid datetime {value:?}: {error}"))
+                })
+        })
+        .transpose()
+}
+
 fn parse_date(value: &str) -> PyResult<NaiveDate> {
     NaiveDate::parse_from_str(value, "%Y-%m-%d")
         .map_err(|error| PyValueError::new_err(format!("invalid date {value:?}: {error}")))
@@ -128,6 +269,22 @@ fn _rust_core(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(accent_color, module)?)?;
     module.add_function(wrap_pyfunction!(all_provider_ids, module)?)?;
     module.add_function(wrap_pyfunction!(backend_name, module)?)?;
+    module.add_function(wrap_pyfunction!(compact_window_label, module)?)?;
+    module.add_function(wrap_pyfunction!(format_percent, module)?)?;
+    module.add_function(wrap_pyfunction!(format_remaining, module)?)?;
+    module.add_function(wrap_pyfunction!(format_countdown, module)?)?;
+    module.add_function(wrap_pyfunction!(format_absolute, module)?)?;
+    module.add_function(wrap_pyfunction!(format_reset, module)?)?;
+    module.add_function(wrap_pyfunction!(format_currency, module)?)?;
+    module.add_function(wrap_pyfunction!(format_credits, module)?)?;
+    module.add_function(wrap_pyfunction!(format_tokens, module)?)?;
+    module.add_function(wrap_pyfunction!(format_updated, module)?)?;
+    module.add_function(wrap_pyfunction!(format_reset_credits, module)?)?;
+    module.add_function(wrap_pyfunction!(format_pace, module)?)?;
+    module.add_function(wrap_pyfunction!(format_window_span, module)?)?;
+    module.add_function(wrap_pyfunction!(next_refresh_seconds, module)?)?;
+    module.add_function(wrap_pyfunction!(workday_progress_percent, module)?)?;
+    module.add_function(wrap_pyfunction!(project_usage_at_reset, module)?)?;
     module.add_function(wrap_pyfunction!(activity_levels, module)?)?;
     module.add_function(wrap_pyfunction!(weekly_totals, module)?)?;
     module.add_function(wrap_pyfunction!(cumulative_totals, module)?)?;

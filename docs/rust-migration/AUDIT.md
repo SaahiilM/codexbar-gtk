@@ -140,6 +140,29 @@ reproducible commands; report artifact limitations honestly.
   recording this documentation was not yet merged; never infer a future success
   from the intended build number. Subsequent checks belong in a new entry.
 
+### E004 — 2026-10-29: planning verification and review handoff
+
+- **Owner:** coding-agent planning session; branch
+  `docs/native-rust-migration-roadmap`, base `46f44d0`, initial plan commit
+  `96099bf`.
+- **PR observed:** [PR #18](https://github.com/SaahiilM/codexbar-gtk/pull/18)
+  was created and open when this entry was recorded. CI/merge outcome was not
+  yet observed; check that PR directly before continuing.
+- **Post-edit validation:** `python3 -m unittest discover -s tests -q` and
+  `CODEXBAR_RUST_CORE=1 python3 -m unittest discover -s tests -q` each passed
+  132 tests with no skips; `git diff --check` passed. Rust format/test/Clippy
+  and build results are the unchanged-code baseline in E002, not a claim that
+  a new backend implementation exists.
+- **Documentation check:** a one-off local Python `pathlib`/`re` check resolved
+  25 relative Markdown links and verified B00–B15, U01–U08, C01–C03 and BG/UG/CG
+  task IDs. This check is not a committed automated test; repeat link checks if
+  moving these files.
+- **Runtime/UI:** not rerun; documentation/build metadata only. No Python
+  removal, backend service implementation or native UI work in this PR.
+- **Handoff:** no backend task claimed and no known external blocker. After
+  verifying this PR's merge status, claim B00 and implement its contracts/test
+  seam; follow with B01's timestamp/numeric/quota-window slice.
+
 ## Append a record for each task change or handoff
 
 ```text

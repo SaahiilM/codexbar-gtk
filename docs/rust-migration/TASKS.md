@@ -11,13 +11,13 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Goal | Fully native Rust GTK4/libadwaita app; backend first, UI second |
 | Current phase | Backend inventory/planning; native UI implementation must wait |
 | Last merged implementation | `46f44d0`, PR #17, build `0.81.0 (16)` |
-| Planning change | Establishes these records and build `0.81.0 (17)`; no backend behavior changes |
+| Planning change | [PR #18](https://github.com/SaahiilM/codexbar-gtk/pull/18), build `0.81.0 (17)`; no backend behavior changes; verify live merge status |
 | Backend tasks completed after that baseline | None |
 | Active implementation task / owner | None claimed |
 | Next ready task | **B00** — backend contracts, service-crate/runtime decision and test seam |
 | First domain implementation | **B01** — timestamp/numeric handling and quota-window models |
 | Open external blockers | None known; task dependencies below still apply |
-| Latest local baseline checks | 30 Rust tests; 132 Python tests in each mode; formatting/Clippy passed; see AUDIT E002 |
+| Latest local checks | 30 Rust tests and formatting/Clippy at baseline (AUDIT E002); 132 Python tests in each mode after docs/metadata edits (E004) |
 | UI validation for this planning change | Not run: documentation/version metadata only; prior fixture smoke evidence is historical |
 
 **First commands for a new model/session:**
@@ -26,6 +26,7 @@ history. A checked box means **verified and merged**, not merely implemented.
 git status -sb
 git log -8 --oneline
 gh pr list --state open
+gh pr view 18 --json state,mergeCommit,statusCheckRollup
 ```
 
 Check whether the planning PR or a subsequent task is already merged/in flight.

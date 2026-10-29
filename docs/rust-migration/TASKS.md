@@ -10,14 +10,14 @@ history. A checked box means **verified and merged**, not merely implemented.
 | --- | --- |
 | Goal | Fully native Rust GTK4/libadwaita app; backend first, UI second |
 | Current phase | B02 provider payload normalization; native UI implementation must wait |
-| Last merged implementation | `965b592`, PR #27, build `0.81.0 (26)` |
+| Last merged implementation | version-bump PR pending, build `0.82.0 (28)` |
 | Planning change | [PR #18](https://github.com/SaahiilM/codexbar-gtk/pull/18), merged at `69c5496`, build `0.81.0 (17)` |
-| Backend tasks completed after that baseline | B00, B01, B02a, B02b1, B02b2a merged; B02b2b remains |
+| Backend tasks completed after that baseline | B00, B01, B02a, B02b1, B02b2a merged; B02b2b remains; version bump to 0.82.0 pending |
 | Active implementation task / owner | None claimed |
 | Active task | None; claim B02b2b before editing |
 | Next domain slice | **B02b2b** — identity/plan, costs, details/charts, credits, reset credits, status/errors
 | Open external blockers | None known; task dependencies below still apply |
-| Latest checks | B02b2a: 38 core + 3 backend tests; format/Clippy/build; 143 Python tests each mode; 3 D-Bus tests; PR #27 CI passed (AUDIT E020/E021) |
+| Latest checks | B02b2a: 38 core + 3 backend tests; format/Clippy/build; 143 Python tests each mode; 3 D-Bus tests; PR #27 CI passed; version bump validated: 143 Python tests each mode, 3 D-Bus tests, all Rust checks passed (AUDIT E022) |
 | UI validation | Local typelibs load; synthetic X11/Wayland widget preview with extra windows succeeded; offscreen backend unavailable (AUDIT E017/E020) |
 
 **First commands for a new model/session:**
@@ -40,9 +40,11 @@ B00 PR #19 (`956ffd3`), B01a PR #20 (`6fa18c9`), B01b PR #21 (`70f295a`),
 B01c PR #22 (`4213503`), B02a PR #23 (`da215b1`), B02b1 PR #25 (`51cd4b8`),
 B02b2a PR #27 (`965b592`), and handoff PR #26 (`f0d218a`) are merged with CI
 passing. GTK4/libadwaita typelibs are available locally through ignored
-`.deps/` (E017); synthetic X11/Wayland widget previews succeeded. B02b2b is
-next: identity/plan, costs, details, credits, reset credits, status and error
-parsing. UI migration remains blocked by BG.
+`.deps/` (E017); synthetic X11/Wayland widget previews succeeded. Version
+bumped to 0.82.0 (28); provider catalog verified against upstream main
+(110 providers, no additions/removals). B02b2b is next: identity/plan, costs,
+details, credits, reset credits, status and error parsing. UI migration
+remains blocked by BG.
 For active work record task/subtask ID, owner/session, branch, PR if available,
 changed files, checks performed/skipped, blockers and the next exact action.
 

@@ -522,6 +522,35 @@ reproducible commands; report artifact limitations honestly.
 - **Next:** B02b2b — identity/plan, costs, details/charts, credits, reset
   credits, status and error normalization. No native UI migration until BG.
 
+### E022 — 2026-10-29: Version bump to CodexBar 0.82.0
+
+- **Owner/branch/base:** current coding-agent session;
+  `backend/upstream-0820-support`, based on merged `24e203f` (PR #28).
+- **Scope:** Bump `MARKETING_VERSION` to `0.82.0` and `CURRENT_PROJECT_VERSION`
+  to `28` in both `VERSION` and `codexbar_gtk/version.py`. Update CHANGELOG and
+  README. Verify provider catalog against upstream `SaahiilM/CodexBar` main
+  branch (110 providers, no additions or removals since 0.81.0).
+- **Upstream check:** Fetched `Providers.swift`, `ProviderInstanceIDAliases.generated.swift`,
+  and `ProviderManifest.swift` from upstream main. Provider enum still lists
+  110 cases matching our Rust/Python catalogs exactly. No new providers,
+  removals, or alias changes require catalog updates.
+- **Data model:** No CLI output envelope changes detected that would affect
+  `data.py` payload parsing. Extra rate-window, pace, cost, details, credits,
+  and status fields remain unchanged.
+- **UI fixes:** No specific upstream UI fixes identified for porting in this
+  bump. The Python GTK shell remains unchanged; native UI migration is blocked
+  by backend gate BG.
+- **Checks actually run:** 38 core + 3 backend Rust tests; rustfmt and Clippy
+  for all three crates; PyO3 extension build; 143 Python tests in default mode
+  and 143 in Rust mode; 3 private-D-Bus tray tests; `git diff --check`. All
+  passed, no skips reported.
+- **UI smoke:** Not rerun; version bump does not affect widget layout or
+  behavior. Previous synthetic X11/Wayland preview evidence (E020) remains
+  valid.
+- **Status:** implementation verified locally; PR not yet created.
+  Build metadata is `0.82.0 (28)`.
+- **Next:** create focused PR, observe CI/merge, then continue B02b2b.
+
 ## Append a record for each task change or handoff
 
 ```text

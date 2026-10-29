@@ -114,7 +114,8 @@ primitives from `data.py` (UTC timestamp parsing, numeric validation and
 `RateWindow`, `Pace`, `CostInfo`, detail chart, provider summary and session
 derived values, plus standard quota-window and extra rate-window payload
 normalization). GTK rendering and the rest of CLI/provider payload normalization
-remain in Python/the CodexBar CLI.
+remain in Python/the CodexBar CLI. The client targets upstream CodexBar
+0.82.0 provider behavior; the provider catalog remains at 110 providers.
 
 ### Native Rust migration roadmap
 
@@ -204,10 +205,10 @@ the menu-bar layout editor, remote sessions over Tailscale/SSH and the
 The GTK front-end uses the same version pair as the macOS bundle:
 
 * `MARKETING_VERSION` in [`VERSION`](VERSION) is the upstream CodexBar release
-  this client is feature-compatible with (`0.81.0`).
+  this client is feature-compatible with (`0.82.0`).
 * `CURRENT_PROJECT_VERSION` is the build number of the Linux front-end.
 * `codexbar_gtk/version.py` turns the pair into the macOS-style
-  `"0.81.0 (27)"` string shown under Settings → About, in the tray menu and by
+  `"0.82.0 (28)"` string shown under Settings → About, in the tray menu and by
   `./run.sh --about`.
 
 Increment `CURRENT_PROJECT_VERSION` for each merged PR and keep it in sync with

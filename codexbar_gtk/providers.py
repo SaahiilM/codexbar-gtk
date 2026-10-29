@@ -6,7 +6,7 @@ human labels plus a color per provider for meters and cards.
 
 from __future__ import annotations
 
-import os
+from . import rust_bridge
 
 # provider id -> (display name, short label, accent color)
 PROVIDERS: dict[str, tuple[str, str, str]] = {
@@ -134,26 +134,12 @@ ALIASES: dict[str, str] = {
 }
 
 
-_USE_RUST_CORE = os.environ.get("CODEXBAR_RUST_CORE", "").strip().lower() in {
-    "1",
-    "true",
-    "yes",
-    "on",
-}
-_RUST_CORE = None
-if _USE_RUST_CORE:
-    try:
-        from . import _rust_core as _RUST_CORE
-    except ImportError as exc:
-        raise RuntimeError(
-            "CODEXBAR_RUST_CORE is enabled, but the Rust extension is unavailable; "
-            "run scripts/build-rust-core.sh first"
-        ) from exc
+_RUST_CORE = rust_bridge.extension()
 
 
 def backend_name() -> str:
     """Return which implementation is serving provider metadata in this process."""
-    return "rust" if _RUST_CORE is not None else "python"
+    return rust_bridge.backend_name()
 
 
 def canonical_id(provider_id: str) -> str:

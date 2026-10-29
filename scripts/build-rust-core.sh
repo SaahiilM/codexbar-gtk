@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build the optional PyO3 extension used to exercise Rust-backed providers.
+# Build the optional PyO3 extension used to exercise Rust-backed business logic.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -20,4 +20,4 @@ if [[ ! -f "${LIBRARY}" ]]; then
 fi
 cp "${LIBRARY}" "${ROOT}/codexbar_gtk/_rust_core.so"
 echo "Built optional extension: ${ROOT}/codexbar_gtk/_rust_core.so"
-echo "Run with CODEXBAR_RUST_CORE=1 ./run.sh to use Rust provider metadata."
+echo "Run with CODEXBAR_RUST_CORE=1 ./run.sh to use Rust-backed logic."

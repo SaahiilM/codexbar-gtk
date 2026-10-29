@@ -64,8 +64,10 @@ dependencies = [
 name = "codexbar-python-bridge"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "codexbar-core",
  "pyo3",
+ "serde_json",
 ]
 
 [[package]]

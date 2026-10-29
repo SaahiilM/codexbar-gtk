@@ -10,15 +10,15 @@ history. A checked box means **verified and merged**, not merely implemented.
 | --- | --- |
 | Goal | Fully native Rust GTK4/libadwaita app; backend first, UI second |
 | Current phase | B01 domain contracts; native UI implementation must wait |
-| Last merged implementation | `6fa18c9`, PR #20, build `0.81.0 (19)` |
+| Last merged implementation | `70f295a`, PR #21, build `0.81.0 (20)` |
 | Planning change | [PR #18](https://github.com/SaahiilM/codexbar-gtk/pull/18), merged at `69c5496`, build `0.81.0 (17)` |
-| Backend tasks completed after that baseline | B00 and B01a merged; B01b is in [PR #21](https://github.com/SaahiilM/codexbar-gtk/pull/21), CI/merge pending |
-| Active implementation task / owner | B01b review handoff, owner: current coding-agent session |
-| Active task | **B01b** — `Pace` and `CostInfo` model properties |
-| Next domain slice | **B01c** — detail, credit, provider, session and spend model contracts |
+| Backend tasks completed after that baseline | B00, B01a and B01b merged; B01c implementation is in progress |
+| Active implementation task / owner | B01c review handoff, owner: current coding-agent session |
+| Active task | **B01c** — detail/credit/provider/session/spend domain contracts and derived properties |
+| Next domain slice | **B02** — provider usage payload normalization |
 | Open external blockers | None known; task dependencies below still apply |
-| Latest checks | 35 core + 3 backend Rust tests; format/Clippy/build; 137 Python tests in both modes; 3 D-Bus tests all passed (AUDIT E009) |
-| UI validation | B01a synthetic preview blocked by missing GTK4 typelib; not rerun for B01b (AUDIT E007/E008) |
+| Latest checks | B01c: 36 core + 3 backend tests; format/Clippy/build; 140 Python tests each mode; 3 D-Bus tests all passed (AUDIT E012) |
+| UI validation | GTK4 preview remains blocked by missing typelib; not rerun for B01c (AUDIT E007/E011) |
 
 **First commands for a new model/session:**
 
@@ -30,10 +30,10 @@ gh pr view 18 --json state,mergeCommit,statusCheckRollup
 gh pr view 19 --json state,mergeCommit,statusCheckRollup
 ```
 
-B00 PR #19 is merged at `956ffd3` and B01a PR #20 at `6fa18c9`; CI passed
-for both (AUDIT E006/E007). B01b PR #21 is open on `backend/b01b-pace-cost-models`; CI/merge pending.
-Verify its PR/merge status before beginning B01c. UI migration remains blocked
-by BG.
+B00 PR #19 (`956ffd3`), B01a PR #20 (`6fa18c9`) and B01b PR #21 (`70f295a`)
+are merged with CI passing (AUDIT E006–E010). B01c is underway on
+`backend/b01c-data-models`; GTK4 preview remains blocked by missing typelibs.
+Verify B01c's PR/merge status before B02. UI migration remains blocked by BG.
 For active work record task/subtask ID, owner/session, branch, PR if available,
 changed files, checks performed/skipped, blockers and the next exact action.
 
@@ -85,10 +85,10 @@ B01 sub-slices (the parent stays pending until all models/contracts and caller
 integration are complete):
 
 - [x] **B01a** Timestamp/numeric primitives and `RateWindow` — merged PR #20.
-- [ ] **B01b** `Pace` and `CostInfo` — implementation currently on
-  `backend/b01b-pace-cost-models`; do not check until merged.
+- [x] **B01b** `Pace` and `CostInfo` — merged PR #21.
 - [ ] **B01c** Detail/credit/provider/session/spend model contracts and
-  remaining derived properties.
+  remaining derived properties — implementation currently on
+  `backend/b01c-data-models`; do not check until merged.
 
 B05/B07/B12 can proceed after B00 independently of payload parsing. B11/B13 are
 not optional just because their Python files sit near presentation code. Do not

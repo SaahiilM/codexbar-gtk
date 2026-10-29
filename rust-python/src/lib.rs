@@ -117,6 +117,31 @@ fn optional_int(value: &Bound<'_, PyAny>) -> Option<i64> {
 }
 
 #[pyfunction]
+fn provider_usage_has_error(error: Option<&str>) -> bool {
+    domain::ProviderUsage::error_is_present(error)
+}
+
+#[pyfunction]
+fn provider_usage_max_used_percent(values: Vec<f64>) -> f64 {
+    domain::ProviderUsage::max_used_from(values)
+}
+
+#[pyfunction]
+fn provider_usage_subtitle(plan: Option<&str>, account_email: Option<&str>) -> String {
+    domain::ProviderUsage::subtitle_for(plan, account_email)
+}
+
+#[pyfunction]
+fn detail_chart_peak(points: Vec<(String, f64)>) -> f64 {
+    domain::DetailChart::peak_for(&points)
+}
+
+#[pyfunction]
+fn agent_session_is_running(state: &str) -> bool {
+    domain::AgentSession::state_is_running(state)
+}
+
+#[pyfunction]
 fn pace_stage_is_deficit(stage: &str) -> bool {
     domain::Pace::stage_is_deficit(stage)
 }
@@ -491,6 +516,11 @@ fn _rust_core(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(parse_timestamp, module)?)?;
     module.add_function(wrap_pyfunction!(optional_float, module)?)?;
     module.add_function(wrap_pyfunction!(optional_int, module)?)?;
+    module.add_function(wrap_pyfunction!(provider_usage_has_error, module)?)?;
+    module.add_function(wrap_pyfunction!(provider_usage_max_used_percent, module)?)?;
+    module.add_function(wrap_pyfunction!(provider_usage_subtitle, module)?)?;
+    module.add_function(wrap_pyfunction!(detail_chart_peak, module)?)?;
+    module.add_function(wrap_pyfunction!(agent_session_is_running, module)?)?;
     module.add_function(wrap_pyfunction!(pace_stage_is_deficit, module)?)?;
     module.add_function(wrap_pyfunction!(pace_stage_is_reserve, module)?)?;
     module.add_function(wrap_pyfunction!(pace_stage_label, module)?)?;

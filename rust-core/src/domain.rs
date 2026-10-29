@@ -419,6 +419,34 @@ pub fn rate_window_from_value(
     })
 }
 
+/// Normalize one entry from the CLI's ``extraRateWindows`` array.
+///
+/// The outer object carries ``id``/``title``/``usageKnown``/``isSyntheticPlaceholder``
+/// while the nested ``window`` object carries the rate-window fields.
+pub fn extra_rate_window_from_value(item: &Value) -> Option<RateWindow> {
+    let object = item.as_object()?;
+    let inner = object.get("window")?.as_object()?;
+    let key = object
+        .get("id")
+        .and_then(Value::as_str)
+        .unwrap_or("extra")
+        .to_owned();
+    let title = object
+        .get("title")
+        .and_then(Value::as_str)
+        .or_else(|| object.get("id").and_then(Value::as_str))
+        .unwrap_or("Extra")
+        .to_owned();
+    let mut rate_window =
+        rate_window_from_value(&Value::Object(inner.clone()), &key, Some(&title))?;
+    let usage_known_inner = rate_window.usage_known;
+    rate_window.usage_known = match object.get("usageKnown") {
+        Some(Value::Bool(false)) => false,
+        _ => usage_known_inner,
+    };
+    Some(rate_window)
+}
+
 fn json_truthy(value: &Value) -> bool {
     match value {
         Value::Null => false,

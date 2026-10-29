@@ -6,6 +6,25 @@ short version tracks, so "which version has what" maps cleanly onto both trees.
 
 ## Unreleased
 
+## 0.82.0 (28) — 2026-10-29
+
+Tracks upstream CodexBar 0.82.0.
+
+### Changed
+
+- Bump `MARKETING_VERSION` to `0.82.0` to track the upstream CodexBar release.
+- Increment GTK build to `28`; keep `VERSION` and `codexbar_gtk/version.py`
+  synchronized.
+- Verify provider catalog still matches upstream (110 providers, no additions
+  or removals between 0.81.0 and main).
+
+### Validation
+
+- 38 rust-core and 3 rust-backend tests passed.
+- 143 Python tests passed in default mode and 143 in Rust mode.
+- 3 private-D-Bus tray tests passed.
+- `git diff --check` passed.
+
 ## 0.81.0 (27) — 2026-10-29
 
 Tracks upstream CodexBar 0.81.0.

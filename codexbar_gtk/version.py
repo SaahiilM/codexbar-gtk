@@ -10,7 +10,7 @@ with every published build of the Linux front-end.
 from __future__ import annotations
 
 SHORT_VERSION = "0.81.0"
-BUILD = 10
+BUILD = 11
 
 
 def display_string() -> str:

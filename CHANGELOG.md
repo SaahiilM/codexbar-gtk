@@ -6,6 +6,18 @@ short version tracks, so "which version has what" maps cleanly onto both trees.
 
 ## Unreleased
 
+## 0.81.0 (11) — 2026-10-29
+
+Tracks upstream CodexBar 0.81.0. This build refreshes the README screenshots
+with synthetic data and documents the current opt-in Rust integration status.
+
+### Updated
+
+- Add current dashboard, compact panel, spend, sessions and provider-settings
+  screenshots to the README; note that the screenshots use fixture data.
+- Document which Python business-logic paths currently use Rust at runtime and
+  how to build/test the optional PyO3 extension.
+
 ## 0.81.0 (10) — 2026-10-29
 
 Tracks upstream CodexBar 0.81.0. This build routes the spend activity helpers

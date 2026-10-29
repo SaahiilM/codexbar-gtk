@@ -6,6 +6,21 @@ short version tracks, so "which version has what" maps cleanly onto both trees.
 
 ## Unreleased
 
+## 0.81.0 (20) — 2026-10-29
+
+Tracks upstream CodexBar 0.81.0.
+
+### Added
+
+- Continue B01 with Rust `Pace` and `CostInfo` domain types and opt-in derived
+  property routing for deficit/reserve labels and bounded usage percentages.
+- Add parity cases for known pace stages, unknown stages, missing/invalid cost
+  limits, and NaN/infinity percentage behavior.
+
+### Validation
+
+- See `docs/rust-migration/AUDIT.md` for B01b implementation evidence.
+
 ## 0.81.0 (19) — 2026-10-29
 
 Tracks upstream CodexBar 0.81.0.

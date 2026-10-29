@@ -117,6 +117,31 @@ fn optional_int(value: &Bound<'_, PyAny>) -> Option<i64> {
 }
 
 #[pyfunction]
+fn pace_stage_is_deficit(stage: &str) -> bool {
+    domain::Pace::stage_is_deficit(stage)
+}
+
+#[pyfunction]
+fn pace_stage_is_reserve(stage: &str) -> bool {
+    domain::Pace::stage_is_reserve(stage)
+}
+
+#[pyfunction]
+fn pace_stage_label(stage: &str) -> String {
+    domain::Pace::label_for_stage(stage).to_owned()
+}
+
+#[pyfunction]
+fn cost_info_has_limit(limit: f64) -> bool {
+    domain::CostInfo::limit_is_usable(limit)
+}
+
+#[pyfunction]
+fn cost_info_used_percent(used: f64, limit: f64) -> f64 {
+    domain::CostInfo::percent_used(used, limit)
+}
+
+#[pyfunction]
 fn rate_window_remaining_percent(used_percent: f64) -> f64 {
     (100.0 - used_percent).max(0.0)
 }
@@ -466,6 +491,11 @@ fn _rust_core(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(parse_timestamp, module)?)?;
     module.add_function(wrap_pyfunction!(optional_float, module)?)?;
     module.add_function(wrap_pyfunction!(optional_int, module)?)?;
+    module.add_function(wrap_pyfunction!(pace_stage_is_deficit, module)?)?;
+    module.add_function(wrap_pyfunction!(pace_stage_is_reserve, module)?)?;
+    module.add_function(wrap_pyfunction!(pace_stage_label, module)?)?;
+    module.add_function(wrap_pyfunction!(cost_info_has_limit, module)?)?;
+    module.add_function(wrap_pyfunction!(cost_info_used_percent, module)?)?;
     module.add_function(wrap_pyfunction!(rate_window_remaining_percent, module)?)?;
     module.add_function(wrap_pyfunction!(rate_window_duration_label, module)?)?;
     module.add_function(wrap_pyfunction!(compact_window_label, module)?)?;

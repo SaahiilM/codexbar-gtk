@@ -134,15 +134,24 @@ class Pace:
     @property
     def in_deficit(self) -> bool:
         """Burning faster than the expected pace."""
+        rust = extension()
+        if rust is not None:
+            return rust.pace_stage_is_deficit(self.stage)
         return self.stage in {"slightlyAhead", "ahead", "farAhead"}
 
     @property
     def in_reserve(self) -> bool:
         """Burning slower than the expected pace."""
+        rust = extension()
+        if rust is not None:
+            return rust.pace_stage_is_reserve(self.stage)
         return self.stage in {"slightlyBehind", "behind", "farBehind"}
 
     @property
     def stage_label(self) -> str:
+        rust = extension()
+        if rust is not None:
+            return rust.pace_stage_label(self.stage)
         return {
             "onTrack": "On pace",
             "slightlyAhead": "In deficit",
@@ -166,10 +175,16 @@ class CostInfo:
 
     @property
     def has_limit(self) -> bool:
+        rust = extension()
+        if rust is not None:
+            return rust.cost_info_has_limit(self.limit)
         return self.limit and self.limit > 0
 
     @property
     def used_percent(self) -> float:
+        rust = extension()
+        if rust is not None:
+            return rust.cost_info_used_percent(self.used, self.limit)
         if not self.has_limit:
             return 0.0
         return max(0.0, min(100.0, (self.used / self.limit) * 100.0))

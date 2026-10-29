@@ -271,6 +271,47 @@ reproducible commands; report artifact limitations honestly.
 - **Next:** observe PR CI/merge, report missing GTK4 smoke as a limitation, then
   continue B01b (remaining data model contracts).
 
+### E008 — 2026-10-29: B01a merged; B01b Pace/CostInfo models
+
+- **B01a merge:** [PR #20](https://github.com/SaahiilM/codexbar-gtk/pull/20)
+  merged at `6fa18c909dbcf8ef9a2135b0ba8dd7373d98f626`; both `test` and
+  `tray-dbus` CI checks succeeded. Main was fast-forwarded and clean.
+- **B01b owner/branch/base:** current coding-agent session;
+  `backend/b01b-pace-cost-models`, based on merged `6fa18c9`.
+- **Scope:** Rust `Pace` and `CostInfo` types/derived policies in
+  `rust-core/src/domain.rs`; PyO3 helpers and opt-in routing in
+  `rust-python/src/lib.rs` and `codexbar_gtk/data.py`; parity tests in
+  `tests/test_rust_domain_integration.py`. `ProviderUsage`, detail/credit,
+  session and spend model contracts remain for B01c.
+- **Behavior detail:** preserve Python cost percent behavior for NaN (treated as
+  the upper clamp through Python's `min` argument order), positive infinity,
+  no/negative limit, negative usage and >100% usage. Unknown pace stages retain
+  their source label and do not classify as deficit/reserve.
+- **Focused checks:** 35 core tests, 3 backend tests, and 5 domain integration
+  tests passed; Rust formatting/Clippy and extension build passed. Full suites
+  and CI pending at first recording.
+- **UI smoke:** not rerun; B01a's synthetic preview attempt remains blocked by
+  missing GTK4 typelibs (E007). This slice only changes value derivations, not
+  widget structure; do not claim a UI pass.
+- **Status:** implementation verified locally before PR creation; not merged.
+  Build `0.81.0 (20)`.
+- **Next:** run full three-crate/Python checks, create a focused PR, observe CI,
+  then proceed to B01c's remaining shared data model contracts.
+
+### E009 — 2026-10-29: B01b full local validation
+
+- **Checks actually run:** rustfmt checks for all three crates; 35 core and 3
+  backend tests; Clippy with warnings denied for core, PyO3 bridge and backend;
+  extension build; 137 Python tests in default mode and 137 in Rust mode; 3
+  private-D-Bus tray tests; `git diff --check`. All passed, no skips reported.
+- **Runtime:** Rust bridge property paths were exercised by the Python suite in
+  both modes. No end-to-end GTK runtime/preview is claimed because GTK4 typelibs
+  are missing, as documented in E007.
+- **PR/status:** [PR #21](https://github.com/SaahiilM/codexbar-gtk/pull/21),
+  commit `6bf814b`; open when this handoff was recorded. CI/merge must be checked
+  live. Build is `0.81.0 (20)`.
+- **Next:** observe CI/merge, then B01c after merge.
+
 ## Append a record for each task change or handoff
 
 ```text

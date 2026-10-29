@@ -404,7 +404,10 @@ reproducible commands; report artifact limitations honestly.
 - **Integration:** Python tests exercised the Rust standard-window parser when
   opt-in, and the Python reference in default mode. No real provider access.
 - **UI smoke:** still blocked by unavailable GTK4 typelibs; no GTK pass claimed.
-- **Status:** PR not yet created at this entry. Next is PR creation and CI.
+- **PR/status:** [PR #23](https://github.com/SaahiilM/codexbar-gtk/pull/23),
+  commit `c3a9d09`; open when this handoff was recorded. CI/merge must be checked
+  live.
+- **Next:** observe CI/merge, then B02b provider envelope normalization.
 
 ## Append a record for each task change or handoff
 

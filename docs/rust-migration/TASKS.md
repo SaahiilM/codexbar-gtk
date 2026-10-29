@@ -12,7 +12,7 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Current phase | B02 provider payload normalization; native UI implementation must wait |
 | Last merged implementation | `4213503`, PR #22, build `0.81.0 (21)` |
 | Planning change | [PR #18](https://github.com/SaahiilM/codexbar-gtk/pull/18), merged at `69c5496`, build `0.81.0 (17)` |
-| Backend tasks completed after that baseline | B00, B01 and B01a–c merged; B02a implementation is verified, PR pending |
+| Backend tasks completed after that baseline | B00, B01 and B01a–c merged; B02a is in [PR #23](https://github.com/SaahiilM/codexbar-gtk/pull/23), CI/merge pending |
 | Active implementation task / owner | B02a review handoff, owner: current coding-agent session |
 | Active task | **B02a** — normalize standard provider quota-window payloads in Rust |
 | Next domain slice | **B02b** — full provider envelope normalization (pace, identity, costs, details, credits) |
@@ -35,9 +35,9 @@ gh pr view 22 --json state,mergeCommit,statusCheckRollup
 
 B00 PR #19 (`956ffd3`), B01a PR #20 (`6fa18c9`), B01b PR #21 (`70f295a`),
 and B01c PR #22 (`4213503`) are merged with CI passing (AUDIT E006–E013).
-B02a is locally verified on `backend/b02a-window-normalization`; PR/merge
-status pending. GTK4 preview remains blocked by missing typelibs. Verify B02a's
-PR/merge status before B02b. UI migration remains blocked by BG.
+B02a PR #23 is open on `backend/b02a-window-normalization`; CI/merge pending.
+GTK4 preview remains blocked by missing typelibs. Verify B02a's PR/merge status
+before B02b. UI migration remains blocked by BG.
 For active work record task/subtask ID, owner/session, branch, PR if available,
 changed files, checks performed/skipped, blockers and the next exact action.
 

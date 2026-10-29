@@ -6,6 +6,8 @@ human labels plus a color per provider for meters and cards.
 
 from __future__ import annotations
 
+import os
+
 # provider id -> (display name, short label, accent color)
 PROVIDERS: dict[str, tuple[str, str, str]] = {
     "abacus": ("Abacus AI", "Abacus", "#2563EB"),
@@ -132,12 +134,38 @@ ALIASES: dict[str, str] = {
 }
 
 
+_USE_RUST_CORE = os.environ.get("CODEXBAR_RUST_CORE", "").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+_RUST_CORE = None
+if _USE_RUST_CORE:
+    try:
+        from . import _rust_core as _RUST_CORE
+    except ImportError as exc:
+        raise RuntimeError(
+            "CODEXBAR_RUST_CORE is enabled, but the Rust extension is unavailable; "
+            "run scripts/build-rust-core.sh first"
+        ) from exc
+
+
+def backend_name() -> str:
+    """Return which implementation is serving provider metadata in this process."""
+    return "rust" if _RUST_CORE is not None else "python"
+
+
 def canonical_id(provider_id: str) -> str:
     """Resolve a configuration id to the id used in the usage payload."""
+    if _RUST_CORE is not None:
+        return _RUST_CORE.canonical_id(provider_id)
     return ALIASES.get(provider_id, provider_id)
 
 
 def display_name(provider_id: str) -> str:
+    if _RUST_CORE is not None:
+        return _RUST_CORE.display_name(provider_id)
     provider_id = canonical_id(provider_id)
     entry = PROVIDERS.get(provider_id)
     if entry:
@@ -146,6 +174,8 @@ def display_name(provider_id: str) -> str:
 
 
 def short_name(provider_id: str) -> str:
+    if _RUST_CORE is not None:
+        return _RUST_CORE.short_name(provider_id)
     provider_id = canonical_id(provider_id)
     entry = PROVIDERS.get(provider_id)
     if entry:
@@ -154,6 +184,8 @@ def short_name(provider_id: str) -> str:
 
 
 def accent_color(provider_id: str) -> str:
+    if _RUST_CORE is not None:
+        return _RUST_CORE.accent_color(provider_id)
     provider_id = canonical_id(provider_id)
     entry = PROVIDERS.get(provider_id)
     if entry:
@@ -162,4 +194,6 @@ def accent_color(provider_id: str) -> str:
 
 
 def all_provider_ids() -> list[str]:
+    if _RUST_CORE is not None:
+        return _RUST_CORE.all_provider_ids()
     return list(PROVIDERS.keys())

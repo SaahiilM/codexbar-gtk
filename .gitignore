@@ -2,4 +2,6 @@ __pycache__/
 *.pyc
 .deps/
 /rust-core/target/
+/rust-python/target/
+/codexbar_gtk/_rust_core.so
 *.png

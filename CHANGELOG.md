@@ -6,8 +6,19 @@ short version tracks, so "which version has what" maps cleanly onto both trees.
 
 ## Unreleased
 
+## 0.81.0 (10) — 2026-10-29
+
+Tracks upstream CodexBar 0.81.0. This build routes the spend activity helpers
+through Rust when `CODEXBAR_RUST_CORE=1`, while Python remains the default.
+
 ### Added
 
+- Add PyO3 bindings for heatmap levels, weekly and cumulative totals, daily cost
+  series, and activity-window alignment.
+- Route the spend page's activity calculations through Rust in opt-in mode and
+  add backend parity tests; retain Python behavior for non-JSON edge inputs.
+- Centralize optional Rust extension loading so provider metadata and activity
+  helpers share the same explicit opt-in and fail-fast behavior.
 - Tray context menu: add **Check for updates**, **Restart**, **Settings** and
   **Quit** actions; the update check compares the public client version marker
   and never downloads or installs code.

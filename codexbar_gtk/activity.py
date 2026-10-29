@@ -6,8 +6,11 @@ Kept free of GTK so the behaviour can be tested head-less, exactly like the
 
 from __future__ import annotations
 
+import json
 import math
 from datetime import date, timedelta
+
+from . import rust_bridge
 
 WEEK_COUNT = 53
 DAY_COUNT = 7
@@ -15,6 +18,9 @@ DAY_COUNT = 7
 
 def activity_levels(values: list[int]) -> list[int]:
     """Bucket values into the five heatmap levels (empty + four shades)."""
+    core = rust_bridge.extension()
+    if core is not None:
+        return core.activity_levels(values)
     peak = max(values, default=0)
     levels: list[int] = []
     for value in values:
@@ -35,6 +41,13 @@ def activity_levels(values: list[int]) -> list[int]:
 
 def weekly_totals(start: date, values: dict[date, int], today: date) -> list[int]:
     """Sum each Sunday-aligned week, mirroring SpendActivitySeries.weeklyActivity."""
+    core = rust_bridge.extension()
+    if core is not None:
+        return core.weekly_totals(
+            start.isoformat(),
+            [(day.isoformat(), value) for day, value in values.items()],
+            today.isoformat(),
+        )
     totals = []
     for week in range(WEEK_COUNT):
         total = 0
@@ -49,6 +62,9 @@ def weekly_totals(start: date, values: dict[date, int], today: date) -> list[int
 
 def cumulative_totals(values: list[int]) -> list[int]:
     """Running total per week, mirroring SpendActivityAggregateSeries.cumulative."""
+    core = rust_bridge.extension()
+    if core is not None:
+        return core.cumulative_totals(values)
     total = 0
     running = []
     for value in values:
@@ -69,6 +85,22 @@ def daily_series(
     incomplete days remain unknown, as do gaps before history coverage is
     established. Days outside the reported range stay absent.
     """
+    core = rust_bridge.extension()
+    if core is not None:
+        try:
+            entries_json = json.dumps(entries, allow_nan=False)
+        except (TypeError, ValueError):
+            # Preserve Python's broader input behavior for non-JSON values and
+            # non-finite floats; CLI JSON payloads take the Rust path.
+            pass
+        else:
+            return [
+                (date.fromisoformat(day), value)
+                for day, value in core.daily_series(
+                    entries_json, days, history_coverage_established
+                )
+            ]
+
     totals: dict[date, float] = {}
     unknown: set[date] = set()
     for entry in entries:
@@ -114,5 +146,8 @@ def daily_series(
 
 def align_start(today: date) -> date:
     """First Sunday of the one-year window ending on ``today``."""
+    core = rust_bridge.extension()
+    if core is not None:
+        return date.fromisoformat(core.align_start(today.isoformat()))
     first = today - timedelta(days=364)
     return first - timedelta(days=(first.weekday() + 1) % DAY_COUNT)

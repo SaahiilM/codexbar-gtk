@@ -8,6 +8,8 @@ on:
       - "rust-core/**"
       - "rust-python/**"
       - "codexbar_gtk/providers.py"
+      - "codexbar_gtk/activity.py"
+      - "codexbar_gtk/rust_bridge.py"
       - "scripts/build-rust-core.sh"
       - "tests/**"
       - ".github/workflows/rust-core.yml"
@@ -30,7 +32,7 @@ jobs:
         run: ./scripts/build-rust-core.sh
       - name: Run Python tests with default backend
         run: python3 -m unittest discover -s tests -v
-      - name: Run Python tests with Rust provider backend
+      - name: Run Python tests with Rust backend
         run: CODEXBAR_RUST_CORE=1 python3 -m unittest discover -s tests -v
       - name: Run Clippy
         run: |

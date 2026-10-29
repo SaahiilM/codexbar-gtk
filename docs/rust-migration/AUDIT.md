@@ -409,6 +409,18 @@ reproducible commands; report artifact limitations honestly.
   live.
 - **Next:** observe CI/merge, then B02b provider envelope normalization.
 
+### E016 — 2026-10-29: B02a merged
+
+- **PR/merge:** [PR #23](https://github.com/SaahiilM/codexbar-gtk/pull/23)
+  merged at `da215b16cc89ffdd5d528c5382cdb6a450831271`; `test` and `tray-dbus`
+  CI checks succeeded. Main was fast-forwarded and clean.
+- **Result:** B02a checked: standard quota-window normalization is routed
+  through Rust in opt-in mode. Extra windows and the rest of provider payload
+  normalization remain Python under B02b.
+- **GTK/UI:** still blocked locally by missing GTK4 typelib; no UI pass claimed.
+- **Next:** B02b, provider pace/identity/plan/cost/details/credits/status/error
+  normalization. No native UI until BG.
+
 ## Append a record for each task change or handoff
 
 ```text

@@ -6,6 +6,20 @@ short version tracks, so "which version has what" maps cleanly onto both trees.
 
 ## Unreleased
 
+## 0.81.0 (23) — 2026-10-29
+
+Tracks upstream CodexBar 0.81.0.
+
+### Changed
+
+- Record the observed merge of B02a, check off its standard rate-window slice,
+  and set B02b as the next provider-normalization task in the durable handoff.
+
+### Validation
+
+- Documentation/version metadata only; B02a behavior and CI evidence are in
+  `docs/rust-migration/AUDIT.md`.
+
 ## 0.81.0 (22) — 2026-10-29
 
 Tracks upstream CodexBar 0.81.0.

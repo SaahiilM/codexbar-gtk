@@ -6,6 +6,20 @@ short version tracks, so "which version has what" maps cleanly onto both trees.
 
 ## Unreleased
 
+## 0.82.0 (29) — 2026-10-29
+
+Tracks upstream CodexBar 0.82.0.
+
+### Added
+
+- Port provider cost payload normalization (`providerCost`) to Rust for valid
+  typed payloads, retaining the Python fallback for malformed field shapes.
+- Add parity coverage for cost fields, missing values, and fallback defaults.
+
+### Validation
+
+- See `docs/rust-migration/AUDIT.md` for B02b2a test and GTK preview evidence.
+
 ## 0.82.0 (28) — 2026-10-29
 
 Tracks upstream CodexBar 0.82.0.

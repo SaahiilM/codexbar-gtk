@@ -551,6 +551,30 @@ reproducible commands; report artifact limitations honestly.
   Build metadata is `0.82.0 (28)`.
 - **Next:** create focused PR, observe CI/merge, then continue B02b2b.
 
+### E023 — 2026-10-29: B02b2b1 provider cost normalization
+
+- **Owner/branch/base:** current coding-agent session;
+  `backend/b02b2b1-cost-normalization`, based on merged `1497667` (PR #29).
+- **Scope:** add `cost_from_value` in `rust-core/src/domain.rs`, expose a PyO3
+  JSON adapter, and route provider cost parsing through Rust in opt-in mode.
+  Invalid field shapes fall back to the Python reference. This only covers cost
+  objects; detail/charts, credits, reset credits, status and errors remain
+  pending B02b2b2.
+- **Semantics/tests:** preserve `used`, `limit`, `currency`, `period`, `balance`,
+  `personal_used`, and `resets_at`. Missing fields default to 0.0/"USD"/None.
+  Non-numeric values return 0.0 via Python fallback. Core tests cover complete
+  payloads, empty objects, totalCost-as-used (not recognized, matching Python),
+  and non-numeric used values.
+- **UI smoke:** Not rerun; cost normalization changes value derivation only,
+  not widget structure. Previous synthetic X11/Wayland preview evidence
+  (E020) remains valid.
+- **Checks actually run:** rustfmt for all three crates; 39 core and 3 backend
+  tests; Clippy with warnings denied for core/bridge/backend; PyO3 extension
+  build; 144 Python tests in default mode and 144 in Rust mode; 3 private-D-Bus
+  tray tests; `git diff --check`. All passed, no skips reported.
+- **Status:** implementation locally verified before PR; build `0.82.0 (29)`.
+- **Next:** create PR, observe CI/merge, then B02b2b2.
+
 ## Append a record for each task change or handoff
 
 ```text

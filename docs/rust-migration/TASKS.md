@@ -10,14 +10,14 @@ history. A checked box means **verified and merged**, not merely implemented.
 | --- | --- |
 | Goal | Fully native Rust GTK4/libadwaita app; backend first, UI second |
 | Current phase | B02 provider payload normalization; native UI implementation must wait |
-| Last merged implementation | version-bump PR pending, build `0.82.0 (28)` |
+| Last merged implementation | version-bump PR #29 merged, build `0.82.0 (28)` |
 | Planning change | [PR #18](https://github.com/SaahiilM/codexbar-gtk/pull/18), merged at `69c5496`, build `0.81.0 (17)` |
-| Backend tasks completed after that baseline | B00, B01, B02a, B02b1, B02b2a merged; B02b2b remains; version bump to 0.82.0 pending |
-| Active implementation task / owner | None claimed |
-| Active task | None; claim B02b2b before editing |
-| Next domain slice | **B02b2b** — identity/plan, costs, details/charts, credits, reset credits, status/errors
+| Backend tasks completed after that baseline | B00, B01, B02a, B02b1, B02b2a merged; B02b2b1 verified, PR pending |
+| Active implementation task / owner | B02b2b1 review handoff, owner: current coding-agent session |
+| Active task | **B02b2b1** — provider cost payload normalization in Rust |
+| Next domain slice | **B02b2b2** — detail/charts, credits, reset credits, status/errors
 | Open external blockers | None known; task dependencies below still apply |
-| Latest checks | B02b2a: 38 core + 3 backend tests; format/Clippy/build; 143 Python tests each mode; 3 D-Bus tests; PR #27 CI passed; version bump validated: 143 Python tests each mode, 3 D-Bus tests, all Rust checks passed (AUDIT E022) |
+| Latest checks | B02b2b1: 39 core + 3 backend tests; format/Clippy/build; 144 Python tests each mode; 3 D-Bus tests all passed (AUDIT E023) |
 | UI validation | Local typelibs load; synthetic X11/Wayland widget preview with extra windows succeeded; offscreen backend unavailable (AUDIT E017/E020) |
 
 **First commands for a new model/session:**
@@ -38,13 +38,12 @@ gh pr view 25 --json state,mergeCommit,statusCheckRollup
 
 B00 PR #19 (`956ffd3`), B01a PR #20 (`6fa18c9`), B01b PR #21 (`70f295a`),
 B01c PR #22 (`4213503`), B02a PR #23 (`da215b1`), B02b1 PR #25 (`51cd4b8`),
-B02b2a PR #27 (`965b592`), and handoff PR #26 (`f0d218a`) are merged with CI
-passing. GTK4/libadwaita typelibs are available locally through ignored
-`.deps/` (E017); synthetic X11/Wayland widget previews succeeded. Version
-bumped to 0.82.0 (28); provider catalog verified against upstream main
-(110 providers, no additions/removals). B02b2b is next: identity/plan, costs,
-details, credits, reset credits, status and error parsing. UI migration
-remains blocked by BG.
+B02b2a PR #27 (`965b592`), handoff PR #26 (`f0d218a`), and version-bump PR #29
+are merged with CI passing. GTK4/libadwaita typelibs are available locally
+through ignored `.deps/` (E017); synthetic X11/Wayland widget previews
+succeeded. B02b2b1 is locally verified on `backend/b02b2b1-cost-normalization`;
+PR pending. Verify its PR/merge before B02b2b2. UI migration remains blocked
+by BG.
 For active work record task/subtask ID, owner/session, branch, PR if available,
 changed files, checks performed/skipped, blockers and the next exact action.
 
@@ -107,8 +106,9 @@ credits and error semantics are integrated):
   merged PR #23.
 - [x] **B02b1** Pace object normalization — merged PR #25.
 - [x] **B02b2a** Extra rate-window normalization — merged PR #27.
-- [ ] **B02b2b** Identity/plan, cost, details/charts, credits, reset credits,
-  status and errors.
+- [x] **B02b2b1** Provider cost normalization — implementation currently on
+  `backend/b02b2b1-cost-normalization`; do not check until merged.
+- [ ] **B02b2b2** Detail/charts, credits, reset credits, status and errors.
 
 B05/B07/B12 can proceed after B00 independently of payload parsing. B11/B13 are
 not optional just because their Python files sit near presentation code. Do not

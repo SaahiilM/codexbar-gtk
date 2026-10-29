@@ -108,8 +108,8 @@ public client `VERSION` marker from GitHub; it does not install or download code
 The application remains primarily Python. The Rust core is being integrated one
 module at a time behind an opt-in PyO3 extension. The live Rust paths currently
 cover provider metadata (canonical IDs, names and colors), Usage & Spend
-activity helpers, and display formatting. GTK rendering and CLI/provider
-fetching remain in Python/the CodexBar CLI.
+activity helpers, display formatting, and monthly allowance daily targets. GTK
+rendering and CLI/provider fetching remain in Python/the CodexBar CLI.
 
 ### Rust module checklist
 
@@ -118,14 +118,13 @@ fetching remain in Python/the CodexBar CLI.
   opt-in mode.
 - [x] `format.py` — UTC-compatible display formatters, Rust-backed in opt-in
   mode; naive and non-UTC datetimes retain the Python behavior.
-- [x] `pace.py` — Rust port and parity tests complete; runtime integration is
-  still pending.
+- [x] `pace.py` — monthly allowance calculations and daily-target formatting,
+  Rust-backed in opt-in mode; currency conversion remains in Python.
 - [x] `history.py` — Rust port and parity tests complete; runtime integration
   is still pending.
 
-The remaining work is to wire the monthly pace and quota-history ports into
-their Python callers, then continue parity testing before removing any Python
-implementations.
+The remaining work is to wire the quota-history port into its Python callers,
+then continue parity testing before removing any Python implementations.
 
 Build the extension and opt in for the app process with:
 
@@ -179,7 +178,7 @@ The GTK front-end uses the same version pair as the macOS bundle:
   this client is feature-compatible with (`0.81.0`).
 * `CURRENT_PROJECT_VERSION` is the build number of the Linux front-end.
 * `codexbar_gtk/version.py` turns the pair into the macOS-style
-  `"0.81.0 (12)"` string shown under Settings → About, in the tray menu and by
+  `"0.81.0 (13)"` string shown under Settings → About, in the tray menu and by
   `./run.sh --about`.
 
 Increment `CURRENT_PROJECT_VERSION` for each merged PR and keep it in sync with

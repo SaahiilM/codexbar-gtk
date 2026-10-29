@@ -128,8 +128,9 @@ are temporary. Backend work is not complete, and native UI work has not started.
 - [Task checklist and current model handoff](docs/rust-migration/TASKS.md)
 - [Decisions, verification evidence and audit trail](docs/rust-migration/AUDIT.md)
 
-Future coding agents should start with [`AGENTS.md`](AGENTS.md). B00 and B01
-are complete; B02 provider payload normalization is in progress.
+Future coding agents should start with [`AGENTS.md`](AGENTS.md). B00, B01,
+and B02 are complete; B04 spend normalization/aggregation is the next backend
+task.
 
 ### Existing opt-in module integrations
 
@@ -145,11 +146,11 @@ are complete; B02 provider payload normalization is in progress.
   either backend; unsupported sample inputs retain the Python path.
 - [x] `charts.py` — time-spaced sparkline coordinates and fixed quota axes,
   Rust-backed in opt-in mode; GTK/Cairo drawing remains in Python.
-- [ ] `data.py` — timestamp/numeric primitives, standard quota-window and pace
-  parsing, plus extra rate-window normalization, and derived properties for
-  `RateWindow`, `Pace`, `CostInfo`, detail charts, providers and sessions are
-  partially Rust-backed in opt-in mode (B01a–c/B02a–b2a); remaining provider
-  payload normalization is transitional.
+- [x] `data.py` — timestamp/numeric primitives, standard quota-window, pace,
+  extra rate-window, provider cost, detail chart, provider context
+  (credits/status/error/plan), and agent-session payload normalization are
+  Rust-backed in opt-in mode (B01a–c/B02a–b2b2b/B03); spend normalization
+  (B04) and remaining UI backend extraction remain transitional.
 
 The six original Rust ports have opt-in runtime integrations, with additional
 `data.py` behavior routed through Rust in opt-in mode. This checklist

@@ -635,6 +635,17 @@ reproducible commands; report artifact limitations honestly.
 - **Status:** implementation locally verified before PR; build `0.82.0 (32)`.
 - **Next:** create PR, observe CI/merge, then B03 agent-session normalization.
 
+### E027 — 2026-10-29: B02b2b2b merged
+
+- **PR/merge:** [PR #33](https://github.com/SaahiilM/codexbar-gtk/pull/33)
+  merged at `5aee61fd6756915d42cfb5c66b635f80594cbcbb`; `test` and `tray-dbus`
+  CI checks succeeded. Main was fast-forwarded and clean.
+- **Result:** B02b2b2b checked. Provider context (credits, credit events, reset
+  credits, status, error, plan) normalizes through Rust in opt-in mode.
+- **Next:** B03 — agent-session normalization (session fields, timestamp
+  handling, running-state classification, stable sorting). No native UI
+  migration until BG.
+
 ## Append a record for each task change or handoff
 
 ```text

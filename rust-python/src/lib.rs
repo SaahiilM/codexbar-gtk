@@ -31,6 +31,15 @@ type RateWindowTuple = (
     bool,
 );
 type ExtraRateWindowTuple = RateWindowTuple;
+type CostInfoTuple = (
+    f64,
+    f64,
+    String,
+    Option<String>,
+    Option<f64>,
+    Option<f64>,
+    Option<String>,
+);
 
 #[pyclass(name = "HistoryStore")]
 struct RustHistoryStore {
@@ -146,6 +155,22 @@ fn extra_rate_window_from_json(payload: &str) -> Option<ExtraRateWindowTuple> {
         window.quota_limit,
         window.quota_unit,
         window.usage_known,
+    ))
+}
+
+#[pyfunction]
+fn cost_from_json(payload: &str) -> Option<CostInfoTuple> {
+    let payload: Value = serde_json::from_str(payload).ok()?;
+    let cost = domain::cost_from_value(&payload)?;
+    Some((
+        cost.used,
+        cost.limit,
+        cost.currency,
+        cost.period,
+        cost.balance,
+        cost.personal_used,
+        cost.resets_at
+            .map(|time| time.to_rfc3339_opts(chrono::SecondsFormat::AutoSi, true)),
     ))
 }
 
@@ -596,6 +621,7 @@ fn _rust_core(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(parse_timestamp, module)?)?;
     module.add_function(wrap_pyfunction!(rate_window_from_json, module)?)?;
     module.add_function(wrap_pyfunction!(extra_rate_window_from_json, module)?)?;
+    module.add_function(wrap_pyfunction!(cost_from_json, module)?)?;
     module.add_function(wrap_pyfunction!(pace_from_json, module)?)?;
     module.add_function(wrap_pyfunction!(optional_float, module)?)?;
     module.add_function(wrap_pyfunction!(optional_int, module)?)?;

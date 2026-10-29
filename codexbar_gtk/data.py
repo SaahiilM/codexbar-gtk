@@ -579,15 +579,54 @@ def provider_usage_from_payload(payload: dict[str, Any]) -> ProviderUsage:
     cost: CostInfo | None = None
     raw_cost = usage.get("providerCost")
     if isinstance(raw_cost, dict):
-        cost = CostInfo(
-            used=float(raw_cost.get("used") or 0.0),
-            limit=float(raw_cost.get("limit") or 0.0),
-            currency=str(raw_cost.get("currencyCode") or "USD"),
-            period=raw_cost.get("period"),
-            balance=raw_cost.get("balance"),
-            personal_used=raw_cost.get("personalUsed"),
-            resets_at=parse_timestamp(raw_cost.get("resetsAt")),
-        )
+        rust = extension()
+        if rust is not None:
+            try:
+                parsed = rust.cost_from_json(json.dumps(raw_cost))
+            except (TypeError, ValueError):
+                parsed = None
+            if parsed is not None:
+                (
+                    used,
+                    limit,
+                    currency,
+                    period,
+                    balance,
+                    personal_used,
+                    resets_at,
+                ) = parsed
+                parsed_reset = parse_timestamp(resets_at)
+                if parsed_reset is None:
+                    parsed_reset = parse_timestamp(raw_cost.get("resetsAt"))
+                cost = CostInfo(
+                    used=used,
+                    limit=limit,
+                    currency=currency,
+                    period=period,
+                    balance=balance,
+                    personal_used=personal_used,
+                    resets_at=parsed_reset,
+                )
+            else:
+                cost = CostInfo(
+                    used=float(raw_cost.get("used") or 0.0),
+                    limit=float(raw_cost.get("limit") or 0.0),
+                    currency=str(raw_cost.get("currencyCode") or "USD"),
+                    period=raw_cost.get("period"),
+                    balance=raw_cost.get("balance"),
+                    personal_used=raw_cost.get("personalUsed"),
+                    resets_at=parse_timestamp(raw_cost.get("resetsAt")),
+                )
+        else:
+            cost = CostInfo(
+                used=float(raw_cost.get("used") or 0.0),
+                limit=float(raw_cost.get("limit") or 0.0),
+                currency=str(raw_cost.get("currencyCode") or "USD"),
+                period=raw_cost.get("period"),
+                balance=raw_cost.get("balance"),
+                personal_used=raw_cost.get("personalUsed"),
+                resets_at=parse_timestamp(raw_cost.get("resetsAt")),
+            )
 
     identity = usage.get("identity") or {}
     account_email = identity.get("accountEmail") or usage.get("accountEmail")

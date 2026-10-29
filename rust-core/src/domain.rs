@@ -195,6 +195,43 @@ impl CostInfo {
     }
 }
 
+/// Normalize one CLI ``providerCost`` envelope into a typed cost snapshot.
+///
+/// Python's float conversion tolerates non-numeric values by falling back to
+/// 0.0; Rust's optional_float rejects them, so callers should use the Python
+/// fallback when this returns None.
+pub fn cost_from_value(value: &Value) -> Option<CostInfo> {
+    let object = value.as_object()?;
+    let used = optional_float(object.get("used")).unwrap_or(0.0);
+    let limit = optional_float(object.get("limit")).unwrap_or(0.0);
+    let currency = object
+        .get("currencyCode")
+        .or_else(|| object.get("currency"))
+        .and_then(Value::as_str)
+        .unwrap_or("USD")
+        .to_owned();
+    let period = object
+        .get("period")
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    let balance = optional_float(object.get("balance"));
+    let personal_used = optional_float(object.get("personalUsed"));
+    let resets_at = object
+        .get("resetsAt")
+        .and_then(Value::as_str)
+        .and_then(|value| parse_timestamp(Some(value)));
+
+    Some(CostInfo {
+        used,
+        limit,
+        currency,
+        period,
+        balance,
+        personal_used,
+        resets_at,
+    })
+}
+
 /// Chart attached to a provider detail section.
 #[derive(Clone, Debug, PartialEq)]
 pub struct DetailChart {
@@ -630,6 +667,44 @@ mod tests {
         assert_eq!(cost(-5.0, 100.0).used_percent(), 0.0);
         assert_eq!(cost(f64::NAN, 100.0).used_percent(), 100.0);
         assert_eq!(cost(10.0, f64::NAN).used_percent(), 0.0);
+    }
+
+    #[test]
+    fn cost_payload_normalization_preserves_fields_and_fallbacks() {
+        let cost = cost_from_value(&json!({
+            "used": 12.5,
+            "limit": 100.0,
+            "currencyCode": "USD",
+            "period": "Extra usage",
+            "balance": 87.5,
+            "personalUsed": 2.0,
+            "resetsAt": "2026-10-30T20:00:00Z"
+        }))
+        .unwrap();
+        assert_eq!(cost.used, 12.5);
+        assert_eq!(cost.limit, 100.0);
+        assert_eq!(cost.currency, "USD");
+        assert_eq!(cost.period.as_deref(), Some("Extra usage"));
+        assert_eq!(cost.balance, Some(87.5));
+        assert_eq!(cost.personal_used, Some(2.0));
+        assert_eq!(
+            cost.resets_at,
+            Utc.with_ymd_and_hms(2026, 10, 30, 20, 0, 0).single()
+        );
+
+        let missing_fields = cost_from_value(&json!({})).unwrap();
+        assert_eq!(missing_fields.used, 0.0);
+        assert_eq!(missing_fields.limit, 0.0);
+        assert_eq!(missing_fields.currency, "USD");
+        assert!(!missing_fields.has_limit());
+        assert_eq!(missing_fields.balance, None);
+
+        let non_numeric_used = cost_from_value(&json!({"used": "not a number"}));
+        assert_eq!(non_numeric_used.unwrap().used, 0.0);
+
+        let missing_used = cost_from_value(&json!({"totalCost": 42}));
+        // totalCost is not a recognized key; Python only reads "used"
+        assert_eq!(missing_used.unwrap().used, 0.0);
     }
 
     #[test]

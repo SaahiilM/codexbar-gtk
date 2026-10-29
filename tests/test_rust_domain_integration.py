@@ -112,6 +112,50 @@ class DomainPrimitiveIntegrationTests(unittest.TestCase):
         self.assertEqual(CostInfo(used=-5, limit=100).used_percent, 0)
         self.assertEqual(CostInfo(used=math.nan, limit=100).used_percent, 100)
 
+    def test_cost_payload_normalization_preserves_fields_and_fallbacks(self):
+        usage = provider_usage_from_payload(
+            {
+                "provider": "codex",
+                "usage": {
+                    "providerCost": {
+                        "used": 12.5,
+                        "limit": 100.0,
+                        "currencyCode": "USD",
+                        "period": "Extra usage",
+                        "balance": 87.5,
+                        "personalUsed": 2.0,
+                        "resetsAt": "2026-10-30T20:00:00Z",
+                    }
+                },
+            }
+        )
+        cost = usage.cost
+        assert cost is not None
+        self.assertEqual(cost.used, 12.5)
+        self.assertEqual(cost.limit, 100.0)
+        self.assertEqual(cost.currency, "USD")
+        self.assertEqual(cost.period, "Extra usage")
+        self.assertEqual(cost.balance, 87.5)
+        self.assertEqual(cost.personal_used, 2.0)
+        self.assertEqual(
+            cost.resets_at,
+            datetime(2026, 10, 30, 20, 0, 0, tzinfo=timezone.utc),
+        )
+
+        # Missing fields fall back to defaults
+        usage = provider_usage_from_payload(
+            {
+                "provider": "codex",
+                "usage": {"providerCost": {}},
+            }
+        )
+        cost = usage.cost
+        assert cost is not None
+        self.assertEqual(cost.used, 0.0)
+        self.assertEqual(cost.limit, 0.0)
+        self.assertEqual(cost.currency, "USD")
+        self.assertFalse(cost.has_limit)
+
     def test_detail_chart_peak_matches_python_contract(self):
         self.assertEqual(DetailChart(points=[("one", 4), ("two", 9)]).peak, 9)
         self.assertEqual(DetailChart(points=[]).peak, 0)

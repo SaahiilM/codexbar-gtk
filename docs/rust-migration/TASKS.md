@@ -12,7 +12,7 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Current phase | B01 domain contracts; native UI implementation must wait |
 | Last merged implementation | `70f295a`, PR #21, build `0.81.0 (20)` |
 | Planning change | [PR #18](https://github.com/SaahiilM/codexbar-gtk/pull/18), merged at `69c5496`, build `0.81.0 (17)` |
-| Backend tasks completed after that baseline | B00, B01a and B01b merged; B01c implementation is in progress |
+| Backend tasks completed after that baseline | B00, B01a and B01b merged; B01c is in [PR #22](https://github.com/SaahiilM/codexbar-gtk/pull/22), CI/merge pending |
 | Active implementation task / owner | B01c review handoff, owner: current coding-agent session |
 | Active task | **B01c** — detail/credit/provider/session/spend domain contracts and derived properties |
 | Next domain slice | **B02** — provider usage payload normalization |
@@ -31,9 +31,9 @@ gh pr view 19 --json state,mergeCommit,statusCheckRollup
 ```
 
 B00 PR #19 (`956ffd3`), B01a PR #20 (`6fa18c9`) and B01b PR #21 (`70f295a`)
-are merged with CI passing (AUDIT E006–E010). B01c is underway on
-`backend/b01c-data-models`; GTK4 preview remains blocked by missing typelibs.
-Verify B01c's PR/merge status before B02. UI migration remains blocked by BG.
+are merged with CI passing (AUDIT E006–E010). B01c PR #22 is open on `backend/b01c-data-models`; CI/merge pending. GTK4
+preview remains blocked by missing typelibs. Verify B01c's PR/merge status
+before B02. UI migration remains blocked by BG.
 For active work record task/subtask ID, owner/session, branch, PR if available,
 changed files, checks performed/skipped, blockers and the next exact action.
 

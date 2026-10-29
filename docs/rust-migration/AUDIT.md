@@ -355,9 +355,10 @@ reproducible commands; report artifact limitations honestly.
 - **Integration:** Python tests exercised the new domain helper routes with the
   Rust bridge enabled, as well as the default Python reference path.
 - **UI smoke:** still not performed; the GTK4 typelib blocker from E007 remains.
-- **Status:** local implementation and checks verified; PR not created at this
-  entry. Build metadata is `0.81.0 (21)`.
-- **Next:** create focused PR, observe CI/merge, then start B02.
+- **PR/status:** [PR #22](https://github.com/SaahiilM/codexbar-gtk/pull/22),
+  commit `89d8b77`; open when this handoff was recorded. CI/merge must be checked
+  live. Build metadata is `0.81.0 (21)`.
+- **Next:** observe CI/merge, then start B02.
 
 ## Append a record for each task change or handoff
 

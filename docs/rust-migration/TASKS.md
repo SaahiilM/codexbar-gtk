@@ -9,16 +9,16 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Field | Current checkpoint |
 | --- | --- |
 | Goal | Fully native Rust GTK4/libadwaita app; backend first, UI second |
-| Current phase | Backend inventory/planning; native UI implementation must wait |
+| Current phase | B00 backend contract implementation; native UI implementation must wait |
 | Last merged implementation | `46f44d0`, PR #17, build `0.81.0 (16)` |
-| Planning change | [PR #18](https://github.com/SaahiilM/codexbar-gtk/pull/18), build `0.81.0 (17)`; no backend behavior changes; verify live merge status |
-| Backend tasks completed after that baseline | None |
-| Active implementation task / owner | None claimed |
-| Next ready task | **B00** — backend contracts, service-crate/runtime decision and test seam |
+| Planning change | [PR #18](https://github.com/SaahiilM/codexbar-gtk/pull/18), merged at `69c5496`, build `0.81.0 (17)` |
+| Backend tasks completed after that baseline | None; B00 implementation is verified, PR pending |
+| Active implementation task / owner | B00 review handoff, owner: current coding-agent session |
+| Active task | **B00** — `rust-backend` service contract, runtime decision and headless test seam |
 | First domain implementation | **B01** — timestamp/numeric handling and quota-window models |
 | Open external blockers | None known; task dependencies below still apply |
-| Latest local checks | 30 Rust tests and formatting/Clippy at baseline (AUDIT E002); 132 Python tests in each mode after docs/metadata edits (E004) |
-| UI validation for this planning change | Not run: documentation/version metadata only; prior fixture smoke evidence is historical |
+| Latest checks | B00: 30 core tests + 3 backend tests; all Rust format/Clippy, extension build, 132 Python tests in both modes and 3 D-Bus tests pass (AUDIT E005) |
+| UI validation | Not run: B00 adds only headless service contracts and does not alter app runtime; prior fixture evidence is historical |
 
 **First commands for a new model/session:**
 
@@ -29,9 +29,11 @@ gh pr list --state open
 gh pr view 18 --json state,mergeCommit,statusCheckRollup
 ```
 
-Check whether the planning PR or a subsequent task is already merged/in flight.
-Inspect the working tree before claiming anything. Do not start B01 over another
-model's branch. Update this handoff when starting, stopping, or completing work.
+PR #18 is merged at `69c5496` (CI passed; see AUDIT E005). B00 is verified
+locally and awaiting its own PR/merge. After verifying the live B00 PR and
+observed merge, claim B01's timestamp/numeric/`RateWindow` slice. Do not start
+B01 over another model's branch. Update this handoff when starting, stopping,
+or completing work.
 For active work record task/subtask ID, owner/session, branch, PR if available,
 changed files, checks performed/skipped, blockers and the next exact action.
 

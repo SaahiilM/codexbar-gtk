@@ -1,0 +1,15 @@
+[package]
+name = "codexbar-backend"
+version = "0.1.0"
+edition = "2021"
+description = "Headless asynchronous services for codexbar-gtk"
+
+[lib]
+name = "codexbar_backend"
+path = "src/lib.rs"
+
+[dependencies]
+codexbar-core = { path = "../rust-core" }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time", "process", "io-util"] }
+
+[dev-dependencies]

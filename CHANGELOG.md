@@ -6,6 +6,22 @@ short version tracks, so "which version has what" maps cleanly onto both trees.
 
 ## Unreleased
 
+## 0.81.0 (18) — 2026-10-29
+
+Tracks upstream CodexBar 0.81.0.
+
+### Added
+
+- Start B00 by adding a headless Rust service-contract crate with versioned
+  snapshots, safe error categories, cooperative cancellation and joined
+  shutdown; no GTK/Python dependency or runtime behavior change.
+- Select Tokio and latest-value watch state for async backend orchestration;
+  defer the Rustls HTTP client to B06 and PTY dependency to B11.
+
+### Validation
+
+- See `docs/rust-migration/AUDIT.md` for the verified B00 checks and limits.
+
 ## 0.81.0 (17) — 2026-10-29
 
 Tracks upstream CodexBar 0.81.0. This build records the backend-first plan for a

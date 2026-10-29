@@ -40,6 +40,13 @@ type CostInfoTuple = (
     Option<f64>,
     Option<String>,
 );
+type DetailRowTuple = (String, String, Option<String>, Option<f64>, String);
+type DetailChartTuple = (String, Option<String>, Option<String>, Vec<(String, f64)>);
+type DetailSectionTuple = (
+    Option<String>,
+    Vec<DetailRowTuple>,
+    Option<DetailChartTuple>,
+);
 
 #[pyclass(name = "HistoryStore")]
 struct RustHistoryStore {
@@ -171,6 +178,31 @@ fn cost_from_json(payload: &str) -> Option<CostInfoTuple> {
         cost.personal_used,
         cost.resets_at
             .map(|time| time.to_rfc3339_opts(chrono::SecondsFormat::AutoSi, true)),
+    ))
+}
+
+#[pyfunction]
+fn detail_section_from_json(payload: &str) -> Option<DetailSectionTuple> {
+    let payload: Value = serde_json::from_str(payload).ok()?;
+    let section = domain::detail_section_from_value(&payload)?;
+    Some((
+        section.title,
+        section
+            .rows
+            .iter()
+            .map(|row| {
+                (
+                    row.label.clone(),
+                    row.value.clone(),
+                    row.secondary_value.clone(),
+                    row.used_percent,
+                    row.severity.clone(),
+                )
+            })
+            .collect(),
+        section
+            .chart
+            .map(|chart| (chart.kind, chart.title, chart.unit, chart.points)),
     ))
 }
 
@@ -622,6 +654,7 @@ fn _rust_core(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(rate_window_from_json, module)?)?;
     module.add_function(wrap_pyfunction!(extra_rate_window_from_json, module)?)?;
     module.add_function(wrap_pyfunction!(cost_from_json, module)?)?;
+    module.add_function(wrap_pyfunction!(detail_section_from_json, module)?)?;
     module.add_function(wrap_pyfunction!(pace_from_json, module)?)?;
     module.add_function(wrap_pyfunction!(optional_float, module)?)?;
     module.add_function(wrap_pyfunction!(optional_int, module)?)?;

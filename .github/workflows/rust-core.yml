@@ -6,6 +6,10 @@ on:
     branches: [main]
     paths:
       - "rust-core/**"
+      - "rust-python/**"
+      - "codexbar_gtk/providers.py"
+      - "scripts/build-rust-core.sh"
+      - "tests/**"
       - ".github/workflows/rust-core.yml"
 
 jobs:
@@ -16,11 +20,19 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-      - name: Check formatting
-        run: cargo fmt --manifest-path rust-core/Cargo.toml -- --check
-      - name: Run tests
+      - name: Check Rust formatting
+        run: |
+          cargo fmt --manifest-path rust-core/Cargo.toml -- --check
+          cargo fmt --manifest-path rust-python/Cargo.toml -- --check
+      - name: Run Rust core tests
         run: cargo test --manifest-path rust-core/Cargo.toml --locked
-      - name: Check provider catalog parity
-        run: python3 -m unittest discover -s tests -p 'test_rust_catalog_parity.py' -v
+      - name: Build PyO3 extension
+        run: ./scripts/build-rust-core.sh
+      - name: Run Python tests with default backend
+        run: python3 -m unittest discover -s tests -v
+      - name: Run Python tests with Rust provider backend
+        run: CODEXBAR_RUST_CORE=1 python3 -m unittest discover -s tests -v
       - name: Run Clippy
-        run: cargo clippy --manifest-path rust-core/Cargo.toml --all-targets --all-features -- -D warnings
+        run: |
+          cargo clippy --manifest-path rust-core/Cargo.toml --all-targets --all-features -- -D warnings
+          cargo clippy --manifest-path rust-python/Cargo.toml --all-targets --all-features -- -D warnings

@@ -8,6 +8,8 @@
 cargo fmt --manifest-path rust-core/Cargo.toml -- --check
 cargo test --manifest-path rust-core/Cargo.toml --locked
 cargo clippy --manifest-path rust-core/Cargo.toml --all-targets --all-features -- -D warnings
+./scripts/build-rust-core.sh
+python3 -m unittest discover -s tests -v
 ```
 
 ## Migration sequence
@@ -21,4 +23,4 @@ cargo clippy --manifest-path rust-core/Cargo.toml --all-targets --all-features -
 
 There is no separate Rust-core release version. Cargo's required package version is internal crate metadata and is not bumped per PR. Each merged project PR increments the GTK build number in the root `VERSION` file and `codexbar_gtk/version.py`; keep both in sync and record the build in the root `CHANGELOG.md`. `MARKETING_VERSION` continues to track the upstream CodexBar release and only changes when the supported upstream version changes.
 
-Current parallel ports: `codexbar_gtk/format.py` → `src/formatting.rs`, `codexbar_gtk/providers.py` → `src/providers.rs`, `codexbar_gtk/activity.py` → `src/activity.rs`, `codexbar_gtk/pace.py` → `src/pace.rs`, and `codexbar_gtk/history.py` → `src/history.rs`. No Python callers have been switched yet.
+Current ports: `format.py`, `activity.py`, `pace.py`, and `history.py` remain parallel Rust implementations. Provider metadata is the first opt-in Rust-backed path: build the PyO3 extension with `scripts/build-rust-core.sh`, then set `CODEXBAR_RUST_CORE=1`. The default remains Python, and enabling the flag fails fast if the extension is missing.

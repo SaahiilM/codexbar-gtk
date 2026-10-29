@@ -134,7 +134,7 @@ The GTK front-end uses the same version pair as the macOS bundle:
   this client is feature-compatible with (`0.81.0`).
 * `CURRENT_PROJECT_VERSION` is the build number of the Linux front-end.
 * `codexbar_gtk/version.py` turns the pair into the macOS-style
-  `"0.81.0 (8)"` string shown under Settings → About, in the tray menu and by
+  `"0.81.0 (9)"` string shown under Settings → About, in the tray menu and by
   `./run.sh --about`.
 
 Increment `CURRENT_PROJECT_VERSION` for each merged PR and keep it in sync with
@@ -149,6 +149,17 @@ changes. [`CHANGELOG.md`](CHANGELOG.md) records the changes in each build.
 python3 -m unittest discover -s tests -v  # the test suite
 ./tools/preview.py /tmp/preview           # render the UI to PNG files
 ```
+
+To exercise the first Rust-backed application path (provider metadata), build
+its optional PyO3 extension and opt in for that process:
+
+```sh
+./scripts/build-rust-core.sh
+CODEXBAR_RUST_CORE=1 ./run.sh
+```
+
+Without the environment flag, the app continues to use Python. With the flag,
+startup fails clearly if the extension was not built.
 
 The tests never touch a real provider account: the CLI is faked and the payloads
 are recorded fixtures.

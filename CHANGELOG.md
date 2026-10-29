@@ -43,6 +43,18 @@ short version tracks, so "which version has what" maps cleanly onto both trees.
   curated Codex mark), with accent-tinted monochrome icons and initials only as
   fallback. The full dashboard keeps its existing avatar treatment.
 
+## 0.81.0 (9) — 2026-10-29
+
+Tracks upstream CodexBar 0.81.0. This build begins opt-in Rust execution in the
+GTK app while keeping Python as the default implementation.
+
+### Added
+
+- Add a PyO3 bridge for provider metadata and allow `CODEXBAR_RUST_CORE=1` to
+  route provider metadata calls through Rust.
+- Add Rust/Python parity integration tests and a local Rust-enabled app launch
+  path.
+
 ## 0.81.0 (8) — 2026-10-28
 
 Tracks upstream CodexBar 0.81.0. This build continues the incremental Rust

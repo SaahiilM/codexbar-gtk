@@ -6,6 +6,29 @@ short version tracks, so "which version has what" maps cleanly onto both trees.
 
 ## Unreleased
 
+## 0.81.0 (15) — 2026-10-29
+
+Tracks upstream CodexBar 0.81.0. This build integrates the final original Rust
+port: quota-history persistence and queries.
+
+### Added
+
+- Route history writes, cached reads, retention pruning, and sorted series
+  queries through the opt-in Rust store, keeping the Python API and JSON-lines
+  format. Unsupported sample inputs continue through Python.
+- Cover cross-backend file compatibility, exact decimal rounding, corrupt
+  records, filesystem failures, cache invalidation, concurrency, and controller
+  recording with regression tests.
+
+### Fixed
+
+- Match Python decimal rounding in Rust history and serialize cache access with
+  writes/pruning so concurrent operations cannot lose retained samples.
+- Skip malformed or nonfinite history records in both backends rather than
+  failing a refresh or turning invalid fields into fabricated zero samples.
+- Replace the built extension atomically so rebuilding cannot overwrite a
+  library mapped by a running development app.
+
 ## 0.81.0 (14) — 2026-10-29
 
 Tracks upstream CodexBar 0.81.0. This build fixes stale system-tray content.

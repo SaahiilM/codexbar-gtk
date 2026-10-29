@@ -22,7 +22,6 @@ pub struct Sample {
 pub struct HistoryStore {
     path: PathBuf,
     retention_days: i64,
-    write_lock: Mutex<()>,
     cache: Mutex<Option<Vec<Sample>>>,
 }
 
@@ -31,7 +30,6 @@ impl HistoryStore {
         Self {
             path: path.into(),
             retention_days,
-            write_lock: Mutex::new(()),
             cache: Mutex::new(None),
         }
     }
@@ -52,7 +50,7 @@ impl HistoryStore {
         if samples.is_empty() {
             return;
         }
-        let Ok(_guard) = self.write_lock.lock() else {
+        let Ok(mut cache) = self.cache.lock() else {
             return;
         };
         if ensure_parent(&self.path).is_err() {
@@ -65,6 +63,8 @@ impl HistoryStore {
         else {
             return;
         };
+        // Even a partial write must invalidate the previous read cache.
+        *cache = None;
         for sample in samples {
             let record = json!({
                 "t": round_two(sample.timestamp),
@@ -77,26 +77,27 @@ impl HistoryStore {
                 return;
             }
         }
-        self.invalidate_cache();
     }
 
     /// Drop samples older than the retention period, using the supplied clock.
     pub fn prune_at(&self, now: f64) {
         let cutoff = now - self.retention_days as f64 * 86_400.0;
-        let kept: Vec<Sample> = self
-            .read_all()
-            .into_iter()
-            .filter(|sample| sample.timestamp >= cutoff)
-            .collect();
-        let Ok(_guard) = self.write_lock.lock() else {
+        let Ok(mut cache) = self.cache.lock() else {
             return;
         };
+        let samples = cache.get_or_insert_with(|| read_samples(&self.path));
+        let kept: Vec<Sample> = samples
+            .iter()
+            .filter(|sample| sample.timestamp >= cutoff)
+            .cloned()
+            .collect();
         if ensure_parent(&self.path).is_err() {
             return;
         }
         let Ok(mut file) = File::create(&self.path) else {
             return;
         };
+        *cache = None;
         for sample in kept {
             let record = json!({
                 "t": round_two(sample.timestamp),
@@ -109,7 +110,6 @@ impl HistoryStore {
                 return;
             }
         }
-        self.invalidate_cache();
     }
 
     pub fn prune(&self) {
@@ -118,32 +118,12 @@ impl HistoryStore {
 
     /// Read the history, ignoring blank or malformed JSON lines.
     pub fn read_all(&self) -> Vec<Sample> {
-        if let Ok(cache) = self.cache.lock() {
-            if let Some(samples) = cache.as_ref() {
-                return samples.clone();
-            }
-        }
-
-        let mut samples = Vec::new();
-        if let Ok(file) = File::open(&self.path) {
-            for line in BufReader::new(file).lines().map_while(Result::ok) {
-                let line = line.trim();
-                if line.is_empty() {
-                    continue;
-                }
-                let Ok(Value::Object(record)) = serde_json::from_str::<Value>(line) else {
-                    continue;
-                };
-                if let Some(sample) = sample_from_record(&record) {
-                    samples.push(sample);
-                }
-            }
-        }
-
-        if let Ok(mut cache) = self.cache.lock() {
-            *cache = Some(samples.clone());
-        }
-        samples
+        let Ok(mut cache) = self.cache.lock() else {
+            return Vec::new();
+        };
+        cache
+            .get_or_insert_with(|| read_samples(&self.path))
+            .clone()
     }
 
     /// Return sorted `(timestamp, used_percent)` points within the last `hours`.
@@ -164,12 +144,25 @@ impl HistoryStore {
     pub fn series(&self, provider: &str, window: &str, hours: f64) -> Vec<(f64, f64)> {
         self.series_at(provider, window, hours, unix_time_seconds())
     }
+}
 
-    fn invalidate_cache(&self) {
-        if let Ok(mut cache) = self.cache.lock() {
-            *cache = None;
+fn read_samples(path: &Path) -> Vec<Sample> {
+    let mut samples = Vec::new();
+    if let Ok(file) = File::open(path) {
+        for line in BufReader::new(file).lines().map_while(Result::ok) {
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+            let Ok(Value::Object(record)) = serde_json::from_str::<Value>(line) else {
+                continue;
+            };
+            if let Some(sample) = sample_from_record(&record) {
+                samples.push(sample);
+            }
         }
     }
+    samples
 }
 
 fn ensure_parent(path: &Path) -> std::io::Result<()> {
@@ -183,7 +176,9 @@ fn ensure_parent(path: &Path) -> std::io::Result<()> {
 }
 
 fn round_two(value: f64) -> f64 {
-    (value * 100.0).round_ties_even() / 100.0
+    // Decimal formatting rounds the original binary float like Python round(x, 2).
+    // Multiplying by 100 first incorrectly turns 2.675 into the exact tie 267.5.
+    format!("{value:.2}").parse().unwrap_or(value)
 }
 
 fn unix_time_seconds() -> f64 {
@@ -195,30 +190,21 @@ fn unix_time_seconds() -> f64 {
 
 fn sample_from_record(record: &Map<String, Value>) -> Option<Sample> {
     Some(Sample {
-        timestamp: value_as_f64(record.get("t")).unwrap_or(0.0),
-        provider: value_as_string(record.get("p")).unwrap_or_default(),
-        window: value_as_string(record.get("w")).unwrap_or_default(),
-        used_percent: value_as_f64(record.get("u")).unwrap_or(0.0),
+        timestamp: value_as_f64(record.get("t").unwrap_or(&json!(0.0)))?,
+        provider: record.get("p").map_or(Some(""), Value::as_str)?.into(),
+        window: record.get("w").map_or(Some(""), Value::as_str)?.into(),
+        used_percent: value_as_f64(record.get("u").unwrap_or(&json!(0.0)))?,
     })
 }
 
-fn value_as_f64(value: Option<&Value>) -> Option<f64> {
-    match value? {
+fn value_as_f64(value: &Value) -> Option<f64> {
+    let number = match value {
         Value::Number(number) => number.as_f64(),
-        Value::String(text) => text.parse().ok(),
+        Value::String(text) => text.trim().parse().ok(),
         Value::Bool(value) => Some(if *value { 1.0 } else { 0.0 }),
         _ => None,
-    }
-}
-
-fn value_as_string(value: Option<&Value>) -> Option<String> {
-    match value? {
-        Value::String(text) => Some(text.clone()),
-        Value::Null => Some("None".into()),
-        Value::Bool(value) => Some(if *value { "True" } else { "False" }.into()),
-        Value::Number(number) => Some(number.to_string()),
-        Value::Array(_) | Value::Object(_) => Some(value?.to_string()),
-    }
+    }?;
+    number.is_finite().then_some(number)
 }
 
 #[cfg(test)]
@@ -295,6 +281,40 @@ mod tests {
             .write_all(b"\nnot json\n[]\n")
             .unwrap();
         assert_eq!(store.read_all(), [sample(10.0, "claude", "weekly", 20.0)]);
+    }
+
+    #[test]
+    fn decimal_rounding_matches_python_without_multiplying_first() {
+        assert_eq!(round_two(2.675), 2.67);
+        assert_eq!(round_two(1.005), 1.0);
+        assert_eq!(round_two(1.015), 1.01);
+        assert_eq!(round_two(1.225), 1.23);
+        assert_eq!(round_two(-2.675), -2.67);
+        assert_eq!(round_two(1e308), 1e308);
+    }
+
+    #[test]
+    fn malformed_fields_are_skipped_instead_of_becoming_zero_samples() {
+        let file = TestFile::new();
+        fs::write(&file.0, "{\"t\":null}\n{\"u\":\"bad\"}\n{\"p\":[]}\n{}\n").unwrap();
+        assert_eq!(file.store(30).read_all(), [sample(0.0, "", "", 0.0)]);
+    }
+
+    #[test]
+    fn concurrent_writes_reads_and_prunes_keep_retained_samples() {
+        let file = TestFile::new();
+        let store = file.store(30);
+        std::thread::scope(|scope| {
+            for index in 0..16 {
+                let store = &store;
+                scope.spawn(move || {
+                    store.append(&[sample(1_000.0, "codex", "primary", index as f64)]);
+                    store.read_all();
+                    store.prune_at(2_000.0);
+                });
+            }
+        });
+        assert_eq!(store.read_all().len(), 16);
     }
 
     #[test]

@@ -10,6 +10,7 @@ on:
       - "codexbar_gtk/providers.py"
       - "codexbar_gtk/activity.py"
       - "codexbar_gtk/format.py"
+      - "codexbar_gtk/pace.py"
       - "codexbar_gtk/rust_bridge.py"
       - "codexbar_gtk/ui/app.py"
       - "codexbar_gtk/ui/settings.py"

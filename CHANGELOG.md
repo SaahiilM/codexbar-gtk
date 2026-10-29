@@ -6,6 +6,18 @@ short version tracks, so "which version has what" maps cleanly onto both trees.
 
 ## Unreleased
 
+## 0.81.0 (13) — 2026-10-29
+
+Tracks upstream CodexBar 0.81.0. This build integrates monthly allowance
+calculations into the opt-in Rust backend.
+
+### Added
+
+- Route monthly-window detection, local-calendar daily targets, and daily-target
+  formatting through Rust while retaining Python fallback behavior for naive
+  datetimes and unsupported inputs. Currency conversion continues to use the
+  existing Python rate service.
+
 ## 0.81.0 (12) — 2026-10-29
 
 Tracks upstream CodexBar 0.81.0. This build integrates Rust display formatting

@@ -109,16 +109,8 @@ where
     )
 }
 
-/// Format a provider's monthly spending cap as a daily target.
-pub fn format_monthly_cost_target<F>(
-    cost: Option<&MonthlyCost>,
-    preferred_currency: &str,
-    now: DateTime<Utc>,
-    convert: &F,
-) -> Option<String>
-where
-    F: Fn(f64, &str, &str) -> Option<f64>,
-{
+/// Calculate a provider's monthly spending cap as a daily target.
+pub fn monthly_cost_daily_target(cost: Option<&MonthlyCost>, now: DateTime<Utc>) -> Option<f64> {
     let cost = cost?;
     let period = cost
         .period
@@ -136,8 +128,26 @@ where
         return None;
     }
     let remaining = (cost.limit - cost.used).max(0.0);
-    let target = daily_target(Some(remaining), cost.resets_at, now);
-    format_daily_target(target, Some(&cost.currency), preferred_currency, convert)
+    daily_target(Some(remaining), cost.resets_at, now)
+}
+
+/// Format a provider's monthly spending cap as a daily target.
+pub fn format_monthly_cost_target<F>(
+    cost: Option<&MonthlyCost>,
+    preferred_currency: &str,
+    now: DateTime<Utc>,
+    convert: &F,
+) -> Option<String>
+where
+    F: Fn(f64, &str, &str) -> Option<f64>,
+{
+    let cost = cost?;
+    format_daily_target(
+        monthly_cost_daily_target(Some(cost), now),
+        Some(&cost.currency),
+        preferred_currency,
+        convert,
+    )
 }
 
 /// Format a daily target. Conversion is attempted only when requested and only

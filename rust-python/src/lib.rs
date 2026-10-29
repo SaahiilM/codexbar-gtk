@@ -1,7 +1,8 @@
 use chrono::{DateTime, NaiveDate, Utc};
-use codexbar_core::{activity, formatting, providers};
+use codexbar_core::{activity, formatting, pace, providers};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
+use pyo3::types::PyDict;
 use serde_json::Value;
 use std::collections::HashMap;
 
@@ -168,6 +169,87 @@ fn project_usage_at_reset(
 }
 
 #[pyfunction]
+fn pace_is_monthly_window(window_minutes: Option<i64>) -> bool {
+    pace::is_monthly_window(window_minutes)
+}
+
+#[pyfunction]
+fn pace_daily_target(
+    remaining: Option<f64>,
+    resets_at: Option<String>,
+    now: &str,
+) -> PyResult<Option<f64>> {
+    Ok(pace::daily_target(
+        remaining,
+        parse_datetime(resets_at.as_deref())?,
+        parse_datetime(Some(now))?.expect("now is required"),
+    ))
+}
+
+#[pyfunction]
+fn pace_window_daily_target(data: &Bound<'_, PyDict>, now: &str) -> PyResult<Option<f64>> {
+    macro_rules! field {
+        ($name:literal) => {
+            data.get_item($name)?
+                .ok_or_else(|| PyValueError::new_err(concat!("missing window field ", $name)))?
+        };
+    }
+    let is_placeholder = field!("is_placeholder").extract()?;
+    let usage_known = field!("usage_known").extract()?;
+    let window_minutes = field!("window_minutes").extract()?;
+    let used_percent = field!("used_percent").extract()?;
+    let quota_limit = field!("quota_limit").extract()?;
+    let quota_unit = field!("quota_unit").extract()?;
+    let resets_at: Option<String> = field!("resets_at").extract()?;
+    let window = pace::AllowanceWindow {
+        is_placeholder,
+        usage_known,
+        window_minutes,
+        used_percent,
+        quota_limit,
+        quota_unit,
+        resets_at: parse_datetime(resets_at.as_deref())?,
+    };
+    Ok(pace::window_daily_target(
+        &window,
+        parse_datetime(Some(now))?.expect("now is required"),
+    ))
+}
+
+#[pyfunction]
+fn pace_monthly_cost_daily_target(
+    used: f64,
+    limit: f64,
+    currency: String,
+    period: Option<String>,
+    resets_at: Option<String>,
+    now: &str,
+) -> PyResult<Option<f64>> {
+    let cost = pace::MonthlyCost {
+        used,
+        limit,
+        currency,
+        period,
+        resets_at: parse_datetime(resets_at.as_deref())?,
+    };
+    Ok(pace::monthly_cost_daily_target(
+        Some(&cost),
+        parse_datetime(Some(now))?.expect("now is required"),
+    ))
+}
+
+#[pyfunction]
+fn pace_format_daily_target(
+    target: Option<f64>,
+    unit: Option<String>,
+    preferred_currency: &str,
+    converted_value: Option<f64>,
+) -> Option<String> {
+    let convert = |_: f64, _: &str, _: &str| converted_value;
+    pace::format_daily_target(target, unit.as_deref(), preferred_currency, &convert)
+}
+
+#[pyfunction]
 fn activity_levels(values: Vec<i64>) -> Vec<i64> {
     activity::activity_levels(&values)
         .into_iter()
@@ -285,6 +367,11 @@ fn _rust_core(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(next_refresh_seconds, module)?)?;
     module.add_function(wrap_pyfunction!(workday_progress_percent, module)?)?;
     module.add_function(wrap_pyfunction!(project_usage_at_reset, module)?)?;
+    module.add_function(wrap_pyfunction!(pace_is_monthly_window, module)?)?;
+    module.add_function(wrap_pyfunction!(pace_daily_target, module)?)?;
+    module.add_function(wrap_pyfunction!(pace_window_daily_target, module)?)?;
+    module.add_function(wrap_pyfunction!(pace_monthly_cost_daily_target, module)?)?;
+    module.add_function(wrap_pyfunction!(pace_format_daily_target, module)?)?;
     module.add_function(wrap_pyfunction!(activity_levels, module)?)?;
     module.add_function(wrap_pyfunction!(weekly_totals, module)?)?;
     module.add_function(wrap_pyfunction!(cumulative_totals, module)?)?;

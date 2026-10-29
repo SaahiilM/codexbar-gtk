@@ -12,7 +12,7 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Current phase | B02 provider payload normalization; native UI implementation must wait |
 | Last merged implementation | `799e7f1`, PR #24, build `0.81.0 (23)` |
 | Planning change | [PR #18](https://github.com/SaahiilM/codexbar-gtk/pull/18), merged at `69c5496`, build `0.81.0 (17)` |
-| Backend tasks completed after that baseline | B00, B01 and B02a merged; B02b remains |
+| Backend tasks completed after that baseline | B00, B01 and B02a merged; B02b1 is in [PR #25](https://github.com/SaahiilM/codexbar-gtk/pull/25), CI/merge pending |
 | Active implementation task / owner | B02b1, current coding-agent session |
 | Active task | **B02b1** — normalize provider pace payloads in Rust |
 | Next domain slice | **B02b2** — identity/plan, costs, details/charts, credits, reset credits, status/errors |
@@ -39,8 +39,8 @@ B00 PR #19 (`956ffd3`), B01a PR #20 (`6fa18c9`), B01b PR #21 (`70f295a`),
 B01c PR #22 (`4213503`), B02a PR #23 (`da215b1`), and handoff PR #24
 (`799e7f1`) are merged with CI passing. GTK4/libadwaita typelibs are available
 locally through ignored `.deps/` (E017); synthetic X11/Wayland widget previews
-succeeded. B02b1 is locally verified on `backend/b02b1-pace-normalization`; PR
-pending. Verify its PR/merge before B02b2. UI migration remains blocked by BG.
+succeeded. B02b1 PR #25 is open on `backend/b02b1-pace-normalization`; CI/merge pending.
+Verify its PR/merge before B02b2. UI migration remains blocked by BG.
 For active work record task/subtask ID, owner/session, branch, PR if available,
 changed files, checks performed/skipped, blockers and the next exact action.
 

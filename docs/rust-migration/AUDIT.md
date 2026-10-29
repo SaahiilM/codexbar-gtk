@@ -465,8 +465,10 @@ reproducible commands; report artifact limitations honestly.
   popup's session/weekly bars and “20% in reserve” chip were inspected. This is
   focused widget/runtime-path evidence, not full navigation, tray, auth, or
   real-provider coverage. Local typelibs are available under ignored `.deps/`.
-- **Status:** implementation locally verified before PR; build `0.81.0 (24)`.
-- **Next:** create PR, observe CI/merge, then B02b2.
+- **PR/status:** [PR #25](https://github.com/SaahiilM/codexbar-gtk/pull/25),
+  commit `f399d3b`; open when this handoff was recorded. CI/merge must be checked
+  live. Build `0.81.0 (24)`.
+- **Next:** observe CI/merge, then B02b2.
 
 ## Append a record for each task change or handoff
 

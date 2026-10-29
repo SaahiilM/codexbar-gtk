@@ -52,7 +52,7 @@ def _variant(value):
     if isinstance(value, bool):
         return dbus.Boolean(value)
     if isinstance(value, int):
-        return dbus.Int32(value) if -2**31 <= value < 2**31 else dbus.Int64(value)
+        return dbus.Int32(value) if -(2**31) <= value < 2**31 else dbus.Int64(value)
     if isinstance(value, float):
         return dbus.Double(value)
     if isinstance(value, str):
@@ -157,6 +157,10 @@ class _DBusMenu(dbus.service.Object if HAVE_DBUS else object):  # type: ignore[m
         )
 
     # -- com.canonical.dbusmenu ------------------------------------------
+
+    @dbus.service.signal(MENU_IFACE, signature="ui")
+    def LayoutUpdated(self, revision, parent) -> None:
+        """Notify hosts that they must fetch the new menu layout."""
 
     @dbus.service.method(MENU_IFACE, in_signature="iias", out_signature="u(ia{sv}av)")
     def GetLayout(self, item_id: int, recursion_depth: int, property_names):
@@ -264,7 +268,9 @@ class _StatusNotifierItem(dbus.service.Object if HAVE_DBUS else object):  # type
 
     # -- org.freedesktop.DBus.Properties ---------------------------------
 
-    @dbus.service.method("org.freedesktop.DBus.Properties", in_signature="ss", out_signature="v")
+    @dbus.service.method(
+        "org.freedesktop.DBus.Properties", in_signature="ss", out_signature="v"
+    )
     def Get(self, interface_name: str, prop_name: str):
         if interface_name not in ("", SNI_IFACE):
             raise dbus.exceptions.DBusException(f"Unknown interface {interface_name}")
@@ -272,7 +278,9 @@ class _StatusNotifierItem(dbus.service.Object if HAVE_DBUS else object):  # type
             raise dbus.exceptions.DBusException(f"Unknown property {prop_name}")
         return _variant(self._properties[prop_name])
 
-    @dbus.service.method("org.freedesktop.DBus.Properties", in_signature="s", out_signature="a{sv}")
+    @dbus.service.method(
+        "org.freedesktop.DBus.Properties", in_signature="s", out_signature="a{sv}"
+    )
     def GetAll(self, interface_name: str):
         return {
             key: _variant(value)
@@ -306,47 +314,50 @@ class _StatusNotifierItem(dbus.service.Object if HAVE_DBUS else object):  # type
     def Scroll(self, delta: int, orientation: str, _unused: int = 0) -> None:
         return None
 
+    # -- signals ----------------------------------------------------------
+
+    @dbus.service.signal("org.freedesktop.DBus.Properties", signature="sa{sv}as")
+    def PropertiesChanged(
+        self, interface_name, changed_properties, invalidated_properties
+    ) -> None:
+        """Publish property changes using dbus-python's supported signal API."""
+
+    @dbus.service.signal(SNI_IFACE, signature="")
+    def NewIcon(self) -> None:
+        """The icon name or pixels changed."""
+
+    @dbus.service.signal(SNI_IFACE, signature="")
+    def NewToolTip(self) -> None:
+        """The tooltip changed."""
+
+    @dbus.service.signal(SNI_IFACE, signature="s")
+    def NewStatus(self, status) -> None:
+        """The item's visibility status changed."""
+
+    @dbus.service.signal(SNI_IFACE, signature="")
+    def NewTitle(self) -> None:
+        """The title changed."""
+
     # -- helpers ----------------------------------------------------------
 
     def _emit_changed(self, prop_name: str, value) -> None:
-        try:
-            self._bus.emit_signal(
-                "/StatusNotifierItem",
-                "org.freedesktop.DBus.Properties",
-                "PropertiesChanged",
-                SNI_IFACE,
-                {prop_name: _variant(value)},
-                [],
-            )
-        except Exception:
-            pass
+        self.PropertiesChanged(SNI_IFACE, {prop_name: _variant(value)}, [])
 
     def set_property(self, prop_name: str, value) -> None:
         self._properties[prop_name] = value
         self._emit_changed(prop_name, value)
-        # The spec asks apps to emit the dedicated "New*" signals when a
-        # property changes; hosts such as Plasma rely on them.
-        signal = {
-            "IconName": "NewIcon",
-            "ToolTip": "NewToolTip",
-            "Status": "NewStatus",
-            "Title": "NewTitle",
-            "Menu": "NewMenu",
-            "IconPixmap": "NewIcon",
-        }.get(prop_name)
-        if signal:
-            self._emit_signal(signal)
-
-    def _emit_signal(self, name: str) -> None:
-        try:
-            self._bus.emit_signal(
-                "/StatusNotifierItem",
-                SNI_IFACE,
-                name,
-                [],
-            )
-        except Exception:
-            pass
+        # Plasma relies on these dedicated signals as well as PropertiesChanged.
+        if prop_name == "Status":
+            self.NewStatus(value)
+        else:
+            signal = {
+                "IconName": self.NewIcon,
+                "ToolTip": self.NewToolTip,
+                "Title": self.NewTitle,
+                "IconPixmap": self.NewIcon,
+            }.get(prop_name)
+            if signal is not None:
+                signal()
 
 
 class TrayIcon:
@@ -481,18 +492,11 @@ class TrayIcon:
         self._notify_layout_updated()
 
     def _notify_layout_updated(self) -> None:
-        if self._menu is None or self._bus is None:
+        if self._menu is None:
             return
-        try:
-            self._bus.emit_signal(
-                MENU_PATH,
-                MENU_IFACE,
-                "LayoutUpdated",
-                dbus.UInt32(self._menu._revision),
-                dbus.Int32(self._menu._root),
-            )
-        except Exception:
-            pass
+        self._menu.LayoutUpdated(
+            dbus.UInt32(self._menu._revision), dbus.Int32(self._menu._root)
+        )
 
     def update(
         self,
@@ -536,7 +540,11 @@ class TrayIcon:
                 dbus.Array(
                     [
                         dbus.Struct(
-                            (dbus.Int32(width), dbus.Int32(height), dbus.ByteArray(data)),
+                            (
+                                dbus.Int32(width),
+                                dbus.Int32(height),
+                                dbus.ByteArray(data),
+                            ),
                             signature="iiay",
                         )
                     ],

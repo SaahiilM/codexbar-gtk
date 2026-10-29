@@ -6,6 +6,19 @@ short version tracks, so "which version has what" maps cleanly onto both trees.
 
 ## Unreleased
 
+## 0.81.0 (14) — 2026-10-29
+
+Tracks upstream CodexBar 0.81.0. This build fixes stale system-tray content.
+
+### Fixed
+
+- Emit tray updates through dbus-python's supported signal API so Plasma
+  refreshes the tooltip and usage icon after provider data loads, instead of
+  keeping the startup “Provider data unavailable” message. Also publish menu
+  layout changes and the status signal's required status argument.
+- Add private-session D-Bus regression tests for tooltip, icon, status, and menu
+  notifications, with a dedicated CI job that installs their dependencies.
+
 ## 0.81.0 (13) — 2026-10-29
 
 Tracks upstream CodexBar 0.81.0. This build integrates monthly allowance

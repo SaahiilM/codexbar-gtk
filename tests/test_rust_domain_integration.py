@@ -236,6 +236,83 @@ class DomainPrimitiveIntegrationTests(unittest.TestCase):
         self.assertEqual(len(section.rows), 0)
         self.assertIsNone(section.chart)
 
+    def test_context_normalization_preserves_credits_status_error_plan(self):
+        usage = provider_usage_from_payload(
+            {
+                "provider": "codex",
+                "usage": {
+                    "credits": {
+                        "remaining": 437.55,
+                        "creditsAvailable": True,
+                        "events": [
+                            {"id": "e1", "date": "2026-10-20", "service": "codex", "creditsUsed": 12.5},
+                            {"id": "e2", "date": "2026-10-21", "service": "codex", "creditsUsed": 5.0},
+                        ],
+                    },
+                    "codexResetCredits": {"availableCount": 3},
+                    "status": {"indicator": "warning", "description": "Degraded performance"},
+                    "error": {"message": "API rate limit exceeded"},
+                },
+                "plan": "Pro Plus",
+            }
+        )
+        self.assertEqual(usage.credits_remaining, 437.55)
+        self.assertTrue(usage.credits_available)
+        self.assertEqual(len(usage.credit_events), 2)
+        self.assertEqual(usage.credit_events[0].id, "e1")
+        self.assertEqual(usage.credit_events[0].date, "2026-10-20")
+        self.assertEqual(usage.credit_events[0].service, "codex")
+        self.assertEqual(usage.credit_events[0].used, 12.5)
+        self.assertEqual(usage.credit_events[1].used, 5.0)
+        self.assertEqual(usage.reset_credits_available, 3)
+        self.assertEqual(usage.status_level, "warning")
+        self.assertEqual(usage.status_description, "Degraded performance")
+        self.assertEqual(usage.error, "API rate limit exceeded")
+        self.assertEqual(usage.plan, "Pro Plus")
+
+        # Missing fields fall back to defaults
+        usage = provider_usage_from_payload({"provider": "codex"})
+        self.assertIsNone(usage.credits_remaining)
+        self.assertFalse(usage.credits_available)
+        self.assertEqual(len(usage.credit_events), 0)
+        self.assertEqual(usage.reset_credits_available, 0)
+        self.assertIsNone(usage.status_level)
+        self.assertIsNone(usage.status_description)
+        self.assertIsNone(usage.error)
+        self.assertIsNone(usage.plan)
+
+        # Plan from identity
+        usage = provider_usage_from_payload(
+            {
+                "provider": "codex",
+                "usage": {
+                    "identity": {
+                        "plan": "Team Plan",
+                        "loginMethod": "apiKey",
+                    },
+                },
+            }
+        )
+        self.assertEqual(usage.plan, "Team Plan")
+
+        # Plan derived from loginMethod when not oauth/apiKey/cookie
+        usage = provider_usage_from_payload(
+            {
+                "provider": "codex",
+                "usage": {"identity": {"loginMethod": "sso"}},
+            }
+        )
+        self.assertEqual(usage.plan, "Sso")
+
+        # No plan from oauth login method
+        usage = provider_usage_from_payload(
+            {
+                "provider": "codex",
+                "usage": {"identity": {"loginMethod": "oauth"}},
+            }
+        )
+        self.assertIsNone(usage.plan)
+
     def test_detail_chart_peak_matches_python_contract(self):
         self.assertEqual(DetailChart(points=[("one", 4), ("two", 9)]).peak, 9)
         self.assertEqual(DetailChart(points=[]).peak, 0)

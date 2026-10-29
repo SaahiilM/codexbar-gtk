@@ -47,6 +47,17 @@ type DetailSectionTuple = (
     Vec<DetailRowTuple>,
     Option<DetailChartTuple>,
 );
+type ProviderContextTuple = (
+    Option<f64>,
+    bool,
+    Vec<CreditEventTuple>,
+    i64,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+);
+type CreditEventTuple = (String, String, String, f64);
 
 #[pyclass(name = "HistoryStore")]
 struct RustHistoryStore {
@@ -203,6 +214,33 @@ fn detail_section_from_json(payload: &str) -> Option<DetailSectionTuple> {
         section
             .chart
             .map(|chart| (chart.kind, chart.title, chart.unit, chart.points)),
+    ))
+}
+
+#[pyfunction]
+fn provider_context_from_json(payload: &str) -> Option<ProviderContextTuple> {
+    let payload: Value = serde_json::from_str(payload).ok()?;
+    let context = domain::provider_context_from_value(&payload)?;
+    Some((
+        context.credits_remaining,
+        context.credits_available,
+        context
+            .credit_events
+            .iter()
+            .map(|event| {
+                (
+                    event.id.clone(),
+                    event.date.clone(),
+                    event.service.clone(),
+                    event.used,
+                )
+            })
+            .collect(),
+        context.reset_credits_available,
+        context.status_level,
+        context.status_description,
+        context.error,
+        context.plan,
     ))
 }
 
@@ -655,6 +693,7 @@ fn _rust_core(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(extra_rate_window_from_json, module)?)?;
     module.add_function(wrap_pyfunction!(cost_from_json, module)?)?;
     module.add_function(wrap_pyfunction!(detail_section_from_json, module)?)?;
+    module.add_function(wrap_pyfunction!(provider_context_from_json, module)?)?;
     module.add_function(wrap_pyfunction!(pace_from_json, module)?)?;
     module.add_function(wrap_pyfunction!(optional_float, module)?)?;
     module.add_function(wrap_pyfunction!(optional_int, module)?)?;

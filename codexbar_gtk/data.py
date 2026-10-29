@@ -605,11 +605,6 @@ def provider_usage_from_payload(payload: dict[str, Any]) -> ProviderUsage:
             if parsed is not None:
                 pace[key] = parsed
 
-    credits = payload.get("credits") or {}
-    credits_remaining = credits.get("remaining")
-    if not isinstance(credits_remaining, (int, float)):
-        credits_remaining = None
-
     cost: CostInfo | None = None
     raw_cost = usage.get("providerCost")
     if isinstance(raw_cost, dict):
@@ -664,44 +659,126 @@ def provider_usage_from_payload(payload: dict[str, Any]) -> ProviderUsage:
 
     identity = usage.get("identity") or {}
     account_email = identity.get("accountEmail") or usage.get("accountEmail")
-    status = payload.get("status") or {}
-    error = payload.get("error") or {}
-    error_message = error.get("message") if isinstance(error, dict) else None
 
-    credit_events: list[CreditEvent] = []
-    for event in credits.get("events") or []:
-        if not isinstance(event, dict):
-            continue
-        used = event.get("creditsUsed")
-        credit_events.append(
-            CreditEvent(
-                id=str(event.get("id", "")),
-                date=str(event.get("date", "")),
-                service=str(event.get("service", "")),
-                used=float(used) if isinstance(used, (int, float)) else 0.0,
+    rust = extension()
+    if rust is not None:
+        try:
+            parsed = rust.provider_context_from_json(json.dumps(payload))
+        except (TypeError, ValueError):
+            parsed = None
+        if parsed is not None:
+            (
+                credits_remaining,
+                credits_available,
+                credit_events_tuples,
+                reset_credits_available,
+                status_level,
+                status_description,
+                error_message,
+                plan,
+            ) = parsed
+            credit_events = [
+                CreditEvent(
+                    id=ev[0],
+                    date=ev[1],
+                    service=ev[2],
+                    used=ev[3],
+                )
+                for ev in credit_events_tuples
+            ]
+            raw_reset_credits = usage.get("codexResetCredits") or {}
+            parsed_reset_credits = []
+            for raw in raw_reset_credits.get("credits") or []:
+                if not isinstance(raw, dict):
+                    continue
+                if str(raw.get("status") or "available") != "available":
+                    continue
+                parsed_reset_credits.append(
+                    {
+                        "title": raw.get("title"),
+                        "granted_at": parse_timestamp(raw.get("grantedAt") or raw.get("granted_at")),
+                        "expires_at": parse_timestamp(raw.get("expiresAt") or raw.get("expires_at")),
+                        "description": raw.get("description"),
+                    }
+                )
+        else:
+            credits = payload.get("credits") or usage.get("credits") or {}
+            credits_remaining = credits.get("remaining")
+            if not isinstance(credits_remaining, (int, float)):
+                credits_remaining = None
+            credits_available = bool(credits.get("creditsAvailable"))
+            credit_events: list[CreditEvent] = []
+            for event in credits.get("events") or []:
+                if not isinstance(event, dict):
+                    continue
+                used = event.get("creditsUsed")
+                credit_events.append(
+                    CreditEvent(
+                        id=str(event.get("id", "")),
+                        date=str(event.get("date", "")),
+                        service=str(event.get("service", "")),
+                        used=float(used) if isinstance(used, (int, float)) else 0.0,
+                    )
+                )
+            reset_credits = usage.get("codexResetCredits") or {}
+            reset_credits_available = reset_credits.get("availableCount") or 0
+            parsed_reset_credits = _reset_credits_from(reset_credits)
+            status = payload.get("status") or usage.get("status") or {}
+            error = payload.get("error") or usage.get("error") or {}
+            status_level = status.get("indicator") if isinstance(status, dict) else None
+            status_description = (
+                status.get("description") if isinstance(status, dict) else None
             )
+            error_message = error.get("message") if isinstance(error, dict) else None
+            plan = _plan_from(payload, identity)
+    else:
+        credits = payload.get("credits") or usage.get("credits") or {}
+        credits_remaining = credits.get("remaining")
+        if not isinstance(credits_remaining, (int, float)):
+            credits_remaining = None
+        credits_available = bool(credits.get("creditsAvailable"))
+        credit_events: list[CreditEvent] = []
+        for event in credits.get("events") or []:
+            if not isinstance(event, dict):
+                continue
+            used = event.get("creditsUsed")
+            credit_events.append(
+                CreditEvent(
+                    id=str(event.get("id", "")),
+                    date=str(event.get("date", "")),
+                    service=str(event.get("service", "")),
+                    used=float(used) if isinstance(used, (int, float)) else 0.0,
+                )
+            )
+        reset_credits = usage.get("codexResetCredits") or {}
+        reset_credits_available = reset_credits.get("availableCount") or 0
+        parsed_reset_credits = _reset_credits_from(reset_credits)
+        status = payload.get("status") or usage.get("status") or {}
+        error = payload.get("error") or usage.get("error") or {}
+        status_level = status.get("indicator") if isinstance(status, dict) else None
+        status_description = (
+            status.get("description") if isinstance(status, dict) else None
         )
-
-    reset_credits = usage.get("codexResetCredits") or {}
-    reset_credits_available = reset_credits.get("availableCount") or 0
+        error_message = error.get("message") if isinstance(error, dict) else None
+        plan = _plan_from(payload, identity)
 
     return ProviderUsage(
-        reset_credits=_reset_credits_from(reset_credits),
+        reset_credits=parsed_reset_credits,
         provider_id=provider_id,
         display_name=provider_meta.display_name(provider_id),
         source=payload.get("source"),
         version=payload.get("version"),
         updated_at=parse_timestamp(usage.get("updatedAt")),
         account_email=account_email,
-        plan=_plan_from(payload, identity),
+        plan=plan,
         login_method=identity.get("loginMethod") or usage.get("loginMethod"),
         windows=windows,
         pace=pace,
         credits_remaining=float(credits_remaining) if credits_remaining is not None else None,
-        credits_available=bool(credits.get("creditsAvailable")),
+        credits_available=credits_available,
         cost=cost,
-        status_level=(status.get("indicator") if isinstance(status, dict) else None),
-        status_description=(status.get("description") if isinstance(status, dict) else None),
+        status_level=status_level,
+        status_description=status_description,
         error=error_message,
         details=_details_from(usage.get("details")),
         reset_credits_available=int(reset_credits_available or 0),

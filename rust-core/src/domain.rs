@@ -385,6 +385,169 @@ pub struct DetailSection {
     pub chart: Option<DetailChart>,
 }
 
+/// Aggregate context fields from a provider payload: credits, status, errors,
+/// plan, and reset credits.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ProviderContext {
+    pub credits_remaining: Option<f64>,
+    pub credits_available: bool,
+    pub credit_events: Vec<CreditEvent>,
+    pub reset_credits_available: i64,
+    pub status_level: Option<String>,
+    pub status_description: Option<String>,
+    pub error: Option<String>,
+    pub plan: Option<String>,
+}
+
+/// Normalize provider context fields (credits, status, error, plan) from a CLI
+/// payload.
+///
+/// Matches Python's ``provider_usage_from_payload`` context assembly: credits
+/// remaining/available/events from ``credits``, reset credits available from
+/// ``codexResetCredits``, status indicator/description from ``status``, error
+/// message from ``error``, and plan from payload/identity/login method.
+pub fn provider_context_from_value(payload: &Value) -> Option<ProviderContext> {
+    let object = payload.as_object()?;
+
+    let credits = object
+        .get("credits")
+        .or_else(|| {
+            object
+                .get("usage")
+                .and_then(Value::as_object)
+                .and_then(|u| u.get("credits"))
+        })
+        .and_then(Value::as_object);
+    let credits_remaining = credits
+        .and_then(|c| c.get("remaining"))
+        .and_then(|v| optional_float(Some(v)));
+    let credits_available = credits
+        .and_then(|c| c.get("creditsAvailable"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+
+    let mut credit_events: Vec<CreditEvent> = Vec::new();
+    if let Some(raw_events) = credits
+        .and_then(|c| c.get("events"))
+        .and_then(Value::as_array)
+    {
+        for raw_event in raw_events.iter() {
+            let event_obj = raw_event.as_object()?;
+            let used = event_obj
+                .get("creditsUsed")
+                .and_then(|v| optional_float(Some(v)))
+                .unwrap_or(0.0);
+            credit_events.push(CreditEvent {
+                id: event_obj
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_owned(),
+                date: event_obj
+                    .get("date")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_owned(),
+                service: event_obj
+                    .get("service")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_owned(),
+                used,
+            });
+        }
+    }
+
+    let reset_credits = object
+        .get("usage")
+        .and_then(Value::as_object)
+        .and_then(|u| u.get("codexResetCredits").and_then(Value::as_object));
+    let reset_credits_available = reset_credits
+        .and_then(|c| c.get("availableCount"))
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0);
+
+    let status = object
+        .get("status")
+        .or_else(|| {
+            object
+                .get("usage")
+                .and_then(Value::as_object)
+                .and_then(|u| u.get("status"))
+        })
+        .and_then(Value::as_object);
+    let status_level = status.and_then(|s| {
+        s.get("indicator")
+            .and_then(Value::as_str)
+            .map(str::to_owned)
+    });
+    let status_description = status.and_then(|s| {
+        s.get("description")
+            .and_then(Value::as_str)
+            .map(str::to_owned)
+    });
+
+    let error = object
+        .get("error")
+        .or_else(|| {
+            object
+                .get("usage")
+                .and_then(Value::as_object)
+                .and_then(|u| u.get("error"))
+        })
+        .and_then(Value::as_object)
+        .and_then(|e| e.get("message").and_then(Value::as_str).map(str::to_owned));
+
+    let plan = provider_plan_from_value(object);
+
+    Some(ProviderContext {
+        credits_remaining,
+        credits_available,
+        credit_events,
+        reset_credits_available,
+        status_level,
+        status_description,
+        error,
+        plan,
+    })
+}
+
+/// Extract the plan from a provider payload, matching Python's ``_plan_from``:
+/// checks ``plan``/``subscriptionPlan`` at top level, then ``identity.plan``,
+/// then derives from ``loginMethod``.
+pub fn provider_plan_from_value(object: &serde_json::Map<String, Value>) -> Option<String> {
+    for key in ["plan", "subscriptionPlan"] {
+        if let Some(Value::String(value)) = object.get(key) {
+            if !value.is_empty() {
+                return Some(value.clone());
+            }
+        }
+    }
+    if let Some(identity) = object
+        .get("usage")
+        .and_then(Value::as_object)
+        .and_then(|u| u.get("identity").and_then(Value::as_object))
+    {
+        if let Some(Value::String(value)) = identity.get("plan") {
+            if !value.is_empty() {
+                return Some(value.clone());
+            }
+        }
+        if let Some(Value::String(login)) = identity.get("loginMethod") {
+            if !login.is_empty() && login != "oauth" && login != "apiKey" && login != "cookie" {
+                return Some(
+                    login
+                        .chars()
+                        .next()
+                        .map(|c| c.to_uppercase().collect::<String>() + &login[1..])
+                        .unwrap_or_default(),
+                );
+            }
+        }
+    }
+    None
+}
+
 /// A running or recent coding-agent session.
 #[derive(Clone, Debug, PartialEq)]
 pub struct AgentSession {
@@ -883,6 +1046,108 @@ mod tests {
         assert_eq!(section.rows.len(), 24);
         assert_eq!(section.rows[0].label, "row 0");
         assert_eq!(section.rows[23].label, "row 23");
+    }
+
+    #[test]
+    fn provider_context_normalization_preserves_credits_status_error_plan() {
+        let context = provider_context_from_value(&json!({
+            "usage": {
+                "credits": {
+                    "remaining": 437.55,
+                    "creditsAvailable": true,
+                    "events": [
+                        {"id": "e1", "date": "2026-10-20", "service": "codex", "creditsUsed": 12.5},
+                        {"id": "e2", "date": "2026-10-21", "service": "codex", "creditsUsed": 5.0},
+                    ],
+                },
+                "codexResetCredits": {
+                    "availableCount": 3,
+                },
+                "status": {
+                    "indicator": "warning",
+                    "description": "Degraded performance",
+                },
+                "error": {
+                    "message": "API rate limit exceeded",
+                },
+            },
+            "plan": "Pro Plus",
+        }))
+        .unwrap();
+        assert_eq!(context.credits_remaining, Some(437.55));
+        assert!(context.credits_available);
+        assert_eq!(context.credit_events.len(), 2);
+        assert_eq!(context.credit_events[0].id, "e1");
+        assert_eq!(context.credit_events[0].date, "2026-10-20");
+        assert_eq!(context.credit_events[0].service, "codex");
+        assert_eq!(context.credit_events[0].used, 12.5);
+        assert_eq!(context.credit_events[1].used, 5.0);
+        assert_eq!(context.reset_credits_available, 3);
+        assert_eq!(context.status_level.as_deref(), Some("warning"));
+        assert_eq!(
+            context.status_description.as_deref(),
+            Some("Degraded performance")
+        );
+        assert_eq!(context.error.as_deref(), Some("API rate limit exceeded"));
+        assert_eq!(context.plan.as_deref(), Some("Pro Plus"));
+
+        // Missing fields fall back to defaults
+        let empty = provider_context_from_value(&json!({
+            "usage": {}
+        }))
+        .unwrap();
+        assert_eq!(empty.credits_remaining, None);
+        assert!(!empty.credits_available);
+        assert_eq!(empty.credit_events.len(), 0);
+        assert_eq!(empty.reset_credits_available, 0);
+        assert_eq!(empty.status_level, None);
+        assert_eq!(empty.status_description, None);
+        assert_eq!(empty.error, None);
+        assert_eq!(empty.plan, None);
+
+        // Plan from identity when inside usage
+        let context = provider_context_from_value(&json!({
+            "usage": {
+                "identity": {
+                    "plan": "Team Plan",
+                    "loginMethod": "apiKey",
+                }
+            }
+        }))
+        .unwrap();
+        assert_eq!(context.plan.as_deref(), Some("Team Plan"));
+
+        // Plan derived from loginMethod when not oauth/apiKey/cookie
+        let context = provider_context_from_value(&json!({
+            "usage": {
+                "identity": {
+                    "loginMethod": "sso",
+                }
+            }
+        }))
+        .unwrap();
+        assert_eq!(context.plan.as_deref(), Some("Sso"));
+
+        // No plan from oauth/login methods
+        let context = provider_context_from_value(&json!({
+            "usage": {
+                "identity": {
+                    "loginMethod": "oauth",
+                }
+            }
+        }))
+        .unwrap();
+        assert_eq!(context.plan, None);
+
+        let context = provider_context_from_value(&json!({
+            "usage": {
+                "identity": {
+                    "loginMethod": "cookie",
+                }
+            }
+        }))
+        .unwrap();
+        assert_eq!(context.plan, None);
     }
 
     #[test]

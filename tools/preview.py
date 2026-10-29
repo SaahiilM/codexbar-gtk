@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""Render the UI to PNG files without a compositor.
+"""Render synthetic/local UI state to PNG files.
 
     ./tools/preview.py [output-dir]
 
-The widgets are drawn through a Gtk.Snapshot and the resulting render node is
-rasterised with cairo, so the previews work head-less (GDK_BACKEND=offscreen).
+The widgets are drawn through a Gtk.Snapshot and rasterized with cairo. Run on
+an available X11/Wayland display; use xvfb-run for a virtual X display when
+needed. If local GTK typelibs were bootstrapped into `.deps/`, this script
+restarts itself with the same library paths used by `run.sh`.
 """
 
 from __future__ import annotations
@@ -12,7 +14,22 @@ from __future__ import annotations
 import os
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, ROOT)
+
+# The no-root bootstrap puts Debian packages in .deps/. Set loader variables
+# before importing PyGObject; LD_LIBRARY_PATH is read by the dynamic loader at
+# process startup, so re-exec instead of changing it only inside this process.
+TYPELIB_DIR = os.path.join(
+    ROOT, ".deps", "root", "usr", "lib", "x86_64-linux-gnu", "girepository-1.0"
+)
+LIB_DIR = os.path.join(ROOT, ".deps", "root", "usr", "lib", "x86_64-linux-gnu")
+if os.path.isdir(TYPELIB_DIR) and not os.environ.get("CODEXBAR_PREVIEW_DEPS_READY"):
+    env = os.environ.copy()
+    env["GI_TYPELIB_PATH"] = TYPELIB_DIR + (":" + env["GI_TYPELIB_PATH"] if env.get("GI_TYPELIB_PATH") else "")
+    env["LD_LIBRARY_PATH"] = LIB_DIR + (":" + env["LD_LIBRARY_PATH"] if env.get("LD_LIBRARY_PATH") else "")
+    env["CODEXBAR_PREVIEW_DEPS_READY"] = "1"
+    os.execvpe(sys.executable, [sys.executable, *sys.argv], env)
 
 import gi
 

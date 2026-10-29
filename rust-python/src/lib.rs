@@ -8,6 +8,15 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 type HistorySample = (f64, String, String, f64);
+type PaceTuple = (
+    String,
+    Option<f64>,
+    Option<f64>,
+    bool,
+    Option<f64>,
+    Option<f64>,
+    Option<String>,
+);
 type RateWindowTuple = (
     String,
     String,
@@ -101,6 +110,21 @@ fn all_provider_ids() -> Vec<String> {
         .into_iter()
         .map(str::to_owned)
         .collect()
+}
+
+#[pyfunction]
+fn pace_from_json(payload: &str) -> Option<PaceTuple> {
+    let payload: Value = serde_json::from_str(payload).ok()?;
+    let pace = domain::pace_from_value(&payload)?;
+    Some((
+        pace.stage,
+        pace.delta_percent,
+        pace.expected_used_percent,
+        pace.will_last_to_reset,
+        pace.eta_seconds,
+        pace.run_out_probability,
+        pace.summary,
+    ))
 }
 
 #[pyfunction]
@@ -549,6 +573,7 @@ fn _rust_core(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(backend_name, module)?)?;
     module.add_function(wrap_pyfunction!(parse_timestamp, module)?)?;
     module.add_function(wrap_pyfunction!(rate_window_from_json, module)?)?;
+    module.add_function(wrap_pyfunction!(pace_from_json, module)?)?;
     module.add_function(wrap_pyfunction!(optional_float, module)?)?;
     module.add_function(wrap_pyfunction!(optional_int, module)?)?;
     module.add_function(wrap_pyfunction!(provider_usage_has_error, module)?)?;

@@ -6,6 +6,24 @@ short version tracks, so "which version has what" maps cleanly onto both trees.
 
 ## Unreleased
 
+## 0.81.0 (24) — 2026-10-29
+
+Tracks upstream CodexBar 0.81.0.
+
+### Added
+
+- Port provider pace-object normalization to Rust for valid typed payloads,
+  retaining the Python fallback for malformed/dynamic field shapes.
+- Make `tools/preview.py` use the local `.deps/` GTK typelib/runtime paths after
+  the no-root bootstrap, and document system/no-root GTK4/libadwaita setup.
+- Verify the GTK preview path with synthetic CLI data after loading GTK4 and
+  libadwaita typelibs locally.
+
+### Validation
+
+- See `docs/rust-migration/AUDIT.md` for B02b1 parity tests and the precise GTK
+  preview environment/scope.
+
 ## 0.81.0 (23) — 2026-10-29
 
 Tracks upstream CodexBar 0.81.0.

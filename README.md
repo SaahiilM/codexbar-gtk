@@ -126,8 +126,8 @@ are temporary. Backend work is not complete, and native UI work has not started.
 - [Task checklist and current model handoff](docs/rust-migration/TASKS.md)
 - [Decisions, verification evidence and audit trail](docs/rust-migration/AUDIT.md)
 
-Future coding agents should start with [`AGENTS.md`](AGENTS.md). B00 is merged;
-B01 is in progress, starting with timestamp/numeric contracts and `RateWindow`.
+Future coding agents should start with [`AGENTS.md`](AGENTS.md). B00 and B01
+are complete; B02 provider payload normalization is in progress.
 
 ### Existing opt-in module integrations
 
@@ -143,13 +143,13 @@ B01 is in progress, starting with timestamp/numeric contracts and `RateWindow`.
   either backend; unsupported sample inputs retain the Python path.
 - [x] `charts.py` — time-spaced sparkline coordinates and fixed quota axes,
   Rust-backed in opt-in mode; GTK/Cairo drawing remains in Python.
-- [ ] `data.py` — timestamp/numeric primitives, standard quota-window parsing,
-  and derived properties for `RateWindow`, `Pace`, `CostInfo`, detail charts,
-  providers and sessions are partially Rust-backed in opt-in mode (B01a–c/B02a);
-  the rest of payload normalization and frontend models remain transitional.
+- [ ] `data.py` — timestamp/numeric primitives, standard quota-window and pace
+  parsing, and derived properties for `RateWindow`, `Pace`, `CostInfo`, detail
+  charts, providers and sessions are partially Rust-backed in opt-in mode
+  (B01a–c/B02a–b1); remaining provider payload normalization is transitional.
 
-The six original Rust ports have opt-in runtime integrations, with the B01a
-partial data primitives now routed through Rust in opt-in mode. This checklist
+The six original Rust ports have opt-in runtime integrations, with additional
+`data.py` behavior routed through Rust in opt-in mode. This checklist
 is not the full backend/native migration checklist above. Python implementations
 remain available as parity references until the backend, native UI and cutover
 gates are passed; the application is not yet entirely Rust.
@@ -206,7 +206,7 @@ The GTK front-end uses the same version pair as the macOS bundle:
   this client is feature-compatible with (`0.81.0`).
 * `CURRENT_PROJECT_VERSION` is the build number of the Linux front-end.
 * `codexbar_gtk/version.py` turns the pair into the macOS-style
-  `"0.81.0 (23)"` string shown under Settings → About, in the tray menu and by
+  `"0.81.0 (24)"` string shown under Settings → About, in the tray menu and by
   `./run.sh --about`.
 
 Increment `CURRENT_PROJECT_VERSION` for each merged PR and keep it in sync with
@@ -225,8 +225,36 @@ optional Rust flag still selects the existing PyO3 module integrations only.
 ```sh
 ./run.sh                                  # run from the checkout
 python3 -m unittest discover -s tests -v  # the test suite
-./tools/preview.py /tmp/preview           # render the UI to PNG files
+./tools/preview.py /tmp/preview           # render UI widgets with local state
 ```
+
+### GTK4 / libadwaita typelibs
+
+On Ubuntu/KDE neon, install the system packages (no-root alternative below):
+
+```sh
+sudo apt update
+sudo apt install python3-gi python3-cairo gir1.2-gtk-4.0 gir1.2-adw-1 libadwaita-1-0
+```
+
+Verify the same Python interpreter used by the app can import both namespaces:
+
+```sh
+python3 - <<'PY'
+import gi
+gi.require_version("Gtk", "4.0")
+gi.require_version("Adw", "1")
+from gi.repository import Gtk, Adw
+print("GTK", Gtk.get_major_version(), "ready; libadwaita ready")
+PY
+```
+
+Without root access, run `./scripts/bootstrap-deps.sh`. It downloads and unpacks
+the typelibs/runtime libraries into the ignored local `.deps/` directory; `run.sh`
+and `tools/preview.py` add those paths automatically. Do not commit `.deps/`.
+The preview needs a working X11/Wayland display; use `xvfb-run -a` for a virtual
+X display if available. The `offscreen` GDK backend is not included in every GTK
+build. Use synthetic CLI data when capturing previews.
 
 To exercise the Rust-backed paths, build the optional PyO3 extension and run
 the test suite with both implementations:

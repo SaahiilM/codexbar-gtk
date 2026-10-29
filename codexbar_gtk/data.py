@@ -368,6 +368,22 @@ def _window_from(payload: dict[str, Any], key: str, title: str) -> RateWindow | 
 def _pace_from(payload: Any) -> Pace | None:
     if not isinstance(payload, dict):
         return None
+    rust = extension()
+    if rust is not None:
+        try:
+            parsed = rust.pace_from_json(json.dumps(payload))
+        except (TypeError, ValueError):
+            parsed = None
+        if parsed is not None:
+            return Pace(
+                stage=parsed[0],
+                delta_percent=parsed[1],
+                expected_used_percent=parsed[2],
+                will_last_to_reset=parsed[3],
+                eta_seconds=parsed[4],
+                run_out_probability=parsed[5],
+                summary=parsed[6],
+            )
     stage = payload.get("stage")
     if not stage:
         return None

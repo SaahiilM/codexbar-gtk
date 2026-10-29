@@ -6,6 +6,23 @@ short version tracks, so "which version has what" maps cleanly onto both trees.
 
 ## Unreleased
 
+## 0.81.0 (21) — 2026-10-29
+
+Tracks upstream CodexBar 0.81.0.
+
+### Added
+
+- Add Rust domain contracts for provider usage, detail/chart sections, credit
+  events, agent sessions and spend summary/provider data.
+- Route chart peaks, provider summary/error/usage properties and session running
+  classification through the opt-in Rust bridge, with Python parity references.
+- Add regression coverage for `max(..., default=0)` semantics, negative chart
+  values, NaN iteration ordering and empty subtitle segments.
+
+### Validation
+
+- See `docs/rust-migration/AUDIT.md` for B01c test and smoke limitations.
+
 ## 0.81.0 (20) — 2026-10-29
 
 Tracks upstream CodexBar 0.81.0.

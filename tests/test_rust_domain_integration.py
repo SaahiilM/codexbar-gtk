@@ -5,8 +5,11 @@ import unittest
 from datetime import datetime, timezone
 
 from codexbar_gtk.data import (
+    AgentSession,
     CostInfo,
+    DetailChart,
     Pace,
+    ProviderUsage,
     RateWindow,
     _optional_float,
     _optional_int,
@@ -75,6 +78,31 @@ class DomainPrimitiveIntegrationTests(unittest.TestCase):
         self.assertEqual(CostInfo(used=150, limit=100).used_percent, 100)
         self.assertEqual(CostInfo(used=-5, limit=100).used_percent, 0)
         self.assertEqual(CostInfo(used=math.nan, limit=100).used_percent, 100)
+
+    def test_detail_chart_peak_matches_python_contract(self):
+        self.assertEqual(DetailChart(points=[("one", 4), ("two", 9)]).peak, 9)
+        self.assertEqual(DetailChart(points=[]).peak, 0)
+        self.assertEqual(DetailChart(points=[("negative", -2)]).peak, -2)
+
+    def test_provider_usage_derived_properties(self):
+        provider = ProviderUsage("fixture", "Fixture", plan="Plus", account_email="fixture@example.invalid")
+        provider.windows = [
+            RateWindow("primary", "Session", used_percent=25),
+            RateWindow("secondary", "Weekly", used_percent=70),
+        ]
+        self.assertEqual(provider.max_used_percent, 70)
+        self.assertIs(provider.primary_window, provider.windows[0])
+        self.assertIs(provider.window("secondary"), provider.windows[1])
+        self.assertEqual(provider.subtitle, "Plus · fixture@example.invalid")
+        self.assertFalse(provider.has_error)
+        provider.error = "synthetic error"
+        self.assertTrue(provider.has_error)
+
+    def test_agent_session_running_state(self):
+        for state in ("running", "ACTIVE", "Live"):
+            with self.subTest(state=state):
+                self.assertTrue(AgentSession("fixture", state=state).is_running)
+        self.assertFalse(AgentSession("fixture", state="finished").is_running)
 
     def test_rate_window_derived_properties(self):
         window = RateWindow("primary", "Session", used_percent=48, window_minutes=300)

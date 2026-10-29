@@ -201,6 +201,9 @@ class DetailChart:
 
     @property
     def peak(self) -> float:
+        rust = extension()
+        if rust is not None:
+            return rust.detail_chart_peak(self.points)
         return max((value for _, value in self.points), default=0.0)
 
 
@@ -260,6 +263,9 @@ class ProviderUsage:
 
     @property
     def has_error(self) -> bool:
+        rust = extension()
+        if rust is not None:
+            return rust.provider_usage_has_error(self.error)
         return bool(self.error)
 
     @property
@@ -268,6 +274,9 @@ class ProviderUsage:
 
     @property
     def max_used_percent(self) -> float:
+        rust = extension()
+        if rust is not None:
+            return rust.provider_usage_max_used_percent([w.used_percent for w in self.windows])
         return max((w.used_percent for w in self.windows), default=0.0)
 
     def window(self, key: str) -> RateWindow | None:
@@ -281,6 +290,9 @@ class ProviderUsage:
 
     @property
     def subtitle(self) -> str:
+        rust = extension()
+        if rust is not None:
+            return rust.provider_usage_subtitle(self.plan, self.account_email)
         parts = []
         if self.plan:
             parts.append(self.plan)
@@ -558,6 +570,9 @@ class AgentSession:
 
     @property
     def is_running(self) -> bool:
+        rust = extension()
+        if rust is not None:
+            return rust.agent_session_is_running(self.state)
         return self.state.lower() in {"running", "active", "live"}
 
 

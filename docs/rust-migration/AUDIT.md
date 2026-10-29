@@ -312,6 +312,54 @@ reproducible commands; report artifact limitations honestly.
   live. Build is `0.81.0 (20)`.
 - **Next:** observe CI/merge, then B01c after merge.
 
+### E010 — 2026-10-29: B01b merged
+
+- **PR/merge:** [PR #21](https://github.com/SaahiilM/codexbar-gtk/pull/21)
+  merged at `70f295a02c57abc62ffa0be0922d7eb9bd3cd46a`; `test` and `tray-dbus`
+  CI checks succeeded. Main was fast-forwarded and clean.
+- **Result:** B01b checked in TASKS. Rust `Pace`/`CostInfo` values and their
+  derived policies are available through the core and opt-in bridge. This does
+  not port payload normalization or complete B01.
+- **Next:** B01c shared data model contracts and derived-property integration.
+
+### E011 — 2026-10-29: B01c shared domain models, pre-PR verification
+
+- **Owner/branch/base:** current coding-agent session;
+  `backend/b01c-data-models`, based on merged `70f295a` (PR #21).
+- **Scope:** add Rust contracts for detail charts/sections/rows, credit events,
+  provider usage, agent sessions and spend summaries/providers in
+  `rust-core/src/domain.rs`. Route detail-chart peak, session running state and
+  provider summary/usage properties through PyO3 in opt-in mode. Python remains
+  the default and continues to parse the external payloads.
+- **Parity correction:** Python `max(iterable, default=0)` uses the default only
+  for an empty iterable; it does not clamp negative values to zero. NaN
+  comparisons preserve the first item according to iteration order. The Rust
+  helper explicitly follows that behavior; tests cover empty, negative and NaN
+  values. Empty provider subtitle segments are omitted as in Python.
+- **Focused checks:** 36 core tests, 8 domain integration tests, rustfmt and
+  Clippy for core/bridge, and PyO3 extension build passed. Full suite pending at
+  first recording.
+- **UI smoke:** not rerun because GTK4 typelibs remain unavailable in this
+  environment (E007); do not claim a UI pass.
+- **Status:** implementation in progress before full-suite verification and PR.
+  Planned build is `0.81.0 (21)`.
+- **Next:** finish all Rust checks, create PR, observe CI/merge, then B02 provider
+  usage normalization. No native UI work until BG.
+
+### E012 — 2026-10-29: B01c full local validation
+
+- **Checks actually run:** rustfmt checks for all three crates; 36 core and 3
+  backend tests; Clippy with warnings denied for core, PyO3 bridge and backend;
+  extension build; 140 Python tests in default mode and 140 in Rust mode; 3
+  private-D-Bus tray tests; `git diff --check`. All passed, no skips reported.
+- **Integration:** Python tests exercised the new domain helper routes with the
+  Rust bridge enabled, as well as the default Python reference path.
+- **UI smoke:** still not performed; the GTK4 typelib blocker from E007 remains.
+- **PR/status:** [PR #22](https://github.com/SaahiilM/codexbar-gtk/pull/22),
+  commit `89d8b77`; open when this handoff was recorded. CI/merge must be checked
+  live. Build metadata is `0.81.0 (21)`.
+- **Next:** observe CI/merge, then start B02.
+
 ## Append a record for each task change or handoff
 
 ```text

@@ -6,6 +6,23 @@ short version tracks, so "which version has what" maps cleanly onto both trees.
 
 ## Unreleased
 
+## 0.81.0 (26) — 2026-10-29
+
+Tracks upstream CodexBar 0.81.0.
+
+### Added
+
+- Port extra rate-window payload normalization (`extraRateWindows`) to Rust for
+  valid typed payloads, retaining the Python fallback for malformed/dynamic
+  field shapes.
+- Verify the GTK preview path with synthetic CLI data including extra windows
+  after loading GTK4 and libadwaita typelibs locally.
+
+### Validation
+
+- See `docs/rust-migration/AUDIT.md` for B02b2a parity tests and GTK preview
+  environment/scope.
+
 ## 0.81.0 (25) — 2026-10-29
 
 Tracks upstream CodexBar 0.81.0.

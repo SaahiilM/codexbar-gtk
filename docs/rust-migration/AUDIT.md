@@ -484,6 +484,33 @@ reproducible commands; report artifact limitations honestly.
 - **Next:** B02b2, remaining extra-window/identity/cost/detail/credit/status/error
   normalization. No native UI migration until BG.
 
+### E020 — 2026-10-29: B02b2a extra rate-window normalization
+
+- **Owner/branch/base:** current coding-agent session;
+  `backend/b02b2a-extra-windows`, based on merged `f0d218a` (PR #26).
+- **Scope:** add `extra_rate_window_from_value` in `rust-core/src/domain.rs`,
+  expose a PyO3 JSON adapter, and route extra-rate-window entries through Rust
+  in opt-in mode. Invalid field shapes fall back to the Python reference.
+  This only covers extra windows; identity/plan, costs, details, credits,
+  reset credits, status and errors remain pending B02b2b.
+- **Semantics/tests:** preserve `key` from `id` (default `"extra"`), `title`
+  from `title`/`id` (default `"Extra"`), `usage_known` from `usageKnown`
+  (explicit `false` forces unknown), and all inner rate-window fields. Core
+  tests include missing id/title/usageKnown, explicit false usageKnown, and
+  quota metadata.
+- **UI smoke:** synthetic fake CLI provided a single account-independent Claude
+  payload with two extra windows (monthly unknown 0%, daily known 60%); preview
+  produced five widget PNGs. Local GTK typelibs are under ignored `.deps/`.
+  Focused widget/runtime-path evidence, not full navigation, tray, auth, or
+  real-provider coverage.
+- **Checks actually run:** rustfmt for all three crates; 38 core and 3 backend
+  tests; Clippy with warnings denied for core/bridge/backend; PyO3 extension
+  build; 143 Python tests in default mode and 143 in Rust mode; 3 private-D-Bus
+  tray tests; `tools/preview.py` compile; `git diff --check`. All passed, no
+  skips reported.
+- **Status:** implementation locally verified before PR; build `0.81.0 (26)`.
+- **Next:** create PR, observe CI/merge, then B02b2b.
+
 ## Append a record for each task change or handoff
 
 ```text

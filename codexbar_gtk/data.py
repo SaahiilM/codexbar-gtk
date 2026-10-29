@@ -497,6 +497,47 @@ def provider_usage_from_payload(payload: dict[str, Any]) -> ProviderUsage:
             inner = item.get("window") or {}
             if not isinstance(inner, dict):
                 continue
+            rust = extension()
+            if rust is not None:
+                try:
+                    parsed = rust.extra_rate_window_from_json(json.dumps(item))
+                except (TypeError, ValueError):
+                    parsed = None
+                if parsed is not None:
+                    (
+                        parsed_key,
+                        parsed_title,
+                        used_percent,
+                        resets_at,
+                        reset_description,
+                        window_minutes,
+                        next_regen_percent,
+                        is_placeholder,
+                        quota_limit,
+                        quota_unit,
+                        usage_known,
+                    ) = parsed
+                    parsed_reset = parse_timestamp(resets_at)
+                    if parsed_reset is None:
+                        parsed_reset = parse_timestamp(inner.get("resetsAt"))
+                    if window_minutes is None:
+                        window_minutes = _optional_int(inner.get("windowMinutes"))
+                    windows.append(
+                        RateWindow(
+                            key=parsed_key,
+                            title=parsed_title,
+                            used_percent=used_percent,
+                            resets_at=parsed_reset,
+                            reset_description=reset_description,
+                            window_minutes=window_minutes,
+                            next_regen_percent=next_regen_percent,
+                            is_placeholder=is_placeholder,
+                            quota_limit=quota_limit,
+                            quota_unit=quota_unit,
+                            usage_known=usage_known,
+                        )
+                    )
+                    continue
             used = inner.get("usedPercent")
             used_percent = _optional_float(used)
             windows.append(

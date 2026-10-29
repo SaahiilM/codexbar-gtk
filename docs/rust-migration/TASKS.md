@@ -10,15 +10,15 @@ history. A checked box means **verified and merged**, not merely implemented.
 | --- | --- |
 | Goal | Fully native Rust GTK4/libadwaita app; backend first, UI second |
 | Current phase | B02 provider payload normalization; native UI implementation must wait |
-| Last merged implementation | `51cd4b8`, PR #25, build `0.81.0 (24)` |
+| Last merged implementation | `f0d218a`, PR #26, build `0.81.0 (25)` |
 | Planning change | [PR #18](https://github.com/SaahiilM/codexbar-gtk/pull/18), merged at `69c5496`, build `0.81.0 (17)` |
-| Backend tasks completed after that baseline | B00, B01, B02a and B02b1 merged; B02b2 remains |
-| Active implementation task / owner | None claimed |
-| Active task | None; claim B02b2 before editing |
-| Next domain slice | **B02b2** — identity/plan, costs, details/charts, credits, reset credits, status/errors |
+| Backend tasks completed after that baseline | B00, B01, B02a, B02b1 merged; B02b2a verified, PR pending |
+| Active implementation task / owner | B02b2a review handoff, owner: current coding-agent session |
+| Active task | **B02b2a** — extra rate-window payload normalization in Rust |
+| Next domain slice | **B02b2b** — identity/plan, costs, details/charts, credits, reset credits, status/errors |
 | Open external blockers | None known; task dependencies below still apply |
-| Latest checks | B02b1: 38 core + 3 backend tests; format/Clippy/build; 142 Python tests each mode; 3 D-Bus tests; PR #25 CI passed (AUDIT E018/E019) |
-| UI validation | Local typelibs load; synthetic X11/Wayland widget preview succeeded; offscreen backend unavailable (AUDIT E017/E018) |
+| Latest checks | B02b2a: 38 core + 3 backend tests; format/Clippy/build; 143 Python tests each mode; 3 D-Bus tests all passed; GTK preview with extra windows succeeded (AUDIT E020) |
+| UI validation | Local typelibs load; synthetic X11/Wayland widget preview with extra windows succeeded; offscreen backend unavailable (AUDIT E017/E020) |
 
 **First commands for a new model/session:**
 
@@ -37,13 +37,12 @@ gh pr view 25 --json state,mergeCommit,statusCheckRollup
 ```
 
 B00 PR #19 (`956ffd3`), B01a PR #20 (`6fa18c9`), B01b PR #21 (`70f295a`),
-B01c PR #22 (`4213503`), B02a PR #23 (`da215b1`), and handoff PR #24
-(`799e7f1`) are merged with CI passing. GTK4/libadwaita typelibs are available
-locally through ignored `.deps/` (E017); synthetic X11/Wayland widget previews
-succeeded. B02b1 PR #25 (`51cd4b8`) is merged with `test` and `tray-dbus` CI passing
-(AUDIT E019). B02b2 is next: extra windows, identity/plan, costs, details,
-credits, reset credits, status and error parsing. Local GTK typelibs and the
-synthetic preview path are available. UI migration remains blocked by BG.
+B01c PR #22 (`4213503`), B02a PR #23 (`da215b1`), B02b1 PR #25 (`51cd4b8`),
+and handoff PR #26 (`f0d218a`) are merged with CI passing. GTK4/libadwaita
+typelibs are available locally through ignored `.deps/` (E017); synthetic
+X11/Wayland widget previews succeeded. B02b2a is locally verified on
+`backend/b02b2a-extra-windows`; PR pending. Verify its PR/merge before B02b2b.
+UI migration remains blocked by BG.
 For active work record task/subtask ID, owner/session, branch, PR if available,
 changed files, checks performed/skipped, blockers and the next exact action.
 
@@ -105,8 +104,10 @@ credits and error semantics are integrated):
 - [x] **B02a** Standard primary/secondary/tertiary rate-window envelope —
   merged PR #23.
 - [x] **B02b1** Pace object normalization — merged PR #25.
-- [ ] **B02b2** Extra windows, identity/plan, cost, details/charts, credits,
-  reset credits, status and errors.
+- [x] **B02b2a** Extra rate-window normalization — implementation currently on
+  `backend/b02b2a-extra-windows`; do not check until merged.
+- [ ] **B02b2b** Identity/plan, cost, details/charts, credits, reset credits,
+  status and errors.
 
 B05/B07/B12 can proceed after B00 independently of payload parsing. B11/B13 are
 not optional just because their Python files sit near presentation code. Do not

@@ -158,6 +158,68 @@ class DomainPrimitiveIntegrationTests(unittest.TestCase):
         self.assertEqual(payload.windows[1].used_percent, 0)
         self.assertFalse(payload.windows[1].usage_known)
 
+    def test_extra_rate_window_usage_known_and_metadata(self):
+        payload = provider_usage_from_payload(
+            {
+                "provider": "claude",
+                "usage": {
+                    "extraRateWindows": [
+                        {
+                            "id": "monthly",
+                            "title": "Monthly allowance",
+                            "usageKnown": False,
+                            "window": {
+                                "usedPercent": 0,
+                                "windowMinutes": 43200,
+                                "quotaLimit": 500,
+                                "quotaUnit": "requests",
+                                "nextRegenPercent": 1.5,
+                            },
+                        },
+                        {
+                            "id": "weekly-extra",
+                            "window": {
+                                "usedPercent": 25,
+                                "windowMinutes": 10080,
+                                "quotaLimit": 200,
+                                "quotaUnit": "requests",
+                            },
+                        },
+                        {
+                            "window": {
+                                "usedPercent": 10,
+                                "windowMinutes": 43200,
+                                "quotaLimit": 300,
+                                "quotaUnit": "tokens",
+                            },
+                        },
+                    ]
+                },
+            }
+        )
+        self.assertEqual(len(payload.windows), 3)
+        monthly = payload.windows[0]
+        self.assertEqual(monthly.key, "monthly")
+        self.assertEqual(monthly.title, "Monthly allowance")
+        self.assertEqual(monthly.used_percent, 0)
+        self.assertFalse(monthly.usage_known)
+        self.assertEqual(monthly.quota_limit, 500)
+        self.assertEqual(monthly.quota_unit, "requests")
+        self.assertEqual(monthly.next_regen_percent, 1.5)
+
+        weekly_extra = payload.windows[1]
+        self.assertEqual(weekly_extra.key, "weekly-extra")
+        self.assertEqual(weekly_extra.title, "weekly-extra")
+        self.assertEqual(weekly_extra.used_percent, 25)
+        self.assertTrue(weekly_extra.usage_known)
+        self.assertEqual(weekly_extra.quota_limit, 200)
+
+        fallback_key = payload.windows[2]
+        self.assertEqual(fallback_key.key, "extra")
+        self.assertEqual(fallback_key.title, "Extra")
+        self.assertEqual(fallback_key.used_percent, 10)
+        self.assertTrue(fallback_key.usage_known)
+
     def test_rate_window_derived_properties(self):
         window = RateWindow("primary", "Session", used_percent=48, window_minutes=300)
         self.assertEqual(window.remaining_percent, 52)

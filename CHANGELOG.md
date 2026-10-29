@@ -6,6 +6,18 @@ short version tracks, so "which version has what" maps cleanly onto both trees.
 
 ## Unreleased
 
+## 0.81.0 (16) — 2026-10-29
+
+Tracks upstream CodexBar 0.81.0. This build ports sparkline geometry to Rust.
+
+### Added
+
+- Calculate sparkline coordinates through the opt-in Rust backend, preserving
+  time-spaced samples, the fixed quota axis, invalid-point filtering, usage
+  clamping, and the equal-timestamp fallback. GTK/Cairo drawing stays in Python.
+- Add edge-case and seeded randomized parity tests, with Python fallback for
+  unsupported numeric types and integers outside exact floating-point range.
+
 ## 0.81.0 (15) — 2026-10-29
 
 Tracks upstream CodexBar 0.81.0. This build integrates the final original Rust

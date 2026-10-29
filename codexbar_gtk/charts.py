@@ -4,6 +4,14 @@ from __future__ import annotations
 
 import math
 
+from . import rust_bridge
+
+
+def _rust_number_compatible(value) -> bool:
+    return isinstance(value, (int, float)) and not (
+        isinstance(value, int) and abs(value) > 2**53
+    )
+
 
 def sparkline_coordinates(
     points: list[tuple[float, float]], width: int, height: int
@@ -16,6 +24,20 @@ def sparkline_coordinates(
     """
     if width <= 1 or height <= 4:
         return []
+    core = rust_bridge.extension()
+    if (
+        core is not None
+        and isinstance(width, int)
+        and isinstance(height, int)
+        and width <= 2**53
+        and height <= 2**53
+        and isinstance(points, (list, tuple))
+        and all(
+            _rust_number_compatible(timestamp) and _rust_number_compatible(value)
+            for timestamp, value in points
+        )
+    ):
+        return core.sparkline_coordinates(points, width, height)
     valid = [
         (timestamp, max(0.0, min(100.0, value)))
         for timestamp, value in points

@@ -1,5 +1,5 @@
 use chrono::{DateTime, NaiveDate, Utc};
-use codexbar_core::{activity, formatting, history, pace, providers};
+use codexbar_core::{activity, charts, formatting, history, pace, providers};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
@@ -93,6 +93,11 @@ fn all_provider_ids() -> Vec<String> {
 #[pyfunction]
 fn backend_name() -> &'static str {
     "rust"
+}
+
+#[pyfunction]
+fn sparkline_coordinates(points: Vec<(f64, f64)>, width: i64, height: i64) -> Vec<(f64, f64)> {
+    charts::sparkline_coordinates(&points, width, height)
 }
 
 #[pyfunction]
@@ -402,6 +407,7 @@ fn python_float(value: Option<&Value>) -> Option<f64> {
 #[pymodule]
 fn _rust_core(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<RustHistoryStore>()?;
+    module.add_function(wrap_pyfunction!(sparkline_coordinates, module)?)?;
     module.add_function(wrap_pyfunction!(canonical_id, module)?)?;
     module.add_function(wrap_pyfunction!(display_name, module)?)?;
     module.add_function(wrap_pyfunction!(short_name, module)?)?;

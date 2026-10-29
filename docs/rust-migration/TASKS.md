@@ -12,7 +12,7 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Current phase | B01 domain contracts; native UI implementation must wait |
 | Last merged implementation | `956ffd3`, PR #19, build `0.81.0 (18)` |
 | Planning change | [PR #18](https://github.com/SaahiilM/codexbar-gtk/pull/18), merged at `69c5496`, build `0.81.0 (17)` |
-| Backend tasks completed after that baseline | B00 merged in [PR #19](https://github.com/SaahiilM/codexbar-gtk/pull/19); B01a implementation is verified, PR pending |
+| Backend tasks completed after that baseline | B00 merged in [PR #19](https://github.com/SaahiilM/codexbar-gtk/pull/19); B01a is in [PR #20](https://github.com/SaahiilM/codexbar-gtk/pull/20), CI/merge pending |
 | Active implementation task / owner | B01a review handoff, owner: current coding-agent session |
 | Active task | **B01a** — timestamp/numeric primitives and `RateWindow` derived properties |
 | Next domain slice | **B01b** — remaining shared data models after B01a is merged |
@@ -31,9 +31,10 @@ gh pr view 19 --json state,mergeCommit,statusCheckRollup
 ```
 
 PR #18 is merged at `69c5496`; B00 PR #19 is merged at `956ffd3`, with both
-CI checks passing (AUDIT E006). B01a is locally verified on `backend/b01-domain-foundation`; the GTK4 preview
-is environment-blocked. Verify the B01a PR/merge status before beginning B01b.
-UI migration remains blocked by BG.
+CI checks passing (AUDIT E006). B01a PR #20 is open on
+`backend/b01-domain-foundation`; CI/merge pending. The GTK4 preview is
+environment-blocked. Verify this PR's status before beginning B01b. UI migration
+remains blocked by BG.
 For active work record task/subtask ID, owner/session, branch, PR if available,
 changed files, checks performed/skipped, blockers and the next exact action.
 

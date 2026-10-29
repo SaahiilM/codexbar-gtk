@@ -265,10 +265,11 @@ reproducible commands; report artifact limitations honestly.
   installed in either the default or `/usr/bin/python3` environment. No real
   provider data was requested. This is an environment blocker, not a passing UI
   check; retry when GTK4 dependencies are available.
-- **Status:** implementation locally verified before PR creation; not merged.
-  Build metadata is `0.81.0 (19)`.
-- **Next:** create focused PR; report missing GTK4 smoke as a limitation, observe
-  CI, then continue B01b (remaining data model contracts).
+- **PR/status:** [PR #20](https://github.com/SaahiilM/codexbar-gtk/pull/20),
+  commit `5a776b9`; open when this handoff was recorded. CI/merge must be checked
+  live. Build metadata is `0.81.0 (19)`.
+- **Next:** observe PR CI/merge, report missing GTK4 smoke as a limitation, then
+  continue B01b (remaining data model contracts).
 
 ## Append a record for each task change or handoff
 

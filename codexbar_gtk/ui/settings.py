@@ -99,11 +99,13 @@ class SettingsWindow(Adw.PreferencesWindow):
         prefs,
         controller,
         on_show_tray_changed: Callable[[bool], None] | None = None,
+        on_open_dashboard: Callable[[], None] | None = None,
     ) -> None:
         super().__init__(application=application)
         self.prefs = prefs
         self.controller = controller
         self._on_show_tray_changed = on_show_tray_changed
+        self._on_open_dashboard = on_open_dashboard
         self._cli_load_generation = 0
         self._version_rows: list[Adw.ActionRow] = []
         self.set_title("CodexBar Settings")
@@ -130,6 +132,20 @@ class SettingsWindow(Adw.PreferencesWindow):
 
     def _general_page(self) -> Adw.PreferencesPage:
         page = Adw.PreferencesPage(title="General", icon_name="preferences-system-symbolic")
+
+        if self._on_open_dashboard is not None:
+            navigation = Adw.PreferencesGroup(title="Navigation")
+            row = Adw.ActionRow(
+                title="Return to dashboard",
+                subtitle="Usage quotas, active sessions and spending",
+            )
+            button = Gtk.Button(label="Open")
+            button.set_valign(Gtk.Align.CENTER)
+            button.connect("clicked", lambda _button: self._on_open_dashboard())
+            row.add_suffix(button)
+            row.set_activatable_widget(button)
+            navigation.add(row)
+            page.add(navigation)
 
         refresh_group = Adw.PreferencesGroup(title="Refreshing")
         refresh_group.add(

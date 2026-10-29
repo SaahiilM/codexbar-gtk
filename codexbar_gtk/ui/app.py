@@ -140,6 +140,7 @@ class CodexBarApp(Adw.Application):
                 self.prefs,
                 self.controller,
                 on_show_tray_changed=self._set_tray_visible,
+                on_open_dashboard=self._open_dashboard,
             )
         return self.settings_window
 
@@ -199,6 +200,8 @@ class CodexBarApp(Adw.Application):
     def _open_dashboard(self) -> None:
         if self.popup is not None:
             self.popup.hide()
+        if self.settings_window is not None:
+            self.settings_window.hide()
         window = self._ensure_main_window()
         # GTK4's present() already raises the window; raise_() was removed.
         window.present()

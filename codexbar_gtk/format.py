@@ -2,11 +2,39 @@
 
 from __future__ import annotations
 
+import math
 from datetime import datetime, timedelta, timezone
 
+from . import rust_bridge
 from .currency import CURRENCIES
 
 RESET_STYLES = ("countdown", "absolute", "both")
+
+
+def _rust_datetime(value: datetime | None) -> str | None:
+    """Serialize UTC datetimes for Rust; leave naive/local values to Python."""
+    if value is None or not isinstance(value, datetime):
+        return None
+    try:
+        if value.utcoffset() != timedelta(0):
+            return None
+    except (OverflowError, ValueError):
+        return None
+    return value.isoformat()
+
+
+def _rust_datetime_compatible(value: datetime | None) -> bool:
+    return value is None or _rust_datetime(value) is not None
+
+
+def _rust_number_compatible(value: float | None) -> bool:
+    if value is None:
+        return True
+    if not isinstance(value, (int, float)):
+        return False
+    if isinstance(value, int) and abs(value) > 2**53:
+        return False
+    return math.isfinite(value)
 
 
 def compact_window_label(title: str | None, window_minutes: int | None) -> str | None:
@@ -16,6 +44,16 @@ def compact_window_label(title: str | None, window_minutes: int | None) -> str |
     other named windows as an uppercased initial (``W``), like the automatic
     menu-bar tokens use (#4743).
     """
+    core = rust_bridge.extension()
+    if core is not None and (
+        (
+            window_minutes is None
+            or isinstance(window_minutes, int)
+            and -(2**63) <= window_minutes < 2**63
+        )
+        and (title is None or isinstance(title, str))
+    ):
+        return core.compact_window_label(title, window_minutes)
     text = (title or "").strip()
     if not text:
         return None
@@ -31,20 +69,44 @@ def compact_window_label(title: str | None, window_minutes: int | None) -> str |
 
 
 def format_percent(value: float | None, decimals: int = 0) -> str:
+    core = rust_bridge.extension()
+    if (
+        core is not None
+        and _rust_number_compatible(value)
+        and isinstance(decimals, int)
+        and decimals >= 0
+    ):
+        return core.format_percent(value, decimals)
     if value is None:
         return "—"
     return f"{value:.{decimals}f}%"
 
 
 def format_remaining(used_percent: float | None, decimals: int = 0) -> str:
+    core = rust_bridge.extension()
+    if (
+        core is not None
+        and _rust_number_compatible(used_percent)
+        and isinstance(decimals, int)
+        and decimals >= 0
+    ):
+        return core.format_remaining(used_percent, decimals)
     if used_percent is None:
         return "—"
     remaining = max(0.0, 100.0 - used_percent)
     return f"{remaining:.{decimals}f}%"
 
 
-def format_countdown(target: datetime | None, now: datetime | None = None) -> str | None:
+def format_countdown(
+    target: datetime | None, now: datetime | None = None
+) -> str | None:
     """Human readable ``4h 12m`` style countdown to ``target``."""
+    core = rust_bridge.extension()
+    if core is not None and _rust_datetime_compatible(target):
+        now = now or datetime.now(timezone.utc)
+        rust_now = _rust_datetime(now)
+        if rust_now is not None:
+            return core.format_countdown(_rust_datetime(target), rust_now)
     if target is None:
         return None
     now = now or datetime.now(timezone.utc)
@@ -65,6 +127,12 @@ def format_countdown(target: datetime | None, now: datetime | None = None) -> st
 
 
 def format_absolute(target: datetime | None, now: datetime | None = None) -> str | None:
+    core = rust_bridge.extension()
+    if core is not None and _rust_datetime_compatible(target):
+        now = now or datetime.now(timezone.utc)
+        rust_now = _rust_datetime(now)
+        if rust_now is not None:
+            return core.format_absolute(_rust_datetime(target), rust_now)
     if target is None:
         return None
     now = now or datetime.now(timezone.utc)
@@ -80,6 +148,14 @@ def format_reset(
     style: str = "countdown",
     now: datetime | None = None,
 ) -> str | None:
+    core = rust_bridge.extension()
+    if (
+        core is not None
+        and now is not None
+        and _rust_datetime_compatible(target)
+        and _rust_datetime_compatible(now)
+    ):
+        return core.format_reset(_rust_datetime(target), style, _rust_datetime(now))
     countdown = format_countdown(target, now)
     absolute = format_absolute(target, now)
     if style == "absolute":
@@ -95,10 +171,21 @@ def format_reset(
     return f"resets in {countdown}"
 
 
-def format_currency(value: float | None, currency: str = "USD", compact: bool = False) -> str:
+def format_currency(
+    value: float | None, currency: str = "USD", compact: bool = False
+) -> str:
+    core = rust_bridge.extension()
+    if (
+        core is not None
+        and _rust_number_compatible(value)
+        and isinstance(currency, str)
+    ):
+        return core.format_currency(value, currency, compact)
     if value is None:
         return "—"
-    symbol = {code: glyph for code, glyph, _rate in CURRENCIES}.get(currency.upper(), "")
+    symbol = {code: glyph for code, glyph, _rate in CURRENCIES}.get(
+        currency.upper(), ""
+    )
     prefix = symbol if symbol else ""
     suffix = "" if symbol else f" {currency}"
     if compact and abs(value) >= 1000:
@@ -109,6 +196,9 @@ def format_currency(value: float | None, currency: str = "USD", compact: bool = 
 
 
 def format_credits(value: float | None) -> str:
+    core = rust_bridge.extension()
+    if core is not None and _rust_number_compatible(value):
+        return core.format_credits(value)
     if value is None:
         return "—"
     if abs(value) >= 100:
@@ -119,6 +209,14 @@ def format_credits(value: float | None) -> str:
 
 
 def format_tokens(value: int | None) -> str:
+    core = rust_bridge.extension()
+    if core is not None and (
+        value is None
+        or isinstance(value, int)
+        and not isinstance(value, bool)
+        and 0 <= value <= 18_446_744_073_709_551_615
+    ):
+        return core.format_tokens(value)
     if not value:
         return "0"
     if value >= 1_000_000_000:
@@ -131,6 +229,12 @@ def format_tokens(value: int | None) -> str:
 
 
 def format_updated(target: datetime | None, now: datetime | None = None) -> str | None:
+    core = rust_bridge.extension()
+    if core is not None and _rust_datetime_compatible(target):
+        now = now or datetime.now(timezone.utc)
+        rust_now = _rust_datetime(now)
+        if rust_now is not None:
+            return core.format_updated(_rust_datetime(target), rust_now)
     if target is None:
         return None
     now = now or datetime.now(timezone.utc)
@@ -159,10 +263,22 @@ def format_reset_credits(
     absolute style) and ``help_items`` one line per credit. ``None`` when
     there is nothing to show.
     """
+    core = rust_bridge.extension()
+    if core is not None and all(
+        _rust_datetime_compatible(item) for item in expirations
+    ):
+        now = now or datetime.now(timezone.utc)
+        rust_now = _rust_datetime(now)
+        if rust_now is not None:
+            return core.format_reset_credits(
+                [_rust_datetime(item) for item in expirations], style, rust_now
+            )
     if not expirations:
         return None
     now = now or datetime.now(timezone.utc)
-    count_text = "1 available" if len(expirations) == 1 else f"{len(expirations)} available"
+    count_text = (
+        "1 available" if len(expirations) == 1 else f"{len(expirations)} available"
+    )
 
     def expiry_item(expires_at: datetime | None) -> tuple[str, str]:
         if expires_at is None:
@@ -184,7 +300,16 @@ def format_reset_credits(
 
 def format_pace(pace) -> str:
     """Compact pace text, matching the macOS app's wording."""
+    core = rust_bridge.extension()
     delta = pace.delta_percent
+    if core is not None and (_rust_number_compatible(delta)):
+        return core.format_pace(
+            pace.stage,
+            delta,
+            pace.in_deficit,
+            pace.in_reserve,
+            pace.stage_label,
+        )
     value = int(round(abs(float(delta)))) if delta is not None else 0
     if pace.stage == "onTrack" or value == 0:
         return "On pace"
@@ -196,6 +321,11 @@ def format_pace(pace) -> str:
 
 
 def format_window_span(minutes: int | None) -> str | None:
+    core = rust_bridge.extension()
+    if core is not None and (
+        minutes is None or isinstance(minutes, int) and -(2**63) <= minutes < 2**63
+    ):
+        return core.format_window_span(minutes)
     if not minutes:
         return None
     if minutes % 1440 == 0:
@@ -207,6 +337,13 @@ def format_window_span(minutes: int | None) -> str | None:
 
 
 def next_refresh_delta(interval_seconds: int) -> timedelta:
+    core = rust_bridge.extension()
+    if (
+        core is not None
+        and isinstance(interval_seconds, int)
+        and -(2**63) <= interval_seconds < 2**63
+    ):
+        return timedelta(seconds=core.next_refresh_seconds(interval_seconds))
     return timedelta(seconds=max(5, interval_seconds))
 
 
@@ -218,6 +355,19 @@ def workday_progress_percent(
     Mirrors the macOS app's weekly progress tick: with five work days only the
     Monday to Friday stretch counts towards the expected burn.
     """
+    core = rust_bridge.extension()
+    if (
+        core is not None
+        and _rust_datetime_compatible(resets_at)
+        and isinstance(work_days, int)
+        and 0 <= work_days <= 4_294_967_295
+    ):
+        now = now or datetime.now(timezone.utc)
+        rust_now = _rust_datetime(now)
+        if rust_now is not None:
+            return core.workday_progress_percent(
+                _rust_datetime(resets_at), rust_now, work_days
+            )
     if resets_at is None or work_days <= 0:
         return None
     now = now or datetime.now(timezone.utc)
@@ -248,6 +398,27 @@ def project_usage_at_reset(
     now: datetime | None = None,
 ) -> float | None:
     """Project the quota usage when the window resets, from recorded samples."""
+    core = rust_bridge.extension()
+    if (
+        core is not None
+        and _rust_datetime_compatible(resets_at)
+        and _rust_number_compatible(used_percent)
+        and all(
+            isinstance(t, (int, float))
+            and _rust_number_compatible(t)
+            and _rust_number_compatible(value)
+            for t, value in samples
+        )
+    ):
+        now = now or datetime.now(timezone.utc)
+        rust_now = _rust_datetime(now)
+        if rust_now is not None:
+            return core.project_usage_at_reset(
+                used_percent,
+                [(t, value) for t, value in samples],
+                _rust_datetime(resets_at),
+                rust_now,
+            )
     if resets_at is None or len(samples) < 2:
         return None
     now = now or datetime.now(timezone.utc)

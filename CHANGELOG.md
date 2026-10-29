@@ -6,6 +6,20 @@ short version tracks, so "which version has what" maps cleanly onto both trees.
 
 ## Unreleased
 
+## 0.81.0 (12) — 2026-10-29
+
+Tracks upstream CodexBar 0.81.0. This build integrates Rust display formatting
+and adds a direct Settings-to-dashboard navigation action.
+
+### Added
+
+- Route UTC display formatting helpers through the opt-in Rust backend while
+  retaining Python behavior for naive/local datetimes and unsupported edge data.
+- Add a visible **Return to dashboard** action to General Settings; opening the
+  dashboard hides Settings and presents the main window.
+- Document the Rust port checklist and distinguish completed Rust ports from
+  the two remaining runtime integrations.
+
 ## 0.81.0 (11) — 2026-10-29
 
 Tracks upstream CodexBar 0.81.0. This build refreshes the README screenshots

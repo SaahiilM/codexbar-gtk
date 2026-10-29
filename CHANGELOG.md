@@ -6,6 +6,20 @@ short version tracks, so "which version has what" maps cleanly onto both trees.
 
 ## Unreleased
 
+## 0.81.0 (27) — 2026-10-29
+
+Tracks upstream CodexBar 0.81.0.
+
+### Changed
+
+- Record the observed B02b2a merge, mark extra rate-window normalization
+  complete, and set B02b2b as the next provider-normalization task.
+
+### Validation
+
+- Documentation/version metadata only; implementation and CI evidence are in
+  `docs/rust-migration/AUDIT.md`.
+
 ## 0.81.0 (26) — 2026-10-29
 
 Tracks upstream CodexBar 0.81.0.

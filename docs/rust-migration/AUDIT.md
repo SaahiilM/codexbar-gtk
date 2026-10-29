@@ -511,6 +511,17 @@ reproducible commands; report artifact limitations honestly.
 - **Status:** implementation locally verified before PR; build `0.81.0 (26)`.
 - **Next:** create PR, observe CI/merge, then B02b2b.
 
+### E021 — 2026-10-29: B02b2a merged
+
+- **PR/merge:** [PR #27](https://github.com/SaahiilM/codexbar-gtk/pull/27)
+  merged at `965b59223d4679e4f373621717deb70a38948f27`; `test` and `tray-dbus`
+  CI checks succeeded. Main was fast-forwarded and clean.
+- **Result:** B02b2a checked. Extra rate-window entries normalize through Rust
+  in opt-in mode; Python fallback handles malformed/dynamic payloads.
+- **GTK:** local typelib bootstrap and fixture preview verified (E017/E020).
+- **Next:** B02b2b — identity/plan, costs, details/charts, credits, reset
+  credits, status and error normalization. No native UI migration until BG.
+
 ## Append a record for each task change or handoff
 
 ```text

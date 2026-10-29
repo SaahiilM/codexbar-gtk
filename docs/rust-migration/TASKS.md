@@ -10,15 +10,15 @@ history. A checked box means **verified and merged**, not merely implemented.
 | --- | --- |
 | Goal | Fully native Rust GTK4/libadwaita app; backend first, UI second |
 | Current phase | B01 domain contracts; native UI implementation must wait |
-| Last merged implementation | `956ffd3`, PR #19, build `0.81.0 (18)` |
+| Last merged implementation | `6fa18c9`, PR #20, build `0.81.0 (19)` |
 | Planning change | [PR #18](https://github.com/SaahiilM/codexbar-gtk/pull/18), merged at `69c5496`, build `0.81.0 (17)` |
-| Backend tasks completed after that baseline | B00 merged in [PR #19](https://github.com/SaahiilM/codexbar-gtk/pull/19); B01a is in [PR #20](https://github.com/SaahiilM/codexbar-gtk/pull/20), CI/merge pending |
-| Active implementation task / owner | B01a review handoff, owner: current coding-agent session |
-| Active task | **B01a** — timestamp/numeric primitives and `RateWindow` derived properties |
-| Next domain slice | **B01b** — remaining shared data models after B01a is merged |
+| Backend tasks completed after that baseline | B00 and B01a merged; B01b is verified, PR pending |
+| Active implementation task / owner | B01b review handoff, owner: current coding-agent session |
+| Active task | **B01b** — `Pace` and `CostInfo` model properties |
+| Next domain slice | **B01c** — detail, credit, provider, session and spend model contracts |
 | Open external blockers | None known; task dependencies below still apply |
-| Latest checks | B01a: 33 core + 3 backend Rust tests; Clippy/format; extension build; 135 Python tests in each mode; 3 private-D-Bus tests all passed (AUDIT E007) |
-| UI validation | Attempted synthetic fixture preview; blocked because GTK4 typelib is missing (AUDIT E007) |
+| Latest checks | 35 core + 3 backend Rust tests; format/Clippy/build; 137 Python tests in both modes; 3 D-Bus tests all passed (AUDIT E009) |
+| UI validation | B01a synthetic preview blocked by missing GTK4 typelib; not rerun for B01b (AUDIT E007/E008) |
 
 **First commands for a new model/session:**
 
@@ -30,11 +30,10 @@ gh pr view 18 --json state,mergeCommit,statusCheckRollup
 gh pr view 19 --json state,mergeCommit,statusCheckRollup
 ```
 
-PR #18 is merged at `69c5496`; B00 PR #19 is merged at `956ffd3`, with both
-CI checks passing (AUDIT E006). B01a PR #20 is open on
-`backend/b01-domain-foundation`; CI/merge pending. The GTK4 preview is
-environment-blocked. Verify this PR's status before beginning B01b. UI migration
-remains blocked by BG.
+B00 PR #19 is merged at `956ffd3` and B01a PR #20 at `6fa18c9`; CI passed
+for both (AUDIT E006/E007). B01b is underway on `backend/b01b-pace-cost-models`.
+Verify its PR/merge status before beginning B01c. UI migration remains blocked
+by BG.
 For active work record task/subtask ID, owner/session, branch, PR if available,
 changed files, checks performed/skipped, blockers and the next exact action.
 
@@ -85,10 +84,11 @@ into smaller PRs without declaring the parent complete early.
 B01 sub-slices (the parent stays pending until all models/contracts and caller
 integration are complete):
 
-- [ ] **B01a** Timestamp/numeric primitives and `RateWindow` — implementation
-  currently on `backend/b01-domain-foundation`; do not check until merged.
-- [ ] **B01b** `Pace`, `CostInfo`, detail/credit/provider/session/spend model
-  contracts and remaining derived properties.
+- [x] **B01a** Timestamp/numeric primitives and `RateWindow` — merged PR #20.
+- [ ] **B01b** `Pace` and `CostInfo` — implementation currently on
+  `backend/b01b-pace-cost-models`; do not check until merged.
+- [ ] **B01c** Detail/credit/provider/session/spend model contracts and
+  remaining derived properties.
 
 B05/B07/B12 can proceed after B00 independently of payload parsing. B11/B13 are
 not optional just because their Python files sit near presentation code. Do not

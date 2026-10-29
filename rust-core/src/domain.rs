@@ -58,6 +58,91 @@ pub fn optional_i64(value: Option<&Value>) -> Option<i64> {
     Some(number as i64)
 }
 
+/// Pace forecast for a quota window.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Pace {
+    pub stage: String,
+    pub delta_percent: Option<f64>,
+    pub expected_used_percent: Option<f64>,
+    pub will_last_to_reset: bool,
+    pub eta_seconds: Option<f64>,
+    pub run_out_probability: Option<f64>,
+    pub summary: Option<String>,
+}
+
+impl Pace {
+    pub fn in_deficit(&self) -> bool {
+        Self::stage_is_deficit(&self.stage)
+    }
+
+    pub fn stage_is_deficit(stage: &str) -> bool {
+        matches!(stage, "slightlyAhead" | "ahead" | "farAhead")
+    }
+
+    pub fn in_reserve(&self) -> bool {
+        Self::stage_is_reserve(&self.stage)
+    }
+
+    pub fn stage_is_reserve(stage: &str) -> bool {
+        matches!(stage, "slightlyBehind" | "behind" | "farBehind")
+    }
+
+    pub fn stage_label(&self) -> &str {
+        Self::label_for_stage(&self.stage)
+    }
+
+    pub fn label_for_stage(stage: &str) -> &str {
+        match stage {
+            "onTrack" => "On pace",
+            "slightlyAhead" | "ahead" => "In deficit",
+            "farAhead" => "Well in deficit",
+            "slightlyBehind" | "behind" => "In reserve",
+            "farBehind" => "Well in reserve",
+            other => other,
+        }
+    }
+}
+
+/// Provider cost/limit data. A zero or negative limit is not a usable cap.
+#[derive(Clone, Debug, PartialEq)]
+pub struct CostInfo {
+    pub used: f64,
+    pub limit: f64,
+    pub currency: String,
+    pub period: Option<String>,
+    pub balance: Option<f64>,
+    pub personal_used: Option<f64>,
+    pub resets_at: Option<DateTime<Utc>>,
+}
+
+impl CostInfo {
+    pub fn has_limit(&self) -> bool {
+        Self::limit_is_usable(self.limit)
+    }
+
+    pub fn limit_is_usable(limit: f64) -> bool {
+        limit > 0.0
+    }
+
+    pub fn used_percent(&self) -> f64 {
+        Self::percent_used(self.used, self.limit)
+    }
+
+    pub fn percent_used(used: f64, limit: f64) -> f64 {
+        if !Self::limit_is_usable(limit) {
+            return 0.0;
+        }
+        let percent = used / limit * 100.0;
+        if percent.is_nan() || percent > 100.0 {
+            100.0
+        } else if percent < 0.0 {
+            0.0
+        } else {
+            percent
+        }
+    }
+}
+
 /// Typed quota window. Missing usage is represented by `usage_known = false`
 /// rather than conflated with a known zero.
 #[derive(Clone, Debug, PartialEq)]
@@ -157,6 +242,55 @@ mod tests {
             quota_unit: None,
             usage_known: true,
         }
+    }
+
+    #[test]
+    fn pace_properties_and_labels_match_python_contract() {
+        let cases = [
+            ("onTrack", false, false, "On pace"),
+            ("slightlyAhead", true, false, "In deficit"),
+            ("ahead", true, false, "In deficit"),
+            ("farAhead", true, false, "Well in deficit"),
+            ("slightlyBehind", false, true, "In reserve"),
+            ("behind", false, true, "In reserve"),
+            ("farBehind", false, true, "Well in reserve"),
+            ("futureStage", false, false, "futureStage"),
+        ];
+        for (stage, deficit, reserve, label) in cases {
+            let pace = Pace {
+                stage: stage.to_owned(),
+                delta_percent: None,
+                expected_used_percent: None,
+                will_last_to_reset: true,
+                eta_seconds: None,
+                run_out_probability: None,
+                summary: None,
+            };
+            assert_eq!(pace.in_deficit(), deficit);
+            assert_eq!(pace.in_reserve(), reserve);
+            assert_eq!(pace.stage_label(), label);
+        }
+    }
+
+    #[test]
+    fn cost_info_limit_and_percent_match_python_contract() {
+        let cost = |used, limit| CostInfo {
+            used,
+            limit,
+            currency: "USD".to_owned(),
+            period: None,
+            balance: None,
+            personal_used: None,
+            resets_at: None,
+        };
+        assert!(!cost(10.0, 0.0).has_limit());
+        assert!(!cost(10.0, -1.0).has_limit());
+        assert!(cost(10.0, f64::INFINITY).has_limit());
+        assert_eq!(cost(50.0, 100.0).used_percent(), 50.0);
+        assert_eq!(cost(150.0, 100.0).used_percent(), 100.0);
+        assert_eq!(cost(-5.0, 100.0).used_percent(), 0.0);
+        assert_eq!(cost(f64::NAN, 100.0).used_percent(), 100.0);
+        assert_eq!(cost(10.0, f64::NAN).used_percent(), 0.0);
     }
 
     #[test]

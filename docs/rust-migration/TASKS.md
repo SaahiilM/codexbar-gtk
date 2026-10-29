@@ -10,14 +10,14 @@ history. A checked box means **verified and merged**, not merely implemented.
 | --- | --- |
 | Goal | Fully native Rust GTK4/libadwaita app; backend first, UI second |
 | Current phase | B02 provider payload normalization; native UI implementation must wait |
-| Last merged implementation | `799e7f1`, PR #24, build `0.81.0 (23)` |
+| Last merged implementation | `51cd4b8`, PR #25, build `0.81.0 (24)` |
 | Planning change | [PR #18](https://github.com/SaahiilM/codexbar-gtk/pull/18), merged at `69c5496`, build `0.81.0 (17)` |
-| Backend tasks completed after that baseline | B00, B01 and B02a merged; B02b1 is in [PR #25](https://github.com/SaahiilM/codexbar-gtk/pull/25), CI/merge pending |
-| Active implementation task / owner | B02b1, current coding-agent session |
-| Active task | **B02b1** — normalize provider pace payloads in Rust |
+| Backend tasks completed after that baseline | B00, B01, B02a and B02b1 merged; B02b2 remains |
+| Active implementation task / owner | None claimed |
+| Active task | None; claim B02b2 before editing |
 | Next domain slice | **B02b2** — identity/plan, costs, details/charts, credits, reset credits, status/errors |
 | Open external blockers | None known; task dependencies below still apply |
-| Latest checks | B02b1: 38 core + 3 backend tests; format/Clippy/build; 142 Python tests each mode; 3 D-Bus tests all passed (AUDIT E018) |
+| Latest checks | B02b1: 38 core + 3 backend tests; format/Clippy/build; 142 Python tests each mode; 3 D-Bus tests; PR #25 CI passed (AUDIT E018/E019) |
 | UI validation | Local typelibs load; synthetic X11/Wayland widget preview succeeded; offscreen backend unavailable (AUDIT E017/E018) |
 
 **First commands for a new model/session:**
@@ -33,14 +33,17 @@ gh pr view 21 --json state,mergeCommit,statusCheckRollup
 gh pr view 22 --json state,mergeCommit,statusCheckRollup
 gh pr view 23 --json state,mergeCommit,statusCheckRollup
 gh pr view 24 --json state,mergeCommit,statusCheckRollup
+gh pr view 25 --json state,mergeCommit,statusCheckRollup
 ```
 
 B00 PR #19 (`956ffd3`), B01a PR #20 (`6fa18c9`), B01b PR #21 (`70f295a`),
 B01c PR #22 (`4213503`), B02a PR #23 (`da215b1`), and handoff PR #24
 (`799e7f1`) are merged with CI passing. GTK4/libadwaita typelibs are available
 locally through ignored `.deps/` (E017); synthetic X11/Wayland widget previews
-succeeded. B02b1 PR #25 is open on `backend/b02b1-pace-normalization`; CI/merge pending.
-Verify its PR/merge before B02b2. UI migration remains blocked by BG.
+succeeded. B02b1 PR #25 (`51cd4b8`) is merged with `test` and `tray-dbus` CI passing
+(AUDIT E019). B02b2 is next: extra windows, identity/plan, costs, details,
+credits, reset credits, status and error parsing. Local GTK typelibs and the
+synthetic preview path are available. UI migration remains blocked by BG.
 For active work record task/subtask ID, owner/session, branch, PR if available,
 changed files, checks performed/skipped, blockers and the next exact action.
 
@@ -101,8 +104,7 @@ credits and error semantics are integrated):
 
 - [x] **B02a** Standard primary/secondary/tertiary rate-window envelope —
   merged PR #23.
-- [ ] **B02b1** Pace object normalization — implementation on
-  `backend/b02b1-pace-normalization`.
+- [x] **B02b1** Pace object normalization — merged PR #25.
 - [ ] **B02b2** Extra windows, identity/plan, cost, details/charts, credits,
   reset credits, status and errors.
 

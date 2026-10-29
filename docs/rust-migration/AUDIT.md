@@ -470,6 +470,20 @@ reproducible commands; report artifact limitations honestly.
   live. Build `0.81.0 (24)`.
 - **Next:** observe CI/merge, then B02b2.
 
+### E019 — 2026-10-29: B02b1 merged
+
+- **PR/merge:** [PR #25](https://github.com/SaahiilM/codexbar-gtk/pull/25)
+  merged at `51cd4b8b4ac0c36eb18c3b021dfd171242bbb802`; `test` and `tray-dbus`
+  CI checks both succeeded. Main was fast-forwarded and clean.
+- **Result:** B02b1 checked. Provider pace objects now normalize through Rust in
+  opt-in mode when fields meet the typed contract; otherwise the Python
+  compatibility path handles the original dynamic payload unchanged.
+- **GTK:** the no-root typelib bootstrap and fixture preview tooling are merged.
+  Actual local setup/preview evidence is E017/E018; this merge does not claim
+  full application navigation/interaction testing.
+- **Next:** B02b2, remaining extra-window/identity/cost/detail/credit/status/error
+  normalization. No native UI migration until BG.
+
 ## Append a record for each task change or handoff
 
 ```text

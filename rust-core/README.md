@@ -2,6 +2,16 @@
 
 `rust-core` is the parallel implementation of the application's business logic. Python remains the runtime path until a module has behavior-parity tests and is switched over in a separate integration change.
 
+## Backend-first native application plan
+
+The final destination is a native Rust GTK4/libadwaita app with no Python runtime.
+Complete the remaining backend before starting the native UI. PyO3 is temporary;
+the six existing integrations do not represent a complete backend. Follow the
+[architecture and gates](../docs/rust-migration/README.md),
+[task checklist/current handoff](../docs/rust-migration/TASKS.md), and
+[decision/audit trail](../docs/rust-migration/AUDIT.md). Root
+[`AGENTS.md`](../AGENTS.md) defines the continuation and evidence requirements.
+
 ## Local checks
 
 ```sh

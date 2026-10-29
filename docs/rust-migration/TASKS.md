@@ -10,14 +10,14 @@ history. A checked box means **verified and merged**, not merely implemented.
 | --- | --- |
 | Goal | Fully native Rust GTK4/libadwaita app; backend first, UI second |
 | Current phase | B02 provider payload normalization; native UI implementation must wait |
-| Last merged implementation | B02b2b2a PR #32 merged, build `0.82.0 (31)` |
+| Last merged implementation | B02b2b2b PR #33 merged, build `0.82.0 (32)` |
 | Planning change | [PR #18](https://github.com/SaahiilM/codexbar-gtk/pull/18), merged at `69c5496`, build `0.81.0 (17)` |
-| Backend tasks completed after that baseline | B00, B01, B02a, B02b1, B02b2a, B02b2b1, B02b2b2a merged; B02b2b2b verified, PR pending |
-| Active implementation task / owner | B02b2b2b review handoff, owner: current coding-agent session |
-| Active task | **B02b2b2b** — credits/status/error/plan context normalization in Rust |
+| Backend tasks completed after that baseline | B00, B01, B02a, B02b1, B02b2a, B02b2b1, B02b2b2a, B02b2b2b merged; B03 remains |
+| Active implementation task / owner | None claimed |
+| Active task | None; claim B03 before editing |
 | Next domain slice | **B03** — agent-session normalization
 | Open external blockers | None known; task dependencies below still apply |
-| Latest checks | B02b2b2b: 42 core + 3 backend tests; format/Clippy/build; 146 Python tests each mode; 3 D-Bus tests all passed (AUDIT E026) |
+| Latest checks | B02b2b2b: 42 core + 3 backend tests; format/Clippy/build; 146 Python tests each mode; 3 D-Bus tests; PR #33 CI passed (AUDIT E026/E027) |
 | UI validation | Local typelibs load; synthetic X11/Wayland widget preview with extra windows succeeded; offscreen backend unavailable (AUDIT E017/E020) |
 
 **First commands for a new model/session:**
@@ -39,11 +39,11 @@ gh pr view 25 --json state,mergeCommit,statusCheckRollup
 B00 PR #19 (`956ffd3`), B01a PR #20 (`6fa18c9`), B01b PR #21 (`70f295a`),
 B01c PR #22 (`4213503`), B02a PR #23 (`da215b1`), B02b1 PR #25 (`51cd4b8`),
 B02b2a PR #27 (`965b592`), B02b2b1 PR #30 (`e5963c6`), B02b2b2a PR #32 (`96ed3d2`),
-and handoff PR #29 are merged with CI passing. GTK4/libadwaita typelibs are
-available locally through ignored `.deps/` (E017); synthetic X11/Wayland
-widget previews succeeded. B02b2b2b is locally verified on
-`backend/b02b2b2b-credits-status`; PR pending. Verify its PR/merge before
-B03. UI migration remains blocked by BG.
+and B02b2b2b PR #33 (`5aee61f`) are merged with CI passing. GTK4/libadwaita
+typelibs are available locally through ignored `.deps/` (E017); synthetic
+X11/Wayland widget previews succeeded. B03 is next: agent-session
+normalization (session fields, timestamp handling, running-state classification,
+stable sorting). UI migration remains blocked by BG.
 For active work record task/subtask ID, owner/session, branch, PR if available,
 changed files, checks performed/skipped, blockers and the next exact action.
 
@@ -108,8 +108,7 @@ credits and error semantics are integrated):
 - [x] **B02b2a** Extra rate-window normalization — merged PR #27.
 - [x] **B02b2b1** Provider cost normalization — merged PR #30.
 - [x] **B02b2b2a** Detail chart normalization — merged PR #32.
-- [x] **B02b2b2b** Credits/status/error/plan context normalization — implementation currently on
-  `backend/b02b2b2b-credits-status`; do not check until merged.
+- [x] **B02b2b2b** Credits/status/error/plan context normalization — merged PR #33.
 - [ ] **B03** — agent-session normalization
 
 B05/B07/B12 can proceed after B00 independently of payload parsing. B11/B13 are

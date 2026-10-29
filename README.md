@@ -108,9 +108,9 @@ public client `VERSION` marker from GitHub; it does not install or download code
 The application remains primarily Python. The Rust core is being integrated one
 module at a time behind an opt-in PyO3 extension. The live Rust paths currently
 cover provider metadata (canonical IDs, names and colors), Usage & Spend
-activity helpers, display formatting, monthly allowance daily targets, and quota
-history storage and queries. GTK
-rendering and CLI/provider fetching remain in Python/the CodexBar CLI.
+activity helpers, display formatting, monthly allowance daily targets, quota
+history storage and queries, and sparkline geometry. GTK rendering and
+CLI/provider fetching remain in Python/the CodexBar CLI.
 
 ### Rust module checklist
 
@@ -124,10 +124,12 @@ rendering and CLI/provider fetching remain in Python/the CodexBar CLI.
 - [x] `history.py` — JSON-lines persistence, retention, caching, and sorted
   quota-history queries, Rust-backed in opt-in mode. Existing files work with
   either backend; unsupported sample inputs retain the Python path.
+- [x] `charts.py` — time-spaced sparkline coordinates and fixed quota axes,
+  Rust-backed in opt-in mode; GTK/Cairo drawing remains in Python.
 
-All five original Rust ports now have opt-in runtime integrations. Python
-implementations remain available while regression coverage and further module
-ports continue; the application is not yet entirely Rust.
+All six Rust ports now have opt-in runtime integrations. Python implementations
+remain available while regression coverage and further module ports continue;
+the application is not yet entirely Rust.
 
 Build the extension and opt in for the app process with:
 
@@ -181,7 +183,7 @@ The GTK front-end uses the same version pair as the macOS bundle:
   this client is feature-compatible with (`0.81.0`).
 * `CURRENT_PROJECT_VERSION` is the build number of the Linux front-end.
 * `codexbar_gtk/version.py` turns the pair into the macOS-style
-  `"0.81.0 (15)"` string shown under Settings → About, in the tray menu and by
+  `"0.81.0 (16)"` string shown under Settings → About, in the tray menu and by
   `./run.sh --about`.
 
 Increment `CURRENT_PROJECT_VERSION` for each merged PR and keep it in sync with

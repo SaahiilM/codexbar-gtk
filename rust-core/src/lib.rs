@@ -4,6 +4,7 @@
 //! until each Rust module has parity tests and an explicit integration step.
 
 pub mod activity;
+pub mod charts;
 pub mod formatting;
 pub mod history;
 pub mod pace;

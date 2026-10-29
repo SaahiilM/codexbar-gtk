@@ -7,6 +7,7 @@ on:
     paths:
       - "rust-core/**"
       - "rust-python/**"
+      - "rust-backend/**"
       - "codexbar_gtk/providers.py"
       - "codexbar_gtk/activity.py"
       - "codexbar_gtk/format.py"
@@ -44,8 +45,11 @@ jobs:
         run: |
           cargo fmt --manifest-path rust-core/Cargo.toml -- --check
           cargo fmt --manifest-path rust-python/Cargo.toml -- --check
+          cargo fmt --manifest-path rust-backend/Cargo.toml -- --check
       - name: Run Rust core tests
         run: cargo test --manifest-path rust-core/Cargo.toml --locked
+      - name: Run headless backend contract tests
+        run: cargo test --manifest-path rust-backend/Cargo.toml --locked
       - name: Build PyO3 extension
         run: ./scripts/build-rust-core.sh
       - name: Run Python tests with default backend
@@ -56,3 +60,4 @@ jobs:
         run: |
           cargo clippy --manifest-path rust-core/Cargo.toml --all-targets --all-features -- -D warnings
           cargo clippy --manifest-path rust-python/Cargo.toml --all-targets --all-features -- -D warnings
+          cargo clippy --manifest-path rust-backend/Cargo.toml --all-targets --all-features -- -D warnings

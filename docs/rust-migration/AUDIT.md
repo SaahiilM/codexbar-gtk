@@ -56,6 +56,30 @@ reproducible commands; report artifact limitations honestly.
   may be committed before its own PR merges: record its PR URL and status at the
   time, and let GitHub/git provide the later merge result. Never pre-record it.
 
+### D004 — 2026-10-29: B00 backend runtime and publication contract
+
+- **Runtime:** use Tokio for async orchestration and `tokio::process` for CLI
+  children. The application owns the runtime, allowing frontend-specific startup
+  and shutdown. GTK must not block on backend I/O.
+- **Publication:** expose immutable, versioned latest-state snapshots using
+  `tokio::sync::watch`; consumers marshal changes onto their own UI thread.
+  Coalescing is appropriate for dashboard snapshots. Any operation needing
+  lossless events must define a separate bounded event channel.
+- **Cancellation/shutdown:** cooperative cancellation token plus explicit task
+  join. Long operations must also impose their own timeouts; B07/B11 must prove
+  child/PTY reaping. Drop requests cancellation but cannot await task completion.
+- **Errors:** public state contains stable error categories and static operation
+  IDs only, not raw stderr, HTTP URLs, credential data or arbitrary error text.
+  Services must redact diagnostics at their source.
+- **Dependencies:** `tokio` and `tokio::process` selected in B00. Add `reqwest`
+  with Rustls in B06 for HTTP; defer `portable-pty` until B11 verifies platform
+  needs with fake login tests. Keep the backend crate separate from the GTK/PyO3
+  crates for now; no workspace migration is justified by this contract slice.
+- **Alternatives:** synchronous service traits would force blocking or add an
+  ad-hoc thread pool for HTTP, child processes and login. An unbounded event
+  stream risks stale UI state and unbounded memory. These were rejected for
+  backend orchestration; domain transformations remain synchronous/pure.
+
 ## Evidence log
 
 ### E001 — 2026-10-29: inherited implementation baseline
@@ -162,6 +186,35 @@ reproducible commands; report artifact limitations honestly.
 - **Handoff:** no backend task claimed and no known external blocker. After
   verifying this PR's merge status, claim B00 and implement its contracts/test
   seam; follow with B01's timestamp/numeric/quota-window slice.
+
+### E005 — 2026-10-29: B00 service contract implementation
+
+- **Owner/branch/base:** current coding-agent session;
+  `backend/b00-service-contract`, based on merged `69c5496` (PR #18).
+- **Scope:** create `rust-backend/` with locked Cargo metadata and generic
+  headless lifecycle contract: immutable Arc-backed snapshots, status/error
+  state, version sequence, cooperative cancellation, publication and joined
+  shutdown. The crate depends on `rust-core` and Tokio, not GTK/Python. Three
+  fake-worker tests cover cancellation/join, preserving successful data through
+  a later failed refresh, and visible sanitized task failure.
+- **Integration limits:** no provider/domain fetch adapter exists yet and no
+  current Python caller is routed through this crate. B00 is service scaffolding,
+  not a completed runtime backend. No app behavior changed.
+- **CI/tooling:** workflow now watches `rust-backend/**` and runs its format,
+  locked tests and Clippy checks. `.gitignore` excludes its build output.
+- **Checks actually run:** rustfmt checks for core/PyO3/backend; 30 core and 3
+  backend tests; Clippy with warnings denied for all 3 crates; PyO3 extension
+  build; 132 Python tests in default and Rust modes; 3 private-D-Bus tray tests;
+  `git diff --check`; locked Cargo metadata. All passed; no skips reported.
+- **UI/runtime smoke:** not run, because this change exposes only a generic
+  headless contract and the existing application is not yet a caller. The
+  `cargo test --manifest-path rust-backend/Cargo.toml --locked` suite runs
+  without Python, GTK, or PyO3. No real provider/account data used.
+- **PR:** [PR #19](https://github.com/SaahiilM/codexbar-gtk/pull/19), commit
+  `b6c90be`; open when this handoff update was recorded. CI/merge status must be
+  checked live. Do not mark B00 complete until merge is observed.
+- **Next:** observe PR checks/merge, then start B01's timestamp/numeric/
+  `RateWindow` characterization and Rust model implementation.
 
 ## Append a record for each task change or handoff
 

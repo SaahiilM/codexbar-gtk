@@ -37,18 +37,27 @@ Python GTK widgets                        Rust GTK4/libadwaita widgets
 - Extend `rust-core/` for typed models and deterministic domain policies. It
   already contains local history storage; retaining that module avoids churn.
   No GTK/Python types or implicit GUI-main-loop dependency in backend APIs.
-- Plan a `rust-backend/` service crate for subprocess execution, preferences,
-  HTTP/cache services, login sessions, and refresh/event orchestration. This
-  crate does **not** exist yet. Choose its runtime, process/HTTP/PTY dependencies,
-  and shutdown contract in B00; document any adjustment here and in AUDIT.
+- `rust-backend/` is the headless service-contract crate, depending on
+  `rust-core/`; it has no GTK/Python dependency. B00 selects Tokio for async
+  orchestration and `tokio::process` for CLI children. The application owns the
+  Tokio runtime; the GTK main thread must never block on backend I/O. State is
+  exposed as immutable snapshots over `tokio::sync::watch` (latest-value
+  semantics), with cooperative cancellation and explicit join on shutdown.
+  Add `reqwest` with Rustls in B06 for bounded HTTP work. Defer `portable-pty`
+  to B11, where its platform/dependency needs can be verified against the fake
+  login harness. This crate currently defines lifecycle/error/state contracts,
+  not provider fetch behavior or current-app integration.
 - Keep `rust-python/` a temporary, thin adapter over those APIs. Python dataclass
   construction is allowed during transition, but it must not conceal duplicated
   policy, fetching, scheduling, aggregation, or notification state.
 - Plan a `rust-gtk/` binary after gate BG. It must consume the same backend API
   directly, not embed Python or invoke a Python backend process. This crate
   also does **not** exist yet. A workspace layout can be introduced separately.
-- The backend produces snapshots/events; the frontend marshals them to its GUI
-  thread. Do not call GTK callbacks under backend locks or block the GUI on I/O.
+- The backend publishes immutable snapshots/state; the frontend marshals them
+  to its GUI thread. `watch` deliberately coalesces intermediate updates; if a
+  future user-visible operation needs a lossless event stream, define a bounded
+  channel contract for that operation rather than treating snapshots as events.
+  Do not call GTK callbacks under backend locks or block the GUI on I/O.
 - Inject clocks, subprocess/HTTP/browser adapters, paths, and cancellation where
   needed for deterministic tests. Prove the backend works headlessly without
   an interpreter before starting native UI implementation.
@@ -138,8 +147,16 @@ git diff --check
 The tray suite requires `dbus-run-session`, dbus-python and PyGObject. CI runs a
 separate dependency-equipped job. Some other environments skip it; record that.
 The extension build helper must retain atomic replacement for running apps.
-Add the corresponding format/test/Clippy commands for each new crate to this
-list and CI when that crate is introduced; no workspace commands are assumed.
+The B00 service crate checks are:
+
+```sh
+cargo fmt --manifest-path rust-backend/Cargo.toml -- --check
+cargo test --manifest-path rust-backend/Cargo.toml --locked
+cargo clippy --manifest-path rust-backend/Cargo.toml --all-targets --all-features -- -D warnings
+```
+
+Add the corresponding format/test/Clippy commands for each new crate to CI;
+no workspace commands are assumed.
 
 ## Stage gates
 

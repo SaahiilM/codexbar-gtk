@@ -6,6 +6,22 @@ short version tracks, so "which version has what" maps cleanly onto both trees.
 
 ## Unreleased
 
+## 0.81.0 (22) — 2026-10-29
+
+Tracks upstream CodexBar 0.81.0.
+
+### Added
+
+- Begin B02a by normalizing standard primary/secondary/tertiary quota windows
+  in Rust and routing the existing `data.py` window parser through the opt-in
+  bridge, preserving known-zero versus unknown usage and Python fallbacks.
+- Add direct coverage for normal payloads, missing values, placeholder truth
+  semantics, UTC resets, and duration handling.
+
+### Validation
+
+- See `docs/rust-migration/AUDIT.md` for B02a checks and GTK smoke limitations.
+
 ## 0.81.0 (21) — 2026-10-29
 
 Tracks upstream CodexBar 0.81.0.

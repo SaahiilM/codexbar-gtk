@@ -8,6 +8,19 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 type HistorySample = (f64, String, String, f64);
+type RateWindowTuple = (
+    String,
+    String,
+    f64,
+    Option<String>,
+    Option<String>,
+    Option<i64>,
+    Option<f64>,
+    bool,
+    Option<f64>,
+    Option<String>,
+    bool,
+);
 
 #[pyclass(name = "HistoryStore")]
 struct RustHistoryStore {
@@ -88,6 +101,27 @@ fn all_provider_ids() -> Vec<String> {
         .into_iter()
         .map(str::to_owned)
         .collect()
+}
+
+#[pyfunction]
+fn rate_window_from_json(payload: &str, key: &str, title: Option<&str>) -> Option<RateWindowTuple> {
+    let payload: Value = serde_json::from_str(payload).ok()?;
+    let window = domain::rate_window_from_value(&payload, key, title)?;
+    Some((
+        window.key,
+        window.title,
+        window.used_percent,
+        window
+            .resets_at
+            .map(|time| time.to_rfc3339_opts(chrono::SecondsFormat::AutoSi, true)),
+        window.reset_description,
+        window.window_minutes,
+        window.next_regen_percent,
+        window.is_placeholder,
+        window.quota_limit,
+        window.quota_unit,
+        window.usage_known,
+    ))
 }
 
 #[pyfunction]
@@ -514,6 +548,7 @@ fn _rust_core(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(all_provider_ids, module)?)?;
     module.add_function(wrap_pyfunction!(backend_name, module)?)?;
     module.add_function(wrap_pyfunction!(parse_timestamp, module)?)?;
+    module.add_function(wrap_pyfunction!(rate_window_from_json, module)?)?;
     module.add_function(wrap_pyfunction!(optional_float, module)?)?;
     module.add_function(wrap_pyfunction!(optional_int, module)?)?;
     module.add_function(wrap_pyfunction!(provider_usage_has_error, module)?)?;

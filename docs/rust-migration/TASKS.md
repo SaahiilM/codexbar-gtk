@@ -9,16 +9,16 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Field | Current checkpoint |
 | --- | --- |
 | Goal | Fully native Rust GTK4/libadwaita app; backend first, UI second |
-| Current phase | B01 domain contracts; native UI implementation must wait |
-| Last merged implementation | `70f295a`, PR #21, build `0.81.0 (20)` |
+| Current phase | B02 provider payload normalization; native UI implementation must wait |
+| Last merged implementation | `4213503`, PR #22, build `0.81.0 (21)` |
 | Planning change | [PR #18](https://github.com/SaahiilM/codexbar-gtk/pull/18), merged at `69c5496`, build `0.81.0 (17)` |
-| Backend tasks completed after that baseline | B00, B01a and B01b merged; B01c is in [PR #22](https://github.com/SaahiilM/codexbar-gtk/pull/22), CI/merge pending |
-| Active implementation task / owner | B01c review handoff, owner: current coding-agent session |
-| Active task | **B01c** — detail/credit/provider/session/spend domain contracts and derived properties |
-| Next domain slice | **B02** — provider usage payload normalization |
+| Backend tasks completed after that baseline | B00, B01 and B01a–c merged; B02a implementation is verified, PR pending |
+| Active implementation task / owner | B02a review handoff, owner: current coding-agent session |
+| Active task | **B02a** — normalize standard provider quota-window payloads in Rust |
+| Next domain slice | **B02b** — full provider envelope normalization (pace, identity, costs, details, credits) |
 | Open external blockers | None known; task dependencies below still apply |
-| Latest checks | B01c: 36 core + 3 backend tests; format/Clippy/build; 140 Python tests each mode; 3 D-Bus tests all passed (AUDIT E012) |
-| UI validation | GTK4 preview remains blocked by missing typelib; not rerun for B01c (AUDIT E007/E011) |
+| Latest checks | B02a: 37 core + 3 backend tests; format/Clippy/build; 141 Python tests each mode; 3 D-Bus tests all passed (AUDIT E015) |
+| UI validation | GTK4 preview remains blocked by missing typelib; not rerun for B02a (AUDIT E007/E014) |
 
 **First commands for a new model/session:**
 
@@ -28,12 +28,16 @@ git log -8 --oneline
 gh pr list --state open
 gh pr view 18 --json state,mergeCommit,statusCheckRollup
 gh pr view 19 --json state,mergeCommit,statusCheckRollup
+gh pr view 20 --json state,mergeCommit,statusCheckRollup
+gh pr view 21 --json state,mergeCommit,statusCheckRollup
+gh pr view 22 --json state,mergeCommit,statusCheckRollup
 ```
 
-B00 PR #19 (`956ffd3`), B01a PR #20 (`6fa18c9`) and B01b PR #21 (`70f295a`)
-are merged with CI passing (AUDIT E006–E010). B01c PR #22 is open on `backend/b01c-data-models`; CI/merge pending. GTK4
-preview remains blocked by missing typelibs. Verify B01c's PR/merge status
-before B02. UI migration remains blocked by BG.
+B00 PR #19 (`956ffd3`), B01a PR #20 (`6fa18c9`), B01b PR #21 (`70f295a`),
+and B01c PR #22 (`4213503`) are merged with CI passing (AUDIT E006–E013).
+B02a is locally verified on `backend/b02a-window-normalization`; PR/merge
+status pending. GTK4 preview remains blocked by missing typelibs. Verify B02a's
+PR/merge status before B02b. UI migration remains blocked by BG.
 For active work record task/subtask ID, owner/session, branch, PR if available,
 changed files, checks performed/skipped, blockers and the next exact action.
 
@@ -64,7 +68,7 @@ into smaller PRs without declaring the parent complete early.
 | Task | Dependencies | Deliverable / acceptance focus |
 | --- | --- | --- |
 | [x] **B00** Backend API and test seam | Foundation | Define snapshot/error contracts, Tokio/watch API and cancellation; record runtime/dependency decisions and headless fake-worker seam. Merged PR #19. |
-| [ ] **B01** Timestamp/numeric contracts and domain models | B00 | Port `data.py` timestamp/numeric helpers, `RateWindow`, `Pace`, `CostInfo`, detail/credit/provider/session/spend model contracts and derived properties. Freeze UTC/local, missing-vs-zero, rounding and large-number behavior. First slice: timestamps, numeric helpers and `RateWindow`; keep the rest explicitly pending. |
+| [x] **B01** Timestamp/numeric contracts and domain models | B00 | Port `data.py` timestamp/numeric helpers, `RateWindow`, `Pace`, `CostInfo`, detail/credit/provider/session/spend model contracts and derived properties. Freeze UTC/local, missing-vs-zero, rounding and large-number behavior. Completed in PRs #20–#22; see B01a–c.
 | [ ] **B02** Provider usage normalization | B01 | Port provider envelopes, extra windows, pace, identity/plan, costs, details/charts, credits and reset-credit parsing. Preserve optional/raw fields, caps, order, placeholder/usage-known flags and error states. |
 | [ ] **B03** Agent-session normalization | B01 | Port session fields, timestamp handling, running-state classification and stable sorting; malformed/missing fields characterized. |
 | [ ] **B04** Spend normalization/aggregation | B01 | Port old/new CLI totals, coverage/provenance, partial/error handling, daily/project/model data and ordering; never double-count totals or turn unknown costs into zero. |
@@ -86,9 +90,16 @@ integration are complete):
 
 - [x] **B01a** Timestamp/numeric primitives and `RateWindow` — merged PR #20.
 - [x] **B01b** `Pace` and `CostInfo` — merged PR #21.
-- [ ] **B01c** Detail/credit/provider/session/spend model contracts and
-  remaining derived properties — implementation currently on
-  `backend/b01c-data-models`; do not check until merged.
+- [x] **B01c** Detail/credit/provider/session/spend model contracts and
+  remaining derived properties — merged PR #22.
+
+B02 sub-slices (the parent stays pending until all provider payload fields,
+credits and error semantics are integrated):
+
+- [ ] **B02a** Standard primary/secondary/tertiary rate-window envelope —
+  implementation currently on `backend/b02a-window-normalization`.
+- [ ] **B02b** Extra windows, pace, identity/plan, cost, details/charts, credits,
+  reset credits, status and errors.
 
 B05/B07/B12 can proceed after B00 independently of payload parsing. B11/B13 are
 not optional just because their Python files sit near presentation code. Do not

@@ -11,6 +11,7 @@ from codexbar_gtk.data import (
     Pace,
     ProviderUsage,
     RateWindow,
+    provider_usage_from_payload,
     _optional_float,
     _optional_int,
     parse_timestamp,
@@ -103,6 +104,27 @@ class DomainPrimitiveIntegrationTests(unittest.TestCase):
             with self.subTest(state=state):
                 self.assertTrue(AgentSession("fixture", state=state).is_running)
         self.assertFalse(AgentSession("fixture", state="finished").is_running)
+
+    def test_standard_window_normalization_preserves_known_zero_and_unknown(self):
+        payload = provider_usage_from_payload(
+            {
+                "provider": "codex",
+                "rateWindowLabels": {"primary": "Session"},
+                "usage": {
+                    "primary": {
+                        "usedPercent": 0,
+                        "windowMinutes": 300,
+                        "resetsAt": "2026-10-29T18:00:00Z",
+                    },
+                    "secondary": {},
+                },
+            }
+        )
+        self.assertEqual(payload.windows[0].used_percent, 0)
+        self.assertTrue(payload.windows[0].usage_known)
+        self.assertEqual(payload.windows[0].duration_label, "5h window")
+        self.assertEqual(payload.windows[1].used_percent, 0)
+        self.assertFalse(payload.windows[1].usage_known)
 
     def test_rate_window_derived_properties(self):
         window = RateWindow("primary", "Session", used_percent=48, window_minutes=300)

@@ -1,8 +1,8 @@
 use chrono::{DateTime, NaiveDate, Utc};
-use codexbar_core::{activity, charts, formatting, history, pace, providers};
+use codexbar_core::{activity, charts, domain, formatting, history, pace, providers};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use pyo3::types::PyDict;
+use pyo3::types::{PyAny, PyBool, PyDict, PyFloat, PyInt};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -88,6 +88,55 @@ fn all_provider_ids() -> Vec<String> {
         .into_iter()
         .map(str::to_owned)
         .collect()
+}
+
+#[pyfunction]
+fn parse_timestamp(value: Option<&str>) -> Option<String> {
+    domain::parse_timestamp(value)
+        .map(|timestamp| timestamp.to_rfc3339_opts(chrono::SecondsFormat::AutoSi, true))
+}
+
+fn python_number_as_json(value: &Bound<'_, PyAny>) -> Option<Value> {
+    if value.is_instance_of::<PyBool>()
+        || !(value.is_instance_of::<PyInt>() || value.is_instance_of::<PyFloat>())
+    {
+        return None;
+    }
+    let number = value.extract::<f64>().ok()?;
+    serde_json::Number::from_f64(number).map(Value::Number)
+}
+
+#[pyfunction]
+fn optional_float(value: &Bound<'_, PyAny>) -> Option<f64> {
+    domain::optional_float(python_number_as_json(value).as_ref())
+}
+
+#[pyfunction]
+fn optional_int(value: &Bound<'_, PyAny>) -> Option<i64> {
+    domain::optional_i64(python_number_as_json(value).as_ref())
+}
+
+#[pyfunction]
+fn rate_window_remaining_percent(used_percent: f64) -> f64 {
+    (100.0 - used_percent).max(0.0)
+}
+
+#[pyfunction]
+fn rate_window_duration_label(window_minutes: Option<i64>) -> Option<String> {
+    domain::RateWindow {
+        key: String::new(),
+        title: String::new(),
+        used_percent: 0.0,
+        resets_at: None,
+        reset_description: None,
+        window_minutes,
+        next_regen_percent: None,
+        is_placeholder: false,
+        quota_limit: None,
+        quota_unit: None,
+        usage_known: true,
+    }
+    .duration_label()
 }
 
 #[pyfunction]
@@ -414,6 +463,11 @@ fn _rust_core(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(accent_color, module)?)?;
     module.add_function(wrap_pyfunction!(all_provider_ids, module)?)?;
     module.add_function(wrap_pyfunction!(backend_name, module)?)?;
+    module.add_function(wrap_pyfunction!(parse_timestamp, module)?)?;
+    module.add_function(wrap_pyfunction!(optional_float, module)?)?;
+    module.add_function(wrap_pyfunction!(optional_int, module)?)?;
+    module.add_function(wrap_pyfunction!(rate_window_remaining_percent, module)?)?;
+    module.add_function(wrap_pyfunction!(rate_window_duration_label, module)?)?;
     module.add_function(wrap_pyfunction!(compact_window_label, module)?)?;
     module.add_function(wrap_pyfunction!(format_percent, module)?)?;
     module.add_function(wrap_pyfunction!(format_remaining, module)?)?;

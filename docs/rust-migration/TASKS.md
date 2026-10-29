@@ -9,16 +9,16 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Field | Current checkpoint |
 | --- | --- |
 | Goal | Fully native Rust GTK4/libadwaita app; backend first, UI second |
-| Current phase | B00 backend contract implementation; native UI implementation must wait |
-| Last merged implementation | `46f44d0`, PR #17, build `0.81.0 (16)` |
+| Current phase | B01 domain contracts; native UI implementation must wait |
+| Last merged implementation | `956ffd3`, PR #19, build `0.81.0 (18)` |
 | Planning change | [PR #18](https://github.com/SaahiilM/codexbar-gtk/pull/18), merged at `69c5496`, build `0.81.0 (17)` |
-| Backend tasks completed after that baseline | None; B00 is verified and [PR #19](https://github.com/SaahiilM/codexbar-gtk/pull/19) is pending CI/merge |
-| Active implementation task / owner | B00 review handoff, owner: current coding-agent session |
-| Active task | **B00** — `rust-backend` service contract, runtime decision and headless test seam |
-| First domain implementation | **B01** — timestamp/numeric handling and quota-window models |
+| Backend tasks completed after that baseline | B00 merged in [PR #19](https://github.com/SaahiilM/codexbar-gtk/pull/19); B01a implementation is verified, PR pending |
+| Active implementation task / owner | B01a review handoff, owner: current coding-agent session |
+| Active task | **B01a** — timestamp/numeric primitives and `RateWindow` derived properties |
+| Next domain slice | **B01b** — remaining shared data models after B01a is merged |
 | Open external blockers | None known; task dependencies below still apply |
-| Latest checks | B00: 30 core tests + 3 backend tests; all Rust format/Clippy, extension build, 132 Python tests in both modes and 3 D-Bus tests pass (AUDIT E005) |
-| UI validation | Not run: B00 adds only headless service contracts and does not alter app runtime; prior fixture evidence is historical |
+| Latest checks | B01a: 33 core + 3 backend Rust tests; Clippy/format; extension build; 135 Python tests in each mode; 3 private-D-Bus tests all passed (AUDIT E007) |
+| UI validation | Attempted synthetic fixture preview; blocked because GTK4 typelib is missing (AUDIT E007) |
 
 **First commands for a new model/session:**
 
@@ -27,13 +27,13 @@ git status -sb
 git log -8 --oneline
 gh pr list --state open
 gh pr view 18 --json state,mergeCommit,statusCheckRollup
+gh pr view 19 --json state,mergeCommit,statusCheckRollup
 ```
 
-PR #18 is merged at `69c5496` (CI passed; see AUDIT E005). B00 PR #19 is
-open; check its live CI/merge status before claiming B01's timestamp/numeric/
-`RateWindow` slice. Do not start
-B01 over another model's branch. Update this handoff when starting, stopping,
-or completing work.
+PR #18 is merged at `69c5496`; B00 PR #19 is merged at `956ffd3`, with both
+CI checks passing (AUDIT E006). B01a is locally verified on `backend/b01-domain-foundation`; the GTK4 preview
+is environment-blocked. Verify the B01a PR/merge status before beginning B01b.
+UI migration remains blocked by BG.
 For active work record task/subtask ID, owner/session, branch, PR if available,
 changed files, checks performed/skipped, blockers and the next exact action.
 
@@ -63,7 +63,7 @@ into smaller PRs without declaring the parent complete early.
 
 | Task | Dependencies | Deliverable / acceptance focus |
 | --- | --- | --- |
-| [ ] **B00** Backend API and test seam | Foundation | Define snapshot/event/error contracts, blocking vs async API and cancellation; record runtime, HTTP/process/PTY dependency decisions and crate layout; make a headless test seam. No native UI. |
+| [x] **B00** Backend API and test seam | Foundation | Define snapshot/error contracts, Tokio/watch API and cancellation; record runtime/dependency decisions and headless fake-worker seam. Merged PR #19. |
 | [ ] **B01** Timestamp/numeric contracts and domain models | B00 | Port `data.py` timestamp/numeric helpers, `RateWindow`, `Pace`, `CostInfo`, detail/credit/provider/session/spend model contracts and derived properties. Freeze UTC/local, missing-vs-zero, rounding and large-number behavior. First slice: timestamps, numeric helpers and `RateWindow`; keep the rest explicitly pending. |
 | [ ] **B02** Provider usage normalization | B01 | Port provider envelopes, extra windows, pace, identity/plan, costs, details/charts, credits and reset-credit parsing. Preserve optional/raw fields, caps, order, placeholder/usage-known flags and error states. |
 | [ ] **B03** Agent-session normalization | B01 | Port session fields, timestamp handling, running-state classification and stable sorting; malformed/missing fields characterized. |
@@ -80,6 +80,14 @@ into smaller PRs without declaring the parent complete early.
 | [ ] **B14** Full transitional backend integration | B06, B10–B13 | Python GTK uses a single Rust service facade and thin conversion/marshalling adapters. Settings actions and login flows use it too. Prove no Python subprocess/HTTP/polling/notification-policy backend remains. |
 | [ ] **B15** Close original-port gaps | B01–B06, B14 | Audit F01–F06 edge/timezone/Unicode/numeric fallbacks and duplicated catalogs. Define/test Rust-only behavior and resolve all production fallback dependencies. Keep Python parity references until cutover. |
 | [ ] **BG** Backend completion gate | B00–B15 | Rust-only headless end-to-end fake CLI/HTTP/PTY tests require neither Python nor GTK/PyO3; transitional GTK fixture smoke passes; review residual-Python inventory and record gate decision in AUDIT. |
+
+B01 sub-slices (the parent stays pending until all models/contracts and caller
+integration are complete):
+
+- [ ] **B01a** Timestamp/numeric primitives and `RateWindow` — implementation
+  currently on `backend/b01-domain-foundation`; do not check until merged.
+- [ ] **B01b** `Pace`, `CostInfo`, detail/credit/provider/session/spend model
+  contracts and remaining derived properties.
 
 B05/B07/B12 can proceed after B00 independently of payload parsing. B11/B13 are
 not optional just because their Python files sit near presentation code. Do not

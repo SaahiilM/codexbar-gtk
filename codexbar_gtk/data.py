@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from . import providers as provider_meta
+from .rust_bridge import extension
 
 WINDOW_KEYS = ("primary", "secondary", "tertiary")
 
@@ -22,6 +23,15 @@ def parse_timestamp(value: Any) -> datetime | None:
     if not value or not isinstance(value, str):
         return None
     text = value.strip()
+    rust = extension()
+    if rust is not None:
+        parsed = rust.parse_timestamp(text)
+        if parsed is not None:
+            try:
+                return datetime.fromisoformat(parsed).astimezone(timezone.utc)
+            except ValueError:
+                pass
+    # Keep Python's wider fromisoformat grammar as a compatibility fallback.
     if text.endswith("Z"):
         text = text[:-1] + "+00:00"
     try:
@@ -35,6 +45,11 @@ def parse_timestamp(value: Any) -> datetime | None:
 
 def _optional_float(value: Any) -> float | None:
     """A finite JSON number, ignoring booleans and non-numeric strings."""
+    rust = extension()
+    if rust is not None:
+        result = rust.optional_float(value)
+        if result is not None:
+            return result
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
     try:
@@ -46,6 +61,11 @@ def _optional_float(value: Any) -> float | None:
 
 def _optional_int(value: Any) -> int | None:
     """An integral JSON number, rejecting booleans and malformed durations."""
+    rust = extension()
+    if rust is not None:
+        result = rust.optional_int(value)
+        if result is not None:
+            return result
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
     try:
@@ -73,11 +93,21 @@ class RateWindow:
 
     @property
     def remaining_percent(self) -> float:
+        rust = extension()
+        if rust is not None:
+            return rust.rate_window_remaining_percent(self.used_percent)
         return max(0.0, 100.0 - self.used_percent)
 
     @property
     def duration_label(self) -> str | None:
         minutes = self.window_minutes
+        rust = extension()
+        if rust is not None:
+            try:
+                return rust.rate_window_duration_label(minutes)
+            except (OverflowError, TypeError, ValueError):
+                # Preserve Python support for values outside Rust's i64 contract.
+                pass
         if not minutes:
             return None
         if minutes % 1440 == 0:

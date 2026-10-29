@@ -156,6 +156,86 @@ class DomainPrimitiveIntegrationTests(unittest.TestCase):
         self.assertEqual(cost.currency, "USD")
         self.assertFalse(cost.has_limit)
 
+    def test_detail_section_normalization_preserves_rows_and_chart(self):
+        usage = provider_usage_from_payload(
+            {
+                "provider": "codex",
+                "usage": {
+                    "details": [
+                        {
+                            "title": "Usage breakdown",
+                            "rows": [
+                                {
+                                    "label": "Code",
+                                    "value": "3 requests",
+                                    "secondaryValue": "Python",
+                                    "progress": {"usedPercent": 45},
+                                    "severity": "normal",
+                                },
+                                {
+                                    "label": "Tests",
+                                    "value": "12 passed",
+                                    "progress": {},
+                                    "severity": "warning",
+                                },
+                            ],
+                            "chart": {
+                                "kind": "bars",
+                                "title": "Daily",
+                                "unit": "requests",
+                                "points": [
+                                    {"label": "10-20", "value": 3},
+                                    {"label": "10-21", "value": 8},
+                                    {"label": "bad", "value": "not a number"},
+                                ][:120],
+                            },
+                        }
+                    ]
+                },
+            }
+        )
+        sections = usage.details
+        self.assertEqual(len(sections), 1)
+        section = sections[0]
+        self.assertEqual(section.title, "Usage breakdown")
+        self.assertEqual(len(section.rows), 2)
+        row = section.rows[0]
+        self.assertEqual(row.label, "Code")
+        self.assertEqual(row.value, "3 requests")
+        self.assertEqual(row.secondary_value, "Python")
+        self.assertEqual(row.used_percent, 45.0)
+        self.assertEqual(row.severity, "normal")
+        row = section.rows[1]
+        self.assertEqual(row.label, "Tests")
+        self.assertEqual(row.value, "12 passed")
+        self.assertIsNone(row.secondary_value)
+        self.assertIsNone(row.used_percent)
+        self.assertEqual(row.severity, "warning")
+        chart = section.chart
+        assert chart is not None
+        self.assertEqual(chart.kind, "bars")
+        self.assertEqual(chart.title, "Daily")
+        self.assertEqual(chart.unit, "requests")
+        self.assertEqual(len(chart.points), 3)
+        self.assertEqual(chart.points[0], ("10-20", 3.0))
+        self.assertEqual(chart.points[1], ("10-21", 8.0))
+        self.assertEqual(chart.points[2], ("bad", 0.0))
+        self.assertEqual(chart.peak, 8.0)
+
+        # Missing fields fall back to defaults
+        usage = provider_usage_from_payload(
+            {
+                "provider": "codex",
+                "usage": {"details": [{}]},
+            }
+        )
+        sections = usage.details
+        self.assertEqual(len(sections), 1)
+        section = sections[0]
+        self.assertIsNone(section.title)
+        self.assertEqual(len(section.rows), 0)
+        self.assertIsNone(section.chart)
+
     def test_detail_chart_peak_matches_python_contract(self):
         self.assertEqual(DetailChart(points=[("one", 4), ("two", 9)]).peak, 9)
         self.assertEqual(DetailChart(points=[]).peak, 0)

@@ -232,6 +232,116 @@ pub fn cost_from_value(value: &Value) -> Option<CostInfo> {
     })
 }
 
+/// Normalize one detail row from a CLI ``providerCost`` details section.
+///
+/// Matches Python's ``DetailRow`` construction: label/value are coerced to
+/// strings, used_percent comes from ``progress.usedPercent`` (rejected when
+/// non-numeric), and severity defaults to ``"normal"``.
+pub fn detail_row_from_value(value: &Value) -> Option<DetailRow> {
+    let object = value.as_object()?;
+    let label = object
+        .get("label")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_owned();
+    let value_str = object
+        .get("value")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_owned();
+    let secondary_value = object
+        .get("secondaryValue")
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    let progress = object.get("progress").and_then(Value::as_object);
+    let used_percent = progress
+        .and_then(|p| p.get("usedPercent"))
+        .and_then(|v| optional_float(Some(v)));
+    let severity = object
+        .get("severity")
+        .and_then(Value::as_str)
+        .unwrap_or("normal")
+        .to_owned();
+
+    Some(DetailRow {
+        label,
+        value: value_str,
+        secondary_value,
+        used_percent,
+        severity,
+    })
+}
+
+/// Normalize one detail section (rows + optional chart) from CLI payload.
+///
+/// Matches Python's section construction: up to 24 rows per section, chart
+/// points truncated to 120.
+pub fn detail_section_from_value(value: &Value) -> Option<DetailSection> {
+    let object = value.as_object()?;
+    let title = object
+        .get("title")
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+
+    let mut rows: Vec<DetailRow> = Vec::new();
+    if let Some(raw_rows) = object.get("rows").and_then(Value::as_array) {
+        for raw_row in raw_rows.iter().take(24) {
+            if let Some(row) = detail_row_from_value(raw_row) {
+                rows.push(row);
+            }
+        }
+    }
+
+    let chart = object.get("chart").and_then(detail_chart_from_value);
+
+    Some(DetailSection { title, rows, chart })
+}
+
+/// Normalize a detail chart from CLI payload.
+///
+/// Chart points are truncated to 120 entries; non-numeric point values fall
+/// back to 0.0 (matching Python's ``float(value)`` coercion).
+pub fn detail_chart_from_value(value: &Value) -> Option<DetailChart> {
+    let object = value.as_object()?;
+    let kind = object
+        .get("kind")
+        .and_then(Value::as_str)
+        .unwrap_or("bars")
+        .to_owned();
+    let title = object
+        .get("title")
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    let unit = object
+        .get("unit")
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+
+    let mut points: Vec<(String, f64)> = Vec::new();
+    if let Some(raw_points) = object.get("points").and_then(Value::as_array) {
+        for raw_point in raw_points.iter().take(120) {
+            let point_obj = raw_point.as_object()?;
+            let label = point_obj
+                .get("label")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_owned();
+            let point_value = point_obj
+                .get("value")
+                .and_then(|v| optional_float(Some(v)))
+                .unwrap_or(0.0);
+            points.push((label, point_value));
+        }
+    }
+
+    Some(DetailChart {
+        kind,
+        title,
+        unit,
+        points,
+    })
+}
+
 /// Chart attached to a provider detail section.
 #[derive(Clone, Debug, PartialEq)]
 pub struct DetailChart {
@@ -705,6 +815,74 @@ mod tests {
         let missing_used = cost_from_value(&json!({"totalCost": 42}));
         // totalCost is not a recognized key; Python only reads "used"
         assert_eq!(missing_used.unwrap().used, 0.0);
+    }
+
+    #[test]
+    fn detail_section_normalization_preserves_rows_and_chart() {
+        let section = detail_section_from_value(&json!({
+            "title": "Usage breakdown",
+            "rows": [
+                {
+                    "label": "Code",
+                    "value": "3 requests",
+                    "secondaryValue": "Python",
+                    "progress": {"usedPercent": 45},
+                    "severity": "normal",
+                },
+                {
+                    "label": "Tests",
+                    "value": "12 passed",
+                    "progress": {},
+                    "severity": "warning",
+                },
+            ],
+            "chart": {
+                "kind": "bars",
+                "title": "Daily",
+                "unit": "requests",
+                "points": [
+                    {"label": "10-20", "value": 3},
+                    {"label": "10-21", "value": 8},
+                    {"label": "bad", "value": "not a number"},
+                ],
+            },
+        }))
+        .unwrap();
+        assert_eq!(section.title.as_deref(), Some("Usage breakdown"));
+        assert_eq!(section.rows.len(), 2);
+        assert_eq!(section.rows[0].label, "Code");
+        assert_eq!(section.rows[0].value, "3 requests");
+        assert_eq!(section.rows[0].secondary_value.as_deref(), Some("Python"));
+        assert_eq!(section.rows[0].used_percent, Some(45.0));
+        assert_eq!(section.rows[0].severity, "normal");
+        assert_eq!(section.rows[1].label, "Tests");
+        assert_eq!(section.rows[1].used_percent, None);
+        assert_eq!(section.rows[1].severity, "warning");
+        let chart = section.chart.unwrap();
+        assert_eq!(chart.kind, "bars");
+        assert_eq!(chart.title.as_deref(), Some("Daily"));
+        assert_eq!(chart.unit.as_deref(), Some("requests"));
+        assert_eq!(chart.points.len(), 3);
+        assert_eq!(chart.points[0], ("10-20".to_owned(), 3.0));
+        assert_eq!(chart.points[1], ("10-21".to_owned(), 8.0));
+        assert_eq!(chart.points[2], ("bad".to_owned(), 0.0));
+        assert_eq!(chart.peak(), 8.0);
+
+        let empty = detail_section_from_value(&json!({})).unwrap();
+        assert_eq!(empty.title, None);
+        assert_eq!(empty.rows.len(), 0);
+        assert_eq!(empty.chart, None);
+    }
+
+    #[test]
+    fn detail_section_row_limit_is_respected() {
+        let rows: Vec<Value> = (0..30)
+            .map(|i| json!({"label": format!("row {}", i), "value": format!("val {}", i)}))
+            .collect();
+        let section = detail_section_from_value(&json!({"rows": rows})).unwrap();
+        assert_eq!(section.rows.len(), 24);
+        assert_eq!(section.rows[0].label, "row 0");
+        assert_eq!(section.rows[23].label, "row 23");
     }
 
     #[test]

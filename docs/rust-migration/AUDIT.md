@@ -585,6 +585,31 @@ reproducible commands; report artifact limitations honestly.
 - **Next:** B02b2b2 — detail/charts, credits, reset credits, status and error
   normalization. No native UI migration until BG.
 
+### E025 — 2026-10-29: B02b2b2a detail chart normalization
+
+- **Owner/branch/base:** current coding-agent session;
+  `backend/b02b2b2a-detail-charts`, based on merged `f82d079` (PR #31).
+- **Scope:** add `detail_row_from_value`, `detail_section_from_value`, and
+  `detail_chart_from_value` in `rust-core/src/domain.rs`, expose PyO3 JSON
+  adapters, and route detail section parsing through Rust in opt-in mode.
+  Invalid field shapes fall back to the Python reference. This only covers
+  detail sections; credits, reset credits, status and errors remain pending
+  B02b2b2b.
+- **Semantics/tests:** preserve title, rows (label, value, secondary_value,
+  used_percent, severity), and chart (kind, title, unit, points). Rows limited
+- **to 24 per section, chart points limited to 120 per section. Non-numeric
+- chart values fall back to 0.0; non-numeric row used_percent uses Python
+- fallback.
+- **UI smoke:** Not rerun; detail chart normalization changes value derivation
+- only, not widget structure. Previous synthetic X11/Wayland preview evidence
+- (E020) remains valid.
+- **Checks actually run:** rustfmt for all three crates; 41 core and 3 backend
+  tests; Clippy with warnings denied for core/bridge/backend; PyO3 extension
+  build; 145 Python tests in default mode and 145 in Rust mode; 3 private-D-Bus
+  tray tests; `git diff --check`. All passed, no skips reported.
+- **Status:** implementation locally verified before PR; build `0.82.0 (31)`.
+- **Next:** create PR, observe CI/merge, then B02b2b2b.
+
 ## Append a record for each task change or handoff
 
 ```text

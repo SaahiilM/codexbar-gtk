@@ -402,9 +402,43 @@ def _details_from(payload: Any) -> list[DetailSection]:
     sections: list[DetailSection] = []
     if not isinstance(payload, list):
         return sections
+    rust = extension()
     for raw_section in payload[:8]:
         if not isinstance(raw_section, dict):
             continue
+        if rust is not None:
+            try:
+                parsed = rust.detail_section_from_json(json.dumps(raw_section))
+            except (TypeError, ValueError):
+                parsed = None
+            if parsed is not None:
+                parsed_title, parsed_rows, parsed_chart = parsed
+                rows = [
+                    DetailRow(
+                        label=row[0],
+                        value=row[1],
+                        secondary_value=row[2],
+                        used_percent=row[3],
+                        severity=row[4],
+                    )
+                    for row in parsed_rows
+                ]
+                chart = None
+                if parsed_chart is not None:
+                    chart = DetailChart(
+                        kind=parsed_chart[0],
+                        title=parsed_chart[1],
+                        unit=parsed_chart[2],
+                        points=parsed_chart[3],
+                    )
+                sections.append(
+                    DetailSection(
+                        title=parsed_title,
+                        rows=rows,
+                        chart=chart,
+                    )
+                )
+                continue
         rows: list[DetailRow] = []
         for raw_row in (raw_section.get("rows") or [])[:24]:
             if not isinstance(raw_row, dict):

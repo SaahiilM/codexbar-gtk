@@ -6,6 +6,22 @@ short version tracks, so "which version has what" maps cleanly onto both trees.
 
 ## Unreleased
 
+## 0.82.0 (32) — 2026-10-29
+
+Tracks upstream CodexBar 0.82.0.
+
+### Added
+
+- Port provider context payload normalization (credits, status, error, plan)
+  to Rust for valid typed payloads, retaining the Python fallback for malformed
+  field shapes.
+- Add parity coverage for credits, credit events, reset credits, status,
+  error, and plan fields.
+
+### Validation
+
+- See `docs/rust-migration/AUDIT.md` for B02b2b2b test and GTK preview evidence.
+
 ## 0.82.0 (31) — 2026-10-29
 
 Tracks upstream CodexBar 0.82.0.

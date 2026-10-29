@@ -610,6 +610,31 @@ reproducible commands; report artifact limitations honestly.
 - **Status:** implementation locally verified before PR; build `0.82.0 (31)`.
 - **Next:** create PR, observe CI/merge, then B02b2b2b.
 
+### E026 — 2026-10-29: B02b2b2b provider context normalization
+
+- **Owner/branch/base:** current coding-agent session;
+  `backend/b02b2b2b-credits-status`, based on merged `96ed3d2` (PR #32).
+- **Scope:** add `provider_context_from_value` and `provider_plan_from_value`
+  in `rust-core/src/domain.rs`, expose PyO3 JSON adapter, and route provider
+  context parsing (credits, credit events, reset credits, status, error, plan)
+  through Rust in opt-in mode. Invalid field shapes fall back to the Python
+  reference.
+- **Semantics/tests:** preserve credits_remaining, credits_available,
+  credit_events, reset_credits_available, status_level, status_description,
+  error, plan. Credits/status/error read from both top level and inside
+  `usage` to match Python compatibility. Core tests cover complete payloads,
+  empty objects, missing fields, plan from identity/login method, and no plan
+  from oauth/apiKey/cookie.
+- **UI smoke:** Not rerun; context normalization changes value derivation
+  only, not widget structure. Previous synthetic X11/Wayland preview evidence
+  (E020) remains valid.
+- **Checks actually run:** rustfmt for all three crates; 42 core and 3 backend
+  tests; Clippy with warnings denied for core/bridge/backend; PyO3 extension
+  build; 146 Python tests in default mode and 146 in Rust mode; 3 private-D-Bus
+  tray tests; `git diff --check`. All passed, no skips reported.
+- **Status:** implementation locally verified before PR; build `0.82.0 (32)`.
+- **Next:** create PR, observe CI/merge, then B03 agent-session normalization.
+
 ## Append a record for each task change or handoff
 
 ```text

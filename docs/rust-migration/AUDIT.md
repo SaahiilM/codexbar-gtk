@@ -307,9 +307,10 @@ reproducible commands; report artifact limitations honestly.
 - **Runtime:** Rust bridge property paths were exercised by the Python suite in
   both modes. No end-to-end GTK runtime/preview is claimed because GTK4 typelibs
   are missing, as documented in E007.
-- **Status:** B01b implementation verified locally; PR status is recorded in a
-  subsequent entry once created. Build is `0.81.0 (20)`.
-- **Next:** focused PR and CI, then B01c after merge.
+- **PR/status:** [PR #21](https://github.com/SaahiilM/codexbar-gtk/pull/21),
+  commit `6bf814b`; open when this handoff was recorded. CI/merge must be checked
+  live. Build is `0.81.0 (20)`.
+- **Next:** observe CI/merge, then B01c after merge.
 
 ## Append a record for each task change or handoff
 

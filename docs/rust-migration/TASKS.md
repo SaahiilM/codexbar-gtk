@@ -12,7 +12,7 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Current phase | B01 domain contracts; native UI implementation must wait |
 | Last merged implementation | `6fa18c9`, PR #20, build `0.81.0 (19)` |
 | Planning change | [PR #18](https://github.com/SaahiilM/codexbar-gtk/pull/18), merged at `69c5496`, build `0.81.0 (17)` |
-| Backend tasks completed after that baseline | B00 and B01a merged; B01b is verified, PR pending |
+| Backend tasks completed after that baseline | B00 and B01a merged; B01b is in [PR #21](https://github.com/SaahiilM/codexbar-gtk/pull/21), CI/merge pending |
 | Active implementation task / owner | B01b review handoff, owner: current coding-agent session |
 | Active task | **B01b** — `Pace` and `CostInfo` model properties |
 | Next domain slice | **B01c** — detail, credit, provider, session and spend model contracts |
@@ -31,7 +31,7 @@ gh pr view 19 --json state,mergeCommit,statusCheckRollup
 ```
 
 B00 PR #19 is merged at `956ffd3` and B01a PR #20 at `6fa18c9`; CI passed
-for both (AUDIT E006/E007). B01b is underway on `backend/b01b-pace-cost-models`.
+for both (AUDIT E006/E007). B01b PR #21 is open on `backend/b01b-pace-cost-models`; CI/merge pending.
 Verify its PR/merge status before beginning B01c. UI migration remains blocked
 by BG.
 For active work record task/subtask ID, owner/session, branch, PR if available,

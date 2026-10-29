@@ -18,6 +18,11 @@ if [[ ! -f "${LIBRARY}" ]]; then
   echo "Expected PyO3 library was not produced: ${LIBRARY}" >&2
   exit 1
 fi
-cp "${LIBRARY}" "${ROOT}/codexbar_gtk/_rust_core.so"
+# Never truncate a shared library that the running development app has mapped.
+STAGED_LIBRARY="$(mktemp "${ROOT}/codexbar_gtk/.rust-core-XXXXXX.so")"
+trap 'rm -f "${STAGED_LIBRARY}"' EXIT
+cp "${LIBRARY}" "${STAGED_LIBRARY}"
+chmod 644 "${STAGED_LIBRARY}"
+mv -f "${STAGED_LIBRARY}" "${ROOT}/codexbar_gtk/_rust_core.so"
 echo "Built optional extension: ${ROOT}/codexbar_gtk/_rust_core.so"
 echo "Run with CODEXBAR_RUST_CORE=1 ./run.sh to use Rust-backed logic."

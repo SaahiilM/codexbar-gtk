@@ -1,10 +1,66 @@
 use chrono::{DateTime, NaiveDate, Utc};
-use codexbar_core::{activity, formatting, pace, providers};
+use codexbar_core::{activity, formatting, history, pace, providers};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use serde_json::Value;
 use std::collections::HashMap;
+use std::path::PathBuf;
+
+type HistorySample = (f64, String, String, f64);
+
+#[pyclass(name = "HistoryStore")]
+struct RustHistoryStore {
+    inner: history::HistoryStore,
+}
+
+#[pymethods]
+impl RustHistoryStore {
+    #[new]
+    fn new(path: PathBuf, retention_days: i64) -> Self {
+        Self {
+            inner: history::HistoryStore::new(path, retention_days),
+        }
+    }
+
+    fn append(&self, samples: Vec<HistorySample>) {
+        let samples: Vec<_> = samples
+            .into_iter()
+            .map(
+                |(timestamp, provider, window, used_percent)| history::Sample {
+                    timestamp,
+                    provider,
+                    window,
+                    used_percent,
+                },
+            )
+            .collect();
+        self.inner.append(&samples);
+    }
+
+    fn read_all(&self) -> Vec<HistorySample> {
+        self.inner
+            .read_all()
+            .into_iter()
+            .map(|sample| {
+                (
+                    sample.timestamp,
+                    sample.provider,
+                    sample.window,
+                    sample.used_percent,
+                )
+            })
+            .collect()
+    }
+
+    fn prune(&self, now: f64) {
+        self.inner.prune_at(now);
+    }
+
+    fn series(&self, provider: &str, window: &str, hours: f64, now: f64) -> Vec<(f64, f64)> {
+        self.inner.series_at(provider, window, hours, now)
+    }
+}
 
 #[pyfunction]
 fn canonical_id(provider_id: &str) -> String {
@@ -345,6 +401,7 @@ fn python_float(value: Option<&Value>) -> Option<f64> {
 
 #[pymodule]
 fn _rust_core(module: &Bound<'_, PyModule>) -> PyResult<()> {
+    module.add_class::<RustHistoryStore>()?;
     module.add_function(wrap_pyfunction!(canonical_id, module)?)?;
     module.add_function(wrap_pyfunction!(display_name, module)?)?;
     module.add_function(wrap_pyfunction!(short_name, module)?)?;

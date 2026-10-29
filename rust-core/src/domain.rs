@@ -116,6 +116,45 @@ impl Pace {
     }
 }
 
+/// Normalize a provider pace object when its dynamic fields match the typed
+/// Rust contract. Unsupported field shapes are left for the Python fallback.
+pub fn pace_from_value(value: &Value) -> Option<Pace> {
+    let object = value.as_object()?;
+    let stage = object.get("stage")?.as_str()?.to_owned();
+    if stage.is_empty() {
+        return None;
+    }
+    for key in [
+        "deltaPercent",
+        "expectedUsedPercent",
+        "etaSeconds",
+        "runOutProbability",
+    ] {
+        if let Some(raw) = object.get(key) {
+            if !raw.is_null() && optional_float(Some(raw)).is_none() {
+                return None;
+            }
+        }
+    }
+    let summary = match object.get("summary") {
+        Some(Value::String(summary)) => Some(summary.clone()),
+        None | Some(Value::Null) => None,
+        _ => return None,
+    };
+    Some(Pace {
+        stage,
+        delta_percent: optional_float(object.get("deltaPercent")),
+        expected_used_percent: optional_float(object.get("expectedUsedPercent")),
+        will_last_to_reset: object
+            .get("willLastToReset")
+            .map(json_truthy)
+            .unwrap_or(true),
+        eta_seconds: optional_float(object.get("etaSeconds")),
+        run_out_probability: optional_float(object.get("runOutProbability")),
+        summary,
+    })
+}
+
 /// Provider cost/limit data. A zero or negative limit is not a usable cap.
 #[derive(Clone, Debug, PartialEq)]
 pub struct CostInfo {
@@ -518,6 +557,30 @@ mod tests {
             assert_eq!(pace.in_reserve(), reserve);
             assert_eq!(pace.stage_label(), label);
         }
+    }
+
+    #[test]
+    fn pace_payload_normalization_preserves_typed_fields_and_fallback_shapes() {
+        let pace = pace_from_value(&json!({
+            "stage": "behind",
+            "deltaPercent": -12.5,
+            "expectedUsedPercent": 45,
+            "willLastToReset": 1,
+            "etaSeconds": 600,
+            "runOutProbability": 0.2,
+            "summary": "in reserve"
+        }))
+        .unwrap();
+        assert_eq!(pace.stage, "behind");
+        assert_eq!(pace.delta_percent, Some(-12.5));
+        assert_eq!(pace.expected_used_percent, Some(45.0));
+        assert!(pace.will_last_to_reset);
+        assert_eq!(pace.eta_seconds, Some(600.0));
+        assert_eq!(pace.run_out_probability, Some(0.2));
+        assert_eq!(pace.summary.as_deref(), Some("in reserve"));
+        assert!(pace_from_value(&json!({"stage": ""})).is_none());
+        assert!(pace_from_value(&json!({"stage": "ahead", "etaSeconds": "unknown"})).is_none());
+        assert!(pace_from_value(&json!({"stage": 1})).is_none());
     }
 
     #[test]

@@ -421,6 +421,55 @@ reproducible commands; report artifact limitations honestly.
 - **Next:** B02b, provider pace/identity/plan/cost/details/credits/status/error
   normalization. No native UI until BG.
 
+### E017 — 2026-10-29: GTK4/libadwaita typelibs made available locally
+
+- **Environment:** KDE neon 24.04/Ubuntu Noble, `/usr/bin/python3` 3.12.3;
+  system `libgtk-4-1` and PyGObject were present, but GTK4, Adw and Graphene
+  typelibs plus libadwaita runtime were missing.
+- **Action:** ran the repository's no-root `./scripts/bootstrap-deps.sh`. It
+  downloaded/unpacked GTK4, Adw, libadwaita, Graphene and related typelibs into
+  ignored `.deps/`; no system packages were installed and no tracked dependency
+  artifacts were added. `run.sh` already prepends those local paths.
+- **Verification:** with those paths, `/usr/bin/python3` imported Gtk 4.14 and
+  Adw successfully. The first `GDK_BACKEND=offscreen` preview failed because
+  this GTK build has no offscreen backend (and crashed after GTK criticals).
+  Retried against the available X11/Wayland desktop with a synthetic fake CLI;
+  `tools/preview.py` rendered card, popup, dashboard, sessions and spend PNGs.
+  The popup visibly showed one synthetic Codex provider at 42% session and 12%
+  weekly. No real provider/account data was requested.
+- **Follow-up:** `tools/preview.py` now re-execs with local `.deps` paths before
+  PyGObject import, so it works after bootstrap without manually setting
+  `GI_TYPELIB_PATH`/`LD_LIBRARY_PATH`. Preview docstring now states display/Xvfb
+  requirements. The GTK preview is a synthetic widget snapshot, not exhaustive
+  interaction testing of the complete `run.sh` app.
+- **Reproduction:** `./scripts/bootstrap-deps.sh`, then
+  `HOME=$(mktemp -d) CODEXBAR_CLI=/path/to/synthetic-cli CODEXBAR_RUST_CORE=1
+  /usr/bin/python3 tools/preview.py /tmp/codexbar-preview`. Use an available
+  X11/Wayland display; the offscreen backend is not installed here.
+
+### E018 — 2026-10-29: B02b1 provider pace normalization
+
+- **Owner/branch/base:** current coding-agent session;
+  `backend/b02b1-pace-normalization`, based on merged `799e7f1` (PR #24).
+- **Scope:** add `pace_from_value` in `rust-core/src/domain.rs`; expose a
+  PyO3 JSON adapter and route `_pace_from` through Rust in opt-in mode. Invalid
+  dynamic field shapes are declined by Rust and handled by the Python reference.
+  This only covers pace objects; extra windows, identity/plan, costs, details,
+  credits, reset credits, status and errors remain pending B02b2.
+- **Checks actually run:** rustfmt for all three crates; 38 core and 3 backend
+  tests; Clippy with warnings denied for core/bridge/backend; PyO3 extension
+  build; 142 Python tests in default and Rust modes; 3 private-D-Bus tests;
+  `tools/preview.py` compile; and `git diff --check`. All passed, no skips.
+- **UI smoke:** synthetic fake CLI provided a single account-independent Codex
+  payload (42%/12%, reserve stage); preview produced five widget PNGs, and the
+  popup's session/weekly bars and “20% in reserve” chip were inspected. This is
+  focused widget/runtime-path evidence, not full navigation, tray, auth, or
+  real-provider coverage. Local typelibs are available under ignored `.deps/`.
+- **PR/status:** [PR #25](https://github.com/SaahiilM/codexbar-gtk/pull/25),
+  commit `f399d3b`; open when this handoff was recorded. CI/merge must be checked
+  live. Build `0.81.0 (24)`.
+- **Next:** observe CI/merge, then B02b2.
+
 ## Append a record for each task change or handoff
 
 ```text

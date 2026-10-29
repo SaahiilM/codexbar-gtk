@@ -52,6 +52,38 @@ class DomainPrimitiveIntegrationTests(unittest.TestCase):
         self.assertEqual(_optional_int(2**70), 2**70)
         self.assertIsNone(_optional_int(math.inf))
 
+    def test_pace_payload_normalization_keeps_valid_values_and_python_fallbacks(self):
+        parsed = provider_usage_from_payload(
+            {
+                "provider": "codex",
+                "pace": {
+                    "primary": {
+                        "stage": "behind",
+                        "deltaPercent": -12.5,
+                        "expectedUsedPercent": 45,
+                        "willLastToReset": 1,
+                        "etaSeconds": 600,
+                        "runOutProbability": 0.2,
+                        "summary": "in reserve",
+                    }
+                },
+            }
+        ).pace["primary"]
+        self.assertEqual(parsed.delta_percent, -12.5)
+        self.assertEqual(parsed.expected_used_percent, 45)
+        self.assertTrue(parsed.will_last_to_reset)
+        self.assertEqual(parsed.eta_seconds, 600)
+        self.assertEqual(parsed.run_out_probability, 0.2)
+        self.assertEqual(parsed.summary, "in reserve")
+
+        fallback = provider_usage_from_payload(
+            {
+                "provider": "codex",
+                "pace": {"primary": {"stage": "ahead", "etaSeconds": "unknown"}},
+            }
+        ).pace["primary"]
+        self.assertEqual(fallback.eta_seconds, "unknown")
+
     def test_pace_labels_and_classifications(self):
         cases = (
             ("onTrack", False, False, "On pace"),

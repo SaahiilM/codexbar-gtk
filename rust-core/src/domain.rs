@@ -336,6 +336,61 @@ impl ProviderUsage {
     }
 }
 
+/// Normalize one standard CLI window envelope into a typed quota window.
+/// Additional-window semantics are handled by the provider normalizer.
+pub fn rate_window_from_value(
+    payload: &Value,
+    key: &str,
+    title: Option<&str>,
+) -> Option<RateWindow> {
+    let object = payload.as_object()?;
+    let used_percent = optional_float(object.get("usedPercent"));
+    let raw_title = title.filter(|value| !value.is_empty());
+    let normalized_title = raw_title.map(str::to_owned).unwrap_or_else(|| {
+        let lower = key.to_lowercase();
+        let mut chars = lower.chars();
+        chars
+            .next()
+            .map(|first| first.to_uppercase().chain(chars).collect())
+            .unwrap_or_default()
+    });
+    Some(RateWindow {
+        key: key.to_owned(),
+        title: normalized_title,
+        used_percent: used_percent.unwrap_or(0.0),
+        resets_at: object
+            .get("resetsAt")
+            .and_then(Value::as_str)
+            .and_then(|value| parse_timestamp(Some(value))),
+        reset_description: object
+            .get("resetDescription")
+            .and_then(Value::as_str)
+            .map(str::to_owned),
+        window_minutes: optional_i64(object.get("windowMinutes")),
+        next_regen_percent: optional_float(object.get("nextRegenPercent")),
+        is_placeholder: object
+            .get("isSyntheticPlaceholder")
+            .is_some_and(json_truthy),
+        quota_limit: optional_float(object.get("quotaLimit")),
+        quota_unit: object
+            .get("quotaUnit")
+            .and_then(Value::as_str)
+            .map(str::to_owned),
+        usage_known: used_percent.is_some(),
+    })
+}
+
+fn json_truthy(value: &Value) -> bool {
+    match value {
+        Value::Null => false,
+        Value::Bool(value) => *value,
+        Value::Number(value) => value.as_f64().is_some_and(|number| number != 0.0),
+        Value::String(value) => !value.is_empty(),
+        Value::Array(value) => !value.is_empty(),
+        Value::Object(value) => !value.is_empty(),
+    }
+}
+
 /// Typed quota window. Missing usage is represented by `usage_known = false`
 /// rather than conflated with a known zero.
 #[derive(Clone, Debug, PartialEq)]
@@ -523,6 +578,52 @@ mod tests {
             "Plus · fixture@example.invalid"
         );
         assert_eq!(ProviderUsage::subtitle_for(Some(""), None), "");
+    }
+
+    #[test]
+    fn standard_window_payload_normalization_preserves_unknown_and_zero() {
+        let known_zero = rate_window_from_value(
+            &json!({
+                "usedPercent": 0,
+                "resetsAt": "2026-10-21T14:56:53Z",
+                "windowMinutes": 300,
+                "isSyntheticPlaceholder": false,
+                "quotaLimit": 120,
+                "quotaUnit": "requests"
+            }),
+            "primary",
+            Some("Session"),
+        )
+        .unwrap();
+        assert_eq!(known_zero.title, "Session");
+        assert_eq!(known_zero.used_percent, 0.0);
+        assert!(known_zero.usage_known);
+        assert_eq!(known_zero.window_minutes, Some(300));
+        assert_eq!(known_zero.quota_limit, Some(120.0));
+        assert_eq!(known_zero.quota_unit.as_deref(), Some("requests"));
+        assert!(!known_zero.is_placeholder);
+
+        let unknown = rate_window_from_value(&json!({}), "secondary", None).unwrap();
+        assert_eq!(unknown.title, "Secondary");
+        assert_eq!(unknown.used_percent, 0.0);
+        assert!(!unknown.usage_known);
+        assert_eq!(unknown.resets_at, None);
+
+        for truthy in [
+            json!(true),
+            json!(1),
+            json!("yes"),
+            json!([1]),
+            json!({"x": 1}),
+        ] {
+            assert!(rate_window_from_value(
+                &json!({"isSyntheticPlaceholder": truthy}),
+                "primary",
+                None,
+            )
+            .unwrap()
+            .is_placeholder);
+        }
     }
 
     #[test]

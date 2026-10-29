@@ -360,6 +360,55 @@ reproducible commands; report artifact limitations honestly.
   live. Build metadata is `0.81.0 (21)`.
 - **Next:** observe CI/merge, then start B02.
 
+### E013 — 2026-10-29: B01c merged
+
+- **PR/merge:** [PR #22](https://github.com/SaahiilM/codexbar-gtk/pull/22)
+  merged at `4213503c37b1441ba1eafd1fb04f2ce108027cef`; `test` and `tray-dbus`
+  CI checks succeeded. Main was fast-forwarded and clean.
+- **Result:** B01 and subtask B01c checked. Core domain contracts and selected
+  derived properties are available through the opt-in bridge. Provider payload
+  normalization remains a separate task (B02).
+- **Next:** standard quota-window normalization (B02a).
+
+### E014 — 2026-10-29: B02a standard quota-window normalization
+
+- **Owner/branch/base:** current coding-agent session;
+  `backend/b02a-window-normalization`, based on merged `4213503` (PR #22).
+- **Scope:** add `rate_window_from_value` in `rust-core/src/domain.rs`, expose a
+  JSON/PyO3 adapter, and route existing `_window_from` through Rust in opt-in
+  mode. Python remains the default and catches unsupported JSON/ISO/numeric
+  inputs through the existing fallback. This slice is only standard
+  primary/secondary/tertiary windows; extra-rate-window rules and the rest of
+  provider payload normalization remain pending B02b.
+- **Semantics/tests:** preserve a valid 0% as known and missing/invalid usage as
+  unknown; parse UTC reset strings with Python fallback; validate numeric fields
+  and Python-like truthiness for synthetic placeholders. Core tests include
+  empty/missing fields and truthy JSON value kinds.
+- **Test-fix evidence:** a Clippy `type_complexity` error led to a named PyO3
+  tuple alias. Earlier B01c testing also caught a mismatch in Python
+  `max(..., default=0)` semantics (documented E011); it was corrected and merged
+  in PR #22 before this task began.
+- **UI smoke:** not rerun because GTK4 typelibs remain unavailable (E007).
+- **Focused checks:** 37 core tests; 3 backend tests; 9 domain integration
+  tests in both default and Rust modes; format/Clippy for core and bridge; PyO3
+  build passed. Full suite recorded in E015.
+- **Status:** locally verified before PR; build `0.81.0 (22)`.
+- **Next:** observe B02a PR/CI/merge, then B02b provider envelope normalization.
+
+### E015 — 2026-10-29: B02a full local validation
+
+- **Checks actually run:** rustfmt for all three crates; 37 core and 3 backend
+  tests; Clippy with warnings denied for core, bridge and backend; PyO3 extension
+  build; 141 Python tests in default mode and 141 in Rust mode; 3 private-D-Bus
+  tray tests; `git diff --check`. All passed, no skips reported.
+- **Integration:** Python tests exercised the Rust standard-window parser when
+  opt-in, and the Python reference in default mode. No real provider access.
+- **UI smoke:** still blocked by unavailable GTK4 typelibs; no GTK pass claimed.
+- **PR/status:** [PR #23](https://github.com/SaahiilM/codexbar-gtk/pull/23),
+  commit `c3a9d09`; open when this handoff was recorded. CI/merge must be checked
+  live.
+- **Next:** observe CI/merge, then B02b provider envelope normalization.
+
 ## Append a record for each task change or handoff
 
 ```text

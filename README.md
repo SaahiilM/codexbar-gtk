@@ -112,8 +112,9 @@ activity helpers, display formatting, monthly allowance daily targets, quota
 history storage and queries, sparkline geometry, and the first typed payload
 primitives from `data.py` (UTC timestamp parsing, numeric validation and
 `RateWindow`, `Pace`, `CostInfo`, detail chart, provider summary and session
-derived values). GTK rendering and CLI/provider payload normalization remain in
-Python/the CodexBar CLI.
+derived values, plus standard quota-window payload normalization). GTK rendering
+and the rest of CLI/provider payload normalization remain in Python/the CodexBar
+CLI.
 
 ### Native Rust migration roadmap
 
@@ -142,10 +143,10 @@ B01 is in progress, starting with timestamp/numeric contracts and `RateWindow`.
   either backend; unsupported sample inputs retain the Python path.
 - [x] `charts.py` — time-spaced sparkline coordinates and fixed quota axes,
   Rust-backed in opt-in mode; GTK/Cairo drawing remains in Python.
-- [ ] `data.py` — timestamp/numeric primitives and derived properties for
-  `RateWindow`, `Pace`, `CostInfo`, detail charts, providers and sessions are
-  partially Rust-backed in opt-in mode (B01a–B01c); payload normalization and
-  frontend models remain transitional.
+- [ ] `data.py` — timestamp/numeric primitives, standard quota-window parsing,
+  and derived properties for `RateWindow`, `Pace`, `CostInfo`, detail charts,
+  providers and sessions are partially Rust-backed in opt-in mode (B01a–c/B02a);
+  the rest of payload normalization and frontend models remain transitional.
 
 The six original Rust ports have opt-in runtime integrations, with the B01a
 partial data primitives now routed through Rust in opt-in mode. This checklist
@@ -205,7 +206,7 @@ The GTK front-end uses the same version pair as the macOS bundle:
   this client is feature-compatible with (`0.81.0`).
 * `CURRENT_PROJECT_VERSION` is the build number of the Linux front-end.
 * `codexbar_gtk/version.py` turns the pair into the macOS-style
-  `"0.81.0 (21)"` string shown under Settings → About, in the tray menu and by
+  `"0.81.0 (22)"` string shown under Settings → About, in the tray menu and by
   `./run.sh --about`.
 
 Increment `CURRENT_PROJECT_VERSION` for each merged PR and keep it in sync with

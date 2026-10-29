@@ -11,6 +11,7 @@ from codexbar_gtk.data import (
     Pace,
     ProviderUsage,
     RateWindow,
+    agent_sessions_from_payloads,
     provider_usage_from_payload,
     _optional_float,
     _optional_int,
@@ -312,6 +313,64 @@ class DomainPrimitiveIntegrationTests(unittest.TestCase):
             }
         )
         self.assertIsNone(usage.plan)
+
+    def test_agent_session_normalization(self):
+        sessions = agent_sessions_from_payloads(
+            [
+                {
+                    "id": "s1",
+                    "provider": "claude",
+                    "state": "running",
+                    "projectName": "My Project",
+                    "cwd": "/home/user/project",
+                    "pid": 1234,
+                    "startedAt": "2026-10-30T10:00:00Z",
+                    "lastActivityAt": "2026-10-30T10:30:00Z",
+                    "host": "my-machine",
+                },
+                {
+                    "id": "s2",
+                    "provider": "codex",
+                    "state": "stopped",
+                    "projectName": "Other Project",
+                    "cwd": "/home/user/other",
+                    "pid": 5678,
+                    "startedAt": "2026-10-30T09:00:00Z",
+                    "lastActivityAt": "2026-10-30T09:30:00Z",
+                    "host": "other-machine",
+                },
+            ]
+        )
+        self.assertEqual(len(sessions), 2)
+        # Running session should come first
+        self.assertEqual(sessions[0].id, "s1")
+        self.assertTrue(sessions[0].is_running)
+        self.assertEqual(sessions[0].provider, "claude")
+        self.assertEqual(sessions[0].project_name, "My Project")
+        self.assertEqual(sessions[0].pid, 1234)
+        self.assertEqual(
+            sessions[0].started_at,
+            datetime(2026, 10, 30, 10, 0, 0, tzinfo=timezone.utc),
+        )
+        self.assertEqual(
+            sessions[0].last_activity_at,
+            datetime(2026, 10, 30, 10, 30, 0, tzinfo=timezone.utc),
+        )
+        self.assertEqual(sessions[0].host, "my-machine")
+
+        self.assertEqual(sessions[1].id, "s2")
+        self.assertFalse(sessions[1].is_running)
+        self.assertEqual(sessions[1].provider, "codex")
+        self.assertEqual(sessions[1].project_name, "Other Project")
+        self.assertEqual(sessions[1].pid, 5678)
+        self.assertEqual(sessions[1].host, "other-machine")
+
+        # Empty payloads
+        sessions = agent_sessions_from_payloads([])
+        self.assertEqual(len(sessions), 0)
+
+        sessions = agent_sessions_from_payloads(["not a dict"])
+        self.assertEqual(len(sessions), 0)
 
     def test_detail_chart_peak_matches_python_contract(self):
         self.assertEqual(DetailChart(points=[("one", 4), ("two", 9)]).peak, 9)

@@ -825,6 +825,39 @@ class AgentSession:
 
 
 def agent_sessions_from_payloads(payloads: list[Any]) -> list[AgentSession]:
+    rust = extension()
+    if rust is not None:
+        try:
+            parsed = rust.agent_sessions_from_json(json.dumps(payloads or []))
+        except (TypeError, ValueError):
+            parsed = None
+        if parsed is not None:
+            sessions = []
+            for (
+                session_id,
+                provider,
+                state,
+                project_name,
+                cwd,
+                pid,
+                started_at,
+                last_activity_at,
+                host,
+            ) in parsed:
+                sessions.append(
+                    AgentSession(
+                        id=session_id,
+                        provider=provider,
+                        state=state,
+                        project_name=project_name,
+                        cwd=cwd,
+                        pid=pid,
+                        started_at=parse_timestamp(started_at),
+                        last_activity_at=parse_timestamp(last_activity_at),
+                        host=host,
+                    )
+                )
+            return sessions
     sessions: list[AgentSession] = []
     for payload in payloads or []:
         if not isinstance(payload, dict):

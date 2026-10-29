@@ -58,6 +58,17 @@ type ProviderContextTuple = (
     Option<String>,
 );
 type CreditEventTuple = (String, String, String, f64);
+type AgentSessionTuple = (
+    String,
+    String,
+    String,
+    String,
+    String,
+    i64,
+    Option<String>,
+    Option<String>,
+    String,
+);
 
 #[pyclass(name = "HistoryStore")]
 struct RustHistoryStore {
@@ -242,6 +253,55 @@ fn provider_context_from_json(payload: &str) -> Option<ProviderContextTuple> {
         context.error,
         context.plan,
     ))
+}
+
+#[pyfunction]
+fn agent_session_from_json(payload: &str) -> Option<AgentSessionTuple> {
+    let payload: Value = serde_json::from_str(payload).ok()?;
+    let session = domain::agent_session_from_value(&payload)?;
+    Some((
+        session.id,
+        session.provider,
+        session.state,
+        session.project_name,
+        session.cwd,
+        session.pid,
+        session
+            .started_at
+            .map(|time| time.to_rfc3339_opts(chrono::SecondsFormat::AutoSi, true)),
+        session
+            .last_activity_at
+            .map(|time| time.to_rfc3339_opts(chrono::SecondsFormat::AutoSi, true)),
+        session.host,
+    ))
+}
+
+#[pyfunction]
+fn agent_sessions_from_json(payload: &str) -> Option<Vec<AgentSessionTuple>> {
+    let payload: Value = serde_json::from_str(payload).ok()?;
+    let sessions = domain::agent_sessions_from_value(&payload)?;
+    Some(
+        sessions
+            .iter()
+            .map(|session| {
+                (
+                    session.id.clone(),
+                    session.provider.clone(),
+                    session.state.clone(),
+                    session.project_name.clone(),
+                    session.cwd.clone(),
+                    session.pid,
+                    session
+                        .started_at
+                        .map(|time| time.to_rfc3339_opts(chrono::SecondsFormat::AutoSi, true)),
+                    session
+                        .last_activity_at
+                        .map(|time| time.to_rfc3339_opts(chrono::SecondsFormat::AutoSi, true)),
+                    session.host.clone(),
+                )
+            })
+            .collect(),
+    )
 }
 
 #[pyfunction]
@@ -694,6 +754,8 @@ fn _rust_core(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(cost_from_json, module)?)?;
     module.add_function(wrap_pyfunction!(detail_section_from_json, module)?)?;
     module.add_function(wrap_pyfunction!(provider_context_from_json, module)?)?;
+    module.add_function(wrap_pyfunction!(agent_session_from_json, module)?)?;
+    module.add_function(wrap_pyfunction!(agent_sessions_from_json, module)?)?;
     module.add_function(wrap_pyfunction!(pace_from_json, module)?)?;
     module.add_function(wrap_pyfunction!(optional_float, module)?)?;
     module.add_function(wrap_pyfunction!(optional_int, module)?)?;

@@ -646,6 +646,28 @@ reproducible commands; report artifact limitations honestly.
   handling, running-state classification, stable sorting). No native UI
   migration until BG.
 
+### E028 — 2026-10-29: B03 agent-session normalization
+
+- **Owner/branch/base:** current coding-agent session;
+  `backend/b03-agent-sessions`, based on merged `f619c99` (PR #34).
+- **Scope:** add `agent_session_from_value` and `agent_sessions_from_value`
+  in `rust-core/src/domain.rs`, expose PyO3 JSON adapters, and route session
+  parsing through Rust in opt-in mode. Sessions are sorted with running
+  sessions first, then by last_activity_at.
+- **Semantics/tests:** preserve id, provider, state, project_name, cwd, pid,
+  started_at, last_activity_at, host. Sessions are sorted with running
+  sessions first, then by descending last_activity_at. Empty/malformed
+  payloads are skipped.
+- **UI smoke:** Not rerun; session normalization changes value derivation
+  only, not widget structure. Previous synthetic X11/Wayland preview evidence
+  (E020) remains valid.
+- **Checks actually run:** rustfmt for all three crates; 42 core and 3 backend
+  tests; Clippy with warnings denied for core/bridge/backend; PyO3 extension
+  build; 147 Python tests in default mode and 147 in Rust mode; 3 private-D-Bus
+  tray tests; `git diff --check`. All passed, no skips reported.
+- **Status:** implementation locally verified before PR; build `0.82.0 (34)`.
+- **Next:** create PR, observe CI/merge, then B04 spend normalization.
+
 ## Append a record for each task change or handoff
 
 ```text

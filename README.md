@@ -178,7 +178,7 @@ The GTK front-end uses the same version pair as the macOS bundle:
   this client is feature-compatible with (`0.81.0`).
 * `CURRENT_PROJECT_VERSION` is the build number of the Linux front-end.
 * `codexbar_gtk/version.py` turns the pair into the macOS-style
-  `"0.81.0 (13)"` string shown under Settings → About, in the tray menu and by
+  `"0.81.0 (14)"` string shown under Settings → About, in the tray menu and by
   `./run.sh --about`.
 
 Increment `CURRENT_PROJECT_VERSION` for each merged PR and keep it in sync with
@@ -206,7 +206,9 @@ CODEXBAR_RUST_CORE=1 python3 -m unittest discover -s tests -v
 The Rust backend is opt-in; without the flag, the app continues to use Python.
 
 The tests never touch a real provider account: the CLI is faked and the payloads
-are recorded fixtures.
+are recorded fixtures. Tray signal tests use a private D-Bus session and require
+`dbus-run-session`, `dbus-python`, and PyGObject; they skip when those optional
+dependencies are absent. CI installs them and runs those tests separately.
 
 ## Licence
 

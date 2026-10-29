@@ -14,11 +14,23 @@ on:
       - "codexbar_gtk/rust_bridge.py"
       - "codexbar_gtk/ui/app.py"
       - "codexbar_gtk/ui/settings.py"
+      - "codexbar_gtk/ui/tray.py"
       - "scripts/build-rust-core.sh"
       - "tests/**"
       - ".github/workflows/rust-core.yml"
 
 jobs:
+  tray-dbus:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install D-Bus test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends dbus-daemon python3-dbus python3-gi
+      - name: Verify tray update signals on a private session bus
+        run: /usr/bin/python3 -m unittest discover -s tests -p test_tray_signals.py -v
+
   test:
     runs-on: ubuntu-latest
     steps:

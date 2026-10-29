@@ -210,10 +210,11 @@ reproducible commands; report artifact limitations honestly.
   headless contract and the existing application is not yet a caller. The
   `cargo test --manifest-path rust-backend/Cargo.toml --locked` suite runs
   without Python, GTK, or PyO3. No real provider/account data used.
-- **Status at entry:** locally verified, PR not yet created when first recorded;
-  do not mark B00 complete until merge and CI are observed.
-- **Next:** create focused PR, observe checks/merge, then start B01's
-  timestamp/numeric/`RateWindow` characterization and Rust model implementation.
+- **PR:** [PR #19](https://github.com/SaahiilM/codexbar-gtk/pull/19), commit
+  `b6c90be`; open when this handoff update was recorded. CI/merge status must be
+  checked live. Do not mark B00 complete until merge is observed.
+- **Next:** observe PR checks/merge, then start B01's timestamp/numeric/
+  `RateWindow` characterization and Rust model implementation.
 
 ## Append a record for each task change or handoff
 

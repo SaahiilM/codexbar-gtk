@@ -12,7 +12,7 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Current phase | B00 backend contract implementation; native UI implementation must wait |
 | Last merged implementation | `46f44d0`, PR #17, build `0.81.0 (16)` |
 | Planning change | [PR #18](https://github.com/SaahiilM/codexbar-gtk/pull/18), merged at `69c5496`, build `0.81.0 (17)` |
-| Backend tasks completed after that baseline | None; B00 implementation is verified, PR pending |
+| Backend tasks completed after that baseline | None; B00 is verified and [PR #19](https://github.com/SaahiilM/codexbar-gtk/pull/19) is pending CI/merge |
 | Active implementation task / owner | B00 review handoff, owner: current coding-agent session |
 | Active task | **B00** — `rust-backend` service contract, runtime decision and headless test seam |
 | First domain implementation | **B01** — timestamp/numeric handling and quota-window models |
@@ -29,9 +29,9 @@ gh pr list --state open
 gh pr view 18 --json state,mergeCommit,statusCheckRollup
 ```
 
-PR #18 is merged at `69c5496` (CI passed; see AUDIT E005). B00 is verified
-locally and awaiting its own PR/merge. After verifying the live B00 PR and
-observed merge, claim B01's timestamp/numeric/`RateWindow` slice. Do not start
+PR #18 is merged at `69c5496` (CI passed; see AUDIT E005). B00 PR #19 is
+open; check its live CI/merge status before claiming B01's timestamp/numeric/
+`RateWindow` slice. Do not start
 B01 over another model's branch. Update this handoff when starting, stopping,
 or completing work.
 For active work record task/subtask ID, owner/session, branch, PR if available,

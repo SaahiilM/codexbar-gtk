@@ -7,7 +7,7 @@
 
 use std::collections::HashMap;
 
-use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
+use chrono::{DateTime, NaiveDate, NaiveDateTime, TimeZone, Utc};
 use serde_json::Value;
 
 fn python_max(values: impl IntoIterator<Item = f64>, default: f64) -> f64 {
@@ -546,6 +546,88 @@ pub fn provider_plan_from_value(object: &serde_json::Map<String, Value>) -> Opti
         }
     }
     None
+}
+
+/// Normalize one agent session from CLI payload.
+///
+/// Matches Python's AgentSession construction with field coercions:
+/// id/provider/state/project_name/cwd/host coerced to strings, pid coerced to
+/// int, started_at/last_activity_at parsed as timestamps.
+pub fn agent_session_from_value(value: &Value) -> Option<AgentSession> {
+    let object = value.as_object()?;
+    Some(AgentSession {
+        id: object
+            .get("id")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_owned(),
+        provider: object
+            .get("provider")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_owned(),
+        state: object
+            .get("state")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_owned(),
+        project_name: object
+            .get("projectName")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_owned(),
+        cwd: object
+            .get("cwd")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_owned(),
+        pid: object.get("pid").and_then(Value::as_i64).unwrap_or(0),
+        started_at: object
+            .get("startedAt")
+            .and_then(Value::as_str)
+            .and_then(|v| parse_timestamp(Some(v))),
+        last_activity_at: object
+            .get("lastActivityAt")
+            .and_then(Value::as_str)
+            .and_then(|v| parse_timestamp(Some(v))),
+        host: object
+            .get("host")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_owned(),
+    })
+}
+
+/// Normalize and sort multiple agent session payloads.
+///
+/// Matches Python's agent_sessions_from_payloads: sessions are sorted with
+/// running sessions first, then by last_activity_at.
+pub fn agent_sessions_from_value(values: &Value) -> Option<Vec<AgentSession>> {
+    let array = values.as_array()?;
+    let mut sessions: Vec<AgentSession> = Vec::new();
+    for raw in array.iter() {
+        if let Some(session) = agent_session_from_value(raw) {
+            sessions.push(session);
+        }
+    }
+    sessions.sort_by(|a, b| {
+        let a_running = a.is_running();
+        let b_running = b.is_running();
+        match (a_running, b_running) {
+            (true, false) => std::cmp::Ordering::Less,
+            (false, true) => std::cmp::Ordering::Greater,
+            _ => {
+                let a_time = a
+                    .last_activity_at
+                    .unwrap_or_else(|| Utc.timestamp_opt(0, 0).single().unwrap());
+                let b_time = b
+                    .last_activity_at
+                    .unwrap_or_else(|| Utc.timestamp_opt(0, 0).single().unwrap());
+                b_time.cmp(&a_time)
+            }
+        }
+    });
+    Some(sessions)
 }
 
 /// A running or recent coding-agent session.

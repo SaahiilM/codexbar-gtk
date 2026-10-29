@@ -6,6 +6,21 @@ short version tracks, so "which version has what" maps cleanly onto both trees.
 
 ## Unreleased
 
+## 0.82.0 (34) — 2026-10-29
+
+Tracks upstream CodexBar 0.82.0.
+
+### Added
+
+- Port agent-session payload normalization to Rust for valid typed payloads,
+  retaining the Python fallback for malformed field shapes.
+- Add parity coverage for session fields, timestamp handling, running-state
+  classification, and stable sorting by running state then last activity.
+
+### Validation
+
+- See `docs/rust-migration/AUDIT.md` for B03 test and GTK preview evidence.
+
 ## 0.82.0 (33) — 2026-10-29
 
 Tracks upstream CodexBar 0.82.0.

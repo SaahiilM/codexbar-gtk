@@ -4,6 +4,21 @@ Client-side changelog for the CodexBar GTK front-end. Each entry keys a build
 number (`CURRENT_PROJECT_VERSION`) to the upstream macOS CodexBar release its
 short version tracks, so "which version has what" maps cleanly onto both trees.
 
+## 0.82.0 (41) — 2026-10-30
+
+Tracks upstream CodexBar 0.82.0.
+
+### Added
+
+- Port CLI discovery and non-interactive command execution to the asynchronous
+  Rust backend with argv safety, timeouts, cancellation and child reaping.
+- Route existing Python CLI adapters through the service in Rust opt-in mode.
+
+### Validation
+
+- See `docs/rust-migration/AUDIT.md` for synthetic CLI parity, process lifecycle,
+  and GTK fixture smoke evidence.
+
 ## 0.82.0 (40) — 2026-10-30
 
 Tracks upstream CodexBar 0.82.0.

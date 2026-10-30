@@ -91,6 +91,8 @@ pub fn event_channel() -> (EventPublisher, mpsc::Receiver<BackendEvent>) {
     )
 }
 
+pub mod cli;
+
 /// Stable, non-sensitive categories for errors crossing the service boundary.
 ///
 /// The backend intentionally does not carry subprocess output, URLs, arbitrary

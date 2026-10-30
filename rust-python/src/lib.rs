@@ -1,16 +1,20 @@
 use chrono::{DateTime, NaiveDate, TimeZone, Utc};
+use codexbar_backend::cli::{self, CliError, CliService};
 use codexbar_backend::updates::{self, UpdateCheckRequest, UpdateError, UpdateRelation, Version};
 use codexbar_core::{
     activity, charts, currency, domain, formatting, history, notifications, ordering, pace,
     preferences, providers,
 };
-use pyo3::exceptions::{PyOSError, PyValueError};
+use pyo3::exceptions::{PyOSError, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyAny, PyBool, PyDict, PyFloat, PyInt, PyList};
 use serde_json::Value;
 use std::collections::HashMap;
+use std::ffi::OsString;
+use std::future::Future;
 use std::path::PathBuf;
 use std::time::Duration;
+use tokio::runtime::Runtime;
 
 type HistorySample = (f64, String, String, f64);
 type PaceTuple = (
@@ -83,6 +87,12 @@ struct RustHistoryStore {
 #[pyclass(name = "PreferencesStore")]
 struct RustPreferencesStore {
     inner: preferences::PreferencesStore,
+}
+
+#[pyclass(name = "CliService")]
+struct RustCliService {
+    runtime: Runtime,
+    inner: CliService,
 }
 
 #[pyclass(name = "NotificationPolicy")]
@@ -465,6 +475,233 @@ impl RustPreferencesStore {
             .import_document(&document)
             .map_err(|error| PyOSError::new_err(format!("preferences import failed: {error}")))
     }
+}
+
+fn cli_error_to_python(error: CliError) -> PyErr {
+    PyRuntimeError::new_err(format!("CLI {:?} ({})", error.kind, error.operation))
+}
+
+fn static_operation(operation: &str) -> &'static str {
+    match operation {
+        "cli_usage" => "cli_usage",
+        "cli_cost" => "cli_cost",
+        "cli_sessions" => "cli_sessions",
+        "cli_dashboard" => "cli_dashboard",
+        "cli_version" => "cli_version",
+        _ => "cli_command",
+    }
+}
+
+fn run_cli_future<T: Send>(
+    py: Python<'_>,
+    runtime: &Runtime,
+    future: impl Future<Output = T> + Send,
+) -> T {
+    let handle = runtime.handle().clone();
+    py.detach(move || handle.block_on(future))
+}
+
+#[pymethods]
+impl RustCliService {
+    #[new]
+    fn new(executable: PathBuf, timezone: Option<String>) -> PyResult<Self> {
+        let runtime =
+            Runtime::new().map_err(|_| PyRuntimeError::new_err("could not start CLI runtime"))?;
+        Ok(Self {
+            runtime,
+            inner: CliService::new(executable, timezone.map(OsString::from)),
+        })
+    }
+
+    fn executable(&self) -> PathBuf {
+        self.inner.executable().to_path_buf()
+    }
+
+    fn run(
+        &self,
+        py: Python<'_>,
+        args: Vec<String>,
+        timeout_seconds: Option<u64>,
+    ) -> PyResult<(i32, String, String)> {
+        let args = args.into_iter().map(OsString::from).collect::<Vec<_>>();
+        let timeout = Duration::from_secs(timeout_seconds.unwrap_or(180).max(1));
+        let result = run_cli_future(py, &self.runtime, self.inner.run(&args, timeout, None))
+            .map_err(cli_error_to_python)?;
+        Ok((result.returncode, result.stdout, result.stderr))
+    }
+
+    fn run_json(
+        &self,
+        py: Python<'_>,
+        args: Vec<String>,
+        timeout_seconds: Option<u64>,
+        operation: &str,
+    ) -> PyResult<String> {
+        let args = args.into_iter().map(OsString::from).collect::<Vec<_>>();
+        let timeout = Duration::from_secs(timeout_seconds.unwrap_or(180).max(1));
+        let value = run_cli_future(
+            py,
+            &self.runtime,
+            self.inner
+                .run_json(&args, timeout, None, static_operation(operation)),
+        )
+        .map_err(cli_error_to_python)?;
+        serde_json::to_string(&value)
+            .map_err(|_| PyRuntimeError::new_err("CLI JSON conversion failed"))
+    }
+
+    fn version(&self, py: Python<'_>, timeout_seconds: Option<u64>) -> PyResult<String> {
+        let timeout = Duration::from_secs(timeout_seconds.unwrap_or(20).max(1));
+        run_cli_future(py, &self.runtime, self.inner.version(timeout, None))
+            .map_err(cli_error_to_python)
+    }
+
+    fn usage_json(
+        &self,
+        py: Python<'_>,
+        provider: Option<&str>,
+        account_index: Option<u32>,
+        all_accounts: bool,
+        timeout_seconds: Option<u64>,
+    ) -> PyResult<String> {
+        let timeout = Duration::from_secs(timeout_seconds.unwrap_or(180).max(1));
+        let values = run_cli_future(
+            py,
+            &self.runtime,
+            self.inner
+                .usage(provider, account_index, all_accounts, timeout, None),
+        )
+        .map_err(cli_error_to_python)?;
+        serde_json::to_string(&values)
+            .map_err(|_| PyRuntimeError::new_err("CLI JSON conversion failed"))
+    }
+
+    fn dashboard_json(&self, py: Python<'_>, timeout_seconds: Option<u64>) -> PyResult<String> {
+        let timeout = Duration::from_secs(timeout_seconds.unwrap_or(180).max(1));
+        let value = run_cli_future(py, &self.runtime, self.inner.dashboard(timeout, None))
+            .map_err(cli_error_to_python)?;
+        serde_json::to_string(&value)
+            .map_err(|_| PyRuntimeError::new_err("CLI JSON conversion failed"))
+    }
+
+    fn cost_json(
+        &self,
+        py: Python<'_>,
+        provider: Option<&str>,
+        days: Option<u32>,
+        timeout_seconds: Option<u64>,
+    ) -> PyResult<String> {
+        let timeout = Duration::from_secs(timeout_seconds.unwrap_or(180).max(1));
+        let values = run_cli_future(
+            py,
+            &self.runtime,
+            self.inner.cost(provider, days, timeout, None),
+        )
+        .map_err(cli_error_to_python)?;
+        serde_json::to_string(&values)
+            .map_err(|_| PyRuntimeError::new_err("CLI JSON conversion failed"))
+    }
+
+    fn sessions_json(&self, py: Python<'_>, timeout_seconds: Option<u64>) -> PyResult<String> {
+        let timeout = Duration::from_secs(timeout_seconds.unwrap_or(60).max(1));
+        let values = run_cli_future(py, &self.runtime, self.inner.sessions(timeout, None))
+            .map_err(cli_error_to_python)?;
+        serde_json::to_string(&values)
+            .map_err(|_| PyRuntimeError::new_err("CLI JSON conversion failed"))
+    }
+
+    fn config_providers_json(
+        &self,
+        py: Python<'_>,
+        timeout_seconds: Option<u64>,
+    ) -> PyResult<String> {
+        let timeout = Duration::from_secs(timeout_seconds.unwrap_or(60).max(1));
+        let values = run_cli_future(
+            py,
+            &self.runtime,
+            self.inner.config_providers(timeout, None),
+        )
+        .map_err(cli_error_to_python)?;
+        serde_json::to_string(&values)
+            .map_err(|_| PyRuntimeError::new_err("CLI JSON conversion failed"))
+    }
+
+    fn set_api_key(
+        &self,
+        py: Python<'_>,
+        provider: &str,
+        key: &str,
+        timeout_seconds: Option<u64>,
+    ) -> PyResult<(i32, String, String)> {
+        let timeout = Duration::from_secs(timeout_seconds.unwrap_or(180).max(1));
+        let result = run_cli_future(
+            py,
+            &self.runtime,
+            self.inner.set_api_key(provider, key, timeout, None),
+        )
+        .map_err(cli_error_to_python)?;
+        Ok((result.returncode, result.stdout, result.stderr))
+    }
+
+    fn provider_action(
+        &self,
+        py: Python<'_>,
+        action: &str,
+        provider: &str,
+        source: Option<&str>,
+        timeout_seconds: Option<u64>,
+    ) -> PyResult<(i32, String, String)> {
+        let timeout = Duration::from_secs(timeout_seconds.unwrap_or(180).max(1));
+        let result = run_cli_future(
+            py,
+            &self.runtime,
+            self.inner
+                .provider_action(action, provider, source, timeout, None),
+        )
+        .map_err(cli_error_to_python)?;
+        Ok((result.returncode, result.stdout, result.stderr))
+    }
+
+    fn hooks_json(&self, py: Python<'_>, timeout_seconds: Option<u64>) -> PyResult<String> {
+        let timeout = Duration::from_secs(timeout_seconds.unwrap_or(30).max(1));
+        let value = run_cli_future(py, &self.runtime, self.inner.hooks(timeout, None))
+            .map_err(cli_error_to_python)?;
+        serde_json::to_string(&value)
+            .map_err(|_| PyRuntimeError::new_err("CLI JSON conversion failed"))
+    }
+
+    fn set_hooks_enabled(
+        &self,
+        py: Python<'_>,
+        enabled: bool,
+        timeout_seconds: Option<u64>,
+    ) -> PyResult<(i32, String, String)> {
+        let timeout = Duration::from_secs(timeout_seconds.unwrap_or(30).max(1));
+        let result = run_cli_future(
+            py,
+            &self.runtime,
+            self.inner.set_hooks_enabled(enabled, timeout, None),
+        )
+        .map_err(cli_error_to_python)?;
+        Ok((result.returncode, result.stdout, result.stderr))
+    }
+
+    fn plugins_json(&self, py: Python<'_>, timeout_seconds: Option<u64>) -> PyResult<String> {
+        let timeout = Duration::from_secs(timeout_seconds.unwrap_or(60).max(1));
+        let values = run_cli_future(py, &self.runtime, self.inner.plugins(timeout, None))
+            .map_err(cli_error_to_python)?;
+        serde_json::to_string(&values)
+            .map_err(|_| PyRuntimeError::new_err("CLI JSON conversion failed"))
+    }
+}
+
+#[pyfunction]
+fn discover_cli_executable(
+    name: &str,
+    override_env: Option<&str>,
+    package_dir: PathBuf,
+) -> PyResult<PathBuf> {
+    cli::discover_executable(name, override_env, &package_dir).map_err(cli_error_to_python)
 }
 
 #[pymethods]
@@ -1339,6 +1576,8 @@ fn _rust_core(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<RustPreferencesStore>()?;
     module.add_class::<RustCurrencyConverter>()?;
     module.add_class::<RustNotificationPolicy>()?;
+    module.add_class::<RustCliService>()?;
+    module.add_function(wrap_pyfunction!(discover_cli_executable, module)?)?;
     module.add_function(wrap_pyfunction!(sparkline_coordinates, module)?)?;
     module.add_function(wrap_pyfunction!(canonical_id, module)?)?;
     module.add_function(wrap_pyfunction!(display_name, module)?)?;

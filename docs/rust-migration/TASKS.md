@@ -9,16 +9,16 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Field | Current checkpoint |
 | --- | --- |
 | Goal | Fully native Rust GTK4/libadwaita app; backend first, UI second |
-| Current phase | B12 read-only update service; native UI implementation must wait |
-| Last merged implementation | B08 PR #40 merged at `9d272fd`, build `0.82.0 (39)` |
+| Current phase | B07 CLI service; native UI implementation must wait for BG |
+| Last merged implementation | B12 PR #41 merged at `bd58f46`, build `0.82.0 (40)` |
 | Planning change | [PR #18](https://github.com/SaahiilM/codexbar-gtk/pull/18), merged at `69c5496`, build `0.81.0 (17)` |
-| Backend tasks completed after that baseline | B00, B01, B02a, B02b1, B02b2a, B02b2b1, B02b2b2a, B02b2b2b, B03, B04, B05, B06, B08 and B09 merged |
-| Active implementation task / owner | B12 read-only update service, owner: current coding-agent session |
-| Active task | **B12** — public VERSION parser/comparison and bounded HTTP check; branch `orchestrated/luna-b12`, build `0.82.0 (40)` |
-| Next domain slice | B12 PR #41 is open at head `95f8a99`; wait for its required checks and verify exact head/reviews/mergeability before any merge. |
-| Open external blockers | PR #41 required checks are in progress; GitHub Actions remains degraded. No bypass. |
-| Latest checks | B08 merge verified on PR #40 run `41102664352`; B12 local workflow on refreshed main: 68 core + 14 backend Rust tests, format/Clippy all crates, extension build, 174 Python tests per mode (2 expected skips default), 3 tray D-Bus tests; all passed (AUDIT E051). B12 GitHub run `41105073196` was in progress at initial observation (E052). |
-| UI validation | B08's four-event synthetic GTK smoke and screenshot are recorded in E049. B12's refreshed Rust loopback-to-dialog smoke passed; updated screenshot: [b12-update-synthetic.png](screenshots/b12-update-synthetic.png), see E051. |
+| Backend tasks completed after that baseline | B00–B09, B12 and B01/B02 sub-slices merged |
+| Active implementation task / owner | B07 CLI service, owner: current coding-agent session |
+| Active task | **B07** — CLI service on `backend/b07-cli-service-rust`, integrated onto `bd58f46`; build `0.82.0 (41)` |
+| Next domain slice | **B07** — send readiness/API status to orchestration and open the screenshot-bearing PR |
+| Open external blockers | None known for B07; PR checks must pass, with no bypass. |
+| Latest checks | Integrated build 41 passed workflow-equivalent checks: 68 core + 22 backend tests, Clippy/format for all crates, extension build, 177 Python tests in each mode (2 expected default-mode skips), and 3 tray D-Bus tests in each mode; see AUDIT E055. |
+| UI validation | Rust-opt-in GTK Spend page smoke passed on build 41 with a synthetic CLI and isolated HOME/private D-Bus. The live screenshot is [b07-cli-spend-synthetic.png](screenshots/b07-cli-spend-synthetic.png); see E055 for environment warnings. |
 
 **First commands for a new model/session:**
 
@@ -79,12 +79,12 @@ into smaller PRs without declaring the parent complete early.
 | [x] **B04** Spend normalization/aggregation | B01 | Port old/new CLI totals, coverage/provenance, partial/error handling, daily/project/model data and ordering; merged PR #36. |
 | [x] **B05** Preferences service | B00 | Port defaults, known-key loading/import, portable export, atomic 0600 writes, reset/update, thread safety and refresh settings. PR #37 merged at `878d4b7`; both checks passed on head `d43b18f`. |
 | [x] **B06** Currency service | B00, B05 | Port currency catalog, labels, conversion, TTL/cache load/write, single-flight refresh and offline fallback; inject HTTP/time; connect monthly pace and spend callers. PR #38 merged at `5e4af06`; both checks passed on head `75bba44`. |
-| [ ] **B07** CLI service | B00 | Port executable discovery, argv/TZ handling, timeout/reaping, stdout/stderr/errors, JSON envelopes, usage/cost/sessions/config/hooks/plugins/account commands. Use fake executables, including failure and cancellation. |
+| [ ] **B07** CLI service | B00 | Port executable discovery, argv/TZ handling, timeout/reaping, stdout/stderr/errors, JSON envelopes, usage/cost/sessions/config/hooks/plugins/account commands. Use fake executables, including failure and cancellation. Active on `backend/b07-cli-service-rust`; see AUDIT E054–E055. |
 | [x] **B08** Notification policies | B01, B02, B05 | Port threshold transitions, session-exhaustion tracking, predictive pace cycles and credit-expiry deduplication. PR #40 merged at `9d272fd`; checks passed (see AUDIT E049). OS notification delivery remains frontend/platform work. |
 | [x] **B09** Provider ordering and tray selection | B01, B02, B05 | Port visibility/order, automatic quota ranking and ETA trust/filtering; preserve deterministic ties, depleted quotas and placeholder exclusion. Merged PR #39 at `93b62bb`; checks passed. |
 | [ ] **B10** Refresh controller | B02–B05, B07–B09 | Port polling/manual mode, forced refresh queuing, cancellation/shutdown, account collection, partial cost fallback, retained sessions/spend, history recording and snapshot/event publication. No I/O/callbacks under GUI locks. |
 | [ ] **B11** Login/auth process service | B00, B07 | Port argv/browser request helpers, auth status and PTY login lifecycle; incremental ANSI/URL/prompt parsing, submitted input, timeout/cancel/reaping. Fake PTY tests only; no stored auth codes/URLs in audit. |
-| [ ] **B12** Read-only update service | B00 | Port public VERSION parsing/comparison and bounded HTTP fetch; test invalid/oversized/network-failure responses. No code download/install behavior. |
+| [x] **B12** Read-only update service | B00 | Port public VERSION parsing/comparison and bounded HTTP fetch; test invalid/oversized/network-failure responses. PR #41 merged at `bd58f46`; both checks passed on head `21537ba` (AUDIT E053). No code download/install behavior. |
 | [ ] **B13** Extract backend work embedded in UI | B04–B12 | Audit all `ui/*.py` workers and policies: spend model grouping/time ranges/currency/partial-state presentation, tray summaries, settings CLI actions, launch-at-login actions, restart/update workers. Move non-widget responsibilities behind the Rust API; log remaining frontend-only behavior explicitly. |
 | [ ] **B14** Full transitional backend integration | B06, B10–B13 | Python GTK uses a single Rust service facade and thin conversion/marshalling adapters. Settings actions and login flows use it too. Prove no Python subprocess/HTTP/polling/notification-policy backend remains. |
 | [ ] **B15** Close original-port gaps | B01–B06, B14 | Audit F01–F06 edge/timezone/Unicode/numeric fallbacks and duplicated catalogs. Define/test Rust-only behavior and resolve all production fallback dependencies. Keep Python parity references until cutover. |

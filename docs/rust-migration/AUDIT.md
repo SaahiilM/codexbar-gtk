@@ -898,3 +898,16 @@ future models must verify the linked PR's status rather than trusting a stale
   coordinate the next merge slot. Do not merge concurrently.
 - **Next:** observe PR #39 checks/review, then wait for B06's merge before
   refreshing this branch from latest main.
+
+### E039 — 2026-10-30: B09 checks passed; B06 merge slot remains active
+
+- **PR #39 state:** GitHub reported both `test` and `tray-dbus` successful on
+  head `f6db236ed73f8927cc9267f9addb41305555612f`. The branch remains open and
+  unmerged. The observed checks are attached to that head; any later push must
+  be checked separately.
+- **B06 sequencing:** PR #38 is still open, with both required checks
+  successful; `origin/main` remains `878d4b7`. B06 retains the first merge slot
+  and build 37. B09 remains second with provisional build 38.
+- **Next:** wait for the serialized B06 merge. Before B09 merge, fetch latest
+  main, reconcile TASKS/AUDIT and version metadata, rerun affected checks, and
+  coordinate the merge slot. No B09 merge is claimed.

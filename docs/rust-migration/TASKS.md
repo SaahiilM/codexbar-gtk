@@ -15,9 +15,9 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Backend tasks completed after that baseline | B00, B01, B02a, B02b1, B02b2a, B02b2b1, B02b2b2a, B02b2b2b, B03 and B04 merged |
 | Active implementation task / owner | B09 provider ordering and tray selection, owner: current coding-agent session |
 | Active task | **B09** — provider ordering and tray selection; [PR #39](https://github.com/SaahiilM/codexbar-gtk/pull/39), head `26458f8`, open; build `0.82.0 (38)` |
-| Next domain slice | **B09** — observe PR #39 checks; B06 has first merge slot/build 37; refresh from latest main and reconcile handoff before B09 merge |
+| Next domain slice | **B09** — PR #39 checks passed on `f6db236`; wait for B06 PR #38's first merge slot/build 37, then refresh from latest main and reconcile handoff before B09 merge |
 | Open external blockers | No code dependency blockers; merge waits for B06's serialized slot |
-| Latest checks | B09 local checks passed (AUDIT E037); PR #39 `test` queued and `tray-dbus` running at handoff update |
+| Latest checks | B09 local checks passed (AUDIT E037); PR #39 `test` and `tray-dbus` passed on `f6db236` |
 | UI validation | Rust-opt-in fixture smoke used isolated home, Codex/Claude/Gemini synthetic DTOs, and a fake tray sink; auto selected Codex while panel order showed Claude then Codex. Screenshot: [b09-tray-synthetic.png](screenshots/b09-tray-synthetic.png). |
 
 **First commands for a new model/session:**

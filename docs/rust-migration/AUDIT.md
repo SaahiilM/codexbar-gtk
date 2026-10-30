@@ -1462,3 +1462,103 @@ future models must verify the linked PR's status rather than trusting a stale
   for the exact-head required checks, then merge only through GitHub's ordinary
   merge path if it permits. If Actions fails to start, use the recorded local
   workflow and GTK evidence only if GitHub permits the ordinary merge.
+
+### E064 — 2026-10-30: B10 merged and build-44 follow-up assigned
+
+- **Observed main update:** a fresh fetch places `origin/main` at B10 merge
+  `a66e6771ff77d782dabe16a3f61d40b20702dd27`. PR #44 merged at 19:11:40 UTC
+  from head `b85348d4a38220a0b3e77e53d0f965f23cf943b5`; `test` and `tray-dbus`
+  both report SUCCESS on run `41112871969`. PR #40's earlier Actions queue
+  delay also resolved: both required jobs report SUCCESS on run `41102664352`
+  before its merge at `9d272fd`.
+- **Merge slot:** B10 is build 43. Orchestration assigned the next slot, build
+  44, to the focused B09 eligibility correction ahead of B13a's provisional
+  build 45. No open PR existed when this follow-up started.
+- **Next:** implement B09a from the B10 merge, preserve the ordered snapshot
+  vector and append new audit evidence; no B13/B14 integration or UI migration
+  is part of this correction.
+
+### E065 — 2026-10-30: B09a tray eligibility correction claimed
+
+- **Owner/base/branch:** current coding-agent session; fresh branch
+  `backend/b09-tray-unknown-state` based on `origin/main` at `a66e677`.
+  Build `0.82.0 (44)` is provisionally assigned; PR not yet opened.
+- **Reproduced Python legacy behavior:** with synthetic DTOs, the old Python
+  selector chose a window whose stored `used_percent` was `0.0` and
+  `usage_known` was false, and selected an errored provider's 100% window when
+  called directly. The normal GTK tray caller already filters errored
+  providers. Unknown-as-zero is documented as a legacy bug; Python parity will
+  intentionally exclude unknown windows while retaining known zero.
+- **Agreed B09/B10/B13/B14 contract:** candidate eligibility excludes providers
+  with a non-empty error, placeholder windows, and `usage_known == false`, then
+  keeps all existing finite/nonnegative checks and ranking/tie policy. Known
+  zero remains eligible; no eligible candidate yields `None` and the tray
+  projection says unavailable. Selection indices refer to the full ordered
+  provider slice and each original provider's windows vector; explicit
+  candidate-to-source coordinates preserve those indices. Provider ID and
+  window key identify the same original positions. B10 keeps its snapshot
+  vector unchanged; B13 consumes and validates this selection without
+  compaction or duplicated policy. B10, B13 and B14 confirmed no API conflict.
+- **Initial code/tests:** the Rust core now skips errored providers, placeholders
+  and unknown windows before ranking, with coordinates retained separately.
+  The private PyO3 candidate adapter returns the selected index into the
+  original flattened Python candidate list. Python selection filters the same
+  data; when selection is empty the tray now displays unavailable instead of
+  choosing a max-usage fallback. Focused checks passed: four Rust ordering
+  tests and eight Python `TraySelectionTests`. Full checks and GTK runtime
+  smoke remain pending.
+- **Next:** complete Rust/Python bridge parity cases for errored providers,
+  unknown windows, known zero, and source indices; update build-44 release and
+  handoff records; run required checks and synthetic GTK smoke; then open a
+  focused PR with the safe screenshot. Merge only after required CI, UI/head,
+  and clean mergeability are verified and orchestration confirms the slot.
+
+### E066 — 2026-10-30: B09a build-44 correction verified locally
+
+- **Source/base/build:** branch `backend/b09-tray-unknown-state` remains based
+  on B10 main merge `a66e677`; `VERSION`, `codexbar_gtk/version.py`, README and
+  CHANGELOG agree on `0.82.0 (44)`. The public selection signature and DTO
+  remain unchanged.
+- **Eligibility and index correction:** `rust-core/src/ordering.rs` now skips
+  errored providers, placeholder windows and unknown windows before ranking;
+  finite/nonnegative checks and existing depletion/ETA/usage ranking remain in
+  `automatic_selection`. The candidate-to-source coordinate vector keeps
+  `provider_index` and `window_index` anchored to the exact input provider and
+  window vectors. Rust tests place an error provider first and an unknown
+  window before a known-zero window, then assert the returned original indexes,
+  ID and key. Empty/fully ineligible candidates return `None`.
+- **Python parity and projection:** `codexbar_gtk/controller.py` retains the
+  Python fallback but intentionally stops treating stored `0.0` as evidence of
+  known usage; known zero remains eligible. The PyO3 candidate adapter carries
+  an eligibility mask and maps its ranked compact candidate back to the
+  original flattened Python candidate index. `CodexBarApp._update_tray` still
+  filters provider errors and now shows the existing unavailable tooltip when
+  automatic selection is empty rather than falling back to max usage and
+  displaying fabricated zero.
+- **Checks actually run:** Cargo format checks passed for `rust-core`,
+  `rust-python` and `rust-backend`; `./scripts/build-rust-core.sh` passed.
+  Locked tests passed with 72 core
+  and 37 backend tests. Clippy with all targets/features and `-D warnings`
+  passed for core, bridge and backend. Python default and Rust-opt-in full suites
+  passed 186 tests each; default mode reported eight expected opt-in-only skips,
+  and Rust-opt-in reported none. The tray D-Bus suite passed three tests in
+  both modes. The focused ordering integration tests passed all three cases,
+  exercising both Python fallback and Rust-extension policy. Version metadata,
+  Python compilation for touched code, and `git diff --check` passed.
+- **Fixture-only GTK smoke:** `CODEXBAR_RUST_CORE=1 python3
+  tools/preview_b09_synthetic.py` used temporary HOME/config/data/cache paths,
+  synthetic provider DTOs and a fake tray sink. It called the actual
+  `CodexBarApp._update_tray`, verified the trusted-ETA Codex choice and
+  unknown-only unavailable tooltip with no `0%`, and rendered
+  `screenshots/b09-tray-unknown-unavailable.png`; the known-provider panel
+  screenshot `screenshots/b09-tray-synthetic.png` was refreshed too. Both were
+  visually inspected. The smoke does not connect to a live StatusNotifier host
+  or use real provider/account data. EGL access, accessibility-bus, missing
+  Cairo foreign-converter, and widget teardown warnings were nonfatal; the
+  smoke exited 0.
+- **Status/next:** B10, B13 and B14 confirmed the full-vector index contract
+  and eligibility policy; there is no contract or dependency blocker. This
+  local correction is verified and PR-pending. Send the exact verification to
+  orchestration, then open a focused screenshot-bearing PR. Do not merge until
+  required checks pass on the PR head, UI/head are verified, mergeability is
+  clean, and the serialized build-44 slot is confirmed.

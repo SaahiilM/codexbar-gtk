@@ -9,16 +9,16 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Field | Current checkpoint |
 | --- | --- |
 | Goal | Fully native Rust GTK4/libadwaita app; backend first, UI second |
-| Current phase | B10 refresh controller; native UI implementation must wait for BG |
-| Last merged implementation | B11 PR #43 merged at `a33f0977`, build `0.82.0 (42)` |
+| Current phase | Backend correction follow-up; native UI implementation must wait for BG |
+| Last merged implementation | B10 PR #44 merged at `a66e677`, build `0.82.0 (43)` |
 | Planning change | [PR #18](https://github.com/SaahiilM/codexbar-gtk/pull/18), merged at `69c5496`, build `0.81.0 (17)` |
-| Backend tasks completed after that baseline | B00–B09, B11, B12 and B01/B02 sub-slices merged |
-| Active implementation task / owner | B10 refresh controller, owner: current coding-agent session |
-| Active task | **B10** — commit `ee3f9c3` rebased onto `a33f0977`; build `0.82.0 (43)` follows merged B11 build 42 |
-| Next domain slice | **B10** — PR #44 is open; verify its exact-head checks/reviews and merge normally if GitHub permits. B13/B14 remain downstream |
-| Open external blockers | No dependency blockers. B10 PR #44 initially reported `tray-dbus` success and `test` in progress; recheck the live exact head before merge. B11's merge-SHA run #41111847909 ended `startup_failure` with zero jobs, not a CI pass. |
-| Latest checks | B10 build-43 post-rebase local workflow: 70 core + 37 backend tests; strict Clippy/rustfmt for all crates; bridge build; 183 Python tests in both modes (8 expected opt-in skips in default mode); 3 tray D-Bus tests in both modes. PR #44 initial status is in AUDIT E063. |
-| UI validation | B10 Rust-opt-in fixture GTK smoke with isolated HOME/private D-Bus is recorded in E062; screenshot [b10-controller-synthetic.png](screenshots/b10-controller-synthetic.png). B11's neutral login screenshot and flow are recorded in E058–E059. |
+| Backend tasks completed after that baseline | B00–B12 and B01/B02 sub-slices merged; B09a correction active |
+| Active implementation task / owner | B09a unknown/error quota eligibility correction, current coding-agent session |
+| Active task | **B09a** — branch `backend/b09-tray-unknown-state`, based on `a66e677`; build `0.82.0 (44)` provisionally reserved ahead of B13a |
+| Next domain slice | **B09a** — finish regression/parity tests and GTK smoke, open a focused PR, and merge only after checks, UI/head and clean mergeability pass |
+| Open external blockers | No dependency or contract blockers. B10, B13 and B14 confirmed original-vector indexing and eligibility semantics. No PR is open for this correction. |
+| Latest checks | Rustfmt and strict Clippy passed for all three crates; 72 core and 37 backend tests passed; bridge build passed; Python suites passed (186 each, 8 expected opt-in-only skips in default mode); tray D-Bus tests passed (3 in each mode); version test, Python compile and `git diff --check` passed. |
+| UI validation | Rust-opt-in fixture GTK smoke called the actual tray update path with a fake sink; trusted ETA selection and unavailable unknown-only state passed. Screenshots: [b09-tray-synthetic.png](screenshots/b09-tray-synthetic.png) and [b09-tray-unknown-unavailable.png](screenshots/b09-tray-unknown-unavailable.png). Fake sink only; no live SNI host. |
 
 **First commands for a new model/session:**
 
@@ -81,8 +81,8 @@ into smaller PRs without declaring the parent complete early.
 | [x] **B06** Currency service | B00, B05 | Port currency catalog, labels, conversion, TTL/cache load/write, single-flight refresh and offline fallback; inject HTTP/time; connect monthly pace and spend callers. PR #38 merged at `5e4af06`; both checks passed on head `75bba44`. |
 | [x] **B07** CLI service | B00 | Port executable discovery, argv/TZ handling, timeout/reaping, stdout/stderr/errors, JSON envelopes and command wrappers. Merged PR #42 at `e9dda26`; both checks passed. See AUDIT E054–E056. |
 | [x] **B08** Notification policies | B01, B02, B05 | Port threshold transitions, session-exhaustion tracking, predictive pace cycles and credit-expiry deduplication. PR #40 merged at `9d272fd`; checks passed (see AUDIT E049). OS notification delivery remains frontend/platform work. |
-| [x] **B09** Provider ordering and tray selection | B01, B02, B05 | Port visibility/order, automatic quota ranking and ETA trust/filtering; preserve deterministic ties, depleted quotas and placeholder exclusion. Merged PR #39 at `93b62bb`; checks passed. |
-| [ ] **B10** Refresh controller | B02–B05, B07–B09 | Port immediate/dynamic polling, manual mode, one queued forced-refresh follow-up, joined shutdown, account collection, partial cost fallback, retained sessions/spend, successful-scan history samples and snapshot/event publication. Complete top-level B02 provider-envelope composition with shared-fixture Python parity; no I/O/callbacks under GUI locks. PR #44 open on `backend/b10-refresh-controller`, build 43; see AUDIT E062–E063. |
+| [x] **B09** Provider ordering and tray selection | B01, B02, B05 | Port visibility/order, automatic quota ranking and ETA trust/filtering; preserve deterministic ties, depleted quotas and placeholder exclusion. Merged PR #39 at `93b62bb`; checks passed. Follow-up B09a corrects unknown/error eligibility. |
+| [x] **B10** Refresh controller | B02–B05, B07–B09 | Port immediate/dynamic polling, manual mode, one queued forced-refresh follow-up, joined shutdown, account collection, partial cost fallback, retained sessions/spend, successful-scan history samples and snapshot/event publication. Complete top-level B02 provider-envelope composition with shared-fixture Python parity; no I/O/callbacks under GUI locks. PR #44 merged at `a66e677`; both required checks passed on `b85348d`. |
 | [x] **B11** Login/auth process service | B00, B07 | PR #43 merged at `a33f0977`. Build-42 local Rust/Python/GTK verification passed (AUDIT E058–E059); GitHub run #41111847909 ended `startup_failure` with zero jobs, so no CI pass is claimed. |
 | [x] **B12** Read-only update service | B00 | Port public VERSION parsing/comparison and bounded HTTP fetch; test invalid/oversized/network-failure responses. PR #41 merged at `bd58f46`; both checks passed on head `21537ba` (AUDIT E053). No code download/install behavior. |
 | [ ] **B13** Extract backend work embedded in UI | B04–B12 | Audit all `ui/*.py` workers and policies: spend model grouping/time ranges/currency/partial-state presentation, tray summaries, settings CLI actions, launch-at-login actions, restart/update workers. Move non-widget responsibilities behind the Rust API; log remaining frontend-only behavior explicitly. |
@@ -108,6 +108,16 @@ credits and error semantics are integrated):
 - [x] **B02b2b1** Provider cost normalization — merged PR #30.
 - [x] **B02b2b2a** Detail chart normalization — merged PR #32.
 - [x] **B02b2b2b** Credits/status/error/plan context normalization — merged PR #33.
+
+B09 follow-up:
+
+- [ ] **B09a** Unknown/error tray eligibility correction — keep the stable
+  B09 ranking, but exclude errored providers, placeholders and unknown-usage
+  windows while retaining known zero. Preserve indexes into the exact ordered
+  snapshot provider/window vectors and show unavailable when no candidate is
+  eligible. Python's previous unknown-as-zero behavior is an intentional
+  parity correction, not a preserved contract. Branch
+  `backend/b09-tray-unknown-state`, build 44 provisional; see AUDIT E065 onward.
 
 B05/B07/B12 can proceed after B00 independently of payload parsing. B11/B13 are
 not optional just because their Python files sit near presentation code. Do not

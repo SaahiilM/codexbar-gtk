@@ -36,7 +36,9 @@ class RustOrderingIntegrationTests(unittest.TestCase):
         provider.pace = pace or {}
         return provider
 
-    def window(self, key, used, *, placeholder=False, minutes=None, reset_hours=None):
+    def window(
+        self, key, used, *, placeholder=False, known=True, minutes=None, reset_hours=None
+    ):
         return RateWindow(
             key=key,
             title=key.title(),
@@ -44,6 +46,7 @@ class RustOrderingIntegrationTests(unittest.TestCase):
             window_minutes=minutes,
             resets_at=self.now + timedelta(hours=reset_hours) if reset_hours else None,
             is_placeholder=placeholder,
+            usage_known=known,
         )
 
     def test_saved_order_hidden_ids_and_unspecified_order_match_python(self):
@@ -102,6 +105,28 @@ class RustOrderingIntegrationTests(unittest.TestCase):
         self.assertEqual(results[1][:3], results[0][:3])
         self.assertIsNone(results[0][3])
         self.assertIsNone(results[1][3])
+
+    def test_unknown_error_and_known_zero_eligibility_match_python_and_rust(self):
+        errored = self.provider("errored", [self.window("primary", 100)])
+        errored.error = "fixture error"
+        unknown = self.provider("unknown", [self.window("unknown", 100, known=False)])
+        known_zero = self.provider("known-zero", [self.window("known-zero", 0)])
+        providers = [errored, unknown, known_zero]
+
+        choices = []
+        for core in (None, self.core):
+            with patch("codexbar_gtk.controller.extension", return_value=core):
+                selected = automatic_tray_selection(providers, now=self.now)
+                no_eligible = automatic_tray_selection([unknown], now=self.now)
+                choices.append(
+                    (
+                        (selected[0].provider_id, selected[1].key) if selected else None,
+                        no_eligible,
+                    )
+                )
+
+        self.assertEqual(choices[0], (("known-zero", "known-zero"), None))
+        self.assertEqual(choices[1], choices[0])
 
 
 if __name__ == "__main__":

@@ -51,9 +51,9 @@ import gi  # noqa: E402
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 
-from gi.repository import Adw, GLib, Gsk, Gtk  # noqa: E402
+from gi.repository import Adw, Gdk, GLib, Gsk, Gtk  # noqa: E402
 
-from codexbar_gtk.controller import AppState, Controller  # noqa: E402
+from codexbar_gtk.controller import AppState, Controller, automatic_tray_selection  # noqa: E402
 from codexbar_gtk.data import Pace, RateWindow, provider_usage_from_payload  # noqa: E402
 from codexbar_gtk.history import HistoryStore  # noqa: E402
 from codexbar_gtk.prefs import Preferences  # noqa: E402
@@ -86,6 +86,8 @@ def synthetic_provider(provider_id: str, used: float, eta: float):
 
 def render(widget: Gtk.Widget, path: str, width: int, height: int) -> None:
     widget.set_size_request(width, height)
+    widget.set_hexpand(True)
+    widget.set_vexpand(True)
     window = Gtk.Window()
     window.set_decorated(False)
     window.set_child(widget)
@@ -160,7 +162,56 @@ def main() -> int:
     )
     os.makedirs(os.path.dirname(os.path.abspath(output)), exist_ok=True)
     render(popup, output, 420, 440)
-    print(f"Rust tray Auto selected Codex; ordered visible panel shows Claude then Codex: {output}")
+
+    unknown = synthetic_provider("unknown", 0.0, 60 * 60)
+    unknown.windows[0].usage_known = False
+    errored = synthetic_provider("errored", 100.0, 60 * 60)
+    errored.error = "synthetic fixture error"
+    assert automatic_tray_selection([unknown], now=NOW) is None
+    assert automatic_tray_selection([errored, unknown], now=NOW) is None
+
+    app._update_tray(AppState(providers=[unknown]))
+    title, body = app.tray.update_args[1:3]
+    assert "unavailable" in body.lower(), body
+    assert "0%" not in body, body
+
+    unavailable = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+    unavailable.add_css_class("tray-unavailable-preview")
+    unavailable.set_halign(Gtk.Align.CENTER)
+    unavailable.set_valign(Gtk.Align.CENTER)
+    unavailable.set_margin_start(28)
+    unavailable.set_margin_end(28)
+    unavailable.set_margin_top(24)
+    unavailable.set_margin_bottom(24)
+    title_label = Gtk.Label(label=title)
+    title_label.add_css_class("title-3")
+    body_label = Gtk.Label(label=body)
+    body_label.add_css_class("body")
+    unavailable.append(title_label)
+    unavailable.append(body_label)
+    unavailable_output = sys.argv[2] if len(sys.argv) > 2 else os.path.join(
+        ROOT,
+        "docs",
+        "rust-migration",
+        "screenshots",
+        "b09-tray-unknown-unavailable.png",
+    )
+    css = Gtk.CssProvider()
+    css.load_from_data(
+        b".tray-unavailable-preview { min-width: 360px; min-height: 160px; "
+        b"padding: 24px; background-color: #202124; color: #ffffff; "
+        b"border-radius: 12px; } "
+        b".tray-unavailable-preview label { color: #ffffff; }"
+    )
+    Gtk.StyleContext.add_provider_for_display(
+        Gdk.Display.get_default(), css, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+    )
+    os.makedirs(os.path.dirname(os.path.abspath(unavailable_output)), exist_ok=True)
+    render(unavailable, unavailable_output, 420, 220)
+    print(
+        "Rust tray Auto selected Codex for the trusted-ETA fixture; unknown-only "
+        f"tray state is unavailable (no fabricated 0%): {output}, {unavailable_output}"
+    )
     shutil.rmtree(HOME, ignore_errors=True)
     return 0
 

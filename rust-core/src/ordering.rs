@@ -132,7 +132,18 @@ pub fn automatic_tray_selection(
     let mut candidates = Vec::new();
     let mut coordinates = Vec::new();
     for (provider_index, provider) in providers.iter().enumerate() {
+        if provider
+            .error
+            .as_deref()
+            .filter(|error| !error.is_empty())
+            .is_some()
+        {
+            continue;
+        }
         for (window_index, window) in provider.windows.iter().enumerate() {
+            if window.is_placeholder || !window.usage_known {
+                continue;
+            }
             let pace = provider.pace.get(&window.key);
             let seconds_until_reset = window.resets_at.map(|reset| {
                 let whole_seconds = reset.timestamp() - now.timestamp();
@@ -323,6 +334,56 @@ mod tests {
         assert_eq!(
             serde_json::from_str::<AutomaticQuotaSelection>(&encoded).unwrap(),
             selected
+        );
+    }
+
+    #[test]
+    fn selection_skips_error_placeholder_and_unknown_but_keeps_known_zero_indices() {
+        let mut errored = provider("errored", 100.0, None);
+        errored.error = Some("fixture error".to_owned());
+
+        let mut selected = provider("selected", 0.0, None);
+        let mut unknown = selected.windows[0].clone();
+        unknown.key = "unknown".to_owned();
+        unknown.used_percent = 100.0;
+        unknown.usage_known = false;
+        let mut known_zero = selected.windows[0].clone();
+        known_zero.key = "known-zero".to_owned();
+        known_zero.used_percent = 0.0;
+        selected.windows = vec![unknown, known_zero];
+
+        let tied = provider("tied", 0.0, None);
+        let providers = vec![errored, selected, tied];
+        let selection = automatic_tray_selection(
+            &providers,
+            Utc.with_ymd_and_hms(2026, 10, 30, 12, 0, 0)
+                .single()
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(selection.provider_index, 1);
+        assert_eq!(selection.provider_id, "selected");
+        assert_eq!(selection.window_index, 1);
+        assert_eq!(selection.window_key, "known-zero");
+    }
+
+    #[test]
+    fn selection_returns_none_when_every_provider_or_window_is_ineligible() {
+        let mut errored = provider("errored", 100.0, None);
+        errored.error = Some("fixture error".to_owned());
+        let mut unknown = provider("unknown", 100.0, None);
+        unknown.windows[0].usage_known = false;
+        let mut placeholder = provider("placeholder", 100.0, None);
+        placeholder.windows[0].is_placeholder = true;
+        let providers = vec![errored, unknown, placeholder];
+        assert_eq!(
+            automatic_tray_selection(
+                &providers,
+                Utc.with_ymd_and_hms(2026, 10, 30, 12, 0, 0)
+                    .single()
+                    .unwrap(),
+            ),
+            None
         );
     }
 }

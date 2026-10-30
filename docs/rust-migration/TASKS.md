@@ -14,10 +14,10 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Planning change | [PR #18](https://github.com/SaahiilM/codexbar-gtk/pull/18), merged at `69c5496`, build `0.81.0 (17)` |
 | Backend tasks completed after that baseline | B00–B12 merged; B09a merge evidence and exact checks are in E067 |
 | Active implementation task / owner | B13a spend/tray projections, current coding-agent session |
-| Active task | **B13a** — branch `backend/b13a-spend-tray-projections`, rebased onto `d1eff677`; build `0.82.0 (45)` reserved |
+| Active task | **B13a** — PR #46, branch `backend/b13a-spend-tray-projections`, based on `d1eff677`; build `0.82.0 (45)` |
 | Next domain slice | **B13b** — settings actions, login/update/restart and launch-at-login extraction after B13a review/merge |
 | Open external blockers | None. Dependencies B04–B12 are merged; B14 confirmed the typed DTO/service boundary and tray source-index contract (E067). |
-| Latest checks | B09a PR #45 `test` and `tray-dbus` succeeded on exact head `f19036e`; B13a Rust, Python, tray D-Bus and format/Clippy checks pass on rebased candidate (E067). |
+| Latest checks | B13a local Rust/Python/tray D-Bus, format/Clippy, extension build and GTK fixture smoke pass (E067). PR #46 initial head `e315255` had `tray-dbus` SUCCESS and `test` PENDING (E068); this handoff update changes the PR head, so recheck exact-head GitHub status before merge. |
 | UI validation | B09a evidence is in E066. B13a fixture GTK smoke passed with a fake tray sink; [b13-spend-tray-synthetic.png](screenshots/b13-spend-tray-synthetic.png) is visually inspected (E067). |
 
 **First commands for a new model/session:**

@@ -1633,3 +1633,21 @@ future models must verify the linked PR's status rather than trusting a stale
   Do not merge until PR-head checks, UI evidence and mergeability are verified
   and orchestration serializes the next merge slot. B13 parent remains pending;
   B14 remains gated until all B13 slices, including B13b, are verified/merged.
+
+### E068 — 2026-10-30: B13a PR #46 opened
+
+- **PR/head/base:** [PR #46](https://github.com/SaahiilM/codexbar-gtk/pull/46)
+  is open from `backend/b13a-spend-tray-projections` at initial head
+  `e315255b8f33f9933118058a055593708243de8e`, based on `main` at B09a merge
+  `d1eff67725cfbde82c49f0eb75861d4dbbd4d797`. The PR includes the synthetic
+  GTK screenshot `screenshots/b13-spend-tray-synthetic.png` and local evidence
+  from E067.
+- **Observed initial GitHub state:** `OPEN`, `MERGEABLE`, no review requests or
+  submitted reviews. Run `41118233020` initially reported `tray-dbus` SUCCESS
+  and `test` PENDING; this is not the final check state. Recheck the exact
+  current head before any merge.
+- **Coordination:** the exact-head status and screenshot were sent to
+  orchestration before opening. B13a has the active build-45 slot. Do not merge
+  until all exact-head required checks pass, mergeability is clean and the
+  serialized slot remains confirmed. B13 parent is partial; B13b is still
+  required before B14 can proceed.

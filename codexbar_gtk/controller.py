@@ -851,9 +851,11 @@ def automatic_tray_selection(
 ) -> tuple[ProviderUsage, RateWindow] | None:
     """Pick the quota the tray should represent, like the macOS Auto lane.
 
-    The ranking mirrors ``AutomaticQuotaSelection``: a fully depleted window
-    outranks everything, then a window forecast to deplete before its reset
-    outranks one that lasts, then the smallest ETA, then the highest usage.
+    Error providers, placeholders and unknown usage are excluded; known zero
+    remains eligible. The ranking mirrors ``AutomaticQuotaSelection``: a fully
+    depleted window outranks everything, then a window forecast to deplete
+    before its reset outranks one that lasts, then the smallest ETA, then the
+    highest usage.
     """
     now = now or datetime.now(timezone.utc)
     rust = extension()
@@ -861,16 +863,19 @@ def automatic_tray_selection(
         candidates: list[tuple[ProviderUsage, RateWindow]] = []
         used_percent: list[float] = []
         placeholders: list[bool] = []
+        candidate_eligible: list[bool] = []
         window_minutes: list[int | None] = []
         seconds_until_reset: list[float | None] = []
         expected_used_percent: list[float | None] = []
         eta_seconds: list[float | None] = []
         for provider in providers:
+            provider_eligible = not provider.has_error
             for window in provider.windows:
                 pace = provider.pace.get(window.key)
                 candidates.append((provider, window))
                 used_percent.append(float(window.used_percent))
                 placeholders.append(bool(window.is_placeholder))
+                candidate_eligible.append(provider_eligible and window.usage_known)
                 window_minutes.append(window.window_minutes)
                 seconds_until_reset.append(
                     (window.resets_at - now).total_seconds()
@@ -885,6 +890,7 @@ def automatic_tray_selection(
             index = rust.automatic_quota_candidate(
                 used_percent,
                 placeholders,
+                candidate_eligible,
                 window_minutes,
                 seconds_until_reset,
                 expected_used_percent,
@@ -896,8 +902,13 @@ def automatic_tray_selection(
             pass
     candidates: list[tuple[ProviderUsage, RateWindow, float | None]] = []
     for provider in providers:
+        if provider.has_error:
+            continue
         for window in provider.windows:
-            if window.is_placeholder:
+            # Older Python selection treated the model's default 0.0 as usage
+            # when a provider omitted the field. Keep known zero eligible, but
+            # do not select unknown usage as though it were a measured zero.
+            if window.is_placeholder or not window.usage_known:
                 continue
             if not math.isfinite(window.used_percent) or window.used_percent < 0:
                 continue

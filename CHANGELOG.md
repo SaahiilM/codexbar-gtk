@@ -4,6 +4,23 @@ Client-side changelog for the CodexBar GTK front-end. Each entry keys a build
 number (`CURRENT_PROJECT_VERSION`) to the upstream macOS CodexBar release its
 short version tracks, so "which version has what" maps cleanly onto both trees.
 
+## 0.82.0 (44) — 2026-10-30
+
+Tracks upstream CodexBar 0.82.0.
+
+### Fixed
+
+- Exclude errored providers, placeholder windows and unknown usage from
+  automatic tray selection. Keep measured zero eligible and show unavailable
+  when no quota can be selected instead of projecting the default `0.0`.
+- Keep tray selection indices anchored to the unchanged ordered provider and
+  window vectors while filtering candidates.
+
+### Validation
+
+- See `docs/rust-migration/AUDIT.md` for the Python/Rust parity regression tests
+  and fixture-only GTK tray smoke evidence.
+
 ## 0.82.0 (43) — 2026-10-30
 
 Tracks upstream CodexBar 0.82.0.

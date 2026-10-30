@@ -1395,6 +1395,7 @@ fn provider_order_indices(
 fn automatic_quota_candidate(
     used_percent: Vec<f64>,
     placeholders: Vec<bool>,
+    candidate_eligible: Vec<bool>,
     window_minutes: Vec<Option<i64>>,
     seconds_until_reset: Vec<Option<f64>>,
     expected_used_percent: Vec<Option<f64>>,
@@ -1403,6 +1404,7 @@ fn automatic_quota_candidate(
     let count = [
         used_percent.len(),
         placeholders.len(),
+        candidate_eligible.len(),
         window_minutes.len(),
         seconds_until_reset.len(),
         expected_used_percent.len(),
@@ -1411,17 +1413,23 @@ fn automatic_quota_candidate(
     .into_iter()
     .min()
     .unwrap_or_default();
-    let candidates: Vec<ordering::QuotaCandidate> = (0..count)
-        .map(|index| ordering::QuotaCandidate {
+    let mut candidates = Vec::new();
+    let mut source_indices = Vec::new();
+    for index in 0..count {
+        if !candidate_eligible[index] {
+            continue;
+        }
+        candidates.push(ordering::QuotaCandidate {
             used_percent: used_percent[index],
             placeholder: placeholders[index],
             window_minutes: window_minutes[index],
             seconds_until_reset: seconds_until_reset[index],
             expected_used_percent: expected_used_percent[index],
             eta_seconds: eta_seconds[index],
-        })
-        .collect();
-    ordering::automatic_selection(&candidates)
+        });
+        source_indices.push(index);
+    }
+    ordering::automatic_selection(&candidates).map(|index| source_indices[index])
 }
 
 #[pyfunction]

@@ -864,6 +864,29 @@ class TraySelectionTests(unittest.TestCase):
     def test_without_usable_windows_there_is_no_selection(self):
         self.assertIsNone(automatic_tray_selection([], now=self.NOW))
 
+    def test_unknown_usage_does_not_masquerade_as_known_zero(self):
+        unknown = self._provider("unknown", [self._window("primary", 0)])
+        unknown.windows[0].usage_known = False
+        known_zero = self._provider("known-zero", [self._window("primary", 0)])
+
+        with patch("codexbar_gtk.controller.extension", return_value=None):
+            self.assertIsNone(automatic_tray_selection([unknown], now=self.NOW))
+            selected = automatic_tray_selection([unknown, known_zero], now=self.NOW)
+
+        self.assertIsNotNone(selected)
+        self.assertIs(selected[0], known_zero)
+
+    def test_errored_provider_is_ineligible_but_known_zero_remains_selectable(self):
+        errored = self._provider("errored", [self._window("primary", 100)])
+        errored.error = "fixture error"
+        known_zero = self._provider("known-zero", [self._window("primary", 0)])
+
+        with patch("codexbar_gtk.controller.extension", return_value=None):
+            selected = automatic_tray_selection([errored, known_zero], now=self.NOW)
+
+        self.assertIsNotNone(selected)
+        self.assertIs(selected[0], known_zero)
+
 
 class PaceWarningTests(unittest.TestCase):
     """Predictive pace notifications, mirroring macOS PredictivePaceWarnings."""

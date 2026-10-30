@@ -355,30 +355,33 @@ class CodexBarApp(Adw.Application):
         self._update_tray(state)
         self._check_notifications(state)
 
+    def _show_tray_unavailable(self) -> None:
+        self.tray.update(
+            "codexbar-gtk",
+            "CodexBar GTK",
+            "Provider data unavailable\nUse Refresh to check again.",
+        )
+        self.tray.set_menu(
+            [
+                ("Show usage panel", self._toggle_popup),
+                ("Refresh", self._refresh_now),
+                ("Open Dashboard", self._open_dashboard),
+                (None, None),
+                ("Check for updates…", self._check_for_updates),
+                ("Restart CodexBar", self._restart),
+                ("Settings…", self._open_settings),
+                (None, None),
+                ("Quit CodexBar", self._quit),
+            ]
+        )
+        self.tray.register()
+
     def _update_tray(self, state) -> None:
         if not self.tray.available:
             return
         providers = [p for p in state.providers if not p.has_error]
         if not providers:
-            self.tray.update(
-                "codexbar-gtk",
-                "CodexBar GTK",
-                "Provider data unavailable\nUse Refresh to check again.",
-            )
-            self.tray.set_menu(
-                [
-                    ("Show usage panel", self._toggle_popup),
-                    ("Refresh", self._refresh_now),
-                    ("Open Dashboard", self._open_dashboard),
-                    (None, None),
-                    ("Check for updates…", self._check_for_updates),
-                    ("Restart CodexBar", self._restart),
-                    ("Settings…", self._open_settings),
-                    (None, None),
-                    ("Quit CodexBar", self._quit),
-                ]
-            )
-            self.tray.register()
+            self._show_tray_unavailable()
             return
 
         source = str(self.prefs.get("unifiedIconSource") or "highest")
@@ -388,7 +391,8 @@ class CodexBarApp(Adw.Application):
             if automatic is not None:
                 highest, tray_window = automatic
             else:
-                highest = max(providers, key=lambda p: p.max_used_percent)
+                self._show_tray_unavailable()
+                return
         elif source == "first":
             highest = providers[0]
         else:

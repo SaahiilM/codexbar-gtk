@@ -15,5 +15,6 @@ serde = { version = "1", features = ["derive"] }
 libc = "0.2"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time", "process", "io-util", "fs", "net"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+portable-pty = "0.9.0"
 
 [dev-dependencies]

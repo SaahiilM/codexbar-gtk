@@ -10,14 +10,14 @@ history. A checked box means **verified and merged**, not merely implemented.
 | --- | --- |
 | Goal | Fully native Rust GTK4/libadwaita app; backend first, UI second |
 | Current phase | B09 provider ordering and tray selection; native UI implementation must wait |
-| Last merged implementation | B05 PR #37 merged at `878d4b7`, build `0.82.0 (36)` |
+| Last merged implementation | B06 PR #38 merged at `5e4af06`, build `0.82.0 (37)` |
 | Planning change | [PR #18](https://github.com/SaahiilM/codexbar-gtk/pull/18), merged at `69c5496`, build `0.81.0 (17)` |
-| Backend tasks completed after that baseline | B00, B01, B02a, B02b1, B02b2a, B02b2b1, B02b2b2a, B02b2b2b, B03 and B04 merged |
+| Backend tasks completed after that baseline | B00, B01, B02a, B02b1, B02b2a, B02b2b1, B02b2b2a, B03, B04, B05 and B06 merged |
 | Active implementation task / owner | B09 provider ordering and tray selection, owner: current coding-agent session |
-| Active task | **B09** — provider ordering and tray selection; [PR #39](https://github.com/SaahiilM/codexbar-gtk/pull/39), head `26458f8`, open; build `0.82.0 (38)` |
-| Next domain slice | **B09** — PR #39 checks passed on `f6db236`; wait for B06 PR #38's first merge slot/build 37, then refresh from latest main and reconcile handoff before B09 merge |
-| Open external blockers | No code dependency blockers; merge waits for B06's serialized slot |
-| Latest checks | B09 local checks passed (AUDIT E037); PR #39 `test` and `tray-dbus` passed on `f6db236` |
+| Active task | **B09** — provider ordering and tray selection; [PR #39](https://github.com/SaahiilM/codexbar-gtk/pull/39), refreshed branch pending push; build `0.82.0 (38)` |
+| Next domain slice | **B09** — push the B06 integration, observe fresh checks/mergeability, coordinate, then merge if clean |
+| Open external blockers | No dependency blockers; new PR head needs GitHub checks and clean mergeability |
+| Latest checks | Combined-source local checks passed (AUDIT E043); GitHub checks on the updated head have not run yet |
 | UI validation | Rust-opt-in fixture smoke used isolated home, Codex/Claude/Gemini synthetic DTOs, and a fake tray sink; auto selected Codex while panel order showed Claude then Codex. Screenshot: [b09-tray-synthetic.png](screenshots/b09-tray-synthetic.png). |
 
 **First commands for a new model/session:**
@@ -77,8 +77,8 @@ into smaller PRs without declaring the parent complete early.
 | [x] **B02** Provider usage normalization | B01 | Port provider envelopes, extra windows, pace, identity/plan, costs, details/charts, credits and reset-credit parsing. Completed in the B02 sub-slices below. |
 | [x] **B03** Agent-session normalization | B01 | Port session fields, timestamp handling, running-state classification and stable sorting; merged PR #35. |
 | [x] **B04** Spend normalization/aggregation | B01 | Port old/new CLI totals, coverage/provenance, partial/error handling, daily/project/model data and ordering; merged PR #36. |
-| [x] **B05** Preferences service | B00 | Port defaults, known-key loading/import, portable export, atomic 0600 writes, reset/update, thread safety and refresh settings. Merged PR #37. |
-| [ ] **B06** Currency service | B00, B05 | Port currency catalog, labels, conversion, TTL/cache load/write, single-flight refresh and offline fallback; inject HTTP/time; connect monthly pace and spend callers. |
+| [x] **B05** Preferences service | B00 | Port defaults, known-key loading/import, portable export, atomic 0600 writes, reset/update, thread safety and refresh settings. PR #37 merged at `878d4b7`; both checks passed on head `d43b18f`. |
+| [x] **B06** Currency service | B00, B05 | Port currency catalog, labels, conversion, TTL/cache load/write, single-flight refresh and offline fallback; inject HTTP/time; connect monthly pace and spend callers. PR #38 merged at `5e4af06`; both checks passed on head `75bba44`. |
 | [ ] **B07** CLI service | B00 | Port executable discovery, argv/TZ handling, timeout/reaping, stdout/stderr/errors, JSON envelopes, usage/cost/sessions/config/hooks/plugins/account commands. Use fake executables, including failure and cancellation. |
 | [ ] **B08** Notification policies | B01, B02, B05 | Port threshold transitions, session-exhaustion tracking, predictive pace cycles and credit-expiry deduplication. Rust owns state; tests use explicit clocks and accounts. OS notification delivery remains frontend/platform work. |
 | [ ] **B09** Provider ordering and tray selection | B01, B02, B05 | Port visibility/order, automatic quota ranking and ETA trust/filtering; preserve deterministic ties, depleted quotas and placeholder exclusion. Active on `orchestrated/luna-b09`. |

@@ -20,6 +20,21 @@ Tracks upstream CodexBar 0.82.0.
 
 - See `docs/rust-migration/AUDIT.md` for B09 parity, runtime and GTK fixture evidence.
 
+## 0.82.0 (37) — 2026-10-30
+
+Tracks upstream CodexBar 0.82.0.
+
+### Added
+
+- Port currency catalog, conversion, cached rates, and bounded asynchronous
+  Rustls HTTP refresh to the opt-in Rust backend with offline fallback.
+
+### Validation
+
+- Rust format and Clippy checks passed; 60 core and 7 backend tests passed.
+  Python passed 161 tests in each mode (two opt-in-only tests skipped in default
+  mode); 3 tray D-Bus tests passed. Synthetic GTK SpendView screenshot included.
+
 ## 0.82.0 (36) — 2026-10-30
 
 Tracks upstream CodexBar 0.82.0.

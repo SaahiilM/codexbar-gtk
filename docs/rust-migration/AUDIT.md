@@ -813,7 +813,85 @@ future models must verify the linked PR's status rather than trusting a stale
 - **Next:** wait for both required checks; merge only after both pass, then
   record GitHub's merge commit and verify `origin/main`.
 
-### E036 — 2026-10-30: B09 provider ordering and tray selection claimed
+### E036 — 2026-10-30: B06 Currency service claimed
+
+- **Owner/branch/base:** current coding-agent session;
+  `orchestrated/luna-b06-currency`, based on merged B05 commit `878d4b7`.
+- **Dependency handoff:** B05 PR #37 merged at
+  `878d4b7b114d7584e72594f475771d66f9bf18aa`; GitHub reported `test` and
+  `tray-dbus` successful on PR head `d43b18f1b6452b073a47269cb2022158a9617735`.
+  This corrects the stale B05-active checkpoint present on `main` when B06
+  started.
+- **Prior work inspection:** read-only review of local branches
+  `backend/b06-currency-service` and `backend/b06-currency-http`, plus
+  `/tmp/codexbar-b06-http` and `/tmp/codexbar-ug-b06`. The former contained a
+  placeholder blocking HTTP refresh; the latter had unrelated uncommitted
+  TASKS edits. Both worktrees and all prior local changes were preserved.
+- **Scope:** Rust currency catalog/conversion and backend refresh/cache, opt-in
+  Python adapter, pace/spend caller routing through existing currency APIs,
+  integration tests and synthetic GTK preview.
+- **Status:** active; build `0.82.0 (37)` reserved for this PR.
+- **Next:** finish local verification, update the audit, and open a focused PR.
+
+### E037 — 2026-10-30: B06 Currency local implementation verification
+
+- **Branch/base:** `orchestrated/luna-b06-currency`, based on merged B05
+  `878d4b7`.
+- **Implementation:** `rust-core/src/currency.rs` owns the ordered 29-code
+  catalog, labels, USD-pivot conversion, and strict cache parsing. The
+  `rust-backend` service uses reqwest with Rustls, a 15-second timeout and
+  64-KiB response bound; it supports injected endpoint/time, 24-hour TTL,
+  single-flight refresh, atomic cache replacement, a streamed response-size
+  cap, and offline/cache retention after request or protocol failure.
+  `rust-python` exposes an opt-in adapter;
+  `currency.py` keeps the Python parity implementation but uses Rust for catalog,
+  picker policy, conversion, cache, and asynchronous refresh when opted in.
+  Existing monthly pace and spend callers route conversion through this adapter.
+- **Contract shared with B14:** `CurrencyService` exposes catalog/rate/convert
+  and status snapshots plus async wrappers and refresh APIs. Status records
+  `fetched_at`, `RateSource::{Offline, Cache, Live}`, and refresh failure. B14
+  was asked to expose those through its facade so UI does not infer cache state.
+- **Checks actually run:** format checks for core/backend/bridge; 60 core tests,
+  7 backend tests (including synthetic HTTP update, oversized-response bound,
+  explicit-time TTL,
+  single-flight, cache reload and offline fallback); bridge crate test target
+  (0 tests); Clippy with warnings denied for all three crates; atomic extension
+  build; default Python suite (161 passed, 2 opt-in-only tests skipped), Rust
+  opt-in Python suite (161 passed, no skips), 3 private-D-Bus tray tests,
+  Python preview compile, and `git diff --check`. All completed successfully.
+- **GTK runtime/UI smoke:** with `CODEXBAR_RUST_CORE=1` and a temporary HOME,
+  presented the real GTK `SpendView` with synthetic $42.50 totals and isolated
+  EUR preferences. It displayed €39.10 total, €5.75 session, and €39.10 provider
+  and project totals. The screenshot was captured from the live desktop window:
+  `screenshots/b06-spend-currency-synthetic.png`. This covers the spend display
+  and Rust conversion route, not full application navigation or live rates.
+- **Environment limits:** GTK logged nonfatal EGL device-permission and
+  accessibility-bus warnings. This environment lacks the PyGObject Cairo
+  foreign converter, so custom chart drawing callbacks logged warnings and the
+  chart areas were blank in the screenshot; the currency totals and tables
+  rendered. No real CLI/account/provider data or network currency service was
+  used in the UI smoke; HTTP tests used a local loopback fixture.
+- **Status:** locally verified; PR not yet opened. Build metadata is
+  `0.82.0 (37)`.
+- **Next:** coordinate merge sequencing with the orchestration thread, commit
+  and open a focused PR containing the screenshot, then wait for checks before
+  any merge.
+
+### E038 — 2026-10-30: B06 PR opened
+
+- **PR:** [PR #38](https://github.com/SaahiilM/codexbar-gtk/pull/38), branch
+  `orchestrated/luna-b06-currency`, initial head
+  `6245c641f45681083402fe117425d034fa2358ce`, base `main`.
+- **Observed at 17:20 UTC:** GitHub state `OPEN`, mergeable; `test` was
+  `IN_PROGRESS` and `tray-dbus` was `QUEUED`; no reviews were present. Live
+  `origin/main` remained B05 merge `878d4b7`.
+- **PR contents:** includes this B06 implementation, build 37 metadata, B05
+  merge/check handoff, local verification record, and synthetic SpendView
+  screenshot.
+- **Next:** observe both required checks on the latest PR head and merge only
+  after they pass and the serialized merge slot remains available.
+
+### E039 — 2026-10-30: B09 provider ordering and tray selection claimed
 
 - **Owner/branch/base:** current coding-agent session, branch
   `orchestrated/luna-b09`, based on live `origin/main` at `878d4b7` (B05 PR #37).
@@ -840,7 +918,7 @@ future models must verify the linked PR's status rather than trusting a stale
   tray smoke, then run all required checks and prepare a focused PR. No PR or
   merge is claimed here.
 
-### E037 — 2026-10-30: B09 local implementation and fixture verification
+### E040 — 2026-10-30: B09 local implementation and fixture verification
 
 - **Scope:** `rust-core/src/ordering.rs` owns typed provider ordering and tray
   selection. `rust-python/src/lib.rs` exposes the compatibility adapter;
@@ -883,12 +961,12 @@ future models must verify the linked PR's status rather than trusting a stale
   then wait for B06's serialized merge slot. Rebase/update from its merge before
   considering B09 merge; do not merge concurrently.
 
-### E038 — 2026-10-30: B09 PR opened
+### E041 — 2026-10-30: B09 PR opened
 
 - **PR:** [PR #39](https://github.com/SaahiilM/codexbar-gtk/pull/39), branch
   `orchestrated/luna-b09`, head `26458f8f9cb726eef33e5e82a1ca900d02c18561`,
   base `main`.
-- **Scope:** B09 implementation and local evidence in E037; synthetic GTK
+- **Scope:** B09 implementation and local evidence in E040; synthetic GTK
   screenshot is included in the PR description and in the repository.
 - **Observed GitHub state:** PR is open. `tray-dbus` is running and `test` is
   queued. No review/merge decision is recorded here.
@@ -899,7 +977,7 @@ future models must verify the linked PR's status rather than trusting a stale
 - **Next:** observe PR #39 checks/review, then wait for B06's merge before
   refreshing this branch from latest main.
 
-### E039 — 2026-10-30: B09 checks passed; B06 merge slot remains active
+### E042 — 2026-10-30: B09 checks passed; B06 merge slot remains active
 
 - **PR #39 state:** GitHub reported both `test` and `tray-dbus` successful on
   head `f6db236ed73f8927cc9267f9addb41305555612f`. The branch remains open and
@@ -911,3 +989,33 @@ future models must verify the linked PR's status rather than trusting a stale
 - **Next:** wait for the serialized B06 merge. Before B09 merge, fetch latest
   main, reconcile TASKS/AUDIT and version metadata, rerun affected checks, and
   coordinate the merge slot. No B09 merge is claimed.
+
+### E043 — 2026-10-30: B09 integrated merged B06 main and reran local checks
+
+- **Main update:** fetched `origin/main` at B06 merge commit
+  `5e4af068254959c07e9a932c42bed0679788b146`. B06 PR #38's `test` and
+  `tray-dbus` checks passed on head `75bba44231a2844f6c8b0c872ada3c16c24da895`.
+- **Conflict resolution:** merged the B06 main branch into B09, preserving the
+  currency core/backend/Python service, tests, preview and screenshot. Reconciled
+  `CHANGELOG.md` so B09 build 38 is above B06 build 37; retained B09 build 38
+  in VERSION/README/version.py; merged the task handoff so B05/B06 are checked
+  and B09 remains active. Combined both audit streams with unique IDs E036–E043.
+  `rust-core` and bridge module imports include both `currency` and `ordering`.
+- **Checks actually run on the combined source tree:** rustfmt for core/backend/
+  bridge; 65 core and 7 backend tests; Clippy with warnings denied for all three
+  crates; atomic extension build; Python default suite (163 tests, 2 opt-in-only
+  skips) and Rust-opt-in suite (163 tests, no skips); 3 tray D-Bus tests; version
+  metadata test; `git diff --check`. All passed.
+- **GTK smoke:** reran `CODEXBAR_RUST_CORE=1 python3
+  tools/preview_b09_synthetic.py`. With isolated HOME and synthetic providers,
+  the real app tray update selected Codex by ETA, and the panel showed Claude
+  then Codex while hiding Gemini. Refreshed screenshot at
+  `docs/rust-migration/screenshots/b09-tray-synthetic.png` was visually inspected.
+  Nonfatal EGL/accessibility and widget teardown warnings remain; a fake tray
+  sink is used, so this does not verify a live StatusNotifier host.
+- **PR state:** PR #39 had head `a49d370` conflicting with main before this
+  refresh. The integrated branch has not yet been pushed; no checks on the new
+  head or mergeability result have been observed. B09 remains build 38.
+- **Next:** commit and push the main integration, observe fresh CI and clean
+  GitHub mergeability, then coordinate the merge with orchestration. Do not
+  treat the previous `f6db236` checks as checks on the updated head.

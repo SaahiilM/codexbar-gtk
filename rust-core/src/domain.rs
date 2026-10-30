@@ -8,6 +8,7 @@
 use std::collections::HashMap;
 
 use chrono::{DateTime, NaiveDate, NaiveDateTime, TimeZone, Utc};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 fn python_max(values: impl IntoIterator<Item = f64>, default: f64) -> f64 {
@@ -72,7 +73,7 @@ pub fn optional_i64(value: Option<&Value>) -> Option<i64> {
 }
 
 /// Pace forecast for a quota window.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Pace {
     pub stage: String,
     pub delta_percent: Option<f64>,
@@ -156,7 +157,7 @@ pub fn pace_from_value(value: &Value) -> Option<Pace> {
 }
 
 /// Provider cost/limit data. A zero or negative limit is not a usable cap.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct CostInfo {
     pub used: f64,
     pub limit: f64,
@@ -343,7 +344,7 @@ pub fn detail_chart_from_value(value: &Value) -> Option<DetailChart> {
 }
 
 /// Chart attached to a provider detail section.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct DetailChart {
     pub kind: String,
     pub title: Option<String>,
@@ -361,7 +362,7 @@ impl DetailChart {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct CreditEvent {
     pub id: String,
     pub date: String,
@@ -369,7 +370,7 @@ pub struct CreditEvent {
     pub used: f64,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct DetailRow {
     pub label: String,
     pub value: String,
@@ -378,7 +379,7 @@ pub struct DetailRow {
     pub severity: String,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct DetailSection {
     pub title: Option<String>,
     pub rows: Vec<DetailRow>,
@@ -387,7 +388,7 @@ pub struct DetailSection {
 
 /// Aggregate context fields from a provider payload: credits, status, errors,
 /// plan, and reset credits.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ProviderContext {
     pub credits_remaining: Option<f64>,
     pub credits_available: bool,
@@ -631,7 +632,7 @@ pub fn agent_sessions_from_value(values: &Value) -> Option<Vec<AgentSession>> {
 }
 
 /// A running or recent coding-agent session.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct AgentSession {
     pub id: String,
     pub provider: String,
@@ -654,7 +655,7 @@ impl AgentSession {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SpendProvider {
     pub provider: String,
     pub cost: f64,
@@ -667,7 +668,7 @@ pub struct SpendProvider {
     pub cost_known: bool,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SpendSummary {
     pub total_cost: f64,
     pub cost_known: bool,
@@ -1042,7 +1043,7 @@ pub fn spend_from_payloads(payloads: &Value) -> SpendSummary {
 }
 
 /// Aggregate provider data consumed by dashboard and tray presentation.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ProviderUsage {
     pub provider_id: String,
     pub display_name: String,
@@ -1112,6 +1113,167 @@ impl ProviderUsage {
             .collect::<Vec<_>>()
             .join(" · ")
     }
+}
+
+/// Normalize one complete CLI provider envelope into the owned domain DTO
+/// consumed by the refresh controller. This composes the B02 field parsers so
+/// the backend does not need Python to assemble provider state.
+pub fn provider_usage_from_value(payload: &Value) -> Option<ProviderUsage> {
+    let object = payload.as_object()?;
+    let provider_id = object
+        .get("provider")
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("unknown")
+        .to_owned();
+    let usage = object.get("usage").and_then(Value::as_object);
+    let labels = object.get("rateWindowLabels").and_then(Value::as_object);
+
+    let mut windows = Vec::new();
+    for key in ["primary", "secondary", "tertiary"] {
+        let Some(raw_window) = usage.and_then(|usage| usage.get(key)) else {
+            continue;
+        };
+        let title = labels
+            .and_then(|labels| labels.get(key))
+            .and_then(Value::as_str);
+        if let Some(window) = rate_window_from_value(raw_window, key, title) {
+            windows.push(window);
+        }
+    }
+    if let Some(extra) = usage
+        .and_then(|usage| usage.get("extraRateWindows"))
+        .and_then(Value::as_array)
+    {
+        windows.extend(
+            extra
+                .iter()
+                .take(6)
+                .filter_map(extra_rate_window_from_value),
+        );
+    }
+
+    let mut pace = HashMap::new();
+    if let Some(raw_pace) = object.get("pace").and_then(Value::as_object) {
+        for key in ["primary", "secondary", "tertiary"] {
+            if let Some(parsed) = raw_pace.get(key).and_then(pace_from_value) {
+                pace.insert(key.to_owned(), parsed);
+            }
+        }
+    }
+
+    let cost = usage
+        .and_then(|usage| usage.get("providerCost"))
+        .and_then(Value::as_object)
+        .and_then(|cost| cost_from_value(&Value::Object(cost.clone())));
+    let context = provider_context_from_value(payload);
+    let identity = usage
+        .and_then(|usage| usage.get("identity"))
+        .and_then(Value::as_object);
+    let account_email = identity
+        .and_then(|identity| identity.get("accountEmail"))
+        .or_else(|| usage.and_then(|usage| usage.get("accountEmail")))
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    let login_method = identity
+        .and_then(|identity| identity.get("loginMethod"))
+        .or_else(|| usage.and_then(|usage| usage.get("loginMethod")))
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    let reset_credits_value = usage
+        .and_then(|usage| usage.get("codexResetCredits"))
+        .and_then(Value::as_object);
+    let reset_credits: Vec<Value> = reset_credits_value
+        .and_then(|value| value.get("credits"))
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|credit| {
+            credit
+                .get("status")
+                .and_then(Value::as_str)
+                .unwrap_or("available")
+                == "available"
+        })
+        .map(|credit| {
+            let granted = credit
+                .get("grantedAt")
+                .or_else(|| credit.get("granted_at"))
+                .and_then(Value::as_str)
+                .and_then(|value| parse_timestamp(Some(value)));
+            let expires = credit
+                .get("expiresAt")
+                .or_else(|| credit.get("expires_at"))
+                .and_then(Value::as_str)
+                .and_then(|value| parse_timestamp(Some(value)));
+            serde_json::json!({
+                "title": credit.get("title").cloned().unwrap_or(Value::Null),
+                "granted_at": granted,
+                "expires_at": expires,
+                "description": credit.get("description").cloned().unwrap_or(Value::Null),
+            })
+        })
+        .collect();
+    let details = usage
+        .and_then(|usage| usage.get("details"))
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(detail_section_from_value)
+        .collect();
+
+    let context = context.unwrap_or(ProviderContext {
+        credits_remaining: None,
+        credits_available: false,
+        credit_events: Vec::new(),
+        reset_credits_available: 0,
+        status_level: None,
+        status_description: None,
+        error: None,
+        plan: None,
+    });
+    Some(ProviderUsage {
+        provider_id: provider_id.clone(),
+        display_name: crate::providers::display_name(&provider_id),
+        source: object
+            .get("source")
+            .and_then(Value::as_str)
+            .map(str::to_owned),
+        version: object
+            .get("version")
+            .and_then(Value::as_str)
+            .map(str::to_owned),
+        updated_at: usage
+            .and_then(|usage| usage.get("updatedAt"))
+            .and_then(Value::as_str)
+            .and_then(|value| parse_timestamp(Some(value))),
+        account_email,
+        plan: context.plan,
+        login_method,
+        windows,
+        pace,
+        credits_remaining: context.credits_remaining,
+        credits_unit: usage
+            .and_then(|usage| usage.get("credits"))
+            .and_then(Value::as_object)
+            .and_then(|credits| credits.get("unit"))
+            .and_then(Value::as_str)
+            .unwrap_or("credits")
+            .to_owned(),
+        credits_available: context.credits_available,
+        cost,
+        status_level: context.status_level,
+        status_description: context.status_description,
+        error: context.error,
+        details,
+        reset_credits_available: context.reset_credits_available,
+        reset_credits,
+        credit_events: context.credit_events,
+        accounts: Vec::new(),
+        selected_account: None,
+        accent_color: crate::providers::accent_color(&provider_id).to_owned(),
+        raw: payload.clone(),
+    })
 }
 
 /// Normalize one standard CLI window envelope into a typed quota window.
@@ -1199,7 +1361,7 @@ fn json_truthy(value: &Value) -> bool {
 
 /// Typed quota window. Missing usage is represented by `usage_known = false`
 /// rather than conflated with a known zero.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct RateWindow {
     pub key: String,
     pub title: String,
@@ -1902,5 +2064,70 @@ mod tests {
         assert!(!summary.history_coverage_established);
         assert_eq!(summary.provenance, "from-totals");
         assert!(summary.cost_partial); // history coverage not established
+    }
+
+    #[test]
+    fn complete_provider_envelope_keeps_known_zero_distinct_from_unknown() {
+        let payload = json!({
+            "provider": "codex",
+            "source": "fixture",
+            "version": "1.2.3",
+            "rateWindowLabels": {"primary": "Session", "secondary": "Weekly"},
+            "usage": {
+                "updatedAt": "2026-10-30T12:00:00Z",
+                "primary": {"usedPercent": 0, "windowMinutes": 300},
+                "secondary": {"windowMinutes": 10080},
+                "identity": {"accountEmail": "synthetic@example.invalid", "loginMethod": "oauth", "plan": "Pro"},
+                "credits": {"remaining": 0, "creditsAvailable": true},
+                "providerCost": {"used": 0, "limit": 10, "currencyCode": "USD"}
+            },
+            "pace": {"primary": {"stage": "onTrack", "willLastToReset": true}},
+            "status": {"indicator": "ok", "description": "fixture status"}
+        });
+        let provider = provider_usage_from_value(&payload).unwrap();
+
+        assert_eq!(provider.provider_id, "codex");
+        assert_eq!(provider.display_name, "Codex");
+        assert_eq!(
+            provider.account_email.as_deref(),
+            Some("synthetic@example.invalid")
+        );
+        assert_eq!(provider.plan.as_deref(), Some("Pro"));
+        assert_eq!(provider.windows.len(), 2);
+        assert_eq!(provider.windows[0].used_percent, 0.0);
+        assert!(provider.windows[0].usage_known);
+        assert_eq!(provider.windows[1].used_percent, 0.0);
+        assert!(!provider.windows[1].usage_known);
+        assert_eq!(provider.credits_remaining, Some(0.0));
+        assert!(provider.credits_available);
+        assert_eq!(provider.cost.as_ref().map(|cost| cost.used), Some(0.0));
+        assert_eq!(provider.raw, payload);
+    }
+
+    #[test]
+    fn shared_b10_provider_fixture_normalizes_full_envelope() {
+        let payload: Value =
+            serde_json::from_str(include_str!("../../tests/fixtures/b10/provider_usage.json"))
+                .unwrap();
+        let provider = provider_usage_from_value(&payload).unwrap();
+
+        assert_eq!(provider.provider_id, "codex");
+        assert_eq!(
+            provider.account_email.as_deref(),
+            Some("synthetic@example.invalid")
+        );
+        assert_eq!(provider.plan.as_deref(), Some("Pro"));
+        assert_eq!(provider.windows.len(), 3);
+        assert!(provider.windows[0].usage_known);
+        assert!(!provider.windows[1].usage_known);
+        assert_eq!(provider.windows[0].used_percent, 0.0);
+        assert_eq!(provider.windows[2].key, "credits");
+        assert_eq!(provider.credits_remaining, Some(0.0));
+        assert_eq!(provider.credit_events.len(), 1);
+        assert_eq!(provider.reset_credits.len(), 1);
+        assert_eq!(provider.details.len(), 1);
+        assert_eq!(provider.details[0].rows.len(), 1);
+        assert_eq!(provider.details[0].chart.as_ref().unwrap().points.len(), 1);
+        assert_eq!(provider.pace["primary"].expected_used_percent, Some(30.0));
     }
 }

@@ -9,16 +9,16 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Field | Current checkpoint |
 | --- | --- |
 | Goal | Fully native Rust GTK4/libadwaita app; backend first, UI second |
-| Current phase | B11 login/auth service; native UI implementation must wait for BG |
-| Last merged implementation | B07 PR #42 merged at `e9dda26`, build `0.82.0 (41)` |
+| Current phase | B10 refresh controller; native UI implementation must wait for BG |
+| Last merged implementation | B11 PR #43 merged at `a33f0977`, build `0.82.0 (42)` |
 | Planning change | [PR #18](https://github.com/SaahiilM/codexbar-gtk/pull/18), merged at `69c5496`, build `0.81.0 (17)` |
-| Backend tasks completed after that baseline | B00–B09, B12 and B01/B02 sub-slices merged; B07 merged in PR #42 |
-| Active implementation task / owner | B11 login/auth service, owner: current coding-agent session |
-| Active task | **B11** — PTY/auth service on `orchestrated/luna-b11`, PR #43 open from build `0.82.0 (42)` on B07 merge `e9dda26` |
-| Next domain slice | **B11** — observe PR #43 required checks/reviews, then merge normally after they pass and verify latest main |
-| Open external blockers | GitHub has not reported checks yet on PR #43; no reviews reported. B10 has the next serialized slot/build 43. |
-| Latest checks | Build 42: 68 core + 32 backend tests, format/Clippy for all crates, extension build, 182 Python tests in both modes (7 expected Rust-only skips by default), and 3 private-D-Bus tray tests in both modes passed. Focused sanitized login rerun passed 32 backend + 5 Python tests; see AUDIT E058–E059. |
-| UI validation | Rust-opt-in GTK login fixture flow completed under temporary HOME/private D-Bus; neutral pre-launch dialog screenshot is `screenshots/b11-login-neutral.png` (AUDIT E058). |
+| Backend tasks completed after that baseline | B00–B09, B11, B12 and B01/B02 sub-slices merged |
+| Active implementation task / owner | B10 refresh controller, owner: current coding-agent session |
+| Active task | **B10** — commit `ee3f9c3` rebased onto `a33f0977`; build `0.82.0 (43)` follows merged B11 build 42 |
+| Next domain slice | **B10** — PR #44 is open; verify its exact-head checks/reviews and merge normally if GitHub permits. B13/B14 remain downstream |
+| Open external blockers | No dependency blockers. B10 PR #44 initially reported `tray-dbus` success and `test` in progress; recheck the live exact head before merge. B11's merge-SHA run #41111847909 ended `startup_failure` with zero jobs, not a CI pass. |
+| Latest checks | B10 build-43 post-rebase local workflow: 70 core + 37 backend tests; strict Clippy/rustfmt for all crates; bridge build; 183 Python tests in both modes (8 expected opt-in skips in default mode); 3 tray D-Bus tests in both modes. PR #44 initial status is in AUDIT E063. |
+| UI validation | B10 Rust-opt-in fixture GTK smoke with isolated HOME/private D-Bus is recorded in E062; screenshot [b10-controller-synthetic.png](screenshots/b10-controller-synthetic.png). B11's neutral login screenshot and flow are recorded in E058–E059. |
 
 **First commands for a new model/session:**
 
@@ -82,8 +82,8 @@ into smaller PRs without declaring the parent complete early.
 | [x] **B07** CLI service | B00 | Port executable discovery, argv/TZ handling, timeout/reaping, stdout/stderr/errors, JSON envelopes and command wrappers. Merged PR #42 at `e9dda26`; both checks passed. See AUDIT E054–E056. |
 | [x] **B08** Notification policies | B01, B02, B05 | Port threshold transitions, session-exhaustion tracking, predictive pace cycles and credit-expiry deduplication. PR #40 merged at `9d272fd`; checks passed (see AUDIT E049). OS notification delivery remains frontend/platform work. |
 | [x] **B09** Provider ordering and tray selection | B01, B02, B05 | Port visibility/order, automatic quota ranking and ETA trust/filtering; preserve deterministic ties, depleted quotas and placeholder exclusion. Merged PR #39 at `93b62bb`; checks passed. |
-| [ ] **B10** Refresh controller | B02–B05, B07–B09 | Port polling/manual mode, forced refresh queuing, cancellation/shutdown, account collection, partial cost fallback, retained sessions/spend, history recording and snapshot/event publication. No I/O/callbacks under GUI locks. |
-| [ ] **B11** Login/auth process service | B00, B07 | Active on `orchestrated/luna-b11`, build 42: integrate discovery and `CliService::run` auth status, route the opt-in GTK login caller through the Rust PTY service, preserve bounded ephemeral events/safe snapshots, and add fixture GTK evidence. See AUDIT E057 onward. |
+| [ ] **B10** Refresh controller | B02–B05, B07–B09 | Port immediate/dynamic polling, manual mode, one queued forced-refresh follow-up, joined shutdown, account collection, partial cost fallback, retained sessions/spend, successful-scan history samples and snapshot/event publication. Complete top-level B02 provider-envelope composition with shared-fixture Python parity; no I/O/callbacks under GUI locks. PR #44 open on `backend/b10-refresh-controller`, build 43; see AUDIT E062–E063. |
+| [x] **B11** Login/auth process service | B00, B07 | PR #43 merged at `a33f0977`. Build-42 local Rust/Python/GTK verification passed (AUDIT E058–E059); GitHub run #41111847909 ended `startup_failure` with zero jobs, so no CI pass is claimed. |
 | [x] **B12** Read-only update service | B00 | Port public VERSION parsing/comparison and bounded HTTP fetch; test invalid/oversized/network-failure responses. PR #41 merged at `bd58f46`; both checks passed on head `21537ba` (AUDIT E053). No code download/install behavior. |
 | [ ] **B13** Extract backend work embedded in UI | B04–B12 | Audit all `ui/*.py` workers and policies: spend model grouping/time ranges/currency/partial-state presentation, tray summaries, settings CLI actions, launch-at-login actions, restart/update workers. Move non-widget responsibilities behind the Rust API; log remaining frontend-only behavior explicitly. |
 | [ ] **B14** Full transitional backend integration | B06, B10–B13 | Python GTK uses a single Rust service facade and thin conversion/marshalling adapters. Settings actions and login flows use it too. Prove no Python subprocess/HTTP/polling/notification-policy backend remains. |

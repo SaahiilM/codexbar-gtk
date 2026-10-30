@@ -210,7 +210,7 @@ The GTK front-end uses the same version pair as the macOS bundle:
   this client is feature-compatible with (`0.82.0`).
 * `CURRENT_PROJECT_VERSION` is the build number of the Linux front-end.
 * `codexbar_gtk/version.py` turns the pair into the macOS-style
-  `"0.82.0 (42)"` string shown under Settings → About, in the tray menu and by
+  `"0.82.0 (43)"` string shown under Settings → About, in the tray menu and by
   `./run.sh --about`.
 
 Increment `CURRENT_PROJECT_VERSION` for each merged PR and keep it in sync with
@@ -223,8 +223,9 @@ changes. [`CHANGELOG.md`](CHANGELOG.md) records the changes in each build.
 The headless Rust service contract is being introduced in `rust-backend/`.
 It uses Tokio for async work, keeps GTK outside the backend crate, and publishes
 latest-value snapshots through a watch channel. This is migration scaffolding;
-the existing application still runs its Python backend by default, and its
-optional Rust flag still selects the existing PyO3 module integrations only.
+the existing application still runs its Python backend by default, while the
+Rust opt-in routes refresh polling and typed notification events through the
+Rust controller and uses existing PyO3 module integrations for other ports.
 
 ```sh
 ./run.sh                                  # run from the checkout

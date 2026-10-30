@@ -484,18 +484,22 @@ class MeterRow(Gtk.Box):
         window = self.window
         used = window.used_percent
 
-        if self.show_used:
-            self.percent_label.set_text(format_percent(used))
+        if not window.usage_known:
+            self.percent_label.set_text("Unavailable")
+            self.progress.set_meter(0.0, "#808892", [], self.workday_ticks)
         else:
-            self.percent_label.set_text(format_remaining(used))
+            if self.show_used:
+                self.percent_label.set_text(format_percent(used))
+            else:
+                self.percent_label.set_text(format_remaining(used))
 
-        severity = severity_for(used, self.thresholds)
-        self.progress.set_meter(
-            min(1.0, max(0.0, used / 100.0)),
-            _severity_color(severity, self.accent_color),
-            self.thresholds,
-            self.workday_ticks,
-        )
+            severity = severity_for(used, self.thresholds)
+            self.progress.set_meter(
+                min(1.0, max(0.0, used / 100.0)),
+                _severity_color(severity, self.accent_color),
+                self.thresholds,
+                self.workday_ticks,
+            )
 
         reset_text = format_reset(window.resets_at, self.reset_style, now)
         if reset_text is None:
@@ -901,11 +905,12 @@ class ProviderCard(Gtk.Box):
             parts.append(provider.plan)
         for row in self.meters:
             window = row.window
-            used = (
-                f"{window.used_percent:.0f}%"
-                if self.show_used
-                else f"{window.remaining_percent:.0f}% left"
-            )
+            if not window.usage_known:
+                used = "unavailable"
+            elif self.show_used:
+                used = f"{window.used_percent:.0f}%"
+            else:
+                used = f"{window.remaining_percent:.0f}% left"
             countdown = format_countdown(window.resets_at)
             text = f"{window.title} {used}"
             if countdown:

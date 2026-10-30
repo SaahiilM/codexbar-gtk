@@ -1,10 +1,14 @@
 use chrono::{DateTime, NaiveDate, TimeZone, Utc};
 use codexbar_backend::cli::{self, CliError, CliService};
+use codexbar_backend::controller::{
+    ControllerCommand, ControllerSnapshot, RefreshControllerConfig, RefreshControllerHandle,
+};
 use codexbar_backend::login::{
     LoginCompletionKind, LoginError, LoginEvent, LoginPrompt, LoginSession as BackendLoginSession,
     LoginSnapshot, LoginStatus,
 };
 use codexbar_backend::updates::{self, UpdateCheckRequest, UpdateError, UpdateRelation, Version};
+use codexbar_backend::{BackendError, BackendEventKind, BackendStatus};
 use codexbar_core::{
     activity, charts, currency, domain, formatting, history, notifications, ordering, pace,
     preferences, providers,
@@ -17,9 +21,14 @@ use std::collections::HashMap;
 use std::ffi::OsString;
 use std::future::Future;
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, Mutex,
+};
 use std::time::Duration;
+use std::time::UNIX_EPOCH;
 use tokio::runtime::Runtime;
+use tokio::sync::{mpsc, watch};
 
 type HistorySample = (f64, String, String, f64);
 type PaceTuple = (
@@ -86,12 +95,12 @@ type AgentSessionTuple = (
 
 #[pyclass(name = "HistoryStore")]
 struct RustHistoryStore {
-    inner: history::HistoryStore,
+    inner: Arc<history::HistoryStore>,
 }
 
 #[pyclass(name = "PreferencesStore")]
 struct RustPreferencesStore {
-    inner: preferences::PreferencesStore,
+    inner: Arc<preferences::PreferencesStore>,
 }
 
 #[pyclass(name = "CliService")]
@@ -108,6 +117,16 @@ struct RustLoginSession {
     session: Mutex<Option<BackendLoginSession>>,
     events: Mutex<Option<tokio::sync::mpsc::Receiver<LoginEvent>>>,
     state: Mutex<Option<tokio::sync::watch::Receiver<LoginSnapshot>>>,
+}
+
+#[pyclass(name = "RefreshController")]
+struct RustRefreshController {
+    runtime: Option<Runtime>,
+    handle: Mutex<Option<RefreshControllerHandle>>,
+    state: watch::Receiver<codexbar_backend::BackendState<ControllerSnapshot>>,
+    force_refresh: mpsc::Sender<ControllerCommand>,
+    notifications: Mutex<mpsc::Receiver<codexbar_backend::BackendEvent>>,
+    shutdown_complete: Arc<AtomicBool>,
 }
 
 #[pyclass(name = "NotificationPolicy")]
@@ -418,7 +437,7 @@ impl RustPreferencesStore {
     #[new]
     fn new(path: PathBuf) -> Self {
         Self {
-            inner: preferences::PreferencesStore::new(path),
+            inner: Arc::new(preferences::PreferencesStore::new(path)),
         }
     }
 
@@ -869,6 +888,176 @@ impl RustCliService {
     }
 }
 
+fn backend_status_name(status: BackendStatus) -> &'static str {
+    match status {
+        BackendStatus::Idle => "idle",
+        BackendStatus::Refreshing => "refreshing",
+        BackendStatus::Ready => "ready",
+        BackendStatus::Failed => "failed",
+        BackendStatus::Stopped => "stopped",
+    }
+}
+
+fn backend_error_json(error: BackendError) -> Value {
+    let kind = match error.kind {
+        codexbar_backend::BackendErrorKind::Cancelled => "cancelled",
+        codexbar_backend::BackendErrorKind::Configuration => "configuration",
+        codexbar_backend::BackendErrorKind::Network => "network",
+        codexbar_backend::BackendErrorKind::Protocol => "protocol",
+        codexbar_backend::BackendErrorKind::Process => "process",
+        codexbar_backend::BackendErrorKind::Storage => "storage",
+        codexbar_backend::BackendErrorKind::Timeout => "timeout",
+        codexbar_backend::BackendErrorKind::Internal => "internal",
+    };
+    serde_json::json!({"kind": kind, "operation": error.operation})
+}
+
+#[pymethods]
+impl RustRefreshController {
+    #[new]
+    fn new(
+        executable: PathBuf,
+        timezone: Option<String>,
+        preferences: PyRef<'_, RustPreferencesStore>,
+        history: PyRef<'_, RustHistoryStore>,
+    ) -> PyResult<Self> {
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .map_err(|_| PyRuntimeError::new_err("could not start refresh runtime"))?;
+        let config = RefreshControllerConfig::new(
+            CliService::new(executable, timezone.map(OsString::from)),
+            preferences.inner.clone(),
+            history.inner.clone(),
+        );
+        let mut handle = {
+            let _entered = runtime.enter();
+            RefreshControllerHandle::start(config)
+        };
+        let state = handle.state();
+        let force_refresh = handle.force_refresh_sender();
+        let notifications = handle
+            .take_notification_receiver()
+            .expect("new controller owns its notification receiver");
+        Ok(Self {
+            runtime: Some(runtime),
+            handle: Mutex::new(Some(handle)),
+            state,
+            force_refresh,
+            notifications: Mutex::new(notifications),
+            shutdown_complete: Arc::new(AtomicBool::new(false)),
+        })
+    }
+
+    /// Read the latest immutable state without waiting for backend work.
+    fn state_sequence(&self) -> u64 {
+        self.state.borrow().sequence
+    }
+
+    fn state_json(&self) -> PyResult<String> {
+        let state = self.state.borrow();
+        let changed_at = state
+            .changed_at
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs_f64();
+        let snapshot = state
+            .snapshot
+            .as_ref()
+            .map(|snapshot| serde_json::to_value(snapshot.as_ref()))
+            .transpose()
+            .map_err(|_| PyRuntimeError::new_err("controller_snapshot_encode"))?;
+        serde_json::to_string(&serde_json::json!({
+            "sequence": state.sequence,
+            "changed_at": changed_at,
+            "status": backend_status_name(state.status),
+            "snapshot": snapshot,
+            "last_error": state.last_error.map(backend_error_json),
+        }))
+        .map_err(|_| PyRuntimeError::new_err("controller_state_encode"))
+    }
+
+    /// Queue one explicit refresh without blocking the GTK thread.
+    fn force_refresh(&self) -> bool {
+        self.force_refresh
+            .try_send(ControllerCommand::ForceRefresh)
+            .is_ok()
+    }
+
+    /// Drain typed notification transitions separately from coalescing state.
+    fn drain_events_json(&self, max_events: Option<usize>) -> PyResult<String> {
+        let limit = max_events.unwrap_or(256).min(256);
+        let mut receiver = self
+            .notifications
+            .lock()
+            .map_err(|_| PyRuntimeError::new_err("controller_event_lock"))?;
+        let mut items = Vec::new();
+        for _ in 0..limit {
+            match receiver.try_recv() {
+                Ok(event) => {
+                    let emitted_at = event
+                        .emitted_at
+                        .duration_since(UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs_f64();
+                    let kind = match event.kind {
+                        BackendEventKind::Notification(event) => notification_event_json(event),
+                    };
+                    items.push(serde_json::json!({
+                        "sequence": event.sequence,
+                        "emitted_at": emitted_at,
+                        "event": kind,
+                    }));
+                }
+                Err(mpsc::error::TryRecvError::Empty | mpsc::error::TryRecvError::Disconnected) => {
+                    break;
+                }
+            }
+        }
+        serde_json::to_string(&items)
+            .map_err(|_| PyRuntimeError::new_err("controller_events_encode"))
+    }
+
+    /// Request cancellation and join asynchronously; poll `shutdown_complete`.
+    fn request_shutdown(&self) -> PyResult<()> {
+        let handle = self
+            .handle
+            .lock()
+            .map_err(|_| PyRuntimeError::new_err("controller_handle_lock"))?
+            .take();
+        let Some(handle) = handle else {
+            return Ok(());
+        };
+        let runtime = self
+            .runtime
+            .as_ref()
+            .ok_or_else(|| PyRuntimeError::new_err("controller_runtime_stopped"))?;
+        let complete = self.shutdown_complete.clone();
+        runtime.spawn(async move {
+            let _ = handle.shutdown().await;
+            complete.store(true, Ordering::Release);
+        });
+        Ok(())
+    }
+
+    fn shutdown_complete(&self) -> bool {
+        self.shutdown_complete.load(Ordering::Acquire)
+    }
+}
+
+impl Drop for RustRefreshController {
+    fn drop(&mut self) {
+        if let Ok(handle) = self.handle.get_mut() {
+            drop(handle.take());
+        }
+        if let Some(runtime) = self.runtime.take() {
+            // Destruction can happen on GTK's main thread. Cancellation has
+            // already been signalled by dropping the handle; never join here.
+            runtime.shutdown_background();
+        }
+    }
+}
+
 #[pyfunction]
 fn discover_cli_executable(
     name: &str,
@@ -900,7 +1089,7 @@ impl RustHistoryStore {
     #[new]
     fn new(path: PathBuf, retention_days: i64) -> Self {
         Self {
-            inner: history::HistoryStore::new(path, retention_days),
+            inner: Arc::new(history::HistoryStore::new(path, retention_days)),
         }
     }
 
@@ -1073,6 +1262,13 @@ fn provider_context_from_json(payload: &str) -> Option<ProviderContextTuple> {
         context.error,
         context.plan,
     ))
+}
+
+#[pyfunction]
+fn provider_usage_from_json(payload: &str) -> Option<String> {
+    let payload: Value = serde_json::from_str(payload).ok()?;
+    let provider = domain::provider_usage_from_value(&payload)?;
+    serde_json::to_string(&provider).ok()
 }
 
 #[pyfunction]
@@ -1769,6 +1965,7 @@ fn _rust_core(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<RustNotificationPolicy>()?;
     module.add_class::<RustCliService>()?;
     module.add_class::<RustLoginSession>()?;
+    module.add_class::<RustRefreshController>()?;
     module.add_function(wrap_pyfunction!(discover_cli_executable, module)?)?;
     module.add_function(wrap_pyfunction!(terminal_command_argv, module)?)?;
     module.add_function(wrap_pyfunction!(browser_command_argv, module)?)?;
@@ -1785,6 +1982,7 @@ fn _rust_core(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(cost_from_json, module)?)?;
     module.add_function(wrap_pyfunction!(detail_section_from_json, module)?)?;
     module.add_function(wrap_pyfunction!(provider_context_from_json, module)?)?;
+    module.add_function(wrap_pyfunction!(provider_usage_from_json, module)?)?;
     module.add_function(wrap_pyfunction!(agent_session_from_json, module)?)?;
     module.add_function(wrap_pyfunction!(agent_sessions_from_json, module)?)?;
     module.add_function(wrap_pyfunction!(pace_from_json, module)?)?;

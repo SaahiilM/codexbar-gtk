@@ -4,6 +4,7 @@
 //! are introduced in `codexbar-core`; service integrations can then expose
 //! `BackendHandle<Snapshot>` to either frontend without moving policy into it.
 
+pub mod controller;
 pub mod currency;
 pub mod login;
 pub mod updates;
@@ -221,6 +222,26 @@ impl<T> StatePublisher<T> {
             state.status = BackendStatus::Ready;
             state.snapshot = Some(Arc::new(snapshot));
             state.last_error = None;
+        });
+    }
+
+    /// Publish usable data while recording a sanitized partial-operation error.
+    /// The snapshot remains current; callers can show the data and its warning.
+    pub fn publish_with_error(&self, snapshot: T, error: BackendError) {
+        self.update(|state| {
+            state.status = BackendStatus::Ready;
+            state.snapshot = Some(Arc::new(snapshot));
+            state.last_error = Some(error);
+        });
+    }
+
+    /// Publish the last usable snapshot with a failed-refresh status.
+    /// This advances state revision without replacing known data with defaults.
+    pub fn fail_with_snapshot(&self, snapshot: T, error: BackendError) {
+        self.update(|state| {
+            state.status = BackendStatus::Failed;
+            state.snapshot = Some(Arc::new(snapshot));
+            state.last_error = Some(error);
         });
     }
 

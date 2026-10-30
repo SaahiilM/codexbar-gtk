@@ -4,7 +4,21 @@ Client-side changelog for the CodexBar GTK front-end. Each entry keys a build
 number (`CURRENT_PROJECT_VERSION`) to the upstream macOS CodexBar release its
 short version tracks, so "which version has what" maps cleanly onto both trees.
 
-## Unreleased
+## 0.82.0 (40) — 2026-10-30
+
+Tracks upstream CodexBar 0.82.0.
+
+### Added
+
+- Add a typed, read-only Rust update check with a bounded public VERSION fetch,
+  numeric version comparison, and sanitized failure categories.
+- Keep update HTTP and version policy in the service adapter; the GTK dialog
+  renders the typed result.
+
+### Validation
+
+- See `docs/rust-migration/AUDIT.md` for B12 parity tests, bounded HTTP fixtures,
+  Rust opt-in GTK smoke evidence, and exact check results.
 
 ## 0.82.0 (39) — 2026-10-30
 

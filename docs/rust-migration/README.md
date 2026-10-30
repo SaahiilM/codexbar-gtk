@@ -43,7 +43,8 @@ Python GTK widgets                        Rust GTK4/libadwaita widgets
   Tokio runtime; the GTK main thread must never block on backend I/O. State is
   exposed as immutable snapshots over `tokio::sync::watch` (latest-value
   semantics), with cooperative cancellation and explicit join on shutdown.
-  Add `reqwest` with Rustls in B06 for bounded HTTP work. Defer `portable-pty`
+  Add `reqwest` with Rustls in B12 for the bounded read-only update check and
+  reuse it for currency HTTP refresh in B06. Defer `portable-pty`
   to B11, where its platform/dependency needs can be verified against the fake
   login harness. This crate currently defines lifecycle/error/state contracts,
   not provider fetch behavior or current-app integration.

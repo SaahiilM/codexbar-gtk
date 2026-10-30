@@ -2,10 +2,49 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+import math
+from urllib.error import URLError
 from urllib.request import Request, urlopen
+
+from . import rust_bridge
 
 VERSION_URL = "https://raw.githubusercontent.com/SaahiilM/codexbar-gtk/main/VERSION"
 PROJECT_URL = "https://github.com/SaahiilM/codexbar-gtk"
+MAX_BYTES = 4096
+
+
+@dataclass(frozen=True)
+class UpdateCheckRequest:
+    """Current client metadata and injectable source for one read-only check."""
+
+    current_version: str
+    current_build: int
+    timeout: float = 5.0
+    url: str = VERSION_URL
+
+
+@dataclass(frozen=True)
+class UpdateCheckResult:
+    """Typed, read-only result for the update dialog to render."""
+
+    relation: str
+    latest_version: str
+    latest_build: int
+
+
+class UpdateCheckError(Exception):
+    """Stable and sanitized failure returned by the update service adapter."""
+
+    def __init__(self, kind: str):
+        self.kind = kind
+        messages = {
+            "invalid_marker": "The public version marker is invalid.",
+            "oversized": "The public version marker exceeds 4096 bytes.",
+            "timeout": "The public version check timed out.",
+            "network": "The public version check failed.",
+        }
+        super().__init__(messages.get(kind, messages["network"]))
 
 
 def parse_version_file(contents: str) -> tuple[str, int]:
@@ -40,3 +79,70 @@ def check_latest_version(timeout: float = 5.0) -> tuple[str, int]:
     with urlopen(request, timeout=timeout) as response:
         contents = response.read(4096).decode("utf-8")
     return parse_version_file(contents)
+
+
+def check_for_update(request: UpdateCheckRequest) -> UpdateCheckResult:
+    """Fetch and compare the public marker; callers only render this result.
+
+    ``url`` is injectable for loopback fixtures. The Rust opt-in path owns the
+    bounded HTTP request and comparison; Python remains the parity reference.
+    """
+    if not math.isfinite(request.timeout) or request.timeout <= 0:
+        raise UpdateCheckError("timeout")
+    core = rust_bridge.extension()
+    if core is not None:
+        try:
+            relation, latest_version, latest_build = core.check_latest_update(
+                request.url,
+                request.current_version,
+                str(request.current_build),
+                request.timeout,
+            )
+        except (OSError, ValueError) as error:
+            message = str(error)
+            if "exceeds 4096 bytes" in message:
+                kind = "oversized"
+            elif "invalid" in message:
+                kind = "invalid_marker"
+            elif "timed out" in message or "timeout" in message:
+                kind = "timeout"
+            elif isinstance(error, OSError):
+                kind = "network"
+            else:
+                kind = "invalid_marker"
+            raise UpdateCheckError(kind) from None
+        return UpdateCheckResult(relation, latest_version, int(latest_build))
+
+    http_request = Request(
+        request.url,
+        headers={"User-Agent": "CodexBar-GTK-update-check", "Accept": "text/plain"},
+    )
+    try:
+        with urlopen(http_request, timeout=min(request.timeout, 300.0)) as response:
+            contents = response.read(MAX_BYTES + 1)
+    except TimeoutError:
+        raise UpdateCheckError("timeout") from None
+    except (OSError, URLError):
+        raise UpdateCheckError("network") from None
+    if len(contents) > MAX_BYTES:
+        raise UpdateCheckError("oversized")
+    try:
+        latest_version, latest_build = parse_version_file(contents.decode("utf-8"))
+        relation = compare_versions(
+            (request.current_version, int(request.current_build)),
+            (latest_version, latest_build),
+        )
+    except (UnicodeDecodeError, ValueError):
+        raise UpdateCheckError("invalid_marker") from None
+    return UpdateCheckResult(relation, latest_version, latest_build)
+
+
+def compare_versions(current: tuple[str, int], latest: tuple[str, int]) -> str:
+    """Apply the update relation policy shared by the UI and Rust service."""
+    current_key = version_key(*current)
+    latest_key = version_key(*latest)
+    if latest_key > current_key:
+        return "available"
+    if latest_key < current_key:
+        return "ahead"
+    return "current"

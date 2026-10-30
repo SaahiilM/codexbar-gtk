@@ -1,4 +1,5 @@
 use chrono::{DateTime, NaiveDate, TimeZone, Utc};
+use codexbar_backend::updates::{self, UpdateCheckRequest, UpdateError, UpdateRelation, Version};
 use codexbar_core::{
     activity, charts, currency, domain, formatting, history, notifications, ordering, pace,
     preferences, providers,
@@ -9,6 +10,7 @@ use pyo3::types::{PyAny, PyBool, PyDict, PyFloat, PyInt, PyList};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::time::Duration;
 
 type HistorySample = (f64, String, String, f64);
 type PaceTuple = (
@@ -1275,6 +1277,51 @@ fn python_string(value: Option<&Value>) -> String {
     }
 }
 
+#[pyfunction]
+fn check_latest_update(
+    py: Python<'_>,
+    url: &str,
+    current_marketing: &str,
+    current_build: &str,
+    timeout_seconds: f64,
+) -> PyResult<(String, String, String)> {
+    if !timeout_seconds.is_finite() || timeout_seconds <= 0.0 {
+        return Err(PyValueError::new_err(
+            "update timeout must be a positive finite number",
+        ));
+    }
+    let current = Version::new(current_marketing, current_build)
+        .map_err(|_| PyValueError::new_err("current version metadata is invalid"))?;
+    let url = url.to_owned();
+    let timeout = Duration::try_from_secs_f64(timeout_seconds.min(300.0))
+        .map_err(|_| PyValueError::new_err("update timeout must be a positive finite number"))?;
+    let result = py.detach(move || {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|_| UpdateError::Network)?;
+        runtime.block_on(updates::check(UpdateCheckRequest::new(
+            current, url, timeout,
+        )))
+    });
+    let check = result.map_err(|error| match error {
+        UpdateError::InvalidMarker => PyValueError::new_err(error.to_string()),
+        UpdateError::Oversized => PyValueError::new_err(error.to_string()),
+        UpdateError::Timeout => PyOSError::new_err(error.to_string()),
+        UpdateError::Network => PyOSError::new_err(error.to_string()),
+    })?;
+    let relation = match check.relation {
+        UpdateRelation::Available => "available",
+        UpdateRelation::Current => "current",
+        UpdateRelation::Ahead => "ahead",
+    };
+    Ok((
+        relation.to_owned(),
+        check.latest.marketing,
+        check.latest.build,
+    ))
+}
+
 fn python_float(value: Option<&Value>) -> Option<f64> {
     match value? {
         Value::Null => None,
@@ -1287,6 +1334,7 @@ fn python_float(value: Option<&Value>) -> Option<f64> {
 
 #[pymodule]
 fn _rust_core(module: &Bound<'_, PyModule>) -> PyResult<()> {
+    module.add_function(wrap_pyfunction!(check_latest_update, module)?)?;
     module.add_class::<RustHistoryStore>()?;
     module.add_class::<RustPreferencesStore>()?;
     module.add_class::<RustCurrencyConverter>()?;

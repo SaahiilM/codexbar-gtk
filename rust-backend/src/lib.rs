@@ -5,6 +5,7 @@
 //! `BackendHandle<Snapshot>` to either frontend without moving policy into it.
 
 pub mod currency;
+pub mod updates;
 
 use std::{
     future::Future,

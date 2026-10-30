@@ -1118,3 +1118,91 @@ future models must verify the linked PR's status rather than trusting a stale
   fresh CI and UI verification pass.
 - **Next:** report the ready branch and settled DTO/channel contract to
   orchestration, then open/link the screenshot-bearing PR after coordination.
+
+### E049 — 2026-10-30: B08 PR #40 merged and verified
+
+- **Observed merge:** PR #40 merged at
+  `9d272fd810912133d0e42f35238dee1fc5e12a30`, now `origin/main`; PR head was
+  `1d0f396ca8d559af2ef0d0ad6e6ad9f70874ac9e`. GitHub Actions run `41102664352`
+  reports both required jobs, `test` and `tray-dbus`, `SUCCESS` on that head.
+- **Owner's local workflow at the exact PR head:** 68 Rust core tests and 10
+  Rust backend tests passed; rustfmt and Clippy checks passed for all three
+  crates; the Rust extension build passed; Python passed 171 tests in each
+  mode, with the 2 expected opt-in-only skips in default mode; 3 D-Bus tray
+  tests passed; and the synthetic GTK smoke passed. The GTK screenshot is
+  embedded in PR #40. No CI bypass was used.
+- **Build sequence:** B06 is build 37, B09 build 38, B08 build 39. B12 owns the
+  next slot at build 40, subject to current metadata verification.
+- **Next:** B12 fetches this main, reconciles shared Rust and handoff files, and
+  reruns its full checks and synthetic GTK smoke on the integrated tree.
+
+### E050 — 2026-10-30: B12 rebased onto B08 main; build 40 assigned
+
+- **Base/build:** refreshed `origin/main` to B08 merge
+  `9d272fd810912133d0e42f35238dee1fc5e12a30`; retained B12 as build
+  `0.82.0 (40)` after B08's build 39. `VERSION`, Python version metadata,
+  README and CHANGELOG now agree on build 40.
+- **Conflict reconciliation:** retained B08's notification policies, bounded
+  backend event channel, Python notification adapter, and successful metadata;
+  restored B12's `updates` backend module and PyO3 entry point. Tokio feature
+  sets and direct service dependencies are combined. Lockfiles preserve B08's
+  direct `serde_json` dependency alongside `reqwest` and Tokio.
+- **B12 contract:** a typed read-only request/result service with bounded HTTP
+  response and timeout, injectable fixture URL/fetch seam, and stable sanitized
+  errors. Unicode decimal version digits preserve Python behavior, including
+  Arabic-Indic/fullwidth numeric comparison; superscript digits pass Python
+  `isdigit()` but fail `int()` and return a sanitized invalid-marker error.
+  The Python reference parser is unchanged.
+- **Status at integration:** no B12 PR existed; integrated checks were pending
+  and are recorded in E051.
+- **Next:** report verified readiness to orchestration, then open the focused
+  screenshot-bearing PR.
+
+### E051 — 2026-10-30: B12 integrated verification on build 40
+
+- **Source/base:** B12 commit `1968d1f` is based on B08 merge
+  `9d272fd810912133d0e42f35238dee1fc5e12a30`. `VERSION`,
+  `codexbar_gtk/version.py`, README and CHANGELOG agree on `0.82.0 (40)`.
+- **Rust checks:** rustfmt checks passed for core, Python bridge and backend;
+  locked tests passed with 68 core and 14 backend tests; Clippy with all targets
+  and features and `-D warnings` passed for all three crates; the atomic Rust
+  extension build passed.
+- **Python and D-Bus checks:** default Python suite passed 174 tests with 2
+  expected Rust-opt-in-only skips; Rust-opt-in suite passed all 174 tests; all
+  3 tray D-Bus tests passed. `git diff --check` passed.
+- **GTK runtime smoke:** with Rust opt-in and an isolated temporary HOME, a
+  loopback-only HTTP fixture served `0.83.0 (1)`. The Rust update service
+  compared it with current `0.82.0 (40)`, and the typed available result passed
+  through `CodexBarApp._finish_update_check` into an actual Adw message dialog.
+  The heading was asserted and the refreshed screenshot
+  `docs/rust-migration/screenshots/b12-update-synthetic.png` was visually
+  inspected. Nonfatal EGL render-device permission, missing accessibility-bus,
+  and no-transient-parent GTK warnings appeared. No external network, account,
+  provider data, or credentials were used.
+- **Status:** B12 implementation and local verification are ready for PR; no
+  PR or GitHub CI result is claimed. The existing B08 checks belong to B08's
+  exact head only. Root checkout's uncommitted drafts remain untouched.
+- **Next:** notify orchestration before opening the screenshot-bearing PR, then
+  verify fresh PR head, reviews, mergeability, required checks and current main
+  before any merge. If GitHub Actions remains degraded, rely only on equivalent
+  passing local checks and GitHub's normal merge permission; do not bypass or
+  describe pending GitHub checks as passed.
+
+### E052 — 2026-10-30: B12 PR #41 opened; initial GitHub checks in progress
+
+- **PR/head/base:** [PR #41](https://github.com/SaahiilM/codexbar-gtk/pull/41),
+  `orchestrated/luna-b12`, head
+  `95f8a994d83f66a88907e1dd3f156279a4022e5a`, base `main` at
+  `9d272fd810912133d0e42f35238dee1fc5e12a30`. The description embeds the
+  synthetic GTK screenshot through an immutable raw URL.
+- **Observed at 18:14 UTC:** PR state `OPEN`, mergeability `MERGEABLE`, merge
+  state `UNSTABLE`, and no reviews. Run `41105073196` showed both `test` and
+  `tray-dbus` `IN_PROGRESS`; `gh pr checks` reported both pending. At this point
+  `origin/main` remained the B08 merge `9d272fd`.
+- **Service status:** GitHub Status still showed the Actions/Pages/Webhooks
+  incident as investigating, with Actions and Webhooks degraded. This is not a
+  B12 test result. Required GitHub checks remain intact; no bypass was used.
+- **Next:** observe checks on the exact current PR head. If the incident delays
+  them, local passing workflow-equivalent results are recorded in E051; merge
+  only if GitHub permits the ordinary PR merge and current head, reviews,
+  mergeability and `main` have been reverified.

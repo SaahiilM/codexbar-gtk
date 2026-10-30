@@ -15,9 +15,9 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Backend tasks completed after that baseline | B00, B01, B02a, B02b1, B02b2a, B02b2b1, B02b2b2a, B02b2b2b, B03, B04, B05, B06, B08 and B09 merged |
 | Active implementation task / owner | B12 read-only update service, owner: current coding-agent session |
 | Active task | **B12** — public VERSION parser/comparison and bounded HTTP check; branch `orchestrated/luna-b12`, build `0.82.0 (40)` |
-| Next domain slice | B12 is rebased on merged B08 main; rerun checks and GTK fixture smoke, then open the focused screenshot-bearing PR after orchestration coordination. |
-| Open external blockers | None known; observe required PR checks and serialized merge slot before merge. |
-| Latest checks | B08 merge verified on PR #40 run `41102664352`; B12 on refreshed main: 68 core + 14 backend Rust tests, format/Clippy all crates, extension build, 174 Python tests per mode (2 expected skips default), 3 tray D-Bus tests; all passed (AUDIT E051). |
+| Next domain slice | B12 PR #41 is open at head `95f8a99`; wait for its required checks and verify exact head/reviews/mergeability before any merge. |
+| Open external blockers | PR #41 required checks are in progress; GitHub Actions remains degraded. No bypass. |
+| Latest checks | B08 merge verified on PR #40 run `41102664352`; B12 local workflow on refreshed main: 68 core + 14 backend Rust tests, format/Clippy all crates, extension build, 174 Python tests per mode (2 expected skips default), 3 tray D-Bus tests; all passed (AUDIT E051). B12 GitHub run `41105073196` was in progress at initial observation (E052). |
 | UI validation | B08's four-event synthetic GTK smoke and screenshot are recorded in E049. B12's refreshed Rust loopback-to-dialog smoke passed; updated screenshot: [b12-update-synthetic.png](screenshots/b12-update-synthetic.png), see E051. |
 
 **First commands for a new model/session:**
@@ -216,6 +216,7 @@ invalid-marker result. The Python reference remains unchanged.
 The rebase retained B08's notification event channel, policies, and bridge
 adapter while adding B12's update module and PyO3 adapter. The integrated checks
 and loopback-fixture GTK smoke passed (AUDIT E051); root-checkout drafts remain
-untouched. No B12 PR exists yet. Next: notify orchestration, then open/link the
-screenshot-bearing PR. Merge only after a fresh state check and normal GitHub
-merge conditions.
+untouched. PR #41 is open and linked to the orchestration thread. Its initial
+required checks were in progress on the recorded head (E052); wait for fresh-
+head results. Merge only after verifying main, exact head, reviews, mergeability
+and normal GitHub merge conditions.

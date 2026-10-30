@@ -1187,3 +1187,22 @@ future models must verify the linked PR's status rather than trusting a stale
   before any merge. If GitHub Actions remains degraded, rely only on equivalent
   passing local checks and GitHub's normal merge permission; do not bypass or
   describe pending GitHub checks as passed.
+
+### E052 — 2026-10-30: B12 PR #41 opened; initial GitHub checks in progress
+
+- **PR/head/base:** [PR #41](https://github.com/SaahiilM/codexbar-gtk/pull/41),
+  `orchestrated/luna-b12`, head
+  `95f8a994d83f66a88907e1dd3f156279a4022e5a`, base `main` at
+  `9d272fd810912133d0e42f35238dee1fc5e12a30`. The description embeds the
+  synthetic GTK screenshot through an immutable raw URL.
+- **Observed at 18:14 UTC:** PR state `OPEN`, mergeability `MERGEABLE`, merge
+  state `UNSTABLE`, and no reviews. Run `41105073196` showed both `test` and
+  `tray-dbus` `IN_PROGRESS`; `gh pr checks` reported both pending. At this point
+  `origin/main` remained the B08 merge `9d272fd`.
+- **Service status:** GitHub Status still showed the Actions/Pages/Webhooks
+  incident as investigating, with Actions and Webhooks degraded. This is not a
+  B12 test result. Required GitHub checks remain intact; no bypass was used.
+- **Next:** observe checks on the exact current PR head. If the incident delays
+  them, local passing workflow-equivalent results are recorded in E051; merge
+  only if GitHub permits the ordinary PR merge and current head, reviews,
+  mergeability and `main` have been reverified.

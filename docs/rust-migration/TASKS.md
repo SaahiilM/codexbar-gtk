@@ -9,16 +9,16 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Field | Current checkpoint |
 | --- | --- |
 | Goal | Fully native Rust GTK4/libadwaita app; backend first, UI second |
-| Current phase | B05 preferences service; native UI implementation must wait |
-| Last merged implementation | B04 PR #36 merged at `8649c88`, build `0.82.0 (35)` |
+| Current phase | B09 provider ordering and tray selection; native UI implementation must wait |
+| Last merged implementation | B05 PR #37 merged at `878d4b7`, build `0.82.0 (36)` |
 | Planning change | [PR #18](https://github.com/SaahiilM/codexbar-gtk/pull/18), merged at `69c5496`, build `0.81.0 (17)` |
 | Backend tasks completed after that baseline | B00, B01, B02a, B02b1, B02b2a, B02b2b1, B02b2b2a, B02b2b2b, B03 and B04 merged |
-| Active implementation task / owner | B05 preferences service, owner: current coding-agent session |
-| Active task | **B05** — preferences service; [PR #37](https://github.com/SaahiilM/codexbar-gtk/pull/37), head `1768d52`, open with required checks running |
-| Next domain slice | **B05** — observe PR #37 checks; merge after required checks pass, then continue with B06 currency |
-| Open external blockers | None known; task dependencies below still apply |
-| Latest checks | B05 local: 56 core + 3 backend tests, all Clippy/format checks, extension build, 159 Python tests in each mode, and 3 tray D-Bus tests passed (AUDIT E034); PR #37 checks running as of 15:46 UTC |
-| UI validation | Rust-opt-in synthetic GTK Settings General page; toggling refresh-on-open persisted to the isolated settings file. [Screenshot](screenshots/b05-settings-synthetic.png); nonfatal GTK/EGL/accessibility warnings (AUDIT E034) |
+| Active implementation task / owner | B09 provider ordering and tray selection, owner: current coding-agent session |
+| Active task | **B09** — provider ordering and tray selection, branch `orchestrated/luna-b09`; locally verified, PR pending; build `0.82.0 (38)` |
+| Next domain slice | **B09** — open focused PR after status report; B06 has first merge slot/build 37; refresh from latest main before B09 merge |
+| Open external blockers | No code dependency blockers; merge waits for B06's serialized slot |
+| Latest checks | B09: 61 core + 3 backend tests, all format/Clippy checks, extension build, 161 Python tests in each mode, 3 tray D-Bus tests, diff check passed |
+| UI validation | Rust-opt-in fixture smoke used isolated home, Codex/Claude/Gemini synthetic DTOs, and a fake tray sink; auto selected Codex while panel order showed Claude then Codex. Screenshot: [b09-tray-synthetic.png](screenshots/b09-tray-synthetic.png). |
 
 **First commands for a new model/session:**
 
@@ -77,11 +77,11 @@ into smaller PRs without declaring the parent complete early.
 | [x] **B02** Provider usage normalization | B01 | Port provider envelopes, extra windows, pace, identity/plan, costs, details/charts, credits and reset-credit parsing. Completed in the B02 sub-slices below. |
 | [x] **B03** Agent-session normalization | B01 | Port session fields, timestamp handling, running-state classification and stable sorting; merged PR #35. |
 | [x] **B04** Spend normalization/aggregation | B01 | Port old/new CLI totals, coverage/provenance, partial/error handling, daily/project/model data and ordering; merged PR #36. |
-| [ ] **B05** Preferences service | B00 | Port defaults, known-key loading/import, portable export, atomic 0600 writes, reset/update, thread safety and refresh settings. Test disk failures and existing documents. Active on `backend/b05-preferences`; local verification complete. |
+| [x] **B05** Preferences service | B00 | Port defaults, known-key loading/import, portable export, atomic 0600 writes, reset/update, thread safety and refresh settings. Merged PR #37. |
 | [ ] **B06** Currency service | B00, B05 | Port currency catalog, labels, conversion, TTL/cache load/write, single-flight refresh and offline fallback; inject HTTP/time; connect monthly pace and spend callers. |
 | [ ] **B07** CLI service | B00 | Port executable discovery, argv/TZ handling, timeout/reaping, stdout/stderr/errors, JSON envelopes, usage/cost/sessions/config/hooks/plugins/account commands. Use fake executables, including failure and cancellation. |
 | [ ] **B08** Notification policies | B01, B02, B05 | Port threshold transitions, session-exhaustion tracking, predictive pace cycles and credit-expiry deduplication. Rust owns state; tests use explicit clocks and accounts. OS notification delivery remains frontend/platform work. |
-| [ ] **B09** Provider ordering and tray selection | B01, B02, B05 | Port visibility/order, automatic quota ranking and ETA trust/filtering; preserve deterministic ties, depleted quotas and placeholder exclusion. |
+| [ ] **B09** Provider ordering and tray selection | B01, B02, B05 | Port visibility/order, automatic quota ranking and ETA trust/filtering; preserve deterministic ties, depleted quotas and placeholder exclusion. Active on `orchestrated/luna-b09`. |
 | [ ] **B10** Refresh controller | B02–B05, B07–B09 | Port polling/manual mode, forced refresh queuing, cancellation/shutdown, account collection, partial cost fallback, retained sessions/spend, history recording and snapshot/event publication. No I/O/callbacks under GUI locks. |
 | [ ] **B11** Login/auth process service | B00, B07 | Port argv/browser request helpers, auth status and PTY login lifecycle; incremental ANSI/URL/prompt parsing, submitted input, timeout/cancel/reaping. Fake PTY tests only; no stored auth codes/URLs in audit. |
 | [ ] **B12** Read-only update service | B00 | Port public VERSION parsing/comparison and bounded HTTP fetch; test invalid/oversized/network-failure responses. No code download/install behavior. |

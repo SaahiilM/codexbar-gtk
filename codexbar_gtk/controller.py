@@ -26,6 +26,7 @@ from .data import (
     spend_from_payloads,
 )
 from .prefs import Preferences
+from .rust_bridge import extension
 
 
 @dataclass
@@ -253,6 +254,18 @@ class Controller:
     def _ordered(self, providers: list[ProviderUsage]) -> list[ProviderUsage]:
         order = list(self.prefs.get("providerOrder") or [])
         hidden = set(self.prefs.get("hiddenProviders") or [])
+        rust = extension()
+        if rust is not None:
+            try:
+                indices = rust.provider_order_indices(
+                    [provider.provider_id for provider in providers],
+                    [provider_id for provider_id in order if isinstance(provider_id, str)],
+                    [provider_id for provider_id in hidden if isinstance(provider_id, str)],
+                )
+                return [providers[index] for index in indices]
+            except (OverflowError, TypeError, ValueError):
+                # Keep Python's broader handling for unusual preference values.
+                pass
         visible = [p for p in providers if p.provider_id not in hidden]
 
         if not order:
@@ -488,6 +501,44 @@ def automatic_tray_selection(
     outranks one that lasts, then the smallest ETA, then the highest usage.
     """
     now = now or datetime.now(timezone.utc)
+    rust = extension()
+    if rust is not None:
+        candidates: list[tuple[ProviderUsage, RateWindow]] = []
+        used_percent: list[float] = []
+        placeholders: list[bool] = []
+        window_minutes: list[int | None] = []
+        seconds_until_reset: list[float | None] = []
+        expected_used_percent: list[float | None] = []
+        eta_seconds: list[float | None] = []
+        for provider in providers:
+            for window in provider.windows:
+                pace = provider.pace.get(window.key)
+                candidates.append((provider, window))
+                used_percent.append(float(window.used_percent))
+                placeholders.append(bool(window.is_placeholder))
+                window_minutes.append(window.window_minutes)
+                seconds_until_reset.append(
+                    (window.resets_at - now).total_seconds()
+                    if window.resets_at is not None
+                    else None
+                )
+                expected_used_percent.append(
+                    pace.expected_used_percent if pace is not None else None
+                )
+                eta_seconds.append(pace.eta_seconds if pace is not None else None)
+        try:
+            index = rust.automatic_quota_candidate(
+                used_percent,
+                placeholders,
+                window_minutes,
+                seconds_until_reset,
+                expected_used_percent,
+                eta_seconds,
+            )
+            return candidates[index] if index is not None else None
+        except (OverflowError, TypeError, ValueError):
+            # Keep Python's wider numeric/date support for out-of-contract data.
+            pass
     candidates: list[tuple[ProviderUsage, RateWindow, float | None]] = []
     for provider in providers:
         for window in provider.windows:

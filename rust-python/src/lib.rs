@@ -1,5 +1,7 @@
 use chrono::{DateTime, NaiveDate, Utc};
-use codexbar_core::{activity, charts, domain, formatting, history, pace, preferences, providers};
+use codexbar_core::{
+    activity, charts, domain, formatting, history, ordering, pace, preferences, providers,
+};
 use pyo3::exceptions::{PyOSError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyAny, PyBool, PyDict, PyFloat, PyInt, PyList};
@@ -448,6 +450,48 @@ fn provider_usage_max_used_percent(values: Vec<f64>) -> f64 {
 #[pyfunction]
 fn provider_usage_subtitle(plan: Option<&str>, account_email: Option<&str>) -> String {
     domain::ProviderUsage::subtitle_for(plan, account_email)
+}
+
+#[pyfunction]
+fn provider_order_indices(
+    provider_ids: Vec<String>,
+    provider_order: Vec<String>,
+    hidden_providers: Vec<String>,
+) -> Vec<usize> {
+    ordering::visible_order(&provider_ids, &provider_order, &hidden_providers)
+}
+
+#[pyfunction]
+fn automatic_quota_candidate(
+    used_percent: Vec<f64>,
+    placeholders: Vec<bool>,
+    window_minutes: Vec<Option<i64>>,
+    seconds_until_reset: Vec<Option<f64>>,
+    expected_used_percent: Vec<Option<f64>>,
+    eta_seconds: Vec<Option<f64>>,
+) -> Option<usize> {
+    let count = [
+        used_percent.len(),
+        placeholders.len(),
+        window_minutes.len(),
+        seconds_until_reset.len(),
+        expected_used_percent.len(),
+        eta_seconds.len(),
+    ]
+    .into_iter()
+    .min()
+    .unwrap_or_default();
+    let candidates: Vec<ordering::QuotaCandidate> = (0..count)
+        .map(|index| ordering::QuotaCandidate {
+            used_percent: used_percent[index],
+            placeholder: placeholders[index],
+            window_minutes: window_minutes[index],
+            seconds_until_reset: seconds_until_reset[index],
+            expected_used_percent: expected_used_percent[index],
+            eta_seconds: eta_seconds[index],
+        })
+        .collect();
+    ordering::automatic_selection(&candidates)
 }
 
 #[pyfunction]
@@ -962,6 +1006,8 @@ fn _rust_core(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(provider_usage_has_error, module)?)?;
     module.add_function(wrap_pyfunction!(provider_usage_max_used_percent, module)?)?;
     module.add_function(wrap_pyfunction!(provider_usage_subtitle, module)?)?;
+    module.add_function(wrap_pyfunction!(provider_order_indices, module)?)?;
+    module.add_function(wrap_pyfunction!(automatic_quota_candidate, module)?)?;
     module.add_function(wrap_pyfunction!(detail_chart_peak, module)?)?;
     module.add_function(wrap_pyfunction!(agent_session_is_running, module)?)?;
     module.add_function(wrap_pyfunction!(spend_from_json, module)?)?;

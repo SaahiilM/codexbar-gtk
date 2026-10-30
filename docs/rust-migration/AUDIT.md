@@ -812,3 +812,73 @@ future models must verify the linked PR's status rather than trusting a stale
   running; no review decision was present. No merge is recorded here.
 - **Next:** wait for both required checks; merge only after both pass, then
   record GitHub's merge commit and verify `origin/main`.
+
+### E036 — 2026-10-30: B09 provider ordering and tray selection claimed
+
+- **Owner/branch/base:** current coding-agent session, branch
+  `orchestrated/luna-b09`, based on live `origin/main` at `878d4b7` (B05 PR #37).
+- **Dependency state:** B01 and B02 are merged; B05 PR #37 is merged at
+  `878d4b7` and its `test` and `tray-dbus` checks passed. No open PRs were
+  present when B09 work began.
+- **Protected checkout:** `/home/sam/Desktop/Dev/codexbar-gtk` contains
+  uncommitted B09/B08/B12/B13 drafts. It was inspected read-only and left
+  unchanged. B09 was selectively implemented in this isolated worktree.
+- **Contract:** Rust owns provider visibility/order and Auto-lane ranking.
+  `order_providers(&[ProviderUsage], &[String], &[String]) -> Vec<ProviderUsage>`
+  returns owned DTOs, filters hidden IDs, applies saved positions and retains
+  input order for unspecified/equal entries. `automatic_tray_selection(&[ProviderUsage],
+  DateTime<Utc>) -> Option<AutomaticQuotaSelection>` returns owned provider ID,
+  window key and indices into the ordered provider/window vectors. Selection
+  considers non-placeholder finite nonnegative usage; full quotas rank first,
+  then trusted ETA (known window duration/reset, expected use >=3%, finite
+  positive ETA before reset), shortest ETA, and highest usage. Strict ties keep
+  the first candidate. B10 should place this result on the backend snapshot;
+  GTK renders it without duplicating policy.
+- **Status:** implementation in progress; B06 reserves build 37, so B09
+  reserves build `0.82.0 (38)` for its PR.
+- **Next:** finish bridge parity and fixture tests, perform the synthetic GTK
+  tray smoke, then run all required checks and prepare a focused PR. No PR or
+  merge is claimed here.
+
+### E037 — 2026-10-30: B09 local implementation and fixture verification
+
+- **Scope:** `rust-core/src/ordering.rs` owns typed provider ordering and tray
+  selection. `rust-python/src/lib.rs` exposes the compatibility adapter;
+  `codexbar_gtk/controller.py` routes `_ordered` and `automatic_tray_selection`
+  through Rust in opt-in mode with Python fallback for unsupported edge values.
+  `tests/test_rust_ordering_integration.py` compares both paths. A helper DTO
+  returns owned selection indices, provider ID and window key and supports
+  Serde serialization.
+- **Policy:** hidden provider IDs are filtered; saved order positions are
+  honored; unspecified entries retain input order. Tray candidates exclude
+  placeholders and invalid usage. Depleted quotas win, then trusted forecasts
+  with window duration/reset, expected usage >=3%, and finite positive ETA
+  before reset; shortest ETA and then highest usage rank next. Strict ties keep
+  the first candidate. The B10 snapshot should include the owned result from
+  the ordered provider vector; GTK only renders it. This exact API was sent to
+  active B10, B14 and orchestration threads before PR creation.
+- **Checks actually run:** core/bridge/backend rustfmt checks; 61 core and 3
+  backend tests; Clippy with warnings denied for core, bridge and backend;
+  atomic PyO3 extension build; 161 Python tests in default mode and 161 in Rust
+  opt-in mode; 3 private-D-Bus tray tests; 2 focused B09 parity tests; and
+  `git diff --check`. All final checks passed with no skips. The backend lock
+  file was refreshed for the core's new direct Serde derive dependency and its
+  locked test command then passed.
+- **GTK smoke:** ran `CODEXBAR_RUST_CORE=1 python3
+  tools/preview_b09_synthetic.py` with an isolated temporary HOME/config/data
+  tree, synthetic Codex/Claude/Gemini providers, and a fake tray sink. The real
+  `CodexBarApp._update_tray` path selected Codex by its trusted 2-hour ETA
+  despite Claude's higher 70% usage; the configured panel order displayed
+  Claude then Codex and filtered Gemini. The GTK panel screenshot is committed
+  at `docs/rust-migration/screenshots/b09-tray-synthetic.png`. No CLI, account,
+  credential, or real usage data was read. The smoke checked the app's tray
+  update path through a fake sink; it did not connect to a live StatusNotifier
+  host. GTK emitted nonfatal EGL/accessibility and widget teardown warnings.
+- **Build/handoff:** `VERSION`, `codexbar_gtk/version.py`, README and CHANGELOG
+  are synchronized at build `0.82.0 (38)` because B06 has the earlier merge
+  slot/build 37. Current `origin/main` remains `878d4b7`; refresh from latest
+  main and reconcile the task/audit handoff before B09 merge. No PR or merge is
+  claimed yet.
+- **Next:** report PR-ready status to orchestration, open the focused B09 PR,
+  then wait for B06's serialized merge slot. Rebase/update from its merge before
+  considering B09 merge; do not merge concurrently.

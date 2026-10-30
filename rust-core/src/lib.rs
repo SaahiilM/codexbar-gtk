@@ -8,6 +8,7 @@ pub mod charts;
 pub mod domain;
 pub mod formatting;
 pub mod history;
+pub mod ordering;
 pub mod pace;
 pub mod preferences;
 pub mod providers;

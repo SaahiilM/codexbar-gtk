@@ -397,8 +397,14 @@ mod tests {
     async fn event_channel_is_bounded_and_preserves_events_in_order() {
         let (publisher, mut receiver) = event_channel();
         assert_eq!(BACKEND_EVENT_CAPACITY, 256);
-        publisher.publish_notification(synthetic_event()).await.unwrap();
-        publisher.publish_notification(synthetic_event()).await.unwrap();
+        publisher
+            .publish_notification(synthetic_event())
+            .await
+            .unwrap();
+        publisher
+            .publish_notification(synthetic_event())
+            .await
+            .unwrap();
         assert_eq!(receiver.recv().await.unwrap().sequence, 0);
         assert_eq!(receiver.recv().await.unwrap().sequence, 1);
     }
@@ -407,17 +413,24 @@ mod tests {
     async fn full_event_channel_backpressures_without_losing_the_next_event() {
         let (publisher, mut receiver) = event_channel();
         for _ in 0..BACKEND_EVENT_CAPACITY {
-            publisher.publish_notification(synthetic_event()).await.unwrap();
+            publisher
+                .publish_notification(synthetic_event())
+                .await
+                .unwrap();
         }
         let blocked_publisher = publisher.clone();
         let blocked = tokio::spawn(async move {
-            blocked_publisher.publish_notification(synthetic_event()).await
+            blocked_publisher
+                .publish_notification(synthetic_event())
+                .await
         });
         assert!(timeout(Duration::from_millis(10), async {
             while !blocked.is_finished() {
                 tokio::task::yield_now().await;
             }
-        }).await.is_err());
+        })
+        .await
+        .is_err());
         assert_eq!(receiver.recv().await.unwrap().sequence, 0);
         timeout(Duration::from_secs(1), blocked)
             .await

@@ -21,7 +21,7 @@ NOW = datetime(2026, 10, 22, 12, 0, tzinfo=timezone.utc)
 class RustNotificationIntegrationTests(unittest.TestCase):
     @staticmethod
     def presentation(events):
-        fields = ("kind", "id", "title", "body", "used_percent", "account_email", "window_key")
+        fields = ("kind", "id", "title", "body", "used_percent", "provider_id", "account_email", "window_key")
         return [{key: event[key] for key in fields if key in event} for event in events]
 
     def provider(self, account="fixture@example.invalid"):
@@ -57,12 +57,14 @@ class RustNotificationIntegrationTests(unittest.TestCase):
             self.assertEqual(self.presentation(events), self.presentation(python.notification_events(state, NOW)))
             self.assertEqual(events[0]["provider_id"], "codex")
             self.assertEqual(events[0]["window_key"], "primary")
+            self.assertEqual(events[0]["account_email"], "fixture@example.invalid")
             self.assertEqual(
                 [event["kind"] for event in events],
                 ["quota_threshold", "session_exhausted", "predictive_pace", "credit_expiry"],
             )
             self.assertEqual(events[1]["account_email"], "fixture@example.invalid")
             self.assertEqual(events[2]["account_email"], "fixture@example.invalid")
+            self.assertTrue(all(event.get("provider_id") == "codex" for event in events))
             self.assertEqual(rust.notification_events(state, NOW), [])
             self.assertEqual(python.notification_events(state, NOW), [])
 
@@ -141,6 +143,34 @@ class RustNotificationIntegrationTests(unittest.TestCase):
             rearmed = rust.notification_events(state, NOW)
             self.assertEqual(self.presentation(rearmed), self.presentation(python.notification_events(state, NOW)))
             self.assertTrue(any(event["kind"] == "quota_threshold" for event in rearmed))
+
+    def test_unknown_usage_keeps_exhaustion_identity_until_disappearance(self):
+        with tempfile.TemporaryDirectory() as folder:
+            rust, python = self.controllers(folder)
+            state = AppState(providers=[self.provider()])
+            first = rust.notification_events(state, NOW)
+            self.assertEqual(self.presentation(first), self.presentation(python.notification_events(state, NOW)))
+            self.assertTrue(any(event["kind"] == "session_exhausted" for event in first))
+
+            unknown = self.provider()
+            unknown.windows[0].usage_known = False
+            unknown.windows[0].used_percent = 0
+            state.providers = [unknown]
+            unknown_events = rust.notification_events(state, NOW)
+            self.assertEqual(self.presentation(unknown_events), self.presentation(python.notification_events(state, NOW)))
+            self.assertFalse(any(event["kind"] == "session_exhausted" for event in unknown_events))
+
+            state.providers = [self.provider()]
+            still_exhausted = rust.notification_events(state, NOW)
+            self.assertEqual(self.presentation(still_exhausted), self.presentation(python.notification_events(state, NOW)))
+            self.assertFalse(any(event["kind"] == "session_exhausted" for event in still_exhausted))
+
+            state.providers = []
+            self.assertEqual(self.presentation(rust.notification_events(state, NOW)), self.presentation(python.notification_events(state, NOW)))
+            state.providers = [self.provider()]
+            reappeared = rust.notification_events(state, NOW)
+            self.assertEqual(self.presentation(reappeared), self.presentation(python.notification_events(state, NOW)))
+            self.assertTrue(any(event["kind"] == "session_exhausted" for event in reappeared))
 
     def test_per_window_disable_still_tracks_quota_rearm_reference_behavior(self):
         with tempfile.TemporaryDirectory() as folder:

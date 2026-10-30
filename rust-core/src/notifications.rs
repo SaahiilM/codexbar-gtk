@@ -106,7 +106,8 @@ impl NotificationPolicy {
         }
         for provider in providers {
             for window in &provider.windows {
-                if !window.usage_known || window.is_placeholder || !window.used_percent.is_finite() {
+                if !window.usage_known || window.is_placeholder || !window.used_percent.is_finite()
+                {
                     continue;
                 }
                 let (enabled, configured): (bool, &[f64]) = match window.key.as_str() {
@@ -174,7 +175,8 @@ impl NotificationPolicy {
                     window.key.clone(),
                 );
                 present.insert(key.clone());
-                if !window.usage_known || window.is_placeholder || !window.used_percent.is_finite() {
+                if !window.usage_known || window.is_placeholder || !window.used_percent.is_finite()
+                {
                     continue;
                 }
                 let exhausted = window.used_percent >= 100.0;

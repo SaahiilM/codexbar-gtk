@@ -341,22 +341,33 @@ class Controller:
         events = []
         events.extend({
             "kind": "quota_threshold", "provider_id": provider_id,
-            "account_email": account_email, "window_key": window_key,
+            "account_email": account_email or None, "window_key": window_key,
             "used_percent": used, "threshold_percent": threshold,
             "title": "Quota warning", "body": message,
         } for provider_id, account_email, window_key, used, threshold, message in self.quota_events(state))
-        events.extend({"kind": "session_exhausted", "title": title, "body": body}
-                      for title, body in self.session_quota_events(state))
-        events.extend({"kind": "predictive_pace", **event}
-                      for event in self.predictive_pace_events(state, now=now))
-        events.extend({"kind": "credit_expiry", **event}
-                      for event in self.credit_expiry_events(state, now=now))
+        events.extend({"kind": "session_exhausted", **event}
+                      for event in self._session_quota_event_records(state))
+        for event in self.predictive_pace_events(state, now=now):
+            identity = next(
+                ((provider.provider_id, provider.account_email, window.key)
+                 for provider in state.providers for window in provider.windows
+                 if event.get("id") == f"predictive-pace-{provider.provider_id}-{window.key}"),
+                (None, None, None),
+            )
+            events.append({"kind": "predictive_pace", "provider_id": identity[0],
+                           "account_email": identity[1] or None, "window_key": identity[2], **event})
+        for event in self.credit_expiry_events(state, now=now):
+            provider = next((provider for provider in state.providers
+                             if event.get("id") == f"reset-credit-expiry-{provider.provider_id}"), None)
+            events.append({"kind": "credit_expiry", "provider_id": provider.provider_id if provider else None, **event})
         return events
 
     def quota_events(self, state: AppState) -> list[tuple[str, str | None, str, float, float, str]]:
         """Return newly crossed quota warning thresholds.
 
-        Each entry is ``(provider_id, window_key, used_percent, message)``.
+        Each entry is ``(provider_id, account_email, window_key, used_percent,
+        threshold_percent, message)``. Account identity is carried in the typed
+        outcome; threshold deduplication keeps the Python provider/window key.
         """
         events: list[tuple[str, str | None, str, float, float, str]] = []
         if not self.prefs.get("quotaWarningNotificationsEnabled", True):
@@ -400,9 +411,9 @@ class Controller:
 
         return events
 
-    def session_quota_events(self, state: AppState) -> list[tuple[str, str]]:
-        """Return newly exhausted primary quota windows, once per exhaustion."""
-        events: list[tuple[str, str]] = []
+    def _session_quota_event_records(self, state: AppState) -> list[dict]:
+        """Return identity-preserving exhaustion outcomes for notification delivery."""
+        events: list[dict] = []
         enabled = bool(self.prefs.get("sessionQuotaNotificationsEnabled", True))
         seen: set[tuple[str, str, str]] = set()
         for provider in state.providers:
@@ -418,16 +429,22 @@ class Controller:
                 self._session_quota_seen[key] = exhausted
                 if enabled and exhausted and not was_exhausted:
                     account = f" ({provider.account_email})" if provider.account_email else ""
-                    events.append(
-                        (
-                            "Session quota exhausted",
-                            f"{provider.display_name}{account} {window.title} is exhausted.",
-                        )
-                    )
+                    events.append({
+                        "provider_id": provider.provider_id,
+                        "account_email": provider.account_email or None,
+                        "window_key": window.key,
+                        "title": "Session quota exhausted",
+                        "body": f"{provider.display_name}{account} {window.title} is exhausted.",
+                    })
         # Drop disappeared accounts/providers so a later appearance can notify again.
         for key in self._session_quota_seen.keys() - seen:
             self._session_quota_seen.pop(key, None)
         return events
+
+    def session_quota_events(self, state: AppState) -> list[tuple[str, str]]:
+        """Return the legacy title/body pairs for Python parity callers."""
+        return [(event["title"], event["body"])
+                for event in self._session_quota_event_records(state)]
 
     # -- pace and reset-credit events ------------------------------------
 

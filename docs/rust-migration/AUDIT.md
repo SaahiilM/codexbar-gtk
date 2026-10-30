@@ -1046,3 +1046,75 @@ future models must verify the linked PR's status rather than trusting a stale
   GitHub checks must be observed on any newer PR head before merge.
 - **Next:** push this audit/handoff refresh, verify the new head's checks and
   clean mergeability, coordinate with orchestration, then merge B09 build 38.
+
+### E046 — 2026-10-30: B09 merged; B08 merge slot is active
+
+- **Observed main update:** PR #39 merged at `93b62bbe6aafd3982f6b9f3a22023f04ddab4f83`.
+  `origin/main` now points at that merge. Both required checks (`test` and
+  `tray-dbus`) completed successfully on PR head
+  `f71c15d15829fc7a397a9d054f70773037a4bb4a`.
+- **Build sequence:** B06 is build 37 and B09 is build 38. B08 now owns the
+  third merge slot and build 39. No B08 PR or merge is claimed here.
+- **Next:** update the isolated B08 branch from this main, reconcile the B09
+  audit/handoff and version metadata, then rerun B08 checks and GTK fixture
+  smoke before opening its PR.
+
+### E047 — 2026-10-30: B08 rebased on B09 main
+
+- **Branch/base:** `backend/b08-notification-policy-service`, rebased on
+  `origin/main` `93b62bb` after B09's verified merge. Conflicts in shared
+  integration/documentation files were resolved while retaining B06 currency
+  and B09 ordering code, checks, build 38 and B09 audit entries. The earlier
+  B08 docs commit based on the old baseline was dropped; this handoff records
+  the current state instead.
+- **Contract:** `codexbar_core::notifications::NotificationPolicy::observe`
+  accepts `&[ProviderUsage]`, `&NotificationPreferences`, and an injected
+  `DateTime<Utc>`, then returns typed quota threshold, exhaustion, predictive
+  pace and credit expiry events. Event identity retains provider/account/window
+  fields where the Python reference uses them. Unknown or placeholder quota
+  windows do not fabricate zero or rearm dedupe; known zero remains a recovery.
+- **B10/B14 channel:** `rust_backend::event_channel()` creates a separate
+  256-item bounded Tokio event queue beside the coalescing watch snapshot.
+  Publishing awaits capacity, assigns sequence numbers as events enter the
+  channel, and reports a sanitized closed-receiver result. B10 can publish
+  typed notification outcomes without losing transitions to watch coalescing.
+- **Validation:** post-rebase required checks and fixture GTK smoke are pending.
+  No PR has been opened. Build metadata is being updated to build 39.
+- **Next:** finish parity coverage, run migration checks and synthetic GTK
+  smoke, record exact observed results, then coordinate PR readiness.
+
+### E048 — 2026-10-30: B08 post-rebase checks and GTK smoke passed
+
+- **Base/build:** validated on `origin/main` B09 merge `93b62bb`; B08 uses the
+  third serialized slot and build `0.82.0 (39)`. `VERSION`, `version.py`,
+  README and CHANGELOG agree on build 39. B06 remains build 37 and B09 build 38.
+- **Code/contract:** added `codexbar_core::notifications::NotificationPolicy`
+  over `ProviderUsage`, `NotificationPreferences` and an injected UTC clock.
+  Typed outcomes retain provider/account/window identity. Unknown or
+  placeholder quota values do not become zero or change re-arm state; a known
+  zero is a real recovery. Python fallback behavior and Rust opt-in behavior
+  are parity-tested. The B10/B14 channel contract remains a separate bounded
+  256-event queue with backpressure, event sequences, explicit receiver-close
+  errors and no GTK/Python types in backend DTOs.
+- **Checks run:** `cargo fmt --check` for core, backend and bridge; locked Rust
+  tests (68 core, 10 backend); Clippy with all targets/features and warnings
+  denied for all three crates; atomic extension build; Python suite (171 tests,
+  2 Rust-opt-in-only skips) in default mode and all 171 tests in Rust-opt-in
+  mode; 3 tray D-Bus tests; Python compileall; and `git diff --check`. All final
+  runs passed. The first Python run caught blank-account `""` versus `None`
+  presentation mismatch; normalization was corrected and both suites passed on
+  rerun.
+- **GTK smoke/artifact:** `CODEXBAR_RUST_CORE=1 python3
+  tools/preview_notifications.py
+  docs/rust-migration/screenshots/b08-notifications-synthetic.png` passed and
+  rendered all four synthetic outcomes through
+  `CodexBarApp._check_notifications`. Delivery was captured at the frontend
+  `_notify` boundary. The refreshed screenshot was visually inspected. The
+  fixture uses `fixture@example.invalid` only and no real CLI or credentials.
+  Nonfatal EGL render-device permission and accessibility-bus warnings appeared.
+- **Status:** implementation and local verification are ready for a focused PR;
+  no PR or merge is claimed. B08 remains unchecked until merge. Orchestration
+  must confirm PR/merge sequencing before the PR is opened; merge only after
+  fresh CI and UI verification pass.
+- **Next:** report the ready branch and settled DTO/channel contract to
+  orchestration, then open/link the screenshot-bearing PR after coordination.

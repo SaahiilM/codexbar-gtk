@@ -80,7 +80,7 @@ Python GTK widgets                        Rust GTK4/libadwaita widgets
 | `prefs.py`: `Preferences`, `DEFAULTS`, refresh intervals | Settings defaults, persistence, portable import/export and derived settings (B05) |
 | `currency.py`: `CurrencyConverter`, shared converter | Rate catalog/conversion, HTTP refresh, TTL/cache, offline fallback (B06) |
 | `cli.py`: `default_cli_path`, `CodexBarCLI` | Discovery, argv, TZ, timeouts, outputs/errors and all command wrappers (B07) |
-| `controller.py`: quota/session/pace/credit events, cycle tracking | Stateful event policies and deduplication; not OS notification delivery (B08) |
+| `controller.py`: quota/session/pace/credit events, cycle tracking | `NotificationPolicy::observe(&[ProviderUsage], &NotificationPreferences, DateTime<Utc>)` returns typed `QuotaThreshold`, `SessionExhausted`, `PredictivePace`, and `CreditExpiry` outcomes; GTK only delivers them (B08) |
 | `controller.py`: `_ordered`, `automatic_tray_selection` and ETA/ranking helpers | Provider visibility/order and tray-quota selection (B09) |
 | `controller.py`: `Controller`, `AppState` | Polling, queued refresh, cancellation, account collection, fallback scans, snapshots and recording (B10) |
 | `login.py`: terminal argv, browser helpers, `ClaudeLoginSession`, auth status | PTY/process lifecycle, streamed parsing, input, cancellation, status and results (B11) |

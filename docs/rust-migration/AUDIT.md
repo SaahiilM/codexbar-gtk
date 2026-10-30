@@ -1440,3 +1440,25 @@ future models must verify the linked PR's status rather than trusting a stale
   opened as a PR; no B10 GitHub checks or merge are claimed.
 - **Next:** send the exact build-43/head status to orchestration, push the
   rebased branch and open the focused B10 PR with the synthetic screenshot.
+
+### E063 — 2026-10-30: B10 PR #44 opened on build 43
+
+- **PR/head/base:** [PR #44](https://github.com/SaahiilM/codexbar-gtk/pull/44),
+  branch `backend/b10-refresh-controller`, initial head
+  `0d39ab54d73335b9966dbf0d9849862d5d269a13`, base `main` at B11 merge
+  `a33f0977dbd916e939a97ba8f157f151a51ffa47`. The description includes an
+  immutable raw link to the synthetic B10 GTK screenshot and records the local
+  workflow-equivalent checks.
+- **Observed initial state:** GitHub reports `OPEN` and `MERGEABLE`, no reviews,
+  and merge state `UNSTABLE`. Run `41112738953` reported `tray-dbus` SUCCESS
+  while `test` was IN_PROGRESS; `gh pr checks` reported the same. These are the
+  initial check results only; verify the current PR head and statuses before
+  merge.
+- **CI accuracy:** B11's merge-SHA run #41111847909 remains a separate
+  zero-job `startup_failure`, recorded in E061. B11's local check/UI evidence
+  and B10's exact-head local verification are not represented as GitHub CI
+  success. No protection or required-check setting was changed.
+- **Next:** refresh PR #44's head, reviews, mergeability and check rollup; wait
+  for the exact-head required checks, then merge only through GitHub's ordinary
+  merge path if it permits. If Actions fails to start, use the recorded local
+  workflow and GTK evidence only if GitHub permits the ordinary merge.

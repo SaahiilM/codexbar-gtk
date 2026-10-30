@@ -13,10 +13,18 @@ Tracks upstream CodexBar 0.82.0.
 - Extract spend and tray presentation policies into Rust-owned DTO projections
   callable through the B14 central facade.
 
+### Fixed
+
+- Keep missing project/model costs unavailable, preserve explicit zero costs,
+  and retain the legacy model-cost fallback from `cost: 0` to a nonzero
+  `totalCost`.
+- Bundle and load the PyGObject Cairo bridge in development and installed
+  layouts so the GTK spend heatmap and daily chart draw on Wayland.
+
 ### Validation
 
-- See `docs/rust-migration/AUDIT.md` E067 for backend, Python and fixture GTK
-  verification evidence.
+- See `docs/rust-migration/AUDIT.md` E069 for exact Rust/Python, installed
+  Wayland smoke and screenshot evidence.
 
 ## 0.82.0 (44) — 2026-10-30
 

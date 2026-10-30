@@ -1651,3 +1651,60 @@ future models must verify the linked PR's status rather than trusting a stale
   until all exact-head required checks pass, mergeability is clean and the
   serialized slot remains confirmed. B13 parent is partial; B13b is still
   required before B14 can proceed.
+
+### E069 — 2026-10-30: B13a Cairo and unknown-cost screenshot corrections
+
+- **Source/base/build:** B13a remains PR #46, build `0.82.0 (45)`, based on
+  `origin/main` at `d1eff67725cfbde82c49f0eb75861d4dbbd4d797`. The refreshed
+  `origin/main` still points to that dependency merge. No B14 contract change
+  was needed.
+- **Cairo diagnosis and fix:** this host's system Python had PyCairo but no
+  `gi._gi_cairo`, so `cairo_support.HAS_CAIRO` was false and both Cairo draw
+  callbacks returned before painting. `scripts/bootstrap-deps.sh` now fetches
+  and stages the bridge, `scripts/install.sh` copies it into the app's private
+  `deps` directory, and `cairo_support.py` searches that installed location.
+  An isolated `--no-autostart` install confirmed the private bridge is present
+  and loadable. `run.sh` supplies the development typelib/library path; the
+  fixture smoke ran with `GDK_BACKEND=wayland` and selected
+  `GdkWaylandDisplay` (`wayland-1`).
+- **Cost-row diagnosis and compatibility:** the fixture omits `totalCost` for
+  `unknown-cost-project` and omits both `cost` and `totalCost` for
+  `unknown-cost-model`; these are truly unknown. The earlier smoke window was
+  created before Rust controller initialization, so it was marked as the Python
+  renderer and could display the legacy `0.0` fallback. The Rust projection
+  DTO kept both costs as `None`. The smoke now configures the view from the
+  explicit opt-in backend and checks the exact DTO rows and visible GTK labels.
+  The Python parity renderer now shows missing costs as `unpriced`. Rust and
+  Python both retain known zero as `$0` when no fallback exists and preserve
+  the legacy model behavior where `cost: 0` falls back to a nonzero
+  `totalCost` (fixture value 3 displays `$3`).
+- **Rust/presentation tests:** Rust projection unit and facade integration
+  fixtures assert unknown project/model costs stay absent, explicit-zero
+  project/model costs stay known, and the zero-to-nonzero `totalCost` fallback
+  stays 3.0. The GTK smoke asserts the same cases against rendered row labels
+  in both Python and Rust modes.
+- **Checks:** `cargo fmt --check` passed for core, backend and PyO3 bridge;
+  locked tests passed (72 core, 45 backend); strict all-target/all-feature
+  Clippy passed for all three crates; `scripts/build-rust-core.sh` passed.
+  Python discovery passed 187 tests in default mode with 9 expected opt-in
+  skips and all 187 in Rust-opt-in mode. The focused tray D-Bus suite passed
+  three tests; Python compilation and `git diff --check` passed. Earlier PR #46
+  head `d590c0d` had both required checks successful; the corrected branch
+  head must be checked again after push.
+- **Fixture-only GTK runtime:** both modes ran against the existing Wayland
+  compositor with an isolated HOME, synthetic CLI, fake tray sink and actual
+  GTK main window. Draw callbacks ran at `680x104` (heatmap: 1,400 tokens,
+  two active cells) and `680x168` (chart: one known positive amount, one
+  unknown day). The smoke verified and captured `unpriced`, `$0`, and `$3`
+  rows. A temporary install's copied app package, private typelibs/libraries
+  and Cairo bridge were used for the Rust screenshot
+  `screenshots/b13-spend-tray-synthetic.png`; a default-Python Wayland capture
+  is `screenshots/b13-spend-tray-python-wayland.png`. Both compositor captures
+  were visually inspected. This used fixture data only; it did not exercise a
+  real account or a live StatusNotifier host. Nonfatal EGL access and AT-SPI
+  connection warnings were emitted; the smoke exited successfully.
+- **Status/next:** PR #46 remains open and held until the corrected head's GitHub
+  checks, clean mergeability and screenshot-bearing PR are reverified. Send the
+  corrected runtime evidence to orchestration before merge and preserve the
+  serialized build-45 slot. B13 remains partial until B13b is implemented and
+  verified; no parent completion is claimed.

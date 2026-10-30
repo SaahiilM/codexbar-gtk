@@ -514,27 +514,54 @@ class SpendView(Gtk.Box):
             [
                 (
                     str(project.get("name") or project.get("path") or "—"),
-                    self._money(float(project.get("totalCost") or 0.0), source),
+                    self._money(float(project["totalCost"]), source)
+                    if project.get("totalCost") is not None
+                    else "unpriced",
                     format_tokens(int(project.get("totalTokens") or 0)),
                 )
                 for project in spend.projects[:12]
             ],
         )
 
-        models: dict[str, list[float]] = {}
+        models: dict[str, dict[str, float | bool]] = {}
         for model in spend.models:
             name = str(model.get("modelName") or model.get("name") or "—")
-            cost = float(model.get("cost") or model.get("totalCost") or 0.0)
-            tokens = float(model.get("totalTokens") or 0.0)
-            bucket = models.setdefault(name, [0.0, 0.0])
-            bucket[0] += cost
-            bucket[1] += tokens
+            raw_cost = model.get("cost")
+            fallback_cost = model.get("totalCost")
+            if raw_cost is None or raw_cost == 0:
+                if fallback_cost not in (None, 0):
+                    raw_cost = fallback_cost
+                elif raw_cost is None:
+                    raw_cost = fallback_cost
+            bucket = models.setdefault(
+                name,
+                {"cost": 0.0, "tokens": 0.0, "cost_known": False, "cost_partial": False},
+            )
+            if raw_cost is None:
+                bucket["cost_partial"] = True
+            else:
+                cost = float(raw_cost)
+                if math.isfinite(cost):
+                    bucket["cost"] = float(bucket["cost"]) + cost
+                    bucket["cost_known"] = True
+                else:
+                    bucket["cost_partial"] = True
+            bucket["tokens"] = float(bucket["tokens"]) + float(model.get("totalTokens") or 0.0)
         self._rebuild_list(
             self.models_box,
             "Models",
             [
-                (name, self._money(values[0], source), format_tokens(int(values[1])))
-                for name, values in sorted(models.items(), key=lambda kv: kv[1][0], reverse=True)[:12]
+                (
+                    name,
+                    (
+                        ("≥ " if values["cost_partial"] else "")
+                        + self._money(float(values["cost"]), source)
+                        if values["cost_known"]
+                        else "unpriced"
+                    ),
+                    format_tokens(int(values["tokens"])),
+                )
+                for name, values in sorted(models.items(), key=lambda kv: float(kv[1]["cost"]), reverse=True)[:12]
             ],
         )
 

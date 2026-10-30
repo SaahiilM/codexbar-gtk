@@ -78,7 +78,7 @@ if [[ -d "${ROOT}/.deps/root/usr/lib/x86_64-linux-gnu" ]]; then
   mkdir -p "${APP_DIR}/deps/typelibs" "${APP_DIR}/deps/lib"
   cp -a "${ROOT}/.deps/root/usr/lib/x86_64-linux-gnu/girepository-1.0/." "${APP_DIR}/deps/typelibs/" 2>/dev/null || true
   cp -a "${ROOT}/.deps/root/usr/lib/x86_64-linux-gnu/"*.so* "${APP_DIR}/deps/lib/" 2>/dev/null || true
-  for so in "${ROOT}"/.deps/_gi_cairo*.so; do
+  for so in "${ROOT}"/.deps/_gi_cairo*.so "${ROOT}"/.deps/root/usr/lib/python3/dist-packages/gi/_gi_cairo*.so; do
     if [[ -e "$so" ]]; then cp -a "$so" "${APP_DIR}/deps/"; fi
   done
 fi

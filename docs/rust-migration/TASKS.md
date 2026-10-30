@@ -17,8 +17,8 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Active task | **B13a** — PR #46, branch `backend/b13a-spend-tray-projections`, based on `d1eff677`; build `0.82.0 (45)` |
 | Next domain slice | **B13b** — settings actions, login/update/restart and launch-at-login extraction after B13a review/merge |
 | Open external blockers | None. Dependencies B04–B12 are merged; B14 confirmed the typed DTO/service boundary and tray source-index contract (E067). |
-| Latest checks | B13a local Rust/Python/tray D-Bus, format/Clippy, extension build and GTK fixture smoke pass (E067). PR #46 initial head `e315255` had `tray-dbus` SUCCESS and `test` PENDING (E068); this handoff update changes the PR head, so recheck exact-head GitHub status before merge. |
-| UI validation | B09a evidence is in E066. B13a fixture GTK smoke passed with a fake tray sink; [b13-spend-tray-synthetic.png](screenshots/b13-spend-tray-synthetic.png) is visually inspected (E067). |
+| Latest checks | B13a local Rust/Python/tray D-Bus, format/Clippy, extension build and installed Wayland fixture smoke pass (E069). PR #46 checks on the earlier head `d590c0d` passed; changes in this handoff require exact-head GitHub checks to be reobserved before merge. |
+| UI validation | B09a evidence is in E066. B13a default Python and Rust opt-in paths both passed live Wayland fixture smoke with a private installed Cairo bridge; [b13-spend-tray-synthetic.png](screenshots/b13-spend-tray-synthetic.png) is a corrected compositor capture with the heatmap, chart and missing/zero cost rows visible (E069). |
 
 **First commands for a new model/session:**
 
@@ -114,8 +114,10 @@ are verified and merged; coordinate Rust DTO/method names with B14):
 
 - [ ] **B13a** Spend/tray projections — Rust DTOs for spend time-range filtering,
   currency conversion, coverage/partial state, provider/model/project grouping,
-  and tray summaries from B10's B09-ordered snapshot/selection. Keep GTK/Cairo
-  drawing and list widgets in Python.
+  and tray summaries from B10's B09-ordered snapshot/selection. Missing row costs
+  remain unavailable; explicit zero stays known, and `cost: 0` falls back to a
+  nonzero `totalCost` for model rows. Keep GTK/Cairo drawing and list widgets in
+  Python.
 - [ ] **B13b** Settings and application actions — route settings CLI actions,
   login, update/restart and launch-at-login through B07/B11/B12 and the central
   facade; keep dialogs/file chooser and GLib marshalling in Python, documenting

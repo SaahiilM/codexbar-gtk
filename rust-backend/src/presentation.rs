@@ -470,11 +470,7 @@ fn model_rows(
             name,
             ..Aggregate::default()
         });
-        let raw_cost = entry
-            .get("cost")
-            .filter(|value| value_truthy(value))
-            .or_else(|| entry.get("totalCost").filter(|value| value_truthy(value)));
-        match raw_cost.and_then(json_number) {
+        match model_cost(entry) {
             Some(cost) => {
                 aggregate.cost += cost;
                 aggregate.known = true;
@@ -518,6 +514,18 @@ fn model_rows(
             }
         })
         .collect()
+}
+
+fn model_cost(entry: &Value) -> Option<f64> {
+    let cost = entry.get("cost").and_then(json_number);
+    if cost.is_some_and(|value| value != 0.0) {
+        return cost;
+    }
+    let total_cost = entry.get("totalCost").and_then(json_number);
+    if total_cost.is_some_and(|value| value != 0.0) {
+        return total_cost;
+    }
+    cost.or(total_cost)
 }
 
 fn clean_option(value: &Option<String>) -> Option<String> {
@@ -885,11 +893,13 @@ mod tests {
                 json!({"date":"2026-10-01", "totalCost":2.0}),
                 json!({"date":"2026-10-03", "totalCost":null}),
             ],
-            projects: vec![json!({"name":"synthetic-project", "totalTokens":12})],
+            projects: vec![json!({"name":"unknown-cost-project", "totalTokens":12})],
             models: vec![
                 json!({"modelName":"m1", "cost":2.0, "totalTokens":100}),
                 json!({"name":"m1", "cost":null, "totalTokens":50}),
                 json!({"name":"m2", "cost":0.0, "totalCost":3.0, "totalTokens":200}),
+                json!({"name":"unknown-cost-model", "totalTokens":5}),
+                json!({"name":"known-zero-model", "cost":0.0, "totalTokens":0}),
             ],
             session_cost: 0.0,
             session_cost_known: true,
@@ -1150,8 +1160,29 @@ mod tests {
         assert_eq!(view.selected_range, "30 days");
         assert_eq!(view.source_currency.as_deref(), Some("USD"));
         assert_eq!(view.display_currency.as_deref(), Some("USD"));
+        assert_eq!(view.projects[0].name, "unknown-cost-project");
         assert_eq!(view.projects[0].source_cost, None);
         assert!(!view.projects[0].cost_known);
+        let unknown_model = view
+            .models
+            .iter()
+            .find(|row| row.name == "unknown-cost-model")
+            .unwrap();
+        assert_eq!(unknown_model.source_cost, None);
+        assert_eq!(unknown_model.display_cost, None);
+        assert!(!unknown_model.cost_known);
+        let known_zero_model = view
+            .models
+            .iter()
+            .find(|row| row.name == "known-zero-model")
+            .unwrap();
+        assert_eq!(known_zero_model.source_cost, Some(0.0));
+        assert_eq!(known_zero_model.display_cost, Some(0.0));
+        assert!(known_zero_model.cost_known);
+        let fallback_zero_model = view.models.iter().find(|row| row.name == "m2").unwrap();
+        assert_eq!(fallback_zero_model.source_cost, Some(3.0));
+        assert_eq!(fallback_zero_model.display_cost, Some(3.0));
+        assert!(fallback_zero_model.cost_known);
         let model_m1 = view.models.iter().find(|row| row.name == "m1").unwrap();
         assert_eq!(model_m1.source_cost, Some(2.0));
         assert!(model_m1.cost_known && model_m1.cost_partial);

@@ -47,8 +47,17 @@ class RustPresentationIntegrationTests(unittest.TestCase):
                     "coverage": {"priced": 3, "unpriced": 1},
                     "provenance": "fixture_history",
                     "daily": [{"date": "2026-10-30", "totalCost": 12.0}],
-                    "projects": [{"name": "synthetic-project", "totalTokens": 20}],
-                    "models": [{"modelName": "synthetic-model", "cost": 2.0, "totalTokens": 10}],
+                    "projects": [
+                        {"name": "synthetic-project", "totalCost": 1.0, "totalTokens": 20},
+                        {"name": "unknown-cost-project", "totalTokens": 7},
+                        {"name": "known-zero-project", "totalCost": 0, "totalTokens": 0},
+                    ],
+                    "models": [
+                        {"modelName": "synthetic-model", "cost": 2.0, "totalTokens": 10},
+                        {"name": "unknown-cost-model", "totalTokens": 5},
+                        {"name": "known-zero-model", "cost": 0, "totalTokens": 0},
+                        {"name": "fallback-zero-model", "cost": 0, "totalCost": 3, "totalTokens": 8},
+                    ],
                 }
             ]
         )
@@ -97,9 +106,36 @@ esac
                 self.assertAlmostEqual(spend["total"]["display_amount"], 12.0 * 0.92)
                 self.assertTrue(spend["tokens"]["known"])
                 self.assertEqual(spend["tokens"]["value"], 900)
-                self.assertEqual(spend["projects"][0]["name"], "synthetic-project")
-                self.assertIsNone(spend["projects"][0]["source_cost"])
-                self.assertIsNone(spend["projects"][0]["display_cost"])
+                unknown_project = next(
+                    row for row in spend["projects"] if row["name"] == "unknown-cost-project"
+                )
+                self.assertIsNone(unknown_project["source_cost"])
+                self.assertIsNone(unknown_project["display_cost"])
+                self.assertFalse(unknown_project["cost_known"])
+                unknown_model = next(
+                    row for row in spend["models"] if row["name"] == "unknown-cost-model"
+                )
+                self.assertIsNone(unknown_model["source_cost"])
+                self.assertIsNone(unknown_model["display_cost"])
+                self.assertFalse(unknown_model["cost_known"])
+                known_zero_project = next(
+                    row for row in spend["projects"] if row["name"] == "known-zero-project"
+                )
+                self.assertEqual(known_zero_project["source_cost"], 0.0)
+                self.assertEqual(known_zero_project["display_cost"], 0.0)
+                self.assertTrue(known_zero_project["cost_known"])
+                known_zero_model = next(
+                    row for row in spend["models"] if row["name"] == "known-zero-model"
+                )
+                self.assertEqual(known_zero_model["source_cost"], 0.0)
+                self.assertEqual(known_zero_model["display_cost"], 0.0)
+                self.assertTrue(known_zero_model["cost_known"])
+                fallback_zero_model = next(
+                    row for row in spend["models"] if row["name"] == "fallback-zero-model"
+                )
+                self.assertEqual(fallback_zero_model["source_cost"], 3.0)
+                self.assertAlmostEqual(fallback_zero_model["display_cost"], 3.0 * 0.92)
+                self.assertTrue(fallback_zero_model["cost_known"])
 
                 tray = json.loads(controller.tray_summary_json())
                 self.assertEqual(tray["unified_icon_source"], "automatic")

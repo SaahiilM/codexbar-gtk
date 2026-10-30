@@ -22,10 +22,13 @@ import threading
 import time
 from dataclasses import dataclass, field
 
+from . import rust_bridge
+
 ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[a-zA-Z]")
 URL_RE = re.compile(r"https?://[^\s\"'<>)\]]+")
 
 CLAUDE_LOGIN_ARGS = ["auth", "login", "--claudeai"]
+MAX_LOGIN_OUTPUT_CHARS = 64 * 1024
 CLAUDE_SUCCESS_MARKERS = (
     "Successfully logged in",
     "Login successful",
@@ -39,9 +42,20 @@ PROMPT_MARKERS = (
 
 def terminal_command_argv(terminal: str, command: list[str]) -> list[str]:
     """Build argv for a terminal emulator without shell-splitting commands."""
+    rust = rust_bridge.extension()
+    if rust is not None:
+        return list(rust.terminal_command_argv(terminal, command))
     terminal_name = os.path.basename(terminal)
     separator = "--" if terminal_name == "gnome-terminal" else "-e"
     return [terminal, separator, *command]
+
+
+def browser_command_argv(binary: str, url: str) -> list[str]:
+    """Build argv for a browser opener without invoking a shell."""
+    rust = rust_bridge.extension()
+    if rust is not None:
+        return list(rust.browser_command_argv(binary, url))
+    return [binary, "open", url] if os.path.basename(binary) == "gio" else [binary, url]
 
 
 @dataclass
@@ -65,12 +79,13 @@ def open_in_browser(url: str) -> bool:
         if not binary:
             continue
         try:
+            argv = browser_command_argv(binary, url)
             if opener == "gio":
                 subprocess.run(
-                    [binary, "open", url], check=False, capture_output=True, timeout=15
+                    argv, check=False, capture_output=True, timeout=15
                 )
             else:
-                subprocess.run([binary, url], check=False, capture_output=True, timeout=15)
+                subprocess.run(argv, check=False, capture_output=True, timeout=15)
             return True
         except (OSError, subprocess.SubprocessError):
             continue
@@ -99,10 +114,38 @@ class ClaudeLoginSession:
         self._pending_input: list[str] = []
         self._done = threading.Event()
         self._thread: threading.Thread | None = None
+        self._rust_session = None
+        self._rust_mode = False
+        self._rust_discovery_failed = False
+        self._rust_cancel_requested = threading.Event()
+
+        rust = rust_bridge.extension()
+        if rust is not None:
+            self._rust_mode = True
+            package_dir = os.path.dirname(os.path.abspath(__file__))
+            try:
+                executable = rust.discover_cli_executable(
+                    binary, "CLAUDE_CLI", package_dir
+                )
+                self._rust_session = rust.LoginSession(executable, int(timeout))
+            except (OSError, RuntimeError):
+                self._rust_discovery_failed = True
 
     # -- lifecycle --------------------------------------------------------
 
     def start(self) -> bool:
+        if self._rust_mode:
+            if self._rust_discovery_failed or self._rust_session is None:
+                self.status = f"{self.binary} not found in PATH"
+                self.result = LoginResult(binary_missing=True, message=self.status)
+                self._done.set()
+                return False
+            self._thread = threading.Thread(
+                target=self._run_rust, name="claude-login-rust", daemon=True
+            )
+            self._thread.start()
+            return True
+
         if not shutil.which(self.binary):
             self.status = f"{self.binary} not found in PATH"
             self.result = LoginResult(binary_missing=True, message=self.status)
@@ -115,10 +158,23 @@ class ClaudeLoginSession:
 
     def submit(self, text: str) -> None:
         """Send text (for example the authorisation code) to the CLI."""
+        if self._rust_session is not None:
+            try:
+                self._rust_session.submit(text)
+            except RuntimeError:
+                self.status = "Could not submit the authorization code"
+            return
         with self._lock:
             self._pending_input.append(text)
 
     def cancel(self) -> None:
+        if self._rust_session is not None:
+            self._rust_cancel_requested.set()
+            try:
+                self._rust_session.cancel()
+            except RuntimeError:
+                pass
+            return
         self._write(b"\x03")  # ctrl-c
         self._done.set()
 
@@ -127,6 +183,72 @@ class ClaudeLoginSession:
         return self.result
 
     # -- internals --------------------------------------------------------
+
+    def _run_rust(self) -> None:
+        assert self._rust_session is not None
+        try:
+            if self._rust_cancel_requested.is_set():
+                self.result = LoginResult(message="Login cancelled")
+                return
+            self._rust_session.start()
+            if self._rust_cancel_requested.is_set():
+                self._rust_session.cancel()
+            while True:
+                self._consume_rust_events()
+                status, needs_code = self._rust_session.snapshot()
+                self.needs_code = bool(needs_code)
+                self.status = {
+                    "starting": "Starting…",
+                    "waiting_for_authorization": "Open the link to authorise, then paste the code",
+                    "waiting_for_code": "Paste the code from the browser",
+                    "finishing": "Finishing sign-in…",
+                    "succeeded": "Signed in to Claude",
+                    "failed": "Login failed",
+                    "timed_out": "Login timed out",
+                    "cancelled": "Login cancelled",
+                }.get(status, "Login in progress")
+                if status in {"succeeded", "failed", "timed_out", "cancelled"}:
+                    break
+                time.sleep(0.05)
+
+            self._consume_rust_events()
+            completion, exit_code = self._rust_session.wait()
+            success = completion == "succeeded"
+            if success:
+                message = "Signed in to Claude"
+            elif completion == "timed_out":
+                message = "Login timed out — try again"
+            elif completion == "cancelled":
+                message = "Login cancelled"
+            elif self.url:
+                message = "Login was not completed"
+            else:
+                message = f"Login failed (exit {exit_code})"
+            self.result = LoginResult(
+                success=success,
+                output=self.output,
+                auth_url=self.url,
+                message=message,
+                timed_out=completion == "timed_out",
+            )
+        except RuntimeError:
+            # Rust errors contain only static operation identifiers and typed
+            # categories. Keep the compatibility UI message similarly generic.
+            self.result = LoginResult(message="Login process failed")
+        finally:
+            self._done.set()
+
+    def _consume_rust_events(self) -> None:
+        assert self._rust_session is not None
+        for kind, value in self._rust_session.poll_events():
+            if kind == "url":
+                self.url = value
+                self.status = "Open the link to authorise, then paste the code"
+            elif kind == "prompt" and value == "paste_code":
+                self.needs_code = True
+                self.status = "Paste the code from the browser"
+            elif kind == "output":
+                self.output = (self.output + value)[-MAX_LOGIN_OUTPUT_CHARS:]
 
     def _write(self, data: str) -> None:
         with self._lock:
@@ -261,6 +383,21 @@ class ClaudeLoginSession:
 
 def claude_auth_status() -> dict:
     """Return the parsed ``claude auth status`` payload."""
+    rust = rust_bridge.extension()
+    if rust is not None:
+        package_dir = os.path.dirname(os.path.abspath(__file__))
+        try:
+            executable = rust.discover_cli_executable(
+                "claude", "CLAUDE_CLI", package_dir
+            )
+            service = rust.CliService(executable, None)
+            import json
+
+            data = json.loads(service.claude_auth_status(30))
+        except (OSError, RuntimeError, ValueError):
+            return {}
+        return data if isinstance(data, dict) else {}
+
     binary = shutil.which("claude")
     if not binary:
         return {}

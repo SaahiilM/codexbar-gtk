@@ -5,6 +5,7 @@
 //! `BackendHandle<Snapshot>` to either frontend without moving policy into it.
 
 pub mod currency;
+pub mod login;
 pub mod updates;
 
 use std::{

@@ -1,5 +1,9 @@
 use chrono::{DateTime, NaiveDate, TimeZone, Utc};
 use codexbar_backend::cli::{self, CliError, CliService};
+use codexbar_backend::login::{
+    LoginCompletionKind, LoginError, LoginEvent, LoginPrompt, LoginSession as BackendLoginSession,
+    LoginSnapshot, LoginStatus,
+};
 use codexbar_backend::updates::{self, UpdateCheckRequest, UpdateError, UpdateRelation, Version};
 use codexbar_core::{
     activity, charts, currency, domain, formatting, history, notifications, ordering, pace,
@@ -13,6 +17,7 @@ use std::collections::HashMap;
 use std::ffi::OsString;
 use std::future::Future;
 use std::path::PathBuf;
+use std::sync::Mutex;
 use std::time::Duration;
 use tokio::runtime::Runtime;
 
@@ -93,6 +98,16 @@ struct RustPreferencesStore {
 struct RustCliService {
     runtime: Runtime,
     inner: CliService,
+}
+
+#[pyclass(name = "LoginSession")]
+struct RustLoginSession {
+    runtime: Runtime,
+    executable: PathBuf,
+    timeout: Duration,
+    session: Mutex<Option<BackendLoginSession>>,
+    events: Mutex<Option<tokio::sync::mpsc::Receiver<LoginEvent>>>,
+    state: Mutex<Option<tokio::sync::watch::Receiver<LoginSnapshot>>>,
 }
 
 #[pyclass(name = "NotificationPolicy")]
@@ -501,6 +516,154 @@ fn run_cli_future<T: Send>(
     py.detach(move || handle.block_on(future))
 }
 
+fn login_error_to_python(error: LoginError) -> PyErr {
+    PyRuntimeError::new_err(format!("login {:?} (claude_login)", error.kind))
+}
+
+#[pymethods]
+impl RustLoginSession {
+    #[new]
+    fn new(executable: PathBuf, timeout_seconds: u64) -> PyResult<Self> {
+        let runtime =
+            Runtime::new().map_err(|_| PyRuntimeError::new_err("could not start login runtime"))?;
+        Ok(Self {
+            runtime,
+            executable,
+            timeout: Duration::from_secs(timeout_seconds.max(1)),
+            session: Mutex::new(None),
+            events: Mutex::new(None),
+            state: Mutex::new(None),
+        })
+    }
+
+    fn start(&self, py: Python<'_>) -> PyResult<bool> {
+        if self
+            .session
+            .lock()
+            .map_err(|_| PyRuntimeError::new_err("login session lock is poisoned"))?
+            .is_some()
+        {
+            return Ok(true);
+        }
+        let mut session = run_cli_future(
+            py,
+            &self.runtime,
+            BackendLoginSession::start_claude(self.executable.clone(), self.timeout),
+        )
+        .map_err(login_error_to_python)?;
+        let events = session
+            .take_events()
+            .ok_or_else(|| PyRuntimeError::new_err("login event stream is unavailable"))?;
+        let state = session.state();
+        *self
+            .session
+            .lock()
+            .map_err(|_| PyRuntimeError::new_err("login session lock is poisoned"))? =
+            Some(session);
+        *self
+            .events
+            .lock()
+            .map_err(|_| PyRuntimeError::new_err("login event lock is poisoned"))? = Some(events);
+        *self
+            .state
+            .lock()
+            .map_err(|_| PyRuntimeError::new_err("login state lock is poisoned"))? = Some(state);
+        Ok(true)
+    }
+
+    fn snapshot(&self) -> PyResult<(String, bool)> {
+        let state = self
+            .state
+            .lock()
+            .map_err(|_| PyRuntimeError::new_err("login state lock is poisoned"))?;
+        let Some(state) = state.as_ref() else {
+            return Ok(("idle".to_owned(), false));
+        };
+        let snapshot = state.borrow();
+        let status = match snapshot.status {
+            LoginStatus::Starting => "starting",
+            LoginStatus::WaitingForAuthorization => "waiting_for_authorization",
+            LoginStatus::WaitingForCode => "waiting_for_code",
+            LoginStatus::Finishing => "finishing",
+            LoginStatus::Succeeded => "succeeded",
+            LoginStatus::Failed => "failed",
+            LoginStatus::TimedOut => "timed_out",
+            LoginStatus::Cancelled => "cancelled",
+        };
+        Ok((status.to_owned(), snapshot.needs_code))
+    }
+
+    /// Drain transient events. These values may contain authorization data;
+    /// callers must keep them in memory and never log or persist them.
+    fn poll_events(&self) -> PyResult<Vec<(String, String)>> {
+        let mut receiver = self
+            .events
+            .lock()
+            .map_err(|_| PyRuntimeError::new_err("login event lock is poisoned"))?;
+        let Some(receiver) = receiver.as_mut() else {
+            return Ok(Vec::new());
+        };
+        let mut events = Vec::new();
+        loop {
+            match receiver.try_recv() {
+                Ok(LoginEvent::AuthorizationUrl(url)) => events.push(("url".into(), url)),
+                Ok(LoginEvent::Prompt(LoginPrompt::OpenBrowser)) => {
+                    events.push(("prompt".into(), "open_browser".into()))
+                }
+                Ok(LoginEvent::Prompt(LoginPrompt::PasteCode)) => {
+                    events.push(("prompt".into(), "paste_code".into()))
+                }
+                Ok(LoginEvent::Output(output)) => events.push(("output".into(), output)),
+                Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+                | Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => break,
+            }
+        }
+        Ok(events)
+    }
+
+    fn submit(&self, text: String) -> PyResult<()> {
+        let session = self
+            .session
+            .lock()
+            .map_err(|_| PyRuntimeError::new_err("login session lock is poisoned"))?;
+        let session = session
+            .as_ref()
+            .ok_or_else(|| PyRuntimeError::new_err("login session has not started"))?;
+        self.runtime
+            .block_on(session.submit(text))
+            .map_err(login_error_to_python)
+    }
+
+    fn cancel(&self) -> PyResult<()> {
+        let session = self
+            .session
+            .lock()
+            .map_err(|_| PyRuntimeError::new_err("login session lock is poisoned"))?;
+        if let Some(session) = session.as_ref() {
+            self.runtime.block_on(session.cancel());
+        }
+        Ok(())
+    }
+
+    fn wait(&self, py: Python<'_>) -> PyResult<(String, Option<u32>)> {
+        let session = self
+            .session
+            .lock()
+            .map_err(|_| PyRuntimeError::new_err("login session lock is poisoned"))?
+            .take()
+            .ok_or_else(|| PyRuntimeError::new_err("login session has not started"))?;
+        let result =
+            run_cli_future(py, &self.runtime, session.wait()).map_err(login_error_to_python)?;
+        let kind = match result.kind {
+            LoginCompletionKind::Succeeded => "succeeded",
+            LoginCompletionKind::Failed => "failed",
+            LoginCompletionKind::TimedOut => "timed_out",
+            LoginCompletionKind::Cancelled => "cancelled",
+        };
+        Ok((kind.to_owned(), result.exit_code))
+    }
+}
+
 #[pymethods]
 impl RustCliService {
     #[new]
@@ -548,6 +711,17 @@ impl RustCliService {
         .map_err(cli_error_to_python)?;
         serde_json::to_string(&value)
             .map_err(|_| PyRuntimeError::new_err("CLI JSON conversion failed"))
+    }
+
+    fn claude_auth_status(&self, py: Python<'_>, timeout_seconds: Option<u64>) -> PyResult<String> {
+        let timeout = Duration::from_secs(timeout_seconds.unwrap_or(30).max(1));
+        let value = run_cli_future(
+            py,
+            &self.runtime,
+            codexbar_backend::login::claude_auth_status(&self.inner, timeout, None),
+        );
+        serde_json::to_string(&value)
+            .map_err(|_| PyRuntimeError::new_err("login status conversion failed"))
     }
 
     fn version(&self, py: Python<'_>, timeout_seconds: Option<u64>) -> PyResult<String> {
@@ -702,6 +876,23 @@ fn discover_cli_executable(
     package_dir: PathBuf,
 ) -> PyResult<PathBuf> {
     cli::discover_executable(name, override_env, &package_dir).map_err(cli_error_to_python)
+}
+
+#[pyfunction]
+fn terminal_command_argv(terminal: &str, command: Vec<String>) -> Vec<String> {
+    let command = command.into_iter().map(OsString::from).collect::<Vec<_>>();
+    codexbar_backend::login::terminal_command_argv(terminal, &command)
+        .into_iter()
+        .map(|arg| arg.to_string_lossy().into_owned())
+        .collect()
+}
+
+#[pyfunction]
+fn browser_command_argv(opener: &str, url: &str) -> Vec<String> {
+    codexbar_backend::login::browser_command_argv(opener, std::ffi::OsStr::new(url))
+        .into_iter()
+        .map(|arg| arg.to_string_lossy().into_owned())
+        .collect()
 }
 
 #[pymethods]
@@ -1577,7 +1768,10 @@ fn _rust_core(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<RustCurrencyConverter>()?;
     module.add_class::<RustNotificationPolicy>()?;
     module.add_class::<RustCliService>()?;
+    module.add_class::<RustLoginSession>()?;
     module.add_function(wrap_pyfunction!(discover_cli_executable, module)?)?;
+    module.add_function(wrap_pyfunction!(terminal_command_argv, module)?)?;
+    module.add_function(wrap_pyfunction!(browser_command_argv, module)?)?;
     module.add_function(wrap_pyfunction!(sparkline_coordinates, module)?)?;
     module.add_function(wrap_pyfunction!(canonical_id, module)?)?;
     module.add_function(wrap_pyfunction!(display_name, module)?)?;

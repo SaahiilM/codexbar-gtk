@@ -1274,3 +1274,106 @@ future models must verify the linked PR's status rather than trusting a stale
   been observed. No merge is claimed.
 - **Next:** notify orchestration and B11 of final readiness/API, then open/link
   the focused screenshot-bearing PR and verify its current head and state.
+
+### E056 — 2026-10-30: B07 PR #42 merge verified
+
+- **Observed dependency merge:** PR #42 merged normally at
+  `e9dda264335bd196cd70409df8d4b7f4992b8382`. Both required checks (`test` and
+  `tray-dbus`) succeeded on its exact head `7b1ded15d7e85eba999e67e6f4a316b83ee297e2`.
+  A fresh `git fetch origin main` confirms that `origin/main` is the merge
+  commit. Build 41 is the current base; B11 owns the next slot, build 42.
+- **Next:** integrate the B07 executable discovery path while keeping PTY
+  session creation and lifecycle in B11.
+
+### E057 — 2026-10-30: B11 integrated on B07 main; build 42
+
+- **Base/build:** rebased B11 onto B07 merge `e9dda264335bd196cd70409df8d4b7f4992b8382`.
+  Updated `VERSION`, `codexbar_gtk/version.py`, README and CHANGELOG to
+  `0.82.0 (42)`.
+- **B11 service and bridge:** `rust-backend/src/login.rs` owns PTY launch,
+  process-group termination, timeout/cancel, wait/reap, incremental ANSI/URL/
+  prompt parsing, submit input, bounded `LoginEvent` receiver and explicit
+  completion. Its `LoginSnapshot` watch exposes only lifecycle status and
+  `needs_code`; safe error values contain only typed categories. Python's
+  Rust-opt-in login adapter discovers `claude` through B07 and passes the
+  returned path directly to the PTY service. Terminal/browser argv helpers use
+  the Rust functions, and the GTK dialog polls for the transient URL/prompt.
+- **Auth-status boundary:** the auth-status helper uses B07
+  `CliService::run` for `auth status`, checks for exit code zero before parsing,
+  accepts only a JSON object, and returns `{}` on discovery/process/timeout/
+  cancellation/invalid JSON/non-object failures. It does not use `run_json` for
+  this compatibility fallback. This corrects the proposed `run_json` wording
+  in E055; interactive login never uses the non-PTY runner.
+- **B14 contract:** the bounded login `LoginEvent` receiver and safe
+  `LoginSnapshot` watch stay separate from B00's notification `event_channel`
+  and B10's refresh snapshot. B14 may expose B11 async start/submit/cancel
+  through its central facade while retaining the independent login event
+  stream. No B10 facade or notification API change is needed.
+- **Sensitive data handling:** authorization URLs and captured output exist
+  only in transient login events and the compatibility UI adapter; they are
+  excluded from watch snapshots, error strings and logs. Test process output is
+  synthetic and stays confined to sanitized fixtures and uncommitted test
+  execution; no output values are copied into the audit trail.
+
+### E058 — 2026-10-30: B11 build-42 workflow and GTK fixture verification
+
+- **Rust checks:** rustfmt checks passed for core/backend/bridge; locked offline
+  Rust tests passed with 68 core, 32 backend and 0 bridge unit tests; Clippy
+  with all targets/features and `-D warnings` passed for all three crates; the
+  atomic `scripts/build-rust-core.sh` extension build passed.
+- **Python and D-Bus checks:** default Python suite passed all 182 tests with
+  7 expected Rust-opt-in-only skips; Rust-opt-in suite passed all 182 tests,
+  including auth-status fallback, PTY URL/prompt/completion, cancel-before-
+  worker-start and argv helpers. The private-D-Bus tray suite passed all 3
+  tests in each mode. `git diff --check` passed.
+- **GTK runtime/UI smoke:** Rust-opt-in GTK login dialog launched with a
+  temporary HOME/config/data/cache and private D-Bus session; the PTY fixture
+  flow accepted test input and completed successfully. The screenshot was
+  captured in a separate neutral pre-launch dialog state before starting any
+  login process. `docs/rust-migration/screenshots/b11-login-neutral.png` was
+  visually inspected and contains no auth output, URL or code. EGL DRI3 and
+  portal document-mount permission warnings were nonfatal. The first attempt
+  used a temporary HOME directory that had not been created and returned a
+  safe generic process error; after creating the isolated directories, the
+  full flow passed.
+- **Status:** build-42 implementation, local checks and fixture UI verification
+  are ready for a focused PR. Before PR creation the open-PR query returned
+  empty, and a fresh fetch confirmed `origin/main` at B07 merge `e9dda26`.
+  No B11 PR, GitHub check or merge is claimed here.
+- **Next:** send this verified status to orchestration, open/link the focused
+  screenshot-bearing PR, then verify the exact head, reviews, required checks,
+  mergeability and current main before the serialized B11 merge.
+
+### E059 — 2026-10-30: B11 screenshot scope sanitized before PR
+
+- **Screenshot replacement:** the first unpublished screenshot draft showed
+  the fixture login field after PTY output. It was removed before PR creation.
+  The committed replacement, `docs/rust-migration/screenshots/b11-login-neutral.png`,
+  was captured from the GTK login dialog before starting a login process. Visual
+  inspection confirms it contains no auth output, authorization URL or code.
+- **Rerun:** after simplifying the sanitized URL fixture, the Rust backend suite
+  passed all 32 tests, the focused Rust-opt-in login integration suite passed
+  all 5 tests, and backend rustfmt check passed. A private-D-Bus GTK run of the
+  fixture login completed successfully without capturing its transient output;
+  a separate neutral pre-launch dialog run produced the replacement screenshot.
+- **Scope:** no fixture URL, submitted code or CLI output is recorded in this
+  audit or screenshot. The full build-42 verification remains as recorded in
+  E058; the focused rerun confirms the sanitized test fixtures and final UI
+  evidence before PR creation.
+
+### E060 — 2026-10-30: B11 PR #43 opened; checks not reported yet
+
+- **PR/head/base:** [PR #43](https://github.com/SaahiilM/codexbar-gtk/pull/43),
+  branch `orchestrated/luna-b11`, head
+  `34b70b9373728209c081c7d4eda716ddcef0fd2a`, base `main` at B07 merge
+  `e9dda264335bd196cd70409df8d4b7f4992b8382`.
+- **Observed state:** GitHub reports the PR `OPEN` and `MERGEABLE`. At the first
+  query, the review list was empty, `reviewDecision` was unset,
+  `statusCheckRollup` was empty, and `gh pr checks` reported no checks on the
+  branch. This is not a passing CI result; no merge is claimed.
+- **Screenshot/description:** the PR description links only the neutral
+  pre-launch screenshot from E059; the body contains no auth output, URL or
+  code. The PR was linked to the B11 task thread.
+- **Next:** watch PR #43 for required checks and reviews, verify the exact head
+  and current main again, then merge normally only after checks pass and UI
+  verification remains valid. B10 retains the following build/merge slot 43.

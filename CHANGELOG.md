@@ -4,6 +4,22 @@ Client-side changelog for the CodexBar GTK front-end. Each entry keys a build
 number (`CURRENT_PROJECT_VERSION`) to the upstream macOS CodexBar release its
 short version tracks, so "which version has what" maps cleanly onto both trees.
 
+## 0.82.0 (42) — 2026-10-30
+
+Tracks upstream CodexBar 0.82.0.
+
+### Added
+
+- Add a Rust PTY login service with bounded transient events, safe lifecycle
+  snapshots, code submission, cancellation, timeout and child reaping.
+- Route Rust-opt-in Claude login and auth-status callers through B07 executable
+  discovery and the PTY-specific service boundary.
+
+### Validation
+
+- See `docs/rust-migration/AUDIT.md` for fixture-only auth parity, PTY lifecycle,
+  GTK login smoke and exact check results.
+
 ## 0.82.0 (41) — 2026-10-30
 
 Tracks upstream CodexBar 0.82.0.

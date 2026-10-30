@@ -104,7 +104,9 @@ name = "codexbar-backend"
 version = "0.1.0"
 dependencies = [
  "codexbar-core",
+ "libc",
  "reqwest",
+ "serde",
  "serde_json",
  "tokio",
 ]

@@ -1206,3 +1206,71 @@ future models must verify the linked PR's status rather than trusting a stale
   them, local passing workflow-equivalent results are recorded in E051; merge
   only if GitHub permits the ordinary PR merge and current head, reviews,
   mergeability and `main` have been reverified.
+
+### E053 — 2026-10-30: B12 PR #41 merged
+
+- **Observed merge:** PR #41 merged at
+  `bd58f46b8a5cae1518aa723968484c91068f3c36`; its required `test` and
+  `tray-dbus` jobs both succeeded on PR head `21537ba`. This supersedes the
+  initial open/pending state in E052.
+- **Next:** B07 is the active slot after B12; verify current build metadata and
+  integrate the ready B07 commit on latest main before opening its PR.
+
+### E054 — 2026-10-30: B07 integrated onto B12 main; build 41
+
+- **Owner/branch:** current coding-agent session,
+  `backend/b07-cli-service-rust`. The B07 implementation commit is
+  `15057ab` after rebasing the original `216fad2` change onto current main;
+  the previously existing `backend/b07-cli-service` branch remains untouched.
+- **Base/dependency:** latest fetched `origin/main` is B12 merge
+  `bd58f46`. B00 and B12 are merged; B06, B08 and B09 are also present.
+- **Build:** latest main is build 40. B07 owns build 41, reflected in
+  `VERSION`, `codexbar_gtk/version.py`, README and CHANGELOG.
+- **Rebase reconciliation:** keep B08's currency and notification services and
+  B12's read-only update service and bridge APIs. Combine Tokio features and
+  dependencies in backend/bridge manifests and lockfiles. Register the B07 CLI
+  PyO3 adapter alongside the B08/B12 classes/functions. Preserve B07's async
+  CLI service, opt-in Python routing, screenshot, and synthetic tests.
+- **Contract:** B07 provides normalized `PathBuf` executable discovery and
+  argv-safe non-PTY command methods; B11 owns PTY sessions and B10 owns
+  controller scheduling, fallback and retention. The service accepts timeouts
+  and B00 cancellation and maps sanitized CLI errors to B00 backend errors.
+- **Status:** build-41 implementation and local verification are recorded in
+  E055. No B07 PR or merge is claimed here.
+- **Next:** send final readiness and contract status to orchestration, then
+  open/link the screenshot-bearing PR and verify its exact head and GitHub state.
+
+### E055 — 2026-10-30: B07 build-41 workflow and GTK fixture verification
+
+- **Integrated revision/base:** `15057ab` on latest `origin/main`
+  `bd58f46`; `VERSION`, `codexbar_gtk/version.py`, README and CHANGELOG agree
+  on build `0.82.0 (41)`.
+- **Workflow-equivalent checks:** rustfmt passed for core, bridge and backend;
+  locked Rust tests passed with 68 core and 22 backend tests; the atomic
+  `scripts/build-rust-core.sh` extension build passed; default Python tests
+  passed (177, 2 expected Rust-opt-in skips); Rust-opt-in tests passed (177);
+  Clippy with all targets/features and warnings denied passed for all three
+  crates; and `git diff --check` passed. Private-D-Bus tray tests passed in
+  both modes (3 each). No required local check was skipped.
+- **GTK runtime/UI smoke:** launched the build-41 Rust-opt-in application on
+  Usage & Spend with a temporary HOME/config/data/cache, private D-Bus session
+  and synthetic fixture CLI. The live GTK window displayed `$4.25` total spend
+  and `9.0K` tokens. Visually inspected the screenshot at
+  `screenshots/b07-cli-spend-synthetic.png`; no real CLI, provider account or
+  credential was used. GTK emitted nonfatal EGL render-device and portal
+  document-mount warnings; the environment lacks the PyGObject Cairo converter,
+  so chart drawing callbacks warned and the activity chart was blank while the
+  spend summary rendered.
+- **B10/B11 contract:** no API change after rebase. Discovery remains
+  `discover_executable(name, override_env, package_dir) -> Result<PathBuf,
+  CliError>`. `CliService` owns the resolved executable and optional timezone;
+  async `usage`, `cost`, `sessions` and `version` methods accept `Duration` and
+  optional B00 `Cancellation`. B11 may use `run_json` for bounded non-PTY auth
+  status, but owns PTY login and presentation helpers; B10 owns controller
+  scheduling, fallback and retained data. CLI errors expose only typed kind
+  and static operation ID.
+- **Status:** workflow-equivalent local checks and fixture GTK smoke passed;
+  PR has not yet been opened and GitHub checks/reviews/mergeability have not
+  been observed. No merge is claimed.
+- **Next:** notify orchestration and B11 of final readiness/API, then open/link
+  the focused screenshot-bearing PR and verify its current head and state.

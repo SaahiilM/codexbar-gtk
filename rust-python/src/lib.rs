@@ -1,6 +1,7 @@
-use chrono::{DateTime, NaiveDate, Utc};
+use chrono::{DateTime, NaiveDate, TimeZone, Utc};
 use codexbar_core::{
-    activity, charts, currency, domain, formatting, history, ordering, pace, preferences, providers,
+    activity, charts, currency, domain, formatting, history, notifications, ordering, pace,
+    preferences, providers,
 };
 use pyo3::exceptions::{PyOSError, PyValueError};
 use pyo3::prelude::*;
@@ -80,6 +81,245 @@ struct RustHistoryStore {
 #[pyclass(name = "PreferencesStore")]
 struct RustPreferencesStore {
     inner: preferences::PreferencesStore,
+}
+
+#[pyclass(name = "NotificationPolicy")]
+struct RustNotificationPolicy {
+    inner: notifications::NotificationPolicy,
+}
+
+#[pymethods]
+impl RustNotificationPolicy {
+    #[new]
+    fn new() -> Self {
+        Self {
+            inner: notifications::NotificationPolicy::default(),
+        }
+    }
+
+    /// Apply policies to a provider/account/window snapshot at an injected epoch clock.
+    fn observe_json(
+        &mut self,
+        snapshot_json: &str,
+        preferences_json: &str,
+        now_epoch_seconds: f64,
+    ) -> PyResult<String> {
+        let snapshot: Value = serde_json::from_str(snapshot_json)
+            .map_err(|_| PyValueError::new_err("notification_snapshot_decode"))?;
+        let preferences: Value = serde_json::from_str(preferences_json)
+            .map_err(|_| PyValueError::new_err("notification_preferences_decode"))?;
+        let Some(providers) = snapshot.as_array() else {
+            return Err(PyValueError::new_err("notification_snapshot_shape"));
+        };
+        if !now_epoch_seconds.is_finite() {
+            return Err(PyValueError::new_err("notification_clock_invalid"));
+        }
+        let providers = providers
+            .iter()
+            .filter_map(notification_provider_from_json)
+            .collect::<Vec<_>>();
+        let thresholds = |key: &str| {
+            preferences
+                .get(key)
+                .and_then(Value::as_array)
+                .map(|items| items.iter().filter_map(Value::as_f64).collect::<Vec<_>>())
+                .unwrap_or_default()
+        };
+        let prefs = notifications::NotificationPreferences {
+            quota_enabled: preferences
+                .get("quotaWarningNotificationsEnabled")
+                .and_then(Value::as_bool)
+                .unwrap_or(true),
+            session_thresholds_enabled: preferences
+                .get("quotaWarningSessionEnabled")
+                .and_then(Value::as_bool)
+                .unwrap_or(true),
+            weekly_thresholds_enabled: preferences
+                .get("quotaWarningWeeklyEnabled")
+                .and_then(Value::as_bool)
+                .unwrap_or(true),
+            session_thresholds: thresholds("quotaWarningSessionThresholds"),
+            weekly_thresholds: thresholds("quotaWarningWeeklyThresholds"),
+            session_exhaustion_enabled: preferences
+                .get("sessionQuotaNotificationsEnabled")
+                .and_then(Value::as_bool)
+                .unwrap_or(true),
+            predictive_pace_enabled: preferences
+                .get("predictivePaceNotificationsEnabled")
+                .and_then(Value::as_bool)
+                .unwrap_or(true),
+            credit_expiry_enabled: preferences
+                .get("limitResetNotificationsEnabled")
+                .and_then(Value::as_bool)
+                .unwrap_or(true),
+        };
+        let seconds = now_epoch_seconds.floor() as i64;
+        let nanos = ((now_epoch_seconds - seconds as f64) * 1e9).round() as u32;
+        let now = Utc
+            .timestamp_opt(seconds, nanos)
+            .single()
+            .ok_or_else(|| PyValueError::new_err("notification_clock_out_of_range"))?;
+        let values = self
+            .inner
+            .observe(&providers, &prefs, now)
+            .into_iter()
+            .map(notification_event_json)
+            .collect::<Vec<_>>();
+        serde_json::to_string(&values)
+            .map_err(|_| PyValueError::new_err("notification_event_encode"))
+    }
+}
+
+fn notification_provider_from_json(value: &Value) -> Option<domain::ProviderUsage> {
+    let object = value.as_object()?;
+    let provider_id = object.get("provider_id")?.as_str()?.to_owned();
+    let display_name = object
+        .get("display_name")
+        .and_then(Value::as_str)
+        .unwrap_or(&provider_id)
+        .to_owned();
+    let windows = object
+        .get("windows")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|window| {
+            let key = window.get("key")?.as_str()?.to_owned();
+            let used_percent = window.get("used_percent").and_then(Value::as_f64);
+            Some(domain::RateWindow {
+                title: window
+                    .get("title")
+                    .and_then(Value::as_str)
+                    .unwrap_or(&key)
+                    .to_owned(),
+                key,
+                used_percent: used_percent.unwrap_or(0.0),
+                resets_at: window
+                    .get("resets_at")
+                    .and_then(Value::as_str)
+                    .and_then(|value| domain::parse_timestamp(Some(value))),
+                reset_description: None,
+                window_minutes: window.get("window_minutes").and_then(Value::as_i64),
+                next_regen_percent: None,
+                is_placeholder: window
+                    .get("is_placeholder")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false),
+                quota_limit: None,
+                quota_unit: None,
+                usage_known: window
+                    .get("usage_known")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false)
+                    && used_percent.is_some(),
+            })
+        })
+        .collect::<Vec<_>>();
+    let pace = object
+        .get("pace")
+        .and_then(Value::as_object)
+        .into_iter()
+        .flatten()
+        .map(|(key, value)| {
+            (
+                key.clone(),
+                domain::Pace {
+                    stage: String::new(),
+                    delta_percent: None,
+                    expected_used_percent: None,
+                    will_last_to_reset: value
+                        .get("will_last_to_reset")
+                        .and_then(Value::as_bool)
+                        .unwrap_or(true),
+                    eta_seconds: value.get("eta_seconds").and_then(Value::as_f64),
+                    run_out_probability: value.get("run_out_probability").and_then(Value::as_f64),
+                    summary: None,
+                },
+            )
+        })
+        .collect::<std::collections::HashMap<_, _>>();
+    let reset_credits = object
+        .get("reset_credits")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    Some(domain::ProviderUsage {
+        provider_id,
+        display_name,
+        source: None,
+        version: None,
+        updated_at: None,
+        account_email: object
+            .get("account_email")
+            .and_then(Value::as_str)
+            .filter(|email| !email.is_empty())
+            .map(str::to_owned),
+        plan: None,
+        login_method: None,
+        windows,
+        pace,
+        credits_remaining: None,
+        credits_unit: String::new(),
+        credits_available: false,
+        cost: None,
+        status_level: None,
+        status_description: None,
+        error: None,
+        details: Vec::new(),
+        reset_credits_available: reset_credits.len() as i64,
+        reset_credits,
+        credit_events: Vec::new(),
+        accounts: Vec::new(),
+        selected_account: None,
+        accent_color: String::new(),
+        raw: value.clone(),
+    })
+}
+
+fn notification_event_json(event: notifications::NotificationEvent) -> Value {
+    match event {
+        notifications::NotificationEvent::QuotaThreshold {
+            provider_id,
+            account_email,
+            window_key,
+            used_percent,
+            threshold_percent,
+            title,
+            body,
+        } => serde_json::json!({
+            "kind":"quota_threshold", "provider_id":provider_id, "account_email":account_email, "window_key":window_key,
+            "used_percent":used_percent, "threshold_percent":threshold_percent, "title":title, "body":body
+        }),
+        notifications::NotificationEvent::SessionExhausted {
+            provider_id,
+            account_email,
+            window_key,
+            title,
+            body,
+        } => serde_json::json!({
+            "kind":"session_exhausted", "provider_id":provider_id, "account_email":account_email,
+            "window_key":window_key, "title":title, "body":body
+        }),
+        notifications::NotificationEvent::PredictivePace {
+            id,
+            provider_id,
+            account_email,
+            window_key,
+            title,
+            body,
+        } => serde_json::json!({
+            "kind":"predictive_pace", "id":id, "provider_id":provider_id, "account_email":account_email,
+            "window_key":window_key, "title":title, "body":body
+        }),
+        notifications::NotificationEvent::CreditExpiry {
+            id,
+            provider_id,
+            title,
+            body,
+        } => serde_json::json!({
+            "kind":"credit_expiry", "id":id, "provider_id":provider_id, "title":title, "body":body
+        }),
+    }
 }
 
 #[pyclass(name = "CurrencyConverter")]
@@ -1050,6 +1290,7 @@ fn _rust_core(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<RustHistoryStore>()?;
     module.add_class::<RustPreferencesStore>()?;
     module.add_class::<RustCurrencyConverter>()?;
+    module.add_class::<RustNotificationPolicy>()?;
     module.add_function(wrap_pyfunction!(sparkline_coordinates, module)?)?;
     module.add_function(wrap_pyfunction!(canonical_id, module)?)?;
     module.add_function(wrap_pyfunction!(display_name, module)?)?;

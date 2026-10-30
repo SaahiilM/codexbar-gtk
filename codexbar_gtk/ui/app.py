@@ -475,14 +475,9 @@ class CodexBarApp(Adw.Application):
         self.tray.register()
 
     def _check_notifications(self, state) -> None:
-        for title, message in self.controller.session_quota_events(state):
-            self._notify(title, message)
-        for provider_id, window_key, used, message in self.controller.quota_events(state):
-            self._notify("Quota warning", message)
-        for event in self.controller.predictive_pace_events(state):
-            self._notify(event["title"], event["body"], id=event["id"])
-        for event in self.controller.credit_expiry_events(state):
-            self._notify(event["title"], event["body"], id=event["id"])
+        for event in self.controller.notification_events(state):
+            identifier = event.get("id")
+            self._notify(event["title"], event["body"], id=identifier)
 
     def _notify(self, title: str, message: str, id: str | None = None) -> None:
         notification = Gio.Notification.new(title)

@@ -7,6 +7,7 @@ Pure Python (no GTK imports) so it can be exercised head-less.
 from __future__ import annotations
 
 import math
+import json
 import threading
 import time
 from dataclasses import dataclass, field
@@ -27,6 +28,7 @@ from .data import (
 )
 from .prefs import Preferences
 from .rust_bridge import extension
+from . import rust_bridge
 
 
 @dataclass
@@ -69,6 +71,9 @@ class Controller:
         self._last_reset_seen: dict[tuple[str, str], float] = {}
         self._pace_notified: dict[tuple[str, str], tuple[int | None, float]] = {}
         self._credit_expiry_seen: set[tuple] = set()
+        self._notification_snapshot_seen: float | None = None
+        rust = rust_bridge.extension()
+        self._rust_notification_policy = rust.NotificationPolicy() if rust is not None else None
 
     # -- listeners --------------------------------------------------------
 
@@ -281,12 +286,90 @@ class Controller:
 
     # -- notifications ----------------------------------------------------
 
-    def quota_events(self, state: AppState) -> list[tuple[str, str, float, str]]:
+    def notification_events(self, state: AppState, now: datetime | None = None) -> list[dict]:
+        """Return typed policy outcomes; platform delivery remains a UI concern."""
+        if state.last_error is not None:
+            return []
+        if state.last_updated is not None:
+            if state.last_updated == self._notification_snapshot_seen:
+                return []
+            self._notification_snapshot_seen = state.last_updated
+        if self._rust_notification_policy is not None:
+            now = now or datetime.now(timezone.utc)
+            providers = []
+            for provider in state.providers:
+                windows = [{
+                    "key": window.key,
+                    "title": window.title,
+                    "used_percent": window.used_percent,
+                    "resets_at": window.resets_at.isoformat() if window.resets_at else None,
+                    "window_minutes": window.window_minutes,
+                    "is_placeholder": window.is_placeholder,
+                    "usage_known": window.usage_known,
+                } for window in provider.windows]
+                pace = {key: {
+                    "will_last_to_reset": value.will_last_to_reset,
+                    "eta_seconds": value.eta_seconds,
+                    "run_out_probability": value.run_out_probability,
+                } for key, value in provider.pace.items()}
+                credits = [{"expires_at": credit["expires_at"].isoformat() if credit.get("expires_at") else None}
+                           for credit in provider.reset_credits]
+                providers.append({
+                    "provider_id": provider.provider_id,
+                    "display_name": provider.display_name,
+                    "account_email": provider.account_email,
+                    "windows": windows,
+                    "pace": pace,
+                    "reset_credits": credits,
+                })
+            preferences = {key: self.prefs.get(key, default) for key, default in {
+                "quotaWarningNotificationsEnabled": True,
+                "quotaWarningSessionEnabled": True,
+                "quotaWarningWeeklyEnabled": True,
+                "quotaWarningSessionThresholds": [50, 20],
+                "quotaWarningWeeklyThresholds": [50, 20],
+                "sessionQuotaNotificationsEnabled": True,
+                "predictivePaceNotificationsEnabled": True,
+                "limitResetNotificationsEnabled": True,
+            }.items()}
+            encoded = self._rust_notification_policy.observe_json(
+                json.dumps(providers), json.dumps(preferences), now.timestamp()
+            )
+            return json.loads(encoded)
+
+        # Python remains the parity reference until the explicit cutover.
+        events = []
+        events.extend({
+            "kind": "quota_threshold", "provider_id": provider_id,
+            "account_email": account_email or None, "window_key": window_key,
+            "used_percent": used, "threshold_percent": threshold,
+            "title": "Quota warning", "body": message,
+        } for provider_id, account_email, window_key, used, threshold, message in self.quota_events(state))
+        events.extend({"kind": "session_exhausted", **event}
+                      for event in self._session_quota_event_records(state))
+        for event in self.predictive_pace_events(state, now=now):
+            identity = next(
+                ((provider.provider_id, provider.account_email, window.key)
+                 for provider in state.providers for window in provider.windows
+                 if event.get("id") == f"predictive-pace-{provider.provider_id}-{window.key}"),
+                (None, None, None),
+            )
+            events.append({"kind": "predictive_pace", "provider_id": identity[0],
+                           "account_email": identity[1] or None, "window_key": identity[2], **event})
+        for event in self.credit_expiry_events(state, now=now):
+            provider = next((provider for provider in state.providers
+                             if event.get("id") == f"reset-credit-expiry-{provider.provider_id}"), None)
+            events.append({"kind": "credit_expiry", "provider_id": provider.provider_id if provider else None, **event})
+        return events
+
+    def quota_events(self, state: AppState) -> list[tuple[str, str | None, str, float, float, str]]:
         """Return newly crossed quota warning thresholds.
 
-        Each entry is ``(provider_id, window_key, used_percent, message)``.
+        Each entry is ``(provider_id, account_email, window_key, used_percent,
+        threshold_percent, message)``. Account identity is carried in the typed
+        outcome; threshold deduplication keeps the Python provider/window key.
         """
-        events: list[tuple[str, str, float, str]] = []
+        events: list[tuple[str, str | None, str, float, float, str]] = []
         if not self.prefs.get("quotaWarningNotificationsEnabled", True):
             return events
 
@@ -295,6 +378,8 @@ class Controller:
 
         for provider in state.providers:
             for window in provider.windows:
+                if not window.usage_known or window.is_placeholder or not math.isfinite(window.used_percent):
+                    continue
                 if window.key == "primary":
                     thresholds = session_thresholds if self.prefs.get("quotaWarningSessionEnabled", True) else []
                 elif window.key == "secondary":
@@ -311,8 +396,10 @@ class Controller:
                         events.append(
                             (
                                 provider.provider_id,
+                                provider.account_email,
                                 window.key,
                                 used,
+                                threshold,
                                 f"{provider.display_name} {window.title} at {used:.0f}% "
                                 f"(threshold {threshold:.0f}%)",
                             )
@@ -324,9 +411,9 @@ class Controller:
 
         return events
 
-    def session_quota_events(self, state: AppState) -> list[tuple[str, str]]:
-        """Return newly exhausted primary quota windows, once per exhaustion."""
-        events: list[tuple[str, str]] = []
+    def _session_quota_event_records(self, state: AppState) -> list[dict]:
+        """Return identity-preserving exhaustion outcomes for notification delivery."""
+        events: list[dict] = []
         enabled = bool(self.prefs.get("sessionQuotaNotificationsEnabled", True))
         seen: set[tuple[str, str, str]] = set()
         for provider in state.providers:
@@ -334,22 +421,30 @@ class Controller:
                 if window.key != "primary":
                     continue
                 key = (provider.provider_id, provider.account_email or "", window.key)
+                seen.add(key)
+                if not window.usage_known or window.is_placeholder or not math.isfinite(window.used_percent):
+                    continue
                 exhausted = window.used_percent >= 100.0
                 was_exhausted = self._session_quota_seen.get(key, False)
                 self._session_quota_seen[key] = exhausted
-                seen.add(key)
                 if enabled and exhausted and not was_exhausted:
                     account = f" ({provider.account_email})" if provider.account_email else ""
-                    events.append(
-                        (
-                            "Session quota exhausted",
-                            f"{provider.display_name}{account} {window.title} is exhausted.",
-                        )
-                    )
+                    events.append({
+                        "provider_id": provider.provider_id,
+                        "account_email": provider.account_email or None,
+                        "window_key": window.key,
+                        "title": "Session quota exhausted",
+                        "body": f"{provider.display_name}{account} {window.title} is exhausted.",
+                    })
         # Drop disappeared accounts/providers so a later appearance can notify again.
         for key in self._session_quota_seen.keys() - seen:
             self._session_quota_seen.pop(key, None)
         return events
+
+    def session_quota_events(self, state: AppState) -> list[tuple[str, str]]:
+        """Return the legacy title/body pairs for Python parity callers."""
+        return [(event["title"], event["body"])
+                for event in self._session_quota_event_records(state)]
 
     # -- pace and reset-credit events ------------------------------------
 

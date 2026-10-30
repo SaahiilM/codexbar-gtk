@@ -6,6 +6,23 @@ short version tracks, so "which version has what" maps cleanly onto both trees.
 
 ## Unreleased
 
+## 0.82.0 (39) — 2026-10-30
+
+Tracks upstream CodexBar 0.82.0.
+
+### Added
+
+- Port quota threshold, session exhaustion, predictive pace, and reset-credit
+  expiry policies to a stateful Rust service with typed event outcomes.
+- Define a bounded, backpressured event stream for notification transitions so
+  coalescing watch snapshots cannot lose them.
+- Preserve unknown versus known-zero quota state in notification policy parity.
+
+### Validation
+
+- See `docs/rust-migration/AUDIT.md` E048 for Rust, Python, tray D-Bus, and
+  synthetic GTK evidence.
+
 ## 0.82.0 (38) — 2026-10-30
 
 Tracks upstream CodexBar 0.82.0.

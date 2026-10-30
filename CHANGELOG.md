@@ -6,6 +6,20 @@ short version tracks, so "which version has what" maps cleanly onto both trees.
 
 ## Unreleased
 
+## 0.82.0 (38) — 2026-10-30
+
+Tracks upstream CodexBar 0.82.0.
+
+### Added
+
+- Port provider visibility/order and automatic tray quota selection to Rust,
+  including deterministic ties, depleted-quota ranking, and trusted ETA rules.
+- Expose owned ordering and tray-selection DTOs for the B10 controller snapshot.
+
+### Validation
+
+- See `docs/rust-migration/AUDIT.md` for B09 parity, runtime and GTK fixture evidence.
+
 ## 0.82.0 (37) — 2026-10-30
 
 Tracks upstream CodexBar 0.82.0.

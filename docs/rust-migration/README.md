@@ -57,6 +57,13 @@ Python GTK widgets                        Rust GTK4/libadwaita widgets
   to its GUI thread. `watch` deliberately coalesces intermediate updates; if a
   future user-visible operation needs a lossless event stream, define a bounded
   channel contract for that operation rather than treating snapshots as events.
+  B08/B10/B14 notification events use `rust_backend::event_channel()` with a
+  256 item Tokio `mpsc` buffer. Producers await sends, applying backpressure;
+  they never silently drop a transition. A closed receiver returns the stable
+  `EventPublishError::ReceiverClosed` result. The independent `watch` stream
+  remains latest-value state. The frontend drains events separately and
+  marshals delivery to its UI thread. Backend DTOs contain no GTK/Python types,
+  and errors use stable category/operation identifiers.
   Do not call GTK callbacks under backend locks or block the GUI on I/O.
 - Inject clocks, subprocess/HTTP/browser adapters, paths, and cancellation where
   needed for deterministic tests. Prove the backend works headlessly without

@@ -6,9 +6,89 @@
 
 pub mod currency;
 
-use std::{future::Future, sync::Arc, time::SystemTime};
+use std::{
+    future::Future,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
+    time::SystemTime,
+};
 
-use tokio::{sync::watch, task::JoinHandle};
+use codexbar_core::notifications::NotificationEvent;
+use tokio::{
+    sync::{mpsc, watch},
+    task::JoinHandle,
+};
+
+/// Maximum queued frontend events before backend producers apply backpressure.
+pub const BACKEND_EVENT_CAPACITY: usize = 256;
+
+#[derive(Clone, Debug)]
+pub enum BackendEventKind {
+    Notification(NotificationEvent),
+}
+
+/// A lossless policy event envelope. Use the bounded event channel for events;
+/// `BackendState`'s watch channel is latest-value state and may coalesce.
+#[derive(Clone, Debug)]
+pub struct BackendEvent {
+    pub sequence: u64,
+    pub emitted_at: SystemTime,
+    pub kind: BackendEventKind,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum EventPublishError {
+    ReceiverClosed,
+}
+
+impl EventPublishError {
+    pub const fn backend_error(self) -> BackendError {
+        BackendError::new(BackendErrorKind::Cancelled, "notification_event_publish")
+    }
+}
+
+/// Bounded event publisher. `publish_notification` awaits capacity and never
+/// silently drops an event. A closed receiver returns an explicit error.
+#[derive(Clone, Debug)]
+pub struct EventPublisher {
+    sender: mpsc::Sender<BackendEvent>,
+    sequence: Arc<AtomicU64>,
+}
+
+impl EventPublisher {
+    pub async fn publish_notification(
+        &self,
+        event: NotificationEvent,
+    ) -> Result<(), EventPublishError> {
+        let permit = self
+            .sender
+            .reserve()
+            .await
+            .map_err(|_| EventPublishError::ReceiverClosed)?;
+        let sequence = self.sequence.fetch_add(1, Ordering::Relaxed);
+        permit.send(BackendEvent {
+            sequence,
+            emitted_at: SystemTime::now(),
+            kind: BackendEventKind::Notification(event),
+        });
+        Ok(())
+    }
+}
+
+/// Create the B10/B14 bounded event stream alongside the coalescing `watch`
+/// snapshot. Consumers must drain it independently and marshal delivery to UI.
+pub fn event_channel() -> (EventPublisher, mpsc::Receiver<BackendEvent>) {
+    let (sender, receiver) = mpsc::channel(BACKEND_EVENT_CAPACITY);
+    (
+        EventPublisher {
+            sender,
+            sequence: Arc::new(AtomicU64::new(0)),
+        },
+        receiver,
+    )
+}
 
 /// Stable, non-sensitive categories for errors crossing the service boundary.
 ///
@@ -301,5 +381,67 @@ mod tests {
         assert_eq!(state.borrow().last_error, Some(expected));
         drop(state);
         assert_eq!(handle.shutdown().await, Err(expected));
+    }
+
+    fn synthetic_event() -> NotificationEvent {
+        NotificationEvent::SessionExhausted {
+            provider_id: "synthetic".into(),
+            account_email: None,
+            window_key: "primary".into(),
+            title: "Synthetic exhaustion".into(),
+            body: "Fixture only".into(),
+        }
+    }
+
+    #[tokio::test]
+    async fn event_channel_is_bounded_and_preserves_events_in_order() {
+        let (publisher, mut receiver) = event_channel();
+        assert_eq!(BACKEND_EVENT_CAPACITY, 256);
+        publisher.publish_notification(synthetic_event()).await.unwrap();
+        publisher.publish_notification(synthetic_event()).await.unwrap();
+        assert_eq!(receiver.recv().await.unwrap().sequence, 0);
+        assert_eq!(receiver.recv().await.unwrap().sequence, 1);
+    }
+
+    #[tokio::test]
+    async fn full_event_channel_backpressures_without_losing_the_next_event() {
+        let (publisher, mut receiver) = event_channel();
+        for _ in 0..BACKEND_EVENT_CAPACITY {
+            publisher.publish_notification(synthetic_event()).await.unwrap();
+        }
+        let blocked_publisher = publisher.clone();
+        let blocked = tokio::spawn(async move {
+            blocked_publisher.publish_notification(synthetic_event()).await
+        });
+        assert!(timeout(Duration::from_millis(10), async {
+            while !blocked.is_finished() {
+                tokio::task::yield_now().await;
+            }
+        }).await.is_err());
+        assert_eq!(receiver.recv().await.unwrap().sequence, 0);
+        timeout(Duration::from_secs(1), blocked)
+            .await
+            .expect("a freed slot should release the sender")
+            .expect("publisher task should not panic")
+            .expect("open event channel should accept the event");
+        let mut final_sequence = 0;
+        for _ in 1..=BACKEND_EVENT_CAPACITY {
+            final_sequence = receiver.recv().await.unwrap().sequence;
+        }
+        assert_eq!(final_sequence, BACKEND_EVENT_CAPACITY as u64);
+    }
+
+    #[tokio::test]
+    async fn event_channel_reports_closed_receiver() {
+        let (publisher, receiver) = event_channel();
+        drop(receiver);
+        assert_eq!(
+            publisher.publish_notification(synthetic_event()).await,
+            Err(EventPublishError::ReceiverClosed)
+        );
+        assert_eq!(
+            EventPublishError::ReceiverClosed.backend_error(),
+            BackendError::new(BackendErrorKind::Cancelled, "notification_event_publish")
+        );
     }
 }

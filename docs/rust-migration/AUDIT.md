@@ -1360,3 +1360,20 @@ future models must verify the linked PR's status rather than trusting a stale
   audit or screenshot. The full build-42 verification remains as recorded in
   E058; the focused rerun confirms the sanitized test fixtures and final UI
   evidence before PR creation.
+
+### E060 — 2026-10-30: B11 PR #43 opened; checks not reported yet
+
+- **PR/head/base:** [PR #43](https://github.com/SaahiilM/codexbar-gtk/pull/43),
+  branch `orchestrated/luna-b11`, head
+  `34b70b9373728209c081c7d4eda716ddcef0fd2a`, base `main` at B07 merge
+  `e9dda264335bd196cd70409df8d4b7f4992b8382`.
+- **Observed state:** GitHub reports the PR `OPEN` and `MERGEABLE`. At the first
+  query, the review list was empty, `reviewDecision` was unset,
+  `statusCheckRollup` was empty, and `gh pr checks` reported no checks on the
+  branch. This is not a passing CI result; no merge is claimed.
+- **Screenshot/description:** the PR description links only the neutral
+  pre-launch screenshot from E059; the body contains no auth output, URL or
+  code. The PR was linked to the B11 task thread.
+- **Next:** watch PR #43 for required checks and reviews, verify the exact head
+  and current main again, then merge normally only after checks pass and UI
+  verification remains valid. B10 retains the following build/merge slot 43.

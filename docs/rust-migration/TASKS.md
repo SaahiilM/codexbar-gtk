@@ -14,10 +14,10 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Planning change | [PR #18](https://github.com/SaahiilM/codexbar-gtk/pull/18), merged at `69c5496`, build `0.81.0 (17)` |
 | Backend tasks completed after that baseline | B00–B09, B12 and B01/B02 sub-slices merged; B07 merged in PR #42 |
 | Active implementation task / owner | B11 login/auth service, owner: current coding-agent session |
-| Active task | **B11** — PTY/auth service on `orchestrated/luna-b11`, integrated onto `e9dda26`; build `0.82.0 (42)` |
-| Next domain slice | **B11** — complete Rust auth-status and PTY adapter routing, run full checks and fixture GTK smoke, then open focused PR |
-| Open external blockers | None for B11. B10 has the next serialized slot/build 43; coordinate before B11 merge. |
-| Latest checks | Build 42: 68 core + 32 backend tests, format/Clippy for all crates, extension build, 182 Python tests in both modes (7 expected Rust-only skips by default), and 3 private-D-Bus tray tests in both modes passed. See AUDIT E058. |
+| Active task | **B11** — PTY/auth service on `orchestrated/luna-b11`, PR #43 open from build `0.82.0 (42)` on B07 merge `e9dda26` |
+| Next domain slice | **B11** — observe PR #43 required checks/reviews, then merge normally after they pass and verify latest main |
+| Open external blockers | GitHub has not reported checks yet on PR #43; no reviews reported. B10 has the next serialized slot/build 43. |
+| Latest checks | Build 42: 68 core + 32 backend tests, format/Clippy for all crates, extension build, 182 Python tests in both modes (7 expected Rust-only skips by default), and 3 private-D-Bus tray tests in both modes passed. Focused sanitized login rerun passed 32 backend + 5 Python tests; see AUDIT E058–E059. |
 | UI validation | Rust-opt-in GTK login fixture flow completed under temporary HOME/private D-Bus; neutral pre-launch dialog screenshot is `screenshots/b11-login-neutral.png` (AUDIT E058). |
 
 **First commands for a new model/session:**

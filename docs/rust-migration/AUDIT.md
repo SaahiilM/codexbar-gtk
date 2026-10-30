@@ -715,6 +715,24 @@ reproducible commands; report artifact limitations honestly.
   CI/merge result observed. GTK build is `0.82.0 (35)` for this PR.
 - **Next:** commit and open the PR, then record its URL and observed checks here.
 
+### E031 — 2026-10-30: B04 synthetic UI screenshots added to PR
+
+- **PR:** [PR #36](https://github.com/SaahiilM/codexbar-gtk/pull/36).
+- **Artifacts:** `docs/rust-migration/screenshots/b04-spend-synthetic.png` and
+  `docs/rust-migration/screenshots/b04-dashboard-synthetic.png` are rendered
+  from the GTK widget tree with the Rust opt-in and synthetic CLI payloads.
+  They contain no account identifiers or live data and are embedded in the PR
+  description as a reference for the SpendView and dashboard.
+- **Scope/limits:** confirms the synthetic spend values flow into the GTK
+  SpendView and dashboard widgets. This is a fixture render, not a full manual
+  interaction pass. The Cairo snapshot renderer shows transparent surfaces on a
+  black canvas in this environment; nonfatal theme/EGL/accessibility warnings
+  were also observed.
+- **Status:** screenshots are committed in this PR; updated checks must pass
+  before merge.
+- **Next:** observe the checks for the screenshot commit; merge PR #36 only when
+  both required checks pass.
+
 ### E030 — 2026-10-30: B04 PR opened
 
 - **PR:** [PR #36](https://github.com/SaahiilM/codexbar-gtk/pull/36), open,

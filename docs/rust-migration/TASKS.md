@@ -18,7 +18,7 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Next domain slice | **B04** — observe PR #36 review/CI; after merge, continue with B05 preferences |
 | Open external blockers | None known; task dependencies below still apply |
 | Latest checks | B04 local checks passed (AUDIT E029); PR #36 `test` in progress and `tray-dbus` queued on 2026-10-30 |
-| UI validation | Synthetic B04 Rust-opt-in SpendView preview rendered spend/dashboard/card/popup/sessions PNGs on Wayland (AUDIT E029); nonfatal GTK/EGL/accessibility warnings |
+| UI validation | Synthetic B04 Rust-opt-in SpendView preview rendered spend/dashboard/card/popup/sessions PNGs on Wayland (AUDIT E029); [SpendView](screenshots/b04-spend-synthetic.png) and [dashboard](screenshots/b04-dashboard-synthetic.png) screenshots are in PR #36 (AUDIT E031) |
 
 **First commands for a new model/session:**
 

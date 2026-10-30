@@ -14,10 +14,10 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Planning change | [PR #18](https://github.com/SaahiilM/codexbar-gtk/pull/18), merged at `69c5496`, build `0.81.0 (17)` |
 | Backend tasks completed after that baseline | B00, B01, B02a, B02b1, B02b2a, B02b2b1, B02b2b2a, B02b2b2b, B03, B04 and B05 merged |
 | Active implementation task / owner | B06 currency service, owner: current coding-agent session |
-| Active task | **B06** — currency catalog, conversion, TTL cache and bounded async HTTP refresh; branch `orchestrated/luna-b06-currency`; locally verified, PR pending |
-| Next domain slice | **B06** — open focused PR, observe checks, coordinate serialized merge, then continue with B07 CLI |
+| Active task | **B06** — currency catalog, conversion, TTL cache and bounded async HTTP refresh; [PR #38](https://github.com/SaahiilM/codexbar-gtk/pull/38), head `6245c64`, open and mergeable |
+| Next domain slice | **B06** — observe both required checks; merge after they pass and orchestration confirms the slot, then continue with B07 CLI |
 | Open external blockers | None known; task dependencies below still apply |
-| Latest checks | B05 merged with `test` and `tray-dbus` passed on PR head `d43b18f`; B06 local Rust/Python/GTK checks passed (AUDIT E037); PR checks pending |
+| Latest checks | B05 checks passed on head `d43b18f`; B06 local Rust/Python/GTK checks passed (AUDIT E037); PR #38 `test` in progress and `tray-dbus` queued at 17:20 UTC |
 | UI validation | Rust-opt-in synthetic GTK SpendView displayed converted EUR values; [screenshot](screenshots/b06-spend-currency-synthetic.png) (AUDIT E037) |
 
 **First commands for a new model/session:**

@@ -876,3 +876,17 @@ future models must verify the linked PR's status rather than trusting a stale
 - **Next:** coordinate merge sequencing with the orchestration thread, commit
   and open a focused PR containing the screenshot, then wait for checks before
   any merge.
+
+### E038 — 2026-10-30: B06 PR opened
+
+- **PR:** [PR #38](https://github.com/SaahiilM/codexbar-gtk/pull/38), branch
+  `orchestrated/luna-b06-currency`, initial head
+  `6245c641f45681083402fe117425d034fa2358ce`, base `main`.
+- **Observed at 17:20 UTC:** GitHub state `OPEN`, mergeable; `test` was
+  `IN_PROGRESS` and `tray-dbus` was `QUEUED`; no reviews were present. Live
+  `origin/main` remained B05 merge `878d4b7`.
+- **PR contents:** includes this B06 implementation, build 37 metadata, B05
+  merge/check handoff, local verification record, and synthetic SpendView
+  screenshot.
+- **Next:** observe both required checks on the latest PR head and merge only
+  after they pass and the serialized merge slot remains available.

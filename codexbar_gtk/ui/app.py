@@ -15,7 +15,13 @@ from ..controller import Controller, automatic_tray_selection
 from ..format import compact_window_label
 from ..prefs import Preferences
 from ..startup import wait_for_display
-from ..updates import PROJECT_URL, check_latest_version, version_key
+from ..updates import (
+    PROJECT_URL,
+    UpdateCheckError,
+    UpdateCheckRequest,
+    UpdateCheckResult,
+    check_for_update,
+)
 from ..version import BUILD, SHORT_VERSION
 from . import icons
 from .popup import PopupWindow
@@ -276,42 +282,44 @@ class CodexBarApp(Adw.Application):
 
         def check() -> None:
             try:
-                latest = check_latest_version()
-                result: tuple[str, tuple[str, int] | str] = ("ok", latest)
-            except Exception as error:
-                result = ("error", str(error))
+                checked = check_for_update(UpdateCheckRequest(SHORT_VERSION, BUILD))
+                result: tuple[str, UpdateCheckResult | UpdateCheckError] = ("ok", checked)
+            except UpdateCheckError as error:
+                result = ("error", error)
             GLib.idle_add(self._finish_update_check, dialog, result)
 
         threading.Thread(target=check, name="codexbar-update-check", daemon=True).start()
 
-    def _finish_update_check(self, dialog, result: tuple[str, tuple[str, int] | str]) -> bool:
+    def _finish_update_check(
+        self, dialog, result: tuple[str, UpdateCheckResult | UpdateCheckError]
+    ) -> bool:
         status, value = result
-        if status != "ok" or not isinstance(value, tuple):
-            error = value if isinstance(value, str) else "unexpected update-check response"
+        if status != "ok" or not isinstance(value, UpdateCheckResult):
+            error = value if isinstance(value, UpdateCheckError) else UpdateCheckError("network")
             dialog.set_heading("Couldn’t check for updates")
             dialog.set_body(
                 f"The update check failed: {error}\n\n"
                 "You can still open the project page and check manually."
             )
         else:
-            latest_version, latest_build = value
-            current_key = version_key(SHORT_VERSION, BUILD)
-            latest_key = version_key(latest_version, latest_build)
             current_display = display_string()
-            latest_display = f"{latest_version} ({latest_build})"
-            if latest_key > current_key:
+            latest_display = f"{value.latest_version} ({value.latest_build})"
+            if value.relation == "available":
                 dialog.set_heading(f"Update available: {latest_display}")
                 dialog.set_body(
                     f"You have {current_display}. This client is distributed as source; "
                     "pull the latest changes in your checkout, run "
                     "./scripts/install.sh --no-autostart, then restart the app."
                 )
-            elif latest_key < current_key:
+            elif value.relation == "ahead":
                 dialog.set_heading("This build is newer than the public version")
                 dialog.set_body(f"Installed: {current_display}\nPublic main: {latest_display}")
-            else:
+            elif value.relation == "current":
                 dialog.set_heading("You’re up to date")
                 dialog.set_body(f"CodexBar GTK {current_display} is the latest public build.")
+            else:
+                dialog.set_heading("Couldn’t check for updates")
+                dialog.set_body("The update check returned an unknown result.")
         return False
 
     @staticmethod

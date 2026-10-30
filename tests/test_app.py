@@ -11,6 +11,7 @@ are recorded fixtures.
 from __future__ import annotations
 
 import json
+from http.server import BaseHTTPRequestHandler, HTTPServer
 import os
 import sys
 import tempfile
@@ -41,7 +42,13 @@ from codexbar_gtk.data import (
 from codexbar_gtk.history import HistoryStore, Sample
 from codexbar_gtk.login import terminal_command_argv
 from codexbar_gtk.prefs import Preferences
-from codexbar_gtk.updates import parse_version_file, version_key
+from codexbar_gtk.updates import (
+    UpdateCheckError,
+    UpdateCheckRequest,
+    check_for_update,
+    parse_version_file,
+    version_key,
+)
 
 FIXTURES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures")
 
@@ -1078,9 +1085,79 @@ class UpdateCheckTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             parse_version_file("MARKETING_VERSION=next\nCURRENT_PROJECT_VERSION=4\n")
 
+    def test_python_unicode_digit_characterization_is_preserved(self):
+        self.assertEqual(
+            parse_version_file("MARKETING_VERSION=0.⁸².0\nCURRENT_PROJECT_VERSION=4\n"),
+            ("0.⁸².0", 4),
+        )
+        with self.assertRaises(ValueError):
+            version_key("0.⁸².0", 4)
+        with self.assertRaises(ValueError):
+            parse_version_file("MARKETING_VERSION=0.82.0\nCURRENT_PROJECT_VERSION=⁴\n")
+
     def test_versions_compare_numerically_then_by_build(self):
         self.assertGreater(version_key("0.81.0", 1), version_key("0.80.99", 99))
         self.assertGreater(version_key("0.81.0", 4), version_key("0.81.0", 3))
+
+    def _check_fixture(self, body: bytes, status: int = 200):
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(status)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *_args):
+                pass
+
+        server = HTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        return f"http://127.0.0.1:{server.server_port}/VERSION", server, thread
+
+    def test_unicode_decimal_digits_match_python_int_and_numeric_ordering(self):
+        self.assertEqual(
+            parse_version_file(
+                "MARKETING_VERSION=٠.٨٢.٠\nCURRENT_PROJECT_VERSION=٤\n"
+            ),
+            ("٠.٨٢.٠", 4),
+        )
+        self.assertEqual(version_key("０.８２.０", 4), version_key("0.82.0", 4))
+        url, server, thread = self._check_fixture(
+            "MARKETING_VERSION=０.８２.０\nCURRENT_PROJECT_VERSION=８\n".encode()
+        )
+        try:
+            result = check_for_update(UpdateCheckRequest("٠.٨٢.٠", 7, url=url))
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=1)
+        self.assertEqual((result.relation, result.latest_version, result.latest_build),
+                         ("available", "０.８２.０", 8))
+
+    def test_service_sanitizes_invalid_oversized_and_network_failures(self):
+        cases = [
+            ("MARKETING_VERSION=0.82.0\nCURRENT_PROJECT_VERSION=⁴\n".encode(), 200, "invalid_marker"),
+            (b"x" * 4097, 200, "oversized"),
+            (b"", 503, "network"),
+        ]
+        for body, status, expected_kind in cases:
+            with self.subTest(kind=expected_kind):
+                url, server, thread = self._check_fixture(body, status)
+                try:
+                    with self.assertRaises(UpdateCheckError) as raised:
+                        check_for_update(UpdateCheckRequest("0.82.0", 7, url=url))
+                finally:
+                    server.shutdown()
+                    server.server_close()
+                    thread.join(timeout=1)
+                self.assertEqual(raised.exception.kind, expected_kind)
+        with self.assertRaises(UpdateCheckError) as raised:
+            check_for_update(UpdateCheckRequest("0.82.0", 7, url="http://127.0.0.1:0/VERSION"))
+        self.assertEqual(raised.exception.kind, "network")
+        with self.assertRaises(UpdateCheckError) as raised:
+            check_for_update(UpdateCheckRequest("0.82.0", 7, timeout=float("nan")))
+        self.assertEqual(raised.exception.kind, "timeout")
 
 
 class SparklineGeometryTests(unittest.TestCase):

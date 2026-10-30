@@ -1118,3 +1118,42 @@ future models must verify the linked PR's status rather than trusting a stale
   fresh CI and UI verification pass.
 - **Next:** report the ready branch and settled DTO/channel contract to
   orchestration, then open/link the screenshot-bearing PR after coordination.
+
+### E049 — 2026-10-30: B08 PR #40 merged and verified
+
+- **Observed merge:** PR #40 merged at
+  `9d272fd810912133d0e42f35238dee1fc5e12a30`, now `origin/main`; PR head was
+  `1d0f396ca8d559af2ef0d0ad6e6ad9f70874ac9e`. GitHub Actions run `41102664352`
+  reports both required jobs, `test` and `tray-dbus`, `SUCCESS` on that head.
+- **Owner's local workflow at the exact PR head:** 68 Rust core tests and 10
+  Rust backend tests passed; rustfmt and Clippy checks passed for all three
+  crates; the Rust extension build passed; Python passed 171 tests in each
+  mode, with the 2 expected opt-in-only skips in default mode; 3 D-Bus tray
+  tests passed; and the synthetic GTK smoke passed. The GTK screenshot is
+  embedded in PR #40. No CI bypass was used.
+- **Build sequence:** B06 is build 37, B09 build 38, B08 build 39. B12 owns the
+  next slot at build 40, subject to current metadata verification.
+- **Next:** B12 fetches this main, reconciles shared Rust and handoff files, and
+  reruns its full checks and synthetic GTK smoke on the integrated tree.
+
+### E050 — 2026-10-30: B12 rebased onto B08 main; build 40 assigned
+
+- **Base/build:** refreshed `origin/main` to B08 merge
+  `9d272fd810912133d0e42f35238dee1fc5e12a30`; retained B12 as build
+  `0.82.0 (40)` after B08's build 39. `VERSION`, Python version metadata,
+  README and CHANGELOG now agree on build 40.
+- **Conflict reconciliation:** retained B08's notification policies, bounded
+  backend event channel, Python notification adapter, and successful metadata;
+  restored B12's `updates` backend module and PyO3 entry point. Tokio feature
+  sets and direct service dependencies are combined. Lockfiles preserve B08's
+  direct `serde_json` dependency alongside `reqwest` and Tokio.
+- **B12 contract:** a typed read-only request/result service with bounded HTTP
+  response and timeout, injectable fixture URL/fetch seam, and stable sanitized
+  errors. Unicode decimal version digits preserve Python behavior, including
+  Arabic-Indic/fullwidth numeric comparison; superscript digits pass Python
+  `isdigit()` but fail `int()` and return a sanitized invalid-marker error.
+  The Python reference parser is unchanged.
+- **Status:** no B12 PR exists. Prior B12 checks predate B08 integration; the
+  integrated tree still requires full checks and loopback-fixture GTK smoke.
+- **Next:** verify metadata and combined source, run required checks and fixture
+  smoke, then report readiness to orchestration before opening the PR.

@@ -9,16 +9,16 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Field | Current checkpoint |
 | --- | --- |
 | Goal | Fully native Rust GTK4/libadwaita app; backend first, UI second |
-| Current phase | B08 notification policies; native UI implementation must wait |
-| Last merged implementation | B09 PR #39 merged at `93b62bb`, build `0.82.0 (38)` |
+| Current phase | B12 read-only update service; native UI implementation must wait |
+| Last merged implementation | B08 PR #40 merged at `9d272fd`, build `0.82.0 (39)` |
 | Planning change | [PR #18](https://github.com/SaahiilM/codexbar-gtk/pull/18), merged at `69c5496`, build `0.81.0 (17)` |
-| Backend tasks completed after that baseline | B00, B01, B02a, B02b1, B02b2a, B02b2b1, B02b2b2a, B03, B04, B05, B06 and B09 merged |
-| Active implementation task / owner | B08 notification policies, owner: current coding-agent session |
-| Active task | **B08** — notification policies; active on `backend/b08-notification-policy-service`, build `0.82.0 (39)` |
-| Next domain slice | **B08** — local parity checks and GTK fixture smoke passed; open the focused PR after orchestration coordination. Merge only after fresh CI and UI verification. |
-| Open external blockers | No dependency blockers; PR review/CI and serialized merge coordination remain outstanding. |
-| Latest checks | B08 post-rebase: 68 core and 10 backend tests, all format/Clippy checks, extension build, 171 Python tests in both modes (two opt-in-only skips in default mode), 3 tray tests and compileall passed; see AUDIT E048. |
-| UI validation | B08 Rust-opt-in fixture smoke rendered four synthetic events through the GTK delivery boundary. [b08-notifications-synthetic.png](screenshots/b08-notifications-synthetic.png); see AUDIT E048. |
+| Backend tasks completed after that baseline | B00, B01, B02a, B02b1, B02b2a, B02b2b1, B02b2b2a, B02b2b2b, B03, B04, B05, B06, B08 and B09 merged |
+| Active implementation task / owner | B12 read-only update service, owner: current coding-agent session |
+| Active task | **B12** — public VERSION parser/comparison and bounded HTTP check; branch `orchestrated/luna-b12`, build `0.82.0 (40)` |
+| Next domain slice | B12 is rebased on merged B08 main; rerun checks and GTK fixture smoke, then open the focused screenshot-bearing PR after orchestration coordination. |
+| Open external blockers | None known; observe required PR checks and serialized merge slot before merge. |
+| Latest checks | B08 merge was verified on PR #40 run `41102664352`; B12's pre-rebase checks passed, and refreshed-main verification is pending (see AUDIT E049–E050). |
+| UI validation | B08's four-event synthetic GTK smoke and screenshot are recorded in E049. B12's update dialog screenshot: [b12-update-synthetic.png](screenshots/b12-update-synthetic.png); refreshed-main smoke pending. |
 
 **First commands for a new model/session:**
 
@@ -80,7 +80,7 @@ into smaller PRs without declaring the parent complete early.
 | [x] **B05** Preferences service | B00 | Port defaults, known-key loading/import, portable export, atomic 0600 writes, reset/update, thread safety and refresh settings. PR #37 merged at `878d4b7`; both checks passed on head `d43b18f`. |
 | [x] **B06** Currency service | B00, B05 | Port currency catalog, labels, conversion, TTL/cache load/write, single-flight refresh and offline fallback; inject HTTP/time; connect monthly pace and spend callers. PR #38 merged at `5e4af06`; both checks passed on head `75bba44`. |
 | [ ] **B07** CLI service | B00 | Port executable discovery, argv/TZ handling, timeout/reaping, stdout/stderr/errors, JSON envelopes, usage/cost/sessions/config/hooks/plugins/account commands. Use fake executables, including failure and cancellation. |
-| [ ] **B08** Notification policies | B01, B02, B05 | Port threshold transitions, session-exhaustion tracking, predictive pace cycles and credit-expiry deduplication. Rust owns state; tests use explicit clocks and accounts. OS notification delivery remains frontend/platform work. Active on `backend/b08-notification-policy-service`. |
+| [x] **B08** Notification policies | B01, B02, B05 | Port threshold transitions, session-exhaustion tracking, predictive pace cycles and credit-expiry deduplication. PR #40 merged at `9d272fd`; checks passed (see AUDIT E049). OS notification delivery remains frontend/platform work. |
 | [x] **B09** Provider ordering and tray selection | B01, B02, B05 | Port visibility/order, automatic quota ranking and ETA trust/filtering; preserve deterministic ties, depleted quotas and placeholder exclusion. Merged PR #39 at `93b62bb`; checks passed. |
 | [ ] **B10** Refresh controller | B02–B05, B07–B09 | Port polling/manual mode, forced refresh queuing, cancellation/shutdown, account collection, partial cost fallback, retained sessions/spend, history recording and snapshot/event publication. No I/O/callbacks under GUI locks. |
 | [ ] **B11** Login/auth process service | B00, B07 | Port argv/browser request helpers, auth status and PTY login lifecycle; incremental ANSI/URL/prompt parsing, submitted input, timeout/cancel/reaping. Fake PTY tests only; no stored auth codes/URLs in audit. |
@@ -176,9 +176,9 @@ Next exact command or implementation step:
 ### B08 handoff — 2026-10-30
 
 Owner: current coding-agent session; branch `backend/b08-notification-policy-service`.
-Status: implementation and local verification complete; focused PR pending
-orchestration coordination. Branch is rebased on latest `origin/main` at
-`93b62bb`; build 39 is assigned. Dependencies B01/B02/B05 are merged. The
+Status: verified and merged in PR #40 at `9d272fd810912133d0e42f35238dee1fc5e12a30`.
+The branch had been rebased on `origin/main` at `93b62bb`; build 39 was assigned
+for the PR. Dependencies B01/B02/B05 are merged. The
 stateful API is
 `codexbar_core::notifications::NotificationPolicy::observe(&[ProviderUsage],
 &NotificationPreferences, now: DateTime<Utc>) -> Vec<NotificationEvent>`.
@@ -195,7 +195,27 @@ numbers, and returns `EventPublishError::ReceiverClosed` if the consumer is
 gone. The separate watch channel remains latest-state/coalescing. B10 should
 publish typed policy events through this channel alongside snapshots.
 
-Post-rebase checks, GTK fixture smoke and refreshed screenshot passed (AUDIT
-E048). Next: send the readiness/contract update to orchestration, open and link
-the screenshot-bearing PR after coordination, then wait for fresh checks and UI
-verification. B08 remains unchecked until merged.
+PR #40 merged at `9d272fd810912133d0e42f35238dee1fc5e12a30` from head
+`1d0f396ca8d559af2ef0d0ad6e6ad9f70874ac9e`. GitHub run `41102664352` reports
+`test` and `tray-dbus` successful. The owner reran the full workflow locally at
+that exact head and captured the synthetic GTK screenshot embedded in the PR;
+see AUDIT E049 for counts and scope. B08 is complete.
+
+### B12 active handoff — 2026-10-30
+
+Status: implementation rebased onto verified `origin/main`
+`9d272fd810912133d0e42f35238dee1fc5e12a30`; build `0.82.0 (40)` is assigned.
+The B08 merge and exact remote/local evidence are recorded in AUDIT E049. B12
+keeps update checking in a typed, read-only Rust service with a 4096-byte
+response bound, bounded timeout, sanitized error classes, and injectable URL /
+fetch seams. GTK renders the service result only. Unicode decimal version
+components (including Arabic-Indic and fullwidth numerals) retain Python parity;
+superscript digits that pass `isdigit()` but fail `int()` produce a sanitized
+invalid-marker result. The Python reference remains unchanged.
+
+The rebase retained B08's notification event channel, policies, and bridge
+adapter while adding B12's update module and PyO3 adapter. B12's previous checks
+were on the pre-B08 base; fresh full checks and loopback-fixture GTK smoke are
+pending. Root-checkout drafts remain untouched. Next: finish verification,
+record exact results, notify orchestration, then open/link the screenshot-bearing
+PR. Merge only after a fresh state check and normal GitHub merge conditions.

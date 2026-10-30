@@ -9,16 +9,16 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Field | Current checkpoint |
 | --- | --- |
 | Goal | Fully native Rust GTK4/libadwaita app; backend first, UI second |
-| Current phase | B05 preferences service; native UI implementation must wait |
-| Last merged implementation | B04 PR #36 merged at `8649c88`, build `0.82.0 (35)` |
+| Current phase | B06 currency service; native UI implementation must wait |
+| Last merged implementation | B05 PR #37 merged at `878d4b7`, build `0.82.0 (36)` |
 | Planning change | [PR #18](https://github.com/SaahiilM/codexbar-gtk/pull/18), merged at `69c5496`, build `0.81.0 (17)` |
-| Backend tasks completed after that baseline | B00, B01, B02a, B02b1, B02b2a, B02b2b1, B02b2b2a, B02b2b2b, B03 and B04 merged |
-| Active implementation task / owner | B05 preferences service, owner: current coding-agent session |
-| Active task | **B05** — preferences service; [PR #37](https://github.com/SaahiilM/codexbar-gtk/pull/37), head `1768d52`, open with required checks running |
-| Next domain slice | **B05** — observe PR #37 checks; merge after required checks pass, then continue with B06 currency |
+| Backend tasks completed after that baseline | B00, B01, B02a, B02b1, B02b2a, B02b2b1, B02b2b2a, B02b2b2b, B03, B04 and B05 merged |
+| Active implementation task / owner | B06 currency service, owner: current coding-agent session |
+| Active task | **B06** — currency catalog, conversion, TTL cache and bounded async HTTP refresh; [PR #38](https://github.com/SaahiilM/codexbar-gtk/pull/38), head `6245c64`, open and mergeable |
+| Next domain slice | **B06** — observe both required checks; merge after they pass and orchestration confirms the slot, then continue with B07 CLI |
 | Open external blockers | None known; task dependencies below still apply |
-| Latest checks | B05 local: 56 core + 3 backend tests, all Clippy/format checks, extension build, 159 Python tests in each mode, and 3 tray D-Bus tests passed (AUDIT E034); PR #37 checks running as of 15:46 UTC |
-| UI validation | Rust-opt-in synthetic GTK Settings General page; toggling refresh-on-open persisted to the isolated settings file. [Screenshot](screenshots/b05-settings-synthetic.png); nonfatal GTK/EGL/accessibility warnings (AUDIT E034) |
+| Latest checks | B05 checks passed on head `d43b18f`; B06 local Rust/Python/GTK checks passed (AUDIT E037); PR #38 `test` in progress and `tray-dbus` queued at 17:20 UTC |
+| UI validation | Rust-opt-in synthetic GTK SpendView displayed converted EUR values; [screenshot](screenshots/b06-spend-currency-synthetic.png) (AUDIT E037) |
 
 **First commands for a new model/session:**
 
@@ -77,8 +77,8 @@ into smaller PRs without declaring the parent complete early.
 | [x] **B02** Provider usage normalization | B01 | Port provider envelopes, extra windows, pace, identity/plan, costs, details/charts, credits and reset-credit parsing. Completed in the B02 sub-slices below. |
 | [x] **B03** Agent-session normalization | B01 | Port session fields, timestamp handling, running-state classification and stable sorting; merged PR #35. |
 | [x] **B04** Spend normalization/aggregation | B01 | Port old/new CLI totals, coverage/provenance, partial/error handling, daily/project/model data and ordering; merged PR #36. |
-| [ ] **B05** Preferences service | B00 | Port defaults, known-key loading/import, portable export, atomic 0600 writes, reset/update, thread safety and refresh settings. Test disk failures and existing documents. Active on `backend/b05-preferences`; local verification complete. |
-| [ ] **B06** Currency service | B00, B05 | Port currency catalog, labels, conversion, TTL/cache load/write, single-flight refresh and offline fallback; inject HTTP/time; connect monthly pace and spend callers. |
+| [x] **B05** Preferences service | B00 | Port defaults, known-key loading/import, portable export, atomic 0600 writes, reset/update, thread safety and refresh settings. PR #37 merged at `878d4b7`; both checks passed on head `d43b18f`. |
+| [ ] **B06** Currency service | B00, B05 | Port currency catalog, labels, conversion, TTL/cache load/write, single-flight refresh and offline fallback; inject HTTP/time; connect monthly pace and spend callers. Active on `orchestrated/luna-b06-currency`; build 37. |
 | [ ] **B07** CLI service | B00 | Port executable discovery, argv/TZ handling, timeout/reaping, stdout/stderr/errors, JSON envelopes, usage/cost/sessions/config/hooks/plugins/account commands. Use fake executables, including failure and cancellation. |
 | [ ] **B08** Notification policies | B01, B02, B05 | Port threshold transitions, session-exhaustion tracking, predictive pace cycles and credit-expiry deduplication. Rust owns state; tests use explicit clocks and accounts. OS notification delivery remains frontend/platform work. |
 | [ ] **B09** Provider ordering and tray selection | B01, B02, B05 | Port visibility/order, automatic quota ranking and ETA trust/filtering; preserve deterministic ties, depleted quotas and placeholder exclusion. |

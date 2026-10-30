@@ -1,5 +1,7 @@
 use chrono::{DateTime, NaiveDate, Utc};
-use codexbar_core::{activity, charts, domain, formatting, history, pace, preferences, providers};
+use codexbar_core::{
+    activity, charts, currency, domain, formatting, history, pace, preferences, providers,
+};
 use pyo3::exceptions::{PyOSError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyAny, PyBool, PyDict, PyFloat, PyInt, PyList};
@@ -78,6 +80,70 @@ struct RustHistoryStore {
 #[pyclass(name = "PreferencesStore")]
 struct RustPreferencesStore {
     inner: preferences::PreferencesStore,
+}
+
+#[pyclass(name = "CurrencyConverter")]
+struct RustCurrencyConverter {
+    inner: codexbar_backend::currency::CurrencyService,
+}
+
+#[pymethods]
+impl RustCurrencyConverter {
+    #[new]
+    fn new(cache_path: PathBuf) -> Self {
+        Self {
+            inner: codexbar_backend::currency::CurrencyService::new(cache_path),
+        }
+    }
+    fn codes(&self) -> Vec<String> {
+        currency::CurrencyCatalog::default().codes()
+    }
+    fn entries(&self) -> Vec<(String, String, f64)> {
+        currency::CURRENCIES
+            .iter()
+            .map(|(c, s, r)| ((*c).into(), (*s).into(), *r))
+            .collect()
+    }
+    fn label(&self, code: &str) -> String {
+        currency::CurrencyCatalog::default().label(code)
+    }
+    fn requires_live_rates(&self, preferred: &str) -> bool {
+        let code = preferred.trim().to_uppercase();
+        !code.is_empty()
+            && code != "AUTO"
+            && code != "USD"
+            && currency::CurrencyCatalog::default().get(&code).is_some()
+    }
+    fn rate(&self, code: &str) -> Option<f64> {
+        self.inner.rate(code)
+    }
+    fn convert(&self, amount: f64, source: &str, target: &str) -> Option<f64> {
+        self.inner.convert(amount, source, target)
+    }
+    fn status(&self) -> (f64, String, bool) {
+        let status = self.inner.status();
+        let source = match status.source {
+            codexbar_backend::currency::RateSource::Offline => "offline",
+            codexbar_backend::currency::RateSource::Cache => "cache",
+            codexbar_backend::currency::RateSource::Live => "live",
+        };
+        (
+            status.fetched_at,
+            source.to_owned(),
+            status.last_refresh_failed,
+        )
+    }
+    fn ensure_rates(&self, preferred: String) {
+        let service = self.inner.clone();
+        std::thread::spawn(move || {
+            if let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+            {
+                runtime.block_on(service.ensure_rates(&preferred));
+            }
+        });
+    }
 }
 
 #[pymethods]
@@ -941,6 +1007,7 @@ fn python_float(value: Option<&Value>) -> Option<f64> {
 fn _rust_core(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<RustHistoryStore>()?;
     module.add_class::<RustPreferencesStore>()?;
+    module.add_class::<RustCurrencyConverter>()?;
     module.add_function(wrap_pyfunction!(sparkline_coordinates, module)?)?;
     module.add_function(wrap_pyfunction!(canonical_id, module)?)?;
     module.add_function(wrap_pyfunction!(display_name, module)?)?;

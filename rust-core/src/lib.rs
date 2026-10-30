@@ -5,6 +5,7 @@
 
 pub mod activity;
 pub mod charts;
+pub mod currency;
 pub mod domain;
 pub mod formatting;
 pub mod history;

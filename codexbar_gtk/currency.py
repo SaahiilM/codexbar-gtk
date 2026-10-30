@@ -15,6 +15,8 @@ import threading
 import time
 import urllib.request
 
+from . import rust_bridge
+
 CACHE_PATH = os.path.expanduser("~/.cache/codexbar-gtk/currency-rates.json")
 CACHE_TTL_SECONDS = 24 * 60 * 60
 RATES_URL = "https://open.er-api.com/v6/latest/USD"
@@ -52,6 +54,11 @@ CURRENCIES: list[tuple[str, str, float]] = [
     ("ILS", "₪", 3.109),
 ]
 
+_RUST = rust_bridge.extension()
+_RUST_CATALOG = _RUST.CurrencyConverter(CACHE_PATH) if _RUST is not None else None
+if _RUST_CATALOG is not None:
+    CURRENCIES = _RUST_CATALOG.entries()
+
 SUPPORTED = tuple(code for code, _symbol, _rate in CURRENCIES)
 _SYMBOLS = {code: symbol for code, symbol, _rate in CURRENCIES}
 _OFFLINE = {code: rate for code, _symbol, rate in CURRENCIES}
@@ -64,6 +71,8 @@ def picker_label(code: str) -> str:
 
 
 def requires_live_rates(preferred: str) -> bool:
+    if _RUST_CATALOG is not None:
+        return _RUST_CATALOG.requires_live_rates(preferred)
     code = (preferred or "").strip().upper()
     return code not in ("", "AUTO", "USD") and code in _OFFLINE
 
@@ -72,16 +81,20 @@ class CurrencyConverter:
     """Thread-safe USD-pivoted converter with a daily rate cache."""
 
     def __init__(self, cache_path: str = CACHE_PATH) -> None:
+        self._rust = _RUST.CurrencyConverter(cache_path) if _RUST is not None else None
         self._lock = threading.Lock()
         self._cache_path = cache_path
         self._rates = dict(_OFFLINE)
         self._fetched_at = 0.0
         self._loading = False
-        self._load_cache()
+        if self._rust is None:
+            self._load_cache()
 
     # -- rates ------------------------------------------------------------
 
     def _load_cache(self) -> None:
+        if self._rust is not None:
+            return
         try:
             with open(self._cache_path, "r", encoding="utf-8") as handle:
                 payload = json.load(handle)
@@ -100,6 +113,8 @@ class CurrencyConverter:
             pass
 
     def _write_cache(self) -> None:
+        if self._rust is not None:
+            return
         try:
             os.makedirs(os.path.dirname(self._cache_path), exist_ok=True)
             with self._lock:
@@ -111,6 +126,9 @@ class CurrencyConverter:
 
     def ensure_rates(self, preferred: str) -> None:
         """Fetch fresh rates in the background when the preferred code needs them."""
+        if self._rust is not None:
+            self._rust.ensure_rates(preferred)
+            return
         if not requires_live_rates(preferred):
             return
         with self._lock:
@@ -145,6 +163,8 @@ class CurrencyConverter:
         threading.Thread(target=worker, name="codexbar-rates", daemon=True).start()
 
     def rate(self, code: str) -> float | None:
+        if self._rust is not None:
+            return self._rust.rate(code)
         code = (code or "").strip().upper()
         if not code:
             return 1.0
@@ -155,6 +175,8 @@ class CurrencyConverter:
 
     def convert(self, amount: float, source: str, target: str) -> float | None:
         """Convert ``amount`` between supported codes, pivoting through USD."""
+        if self._rust is not None:
+            return self._rust.convert(amount, source, target)
         src = (source or "").strip().upper()
         dst = (target or "").strip().upper()
         if not src or not dst or src == dst:
@@ -165,6 +187,10 @@ class CurrencyConverter:
             return None
         return amount / src_rate * dst_rate
 
+    def status(self):
+        """Return Rust cache source metadata when opt-in mode is active."""
+        return self._rust.status() if self._rust is not None else None
+
 
 _SHARED: CurrencyConverter | None = None
 
@@ -172,7 +198,16 @@ _SHARED: CurrencyConverter | None = None
 def shared() -> CurrencyConverter:
     global _SHARED
     if _SHARED is None:
-        _SHARED = CurrencyConverter()
+        if _RUST_CATALOG is None:
+            _SHARED = CurrencyConverter()
+        else:
+            _SHARED = object.__new__(CurrencyConverter)
+            _SHARED._rust = _RUST_CATALOG
+            _SHARED._lock = threading.Lock()
+            _SHARED._cache_path = CACHE_PATH
+            _SHARED._rates = dict(_OFFLINE)
+            _SHARED._fetched_at = 0.0
+            _SHARED._loading = False
     return _SHARED
 
 

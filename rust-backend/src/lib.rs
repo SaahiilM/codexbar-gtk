@@ -4,6 +4,8 @@
 //! are introduced in `codexbar-core`; service integrations can then expose
 //! `BackendHandle<Snapshot>` to either frontend without moving policy into it.
 
+pub mod currency;
+
 use std::{future::Future, sync::Arc, time::SystemTime};
 
 use tokio::{sync::watch, task::JoinHandle};

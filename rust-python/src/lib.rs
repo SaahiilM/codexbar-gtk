@@ -1,6 +1,6 @@
 use chrono::{DateTime, NaiveDate, Utc};
-use codexbar_core::{activity, charts, domain, formatting, history, pace, providers};
-use pyo3::exceptions::PyValueError;
+use codexbar_core::{activity, charts, domain, formatting, history, pace, preferences, providers};
+use pyo3::exceptions::{PyOSError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyAny, PyBool, PyDict, PyFloat, PyInt, PyList};
 use serde_json::Value;
@@ -73,6 +73,90 @@ type AgentSessionTuple = (
 #[pyclass(name = "HistoryStore")]
 struct RustHistoryStore {
     inner: history::HistoryStore,
+}
+
+#[pyclass(name = "PreferencesStore")]
+struct RustPreferencesStore {
+    inner: preferences::PreferencesStore,
+}
+
+#[pymethods]
+impl RustPreferencesStore {
+    #[new]
+    fn new(path: PathBuf) -> Self {
+        Self {
+            inner: preferences::PreferencesStore::new(path),
+        }
+    }
+
+    fn load(&self) {
+        self.inner.load();
+    }
+
+    fn save(&self) -> PyResult<()> {
+        self.inner
+            .save()
+            .map_err(|error| PyOSError::new_err(format!("preferences save failed: {error}")))
+    }
+
+    fn get_json(&self, key: &str) -> Option<String> {
+        self.inner
+            .get(key)
+            .and_then(|value| serde_json::to_string(&value).ok())
+    }
+
+    fn set_json(&self, key: String, value_json: &str, persist: bool) -> PyResult<()> {
+        let value = serde_json::from_str(value_json)
+            .map_err(|error| PyValueError::new_err(format!("invalid preference value: {error}")))?;
+        self.inner
+            .set(key, value, persist)
+            .map_err(|error| PyOSError::new_err(format!("preferences save failed: {error}")))
+    }
+
+    fn update_json(&self, values_json: &str) -> PyResult<()> {
+        let values = serde_json::from_str::<Value>(values_json).map_err(|error| {
+            PyValueError::new_err(format!("invalid preference updates: {error}"))
+        })?;
+        let Value::Object(values) = values else {
+            return Err(PyValueError::new_err(
+                "preference updates must be an object",
+            ));
+        };
+        self.inner
+            .update(values)
+            .map_err(|error| PyOSError::new_err(format!("preferences save failed: {error}")))
+    }
+
+    fn reset(&self) -> PyResult<()> {
+        self.inner
+            .reset()
+            .map_err(|error| PyOSError::new_err(format!("preferences reset failed: {error}")))
+    }
+
+    fn as_json(&self) -> String {
+        serde_json::to_string(&self.inner.values()).unwrap_or_else(|_| "{}".to_owned())
+    }
+
+    fn refresh_seconds(&self) -> i64 {
+        self.inner.refresh_seconds()
+    }
+
+    fn refresh_is_manual(&self) -> bool {
+        self.inner.refresh_is_manual()
+    }
+
+    fn export_json(&self) -> String {
+        serde_json::to_string(&self.inner.export_document()).unwrap_or_else(|_| "{}".to_owned())
+    }
+
+    fn import_json(&self, document_json: &str) -> PyResult<()> {
+        let document = serde_json::from_str(document_json).map_err(|error| {
+            PyValueError::new_err(format!("invalid preference document: {error}"))
+        })?;
+        self.inner
+            .import_document(&document)
+            .map_err(|error| PyOSError::new_err(format!("preferences import failed: {error}")))
+    }
 }
 
 #[pymethods]
@@ -487,6 +571,11 @@ fn spend_from_json<'py>(payload: &str, py: Python<'py>) -> Option<Bound<'py, PyD
 }
 
 #[pyfunction]
+fn preferences_defaults_json() -> String {
+    serde_json::to_string(&preferences::default_values()).unwrap_or_else(|_| "{}".to_owned())
+}
+
+#[pyfunction]
 fn pace_stage_is_deficit(stage: &str) -> bool {
     domain::Pace::stage_is_deficit(stage)
 }
@@ -851,6 +940,7 @@ fn python_float(value: Option<&Value>) -> Option<f64> {
 #[pymodule]
 fn _rust_core(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<RustHistoryStore>()?;
+    module.add_class::<RustPreferencesStore>()?;
     module.add_function(wrap_pyfunction!(sparkline_coordinates, module)?)?;
     module.add_function(wrap_pyfunction!(canonical_id, module)?)?;
     module.add_function(wrap_pyfunction!(display_name, module)?)?;
@@ -875,6 +965,7 @@ fn _rust_core(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(detail_chart_peak, module)?)?;
     module.add_function(wrap_pyfunction!(agent_session_is_running, module)?)?;
     module.add_function(wrap_pyfunction!(spend_from_json, module)?)?;
+    module.add_function(wrap_pyfunction!(preferences_defaults_json, module)?)?;
     module.add_function(wrap_pyfunction!(pace_stage_is_deficit, module)?)?;
     module.add_function(wrap_pyfunction!(pace_stage_is_reserve, module)?)?;
     module.add_function(wrap_pyfunction!(pace_stage_label, module)?)?;

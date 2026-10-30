@@ -733,6 +733,58 @@ reproducible commands; report artifact limitations honestly.
 - **Next:** observe the checks for the screenshot commit; merge PR #36 only when
   both required checks pass.
 
+### E032 — 2026-10-30: B04 merged
+
+- **PR/merge:** [PR #36](https://github.com/SaahiilM/codexbar-gtk/pull/36)
+  merged at `8649c8862c4ce7514f8aae848dd624b0d641047f`.
+- **Observed checks:** `test` and `tray-dbus` both passed on head `caf5d04`.
+  Merge verification fetched `origin/main`; `8649c88` is its latest commit.
+- **UI evidence:** synthetic GTK SpendView/dashboard screenshots are included
+  in the merged PR. The preview used Rust opt-in and fixture-only CLI data.
+- **Result:** B04 is verified and merged at build `0.82.0 (35)`.
+- **Next:** B05 Preferences on `backend/b05-preferences`.
+
+### E033 — 2026-10-30: B05 Preferences claimed
+
+- **Owner/branch/base:** current coding-agent session;
+  `backend/b05-preferences`, based on merged `8649c88`.
+- **Scope:** port preference defaults, known-key loading/import, portable
+  documents, atomic 0600 persistence, reset/update, thread safety, and refresh
+  interval derivation; integrate through the opt-in PyO3 adapter.
+- **Status:** active; implementation and characterization tests in progress.
+- **Build:** `0.82.0 (36)` reserved for this PR.
+- **Next:** add a typed Rust preference store and test it against the existing
+  Python contract using temporary files, including read/write failures.
+
+### E034 — 2026-10-30: B05 Preferences local implementation verification
+
+- **Branch/base:** `backend/b05-preferences`, based on merged `8649c88`.
+- **Scope:** add `rust-core/src/preferences.rs`, expose a PyO3
+  `PreferencesStore`, and route `codexbar_gtk/prefs.py` through it when Rust
+  opt-in is enabled. Add preference adapter integration tests. Python-only
+  values that cannot be represented as JSON switch that instance to the Python
+  reference with its current state preserved.
+- **Contract:** Rust defaults parity-test against `prefs.DEFAULTS`; file loading
+  applies known keys over defaults; portable import filters unknown keys but
+  ignores the document version as Python does; export preserves in-memory
+  unknown keys; writes use a sibling temporary file, atomic rename and 0600
+  permissions; storage errors surface to callers. Refresh intervals and manual
+  mode match Python.
+- **Checks actually run:** 56 Rust core tests, 3 backend tests, core/bridge/
+  backend Clippy with warnings denied, all crate format checks, extension build,
+  159 Python tests in each backend mode, 3 tray D-Bus tests, and
+  `git diff --check` all passed.
+- **Runtime/UI smoke:** with `CODEXBAR_RUST_CORE=1`, constructed the Settings
+  General page with an isolated settings path and fixture controller, toggled
+  refresh-on-open, and confirmed the change persisted through Rust. Captured
+  the presented Settings General window on the live Wayland desktop with
+  Spectacle at `docs/rust-migration/screenshots/b05-settings-synthetic.png`;
+  labels and controls are visible. GTK also emitted nonfatal theme/EGL/
+  accessibility warnings. No account data or real CLI calls were used.
+- **Status:** locally verified; no commit or PR yet; build `0.82.0 (36)`.
+- **Next:** commit and open the focused B05 PR, embedding the settings screenshot
+  in its description; update the handoff with the PR and observed checks.
+
 ### E030 — 2026-10-30: B04 PR opened
 
 - **PR:** [PR #36](https://github.com/SaahiilM/codexbar-gtk/pull/36), open,

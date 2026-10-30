@@ -19,10 +19,18 @@ from .format import format_countdown
 from .history import HistoryStore, Sample
 from .data import (
     AgentSession,
+    CostInfo,
+    CreditEvent,
+    DetailChart,
+    DetailRow,
+    DetailSection,
+    Pace,
     ProviderUsage,
     RateWindow,
+    SpendProvider,
     SpendSummary,
     agent_sessions_from_payloads,
+    parse_timestamp,
     provider_usage_from_payload,
     spend_from_payloads,
 )
@@ -51,6 +59,164 @@ class AppState:
 Listener = Callable[[AppState], None]
 
 
+def _controller_error_text(error: dict | None) -> str | None:
+    if not isinstance(error, dict):
+        return None
+    kind = error.get("kind")
+    operation = error.get("operation")
+    if not isinstance(kind, str) or not isinstance(operation, str):
+        return None
+    return f"{kind} ({operation})"
+
+
+def _provider_from_dto(value: dict) -> ProviderUsage:
+    windows = [
+        RateWindow(
+            key=item["key"],
+            title=item["title"],
+            used_percent=item["used_percent"],
+            resets_at=parse_timestamp(item.get("resets_at")),
+            reset_description=item.get("reset_description"),
+            window_minutes=item.get("window_minutes"),
+            next_regen_percent=item.get("next_regen_percent"),
+            is_placeholder=item["is_placeholder"],
+            quota_limit=item.get("quota_limit"),
+            quota_unit=item.get("quota_unit"),
+            usage_known=item["usage_known"],
+        )
+        for item in value.get("windows", [])
+    ]
+    pace = {
+        key: Pace(
+            stage=item["stage"],
+            delta_percent=item.get("delta_percent"),
+            expected_used_percent=item.get("expected_used_percent"),
+            will_last_to_reset=item["will_last_to_reset"],
+            eta_seconds=item.get("eta_seconds"),
+            run_out_probability=item.get("run_out_probability"),
+            summary=item.get("summary"),
+        )
+        for key, item in value.get("pace", {}).items()
+    }
+    cost_value = value.get("cost")
+    cost = (
+        CostInfo(
+            used=cost_value["used"],
+            limit=cost_value["limit"],
+            currency=cost_value["currency"],
+            period=cost_value.get("period"),
+            balance=cost_value.get("balance"),
+            personal_used=cost_value.get("personal_used"),
+            resets_at=parse_timestamp(cost_value.get("resets_at")),
+        )
+        if isinstance(cost_value, dict)
+        else None
+    )
+    details = []
+    for section in value.get("details", []):
+        rows = [
+            DetailRow(
+                label=row["label"],
+                value=row["value"],
+                secondary_value=row.get("secondary_value"),
+                used_percent=row.get("used_percent"),
+                severity=row["severity"],
+            )
+            for row in section.get("rows", [])
+        ]
+        chart_value = section.get("chart")
+        chart = (
+            DetailChart(
+                kind=chart_value["kind"],
+                title=chart_value.get("title"),
+                unit=chart_value.get("unit"),
+                points=[(point[0], point[1]) for point in chart_value.get("points", [])],
+            )
+            if isinstance(chart_value, dict)
+            else None
+        )
+        details.append(DetailSection(title=section.get("title"), rows=rows, chart=chart))
+    reset_credits = [
+        {
+            **item,
+            "granted_at": parse_timestamp(item.get("granted_at")),
+            "expires_at": parse_timestamp(item.get("expires_at")),
+        }
+        for item in value.get("reset_credits", [])
+    ]
+    return ProviderUsage(
+        provider_id=value["provider_id"],
+        display_name=value["display_name"],
+        source=value.get("source"),
+        version=value.get("version"),
+        updated_at=parse_timestamp(value.get("updated_at")),
+        account_email=value.get("account_email"),
+        plan=value.get("plan"),
+        login_method=value.get("login_method"),
+        windows=windows,
+        pace=pace,
+        credits_remaining=value.get("credits_remaining"),
+        credits_unit=value["credits_unit"],
+        credits_available=value["credits_available"],
+        cost=cost,
+        status_level=value.get("status_level"),
+        status_description=value.get("status_description"),
+        error=value.get("error"),
+        details=details,
+        reset_credits_available=value["reset_credits_available"],
+        reset_credits=reset_credits,
+        credit_events=[CreditEvent(**item) for item in value.get("credit_events", [])],
+        accounts=value.get("accounts", []),
+        selected_account=value.get("selected_account"),
+        accent_color=value["accent_color"],
+        raw=value.get("raw", {}),
+    )
+
+
+def _session_from_dto(value: dict) -> AgentSession:
+    return AgentSession(
+        id=value["id"],
+        provider=value["provider"],
+        state=value["state"],
+        project_name=value["project_name"],
+        cwd=value["cwd"],
+        pid=value["pid"],
+        started_at=parse_timestamp(value.get("started_at")),
+        last_activity_at=parse_timestamp(value.get("last_activity_at")),
+        host=value["host"],
+    )
+
+
+def _spend_from_dto(value: dict | None) -> SpendSummary | None:
+    if value is None:
+        return None
+    return SpendSummary(
+        total_cost=value["total_cost"],
+        cost_known=value["cost_known"],
+        cost_partial=value["cost_partial"],
+        currency=value["currency"],
+        total_tokens=value["total_tokens"],
+        coverage=value["coverage"],
+        provenance=value["provenance"],
+        reporting_period=value.get("reporting_period"),
+        history_label=value.get("history_label"),
+        history_coverage_established=value["history_coverage_established"],
+        daily=value["daily"],
+        projects=value["projects"],
+        models=value["models"],
+        session_cost=value["session_cost"],
+        session_cost_known=value["session_cost_known"],
+        session_tokens=value["session_tokens"],
+        last30_cost=value["last30_cost"],
+        last30_cost_known=value["last30_cost_known"],
+        last30_cost_partial=value["last30_cost_partial"],
+        last30_tokens=value["last30_tokens"],
+        incomplete_requests=value["incomplete_requests"],
+        error=value.get("error"),
+        providers=[SpendProvider(**item) for item in value["providers"]],
+    )
+
+
 class Controller:
     """Polls the codexbar CLI on a background thread and publishes state."""
 
@@ -74,6 +240,10 @@ class Controller:
         self._notification_snapshot_seen: float | None = None
         rust = rust_bridge.extension()
         self._rust_notification_policy = rust.NotificationPolicy() if rust is not None else None
+        self._rust_controller = None
+        self._rust_sequence = -1
+        self._rust_events: list[dict] = []
+        self._rust_tray_selection: dict | None = None
 
     # -- listeners --------------------------------------------------------
 
@@ -94,6 +264,22 @@ class Controller:
     # -- lifecycle --------------------------------------------------------
 
     def start(self) -> None:
+        rust = rust_bridge.extension()
+        if rust is not None:
+            if not hasattr(rust, "RefreshController"):
+                raise RuntimeError("Rust refresh controller is unavailable; rebuild the Rust extension")
+            if self.prefs._rust is None:
+                raise RuntimeError("Rust preferences are unavailable for the Rust refresh controller")
+            history_store = self.history._rust_store()
+            if history_store is None:
+                raise RuntimeError("Rust history store is unavailable for the Rust refresh controller")
+            self._rust_controller = rust.RefreshController(
+                self.cli.executable,
+                self.cli.timezone,
+                self.prefs._rust,
+                history_store,
+            )
+            return
         if self._thread and self._thread.is_alive():
             return
         self._stop.clear()
@@ -101,7 +287,73 @@ class Controller:
         self._thread.start()
 
     def stop(self) -> None:
+        if self._rust_controller is not None:
+            self._rust_controller.request_shutdown()
+            return
         self._stop.set()
+
+    @property
+    def uses_rust_controller(self) -> bool:
+        return self._rust_controller is not None
+
+    def poll(self) -> bool:
+        """Poll Rust watch state/events without waiting; called on GTK's main loop."""
+        if self._rust_controller is None:
+            return False
+        new_events = json.loads(self._rust_controller.drain_events_json(256))
+        if new_events:
+            self._rust_events.extend(item["event"] for item in new_events)
+        changed = self._rust_controller.state_sequence() != self._rust_sequence
+        if changed:
+            envelope = json.loads(self._rust_controller.state_json())
+            self._rust_sequence = envelope["sequence"]
+            snapshot = envelope.get("snapshot")
+            status = envelope.get("status")
+            self.state.refreshing = status == "refreshing"
+            if snapshot is not None:
+                self.state.providers = [_provider_from_dto(item) for item in snapshot["providers"]]
+                self.state.spend = _spend_from_dto(snapshot.get("spend"))
+                self.state.sessions = [_session_from_dto(item) for item in snapshot["sessions"]]
+                updated_at = parse_timestamp(snapshot.get("updated_at"))
+                self.state.last_updated = updated_at.timestamp() if updated_at else None
+                self.state.cli_version = snapshot.get("version", "unknown")
+                error = (
+                    envelope.get("last_error")
+                    if status == "refreshing"
+                    else snapshot.get("last_error") or envelope.get("last_error")
+                )
+                self.state.last_error = _controller_error_text(error)
+                self._rust_tray_selection = snapshot.get("tray_selection")
+            else:
+                self.state.last_error = _controller_error_text(envelope.get("last_error"))
+            self._notify()
+        elif new_events:
+            # Event delivery is lossless and independent of watch coalescing.
+            self._notify()
+        return True
+
+    def automatic_tray_selection(self, providers: list[ProviderUsage]):
+        """Resolve the stored Rust selection; Python mode retains its policy path."""
+        if self._rust_controller is None:
+            return automatic_tray_selection(providers)
+        selection = self._rust_tray_selection
+        if selection is None:
+            return None
+        provider_index = selection.get("provider_index")
+        window_index = selection.get("window_index")
+        if not isinstance(provider_index, int) or not 0 <= provider_index < len(self.state.providers):
+            return None
+        provider = self.state.providers[provider_index]
+        if provider.provider_id != selection.get("provider_id") or not any(
+            item is provider for item in providers
+        ):
+            return None
+        if not isinstance(window_index, int) or not 0 <= window_index < len(provider.windows):
+            return None
+        window = provider.windows[window_index]
+        if window.key != selection.get("window_key"):
+            return None
+        return provider, window
 
     def _loop(self) -> None:
         while not self._stop.is_set():
@@ -119,6 +371,10 @@ class Controller:
     # -- refreshing -------------------------------------------------------
 
     def refresh(self, force: bool = False) -> AppState:
+        if self._rust_controller is not None:
+            if force:
+                self._rust_controller.force_refresh()
+            return self.state
         with self._refresh_guard:
             if self._refreshing.is_set():
                 if force:
@@ -288,6 +544,10 @@ class Controller:
 
     def notification_events(self, state: AppState, now: datetime | None = None) -> list[dict]:
         """Return typed policy outcomes; platform delivery remains a UI concern."""
+        if self._rust_controller is not None:
+            events = self._rust_events
+            self._rust_events = []
+            return events
         if state.last_error is not None:
             return []
         if state.last_updated is not None:

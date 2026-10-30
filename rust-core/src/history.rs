@@ -1,5 +1,6 @@
 //! Local JSON-lines quota history store, ported from `codexbar_gtk/history.py`.
 
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
@@ -10,7 +11,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 pub const RETENTION_DAYS: i64 = 30;
 pub const DEFAULT_RELATIVE_PATH: &str = ".config/codexbar-gtk/history.jsonl";
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Sample {
     pub timestamp: f64,
     pub provider: String,

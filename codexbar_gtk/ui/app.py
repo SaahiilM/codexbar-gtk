@@ -11,7 +11,7 @@ from gi.repository import Adw, Gdk, Gio, GLib, Gtk
 
 from .. import APP_ID, currency, display_string
 from ..cli import CodexBarCLI
-from ..controller import Controller, automatic_tray_selection
+from ..controller import Controller
 from ..format import compact_window_label
 from ..prefs import Preferences
 from ..startup import wait_for_display
@@ -83,6 +83,10 @@ class CodexBarApp(Adw.Application):
             self._apply_state(self.controller.state)
 
         GLib.timeout_add_seconds(TICK_SECONDS, self._tick)
+        if self.controller.uses_rust_controller:
+            # The Rust watch is polled without blocking the GTK main loop;
+            # callbacks and notification delivery stay on this thread.
+            GLib.timeout_add(250, self.controller.poll)
 
     def do_command_line(self, command_line: Gio.ApplicationCommandLine) -> int:
         """Handle our own flags.
@@ -195,6 +199,9 @@ class CodexBarApp(Adw.Application):
 
     def _do_refresh(self) -> bool:
         self._pending_refresh = False
+        if self.controller.uses_rust_controller:
+            self.controller.refresh(force=True)
+            return False
         threading.Thread(
             target=self.controller.refresh,
             kwargs={"force": True},
@@ -377,7 +384,7 @@ class CodexBarApp(Adw.Application):
         source = str(self.prefs.get("unifiedIconSource") or "highest")
         tray_window = None
         if source == "automatic":
-            automatic = automatic_tray_selection(providers)
+            automatic = self.controller.automatic_tray_selection(providers)
             if automatic is not None:
                 highest, tray_window = automatic
             else:
@@ -440,8 +447,12 @@ class CodexBarApp(Adw.Application):
         entries: list = []
         for provider in providers:
             if rows_option == "progress":
-                used = max((w.used_percent for w in provider.windows), default=0.0)
-                windows_at_used = [w for w in provider.windows if w.used_percent == used]
+                known_windows = [w for w in provider.windows if w.usage_known]
+                if not known_windows:
+                    entries.append((f"{provider.display_name} — Unavailable", self._open_dashboard))
+                    continue
+                used = max(w.used_percent for w in known_windows)
+                windows_at_used = [w for w in known_windows if w.used_percent == used]
                 used_window = next(
                     (w for w in windows_at_used if not w.is_placeholder),
                     windows_at_used[0] if windows_at_used else None,
@@ -462,7 +473,8 @@ class CodexBarApp(Adw.Application):
                             summary = f"{bar} {label} {used:.0f}%"
             else:
                 summary = " · ".join(
-                    f"{w.title} {w.used_percent:.0f}%" for w in provider.windows
+                    f"{w.title} {w.used_percent:.0f}%" if w.usage_known else f"{w.title} unavailable"
+                    for w in provider.windows
                 )
             entries.append((f"{provider.display_name} — {summary}", self._open_dashboard))
         entries += [

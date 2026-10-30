@@ -113,6 +113,7 @@ dependencies = [
  "iana-time-zone",
  "js-sys",
  "num-traits",
+ "serde",
  "wasm-bindgen",
  "windows-link",
 ]
@@ -121,6 +122,7 @@ dependencies = [
 name = "codexbar-backend"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "codexbar-core",
  "libc",
  "portable-pty",

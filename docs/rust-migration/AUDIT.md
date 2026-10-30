@@ -1377,3 +1377,66 @@ future models must verify the linked PR's status rather than trusting a stale
 - **Next:** watch PR #43 for required checks and reviews, verify the exact head
   and current main again, then merge normally only after checks pass and UI
   verification remains valid. B10 retains the following build/merge slot 43.
+
+### E061 — 2026-10-30: B11 PR #43 merged with Actions startup failure recorded
+
+- **Observed merge:** PR #43 merged at
+  `a33f0977dbd916e939a97ba8f157f151a51ffa47` from exact head
+  `8f998ff3a38a9682b4177b1ce3f672af376e2d9a`; the merge commit is the fetched
+  `origin/main`. Build 42 is now main; B10 owns build 43.
+- **GitHub run status:** merge-SHA Actions run
+  [#41111847909](https://github.com/SaahiilM/codexbar-gtk/actions/runs/41111847909)
+  completed with conclusion `startup_failure` and zero jobs. PR #43's
+  `statusCheckRollup` is empty. This is not a CI pass. The exact-head local
+  workflow-equivalent checks and neutral GTK login smoke passed as recorded in
+  E058–E059; no branch protection or check settings were changed.
+- **Next:** B10 is the active implementation slot. Fetch and rebase on
+  `a33f0977`, reconcile build 43 and migration records, then run the B10 exact
+  head checks and fixture GTK smoke.
+
+### E062 — 2026-10-30: B10 rebased onto B11 main and verified on build 43
+
+- **Integrated base/head:** fetched `origin/main` is B11 merge
+  `a33f0977dbd916e939a97ba8f157f151a51ffa47`, build 42. B10 commit
+  `ee3f9c3c156acf043e0362d275c4864220df7e83` is rebased directly on that
+  base. `VERSION`, `codexbar_gtk/version.py`, README and CHANGELOG agree on
+  build `0.82.0 (43)`. The PyO3 bridge retains B11's independent
+  `LoginSession` adapter and registers B10 `RefreshController` alongside it.
+- **B10 boundary and behavior:** the B14-approved
+  `RefreshControllerHandle` exposes immediate `start`/`start_async`, immutable
+  `BackendState<ControllerSnapshot>` watch, explicit force command/sender with
+  one queued follow-up per active pass, the bounded B08 notification receiver,
+  and joined async shutdown. Snapshot DTOs include revision, CLI version,
+  update/error context, ordered providers, spend, sessions, history and B09
+  tray selection; no login events/fields or GTK/Python types. The controller
+  dynamically reads polling preferences, keeps explicit refresh in manual mode,
+  retains sessions on scan failure, falls back from `both` to codex/claude cost
+  sources, preserves usable prior/fresh spend, and appends one history sample
+  per provider window after each successful usage scan.
+- **B02 envelope gap/parity:** `provider_usage_from_value` composes the complete
+  top-level CLI usage envelope using the merged B02 parsers. The shared
+  synthetic fixture is normalized in Rust and compared with the Python
+  `provider_usage_from_payload` result and reconstructed Python DTO. Unknown or
+  partial quota data stays distinct from known zero. Python remains the parity
+  reference; Rust remains opt-in.
+- **Workflow-equivalent checks on the rebased candidate:** `cargo fmt --check`
+  passed for core, backend and bridge; locked Rust tests passed (70 core, 37
+  backend); strict Clippy passed for all three crates; the atomic extension
+  build passed; default Python tests passed (183, with eight expected
+  Rust-opt-in skips); Rust-opt-in Python tests passed (183); private-D-Bus tray
+  tests passed in both modes (3 each); `py_compile` and `git diff --check`
+  passed. No real provider account or credentials were used.
+- **Fixture-only GTK smoke:** after rebase and extension rebuild,
+  `python3 tools/preview_b10_controller.py` launched the Rust controller with
+  synthetic CLI data, temporary HOME/config/data/cache and private D-Bus. The
+  screenshot `screenshots/b10-controller-synthetic.png` was regenerated and
+  visually inspected: Codex shows 64% and the unknown weekly quota shows
+  “Unavailable”. The fixture flow also checked typed events, refresh state and
+  joined shutdown. Nonfatal EGL device, AT-SPI, missing cairo.Context converter
+  and Gtk progress-bar teardown warnings occurred; the script exited 0.
+- **GitHub status distinction:** B11's merge-SHA run and PR status are recorded
+  in E061 as `startup_failure`/zero jobs and empty rollup. B11's local workflow
+  and neutral GTK evidence is in E058–E059. B10 has not yet been pushed or
+  opened as a PR; no B10 GitHub checks or merge are claimed.
+- **Next:** send the exact build-43/head status to orchestration, push the
+  rebased branch and open the focused B10 PR with the synthetic screenshot.

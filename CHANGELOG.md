@@ -4,6 +4,28 @@ Client-side changelog for the CodexBar GTK front-end. Each entry keys a build
 number (`CURRENT_PROJECT_VERSION`) to the upstream macOS CodexBar release its
 short version tracks, so "which version has what" maps cleanly onto both trees.
 
+## 0.82.0 (43) — 2026-10-30
+
+Tracks upstream CodexBar 0.82.0.
+
+### Added
+
+- Add the Rust refresh controller with an immediate first pass, dynamic polling,
+  one queued forced-refresh follow-up and joined asynchronous shutdown.
+- Publish immutable refresh snapshots with owned ordered provider data, spend,
+  sessions, history, tray selection, version context and sanitized errors.
+- Send typed notification transitions through a bounded event channel separate
+  from coalescing snapshots; retain usable prior state across partial failures.
+- Route Rust opt-in GTK refresh and force-refresh actions through the controller
+  while keeping Python implementations as parity references.
+- Compose complete usage provider envelopes in Rust and compare the shared
+  synthetic fixture with the Python reference to close the B02 integration gap.
+
+### Validation
+
+- See `docs/rust-migration/AUDIT.md` for B10 controller tests, full-envelope
+  parity, and fixture-only GTK smoke evidence.
+
 ## 0.82.0 (42) — 2026-10-30
 
 Tracks upstream CodexBar 0.82.0.

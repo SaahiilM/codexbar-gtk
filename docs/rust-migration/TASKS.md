@@ -14,10 +14,10 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Planning change | [PR #18](https://github.com/SaahiilM/codexbar-gtk/pull/18), merged at `69c5496`, build `0.81.0 (17)` |
 | Backend tasks completed after that baseline | B00, B01, B02a, B02b1, B02b2a, B02b2b1, B02b2b2a, B02b2b2b, B03 merged |
 | Active implementation task / owner | B04 spend aggregation, owner: current coding-agent session |
-| Active task | **B04** — spend normalization/aggregation (locally verified; PR preparation) |
-| Next domain slice | **B04** — open focused PR; after review/merge, continue with B05 preferences |
+| Active task | **B04** — spend normalization/aggregation ([PR #36](https://github.com/SaahiilM/codexbar-gtk/pull/36), review/CI pending) |
+| Next domain slice | **B04** — observe PR #36 review/CI; after merge, continue with B05 preferences |
 | Open external blockers | None known; task dependencies below still apply |
-| Latest checks | B04 local: 49 core + 3 backend tests, core/bridge/backend Clippy, extension build, 155 Python tests in each mode, 3 tray D-Bus tests, formatting and diff checks passed (AUDIT E029) |
+| Latest checks | B04 local checks passed (AUDIT E029); PR #36 `test` in progress and `tray-dbus` queued on 2026-10-30 |
 | UI validation | Synthetic B04 Rust-opt-in SpendView preview rendered spend/dashboard/card/popup/sessions PNGs on Wayland (AUDIT E029); nonfatal GTK/EGL/accessibility warnings |
 
 **First commands for a new model/session:**
@@ -109,7 +109,7 @@ credits and error semantics are integrated):
 - [x] **B02b2b2a** Detail chart normalization — merged PR #32.
 - [x] **B02b2b2b** Credits/status/error/plan context normalization — merged PR #33.
 - [x] **B03** — agent-session normalization — merged PR #35.
-- [ ] **B04** — spend normalization/aggregation — active on `backend/b04-spend-aggregation`; local verification and synthetic GTK preview complete, PR not created.
+- [ ] **B04** — spend normalization/aggregation — PR #36 open; local verification and synthetic GTK preview complete; CI/review pending.
 
 B05/B07/B12 can proceed after B00 independently of payload parsing. B11/B13 are
 not optional just because their Python files sit near presentation code. Do not

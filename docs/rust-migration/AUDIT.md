@@ -715,6 +715,17 @@ reproducible commands; report artifact limitations honestly.
   CI/merge result observed. GTK build is `0.82.0 (35)` for this PR.
 - **Next:** commit and open the PR, then record its URL and observed checks here.
 
+### E030 — 2026-10-30: B04 PR opened
+
+- **PR:** [PR #36](https://github.com/SaahiilM/codexbar-gtk/pull/36), open,
+  head `c3092b44a949d22b0f218d889e90f5dc0fde5cbb`, base branch `main`.
+- **Scope:** records the B04 implementation in E029; this entry only records
+  the PR handoff and live GitHub state.
+- **Observed checks:** at 2026-10-30 15:17 UTC, `test` was in progress and
+  `tray-dbus` was queued. No review decision or merge commit was present.
+- **Next:** observe CI/review on PR #36. Do not mark B04 merged until GitHub
+  reports the merged commit and successful required checks.
+
 After a task merges, the next entry/checkpoint should record the observed merge
 commit and CI result. Update the live TASKS handoff in each implementation PR;
 future models must verify the linked PR's status rather than trusting a stale

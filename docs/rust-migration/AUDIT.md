@@ -1153,7 +1153,37 @@ future models must verify the linked PR's status rather than trusting a stale
   Arabic-Indic/fullwidth numeric comparison; superscript digits pass Python
   `isdigit()` but fail `int()` and return a sanitized invalid-marker error.
   The Python reference parser is unchanged.
-- **Status:** no B12 PR exists. Prior B12 checks predate B08 integration; the
-  integrated tree still requires full checks and loopback-fixture GTK smoke.
-- **Next:** verify metadata and combined source, run required checks and fixture
-  smoke, then report readiness to orchestration before opening the PR.
+- **Status at integration:** no B12 PR existed; integrated checks were pending
+  and are recorded in E051.
+- **Next:** report verified readiness to orchestration, then open the focused
+  screenshot-bearing PR.
+
+### E051 — 2026-10-30: B12 integrated verification on build 40
+
+- **Source/base:** B12 commit `1968d1f` is based on B08 merge
+  `9d272fd810912133d0e42f35238dee1fc5e12a30`. `VERSION`,
+  `codexbar_gtk/version.py`, README and CHANGELOG agree on `0.82.0 (40)`.
+- **Rust checks:** rustfmt checks passed for core, Python bridge and backend;
+  locked tests passed with 68 core and 14 backend tests; Clippy with all targets
+  and features and `-D warnings` passed for all three crates; the atomic Rust
+  extension build passed.
+- **Python and D-Bus checks:** default Python suite passed 174 tests with 2
+  expected Rust-opt-in-only skips; Rust-opt-in suite passed all 174 tests; all
+  3 tray D-Bus tests passed. `git diff --check` passed.
+- **GTK runtime smoke:** with Rust opt-in and an isolated temporary HOME, a
+  loopback-only HTTP fixture served `0.83.0 (1)`. The Rust update service
+  compared it with current `0.82.0 (40)`, and the typed available result passed
+  through `CodexBarApp._finish_update_check` into an actual Adw message dialog.
+  The heading was asserted and the refreshed screenshot
+  `docs/rust-migration/screenshots/b12-update-synthetic.png` was visually
+  inspected. Nonfatal EGL render-device permission, missing accessibility-bus,
+  and no-transient-parent GTK warnings appeared. No external network, account,
+  provider data, or credentials were used.
+- **Status:** B12 implementation and local verification are ready for PR; no
+  PR or GitHub CI result is claimed. The existing B08 checks belong to B08's
+  exact head only. Root checkout's uncommitted drafts remain untouched.
+- **Next:** notify orchestration before opening the screenshot-bearing PR, then
+  verify fresh PR head, reviews, mergeability, required checks and current main
+  before any merge. If GitHub Actions remains degraded, rely only on equivalent
+  passing local checks and GitHub's normal merge permission; do not bypass or
+  describe pending GitHub checks as passed.

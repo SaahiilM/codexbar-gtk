@@ -17,8 +17,8 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Active task | **B12** — public VERSION parser/comparison and bounded HTTP check; branch `orchestrated/luna-b12`, build `0.82.0 (40)` |
 | Next domain slice | B12 is rebased on merged B08 main; rerun checks and GTK fixture smoke, then open the focused screenshot-bearing PR after orchestration coordination. |
 | Open external blockers | None known; observe required PR checks and serialized merge slot before merge. |
-| Latest checks | B08 merge was verified on PR #40 run `41102664352`; B12's pre-rebase checks passed, and refreshed-main verification is pending (see AUDIT E049–E050). |
-| UI validation | B08's four-event synthetic GTK smoke and screenshot are recorded in E049. B12's update dialog screenshot: [b12-update-synthetic.png](screenshots/b12-update-synthetic.png); refreshed-main smoke pending. |
+| Latest checks | B08 merge verified on PR #40 run `41102664352`; B12 on refreshed main: 68 core + 14 backend Rust tests, format/Clippy all crates, extension build, 174 Python tests per mode (2 expected skips default), 3 tray D-Bus tests; all passed (AUDIT E051). |
+| UI validation | B08's four-event synthetic GTK smoke and screenshot are recorded in E049. B12's refreshed Rust loopback-to-dialog smoke passed; updated screenshot: [b12-update-synthetic.png](screenshots/b12-update-synthetic.png), see E051. |
 
 **First commands for a new model/session:**
 
@@ -214,8 +214,8 @@ superscript digits that pass `isdigit()` but fail `int()` produce a sanitized
 invalid-marker result. The Python reference remains unchanged.
 
 The rebase retained B08's notification event channel, policies, and bridge
-adapter while adding B12's update module and PyO3 adapter. B12's previous checks
-were on the pre-B08 base; fresh full checks and loopback-fixture GTK smoke are
-pending. Root-checkout drafts remain untouched. Next: finish verification,
-record exact results, notify orchestration, then open/link the screenshot-bearing
-PR. Merge only after a fresh state check and normal GitHub merge conditions.
+adapter while adding B12's update module and PyO3 adapter. The integrated checks
+and loopback-fixture GTK smoke passed (AUDIT E051); root-checkout drafts remain
+untouched. No B12 PR exists yet. Next: notify orchestration, then open/link the
+screenshot-bearing PR. Merge only after a fresh state check and normal GitHub
+merge conditions.

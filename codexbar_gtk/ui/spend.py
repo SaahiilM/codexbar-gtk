@@ -514,27 +514,54 @@ class SpendView(Gtk.Box):
             [
                 (
                     str(project.get("name") or project.get("path") or "—"),
-                    self._money(float(project.get("totalCost") or 0.0), source),
+                    self._money(float(project["totalCost"]), source)
+                    if project.get("totalCost") is not None
+                    else "unpriced",
                     format_tokens(int(project.get("totalTokens") or 0)),
                 )
                 for project in spend.projects[:12]
             ],
         )
 
-        models: dict[str, list[float]] = {}
+        models: dict[str, dict[str, float | bool]] = {}
         for model in spend.models:
             name = str(model.get("modelName") or model.get("name") or "—")
-            cost = float(model.get("cost") or model.get("totalCost") or 0.0)
-            tokens = float(model.get("totalTokens") or 0.0)
-            bucket = models.setdefault(name, [0.0, 0.0])
-            bucket[0] += cost
-            bucket[1] += tokens
+            raw_cost = model.get("cost")
+            fallback_cost = model.get("totalCost")
+            if raw_cost is None or raw_cost == 0:
+                if fallback_cost not in (None, 0):
+                    raw_cost = fallback_cost
+                elif raw_cost is None:
+                    raw_cost = fallback_cost
+            bucket = models.setdefault(
+                name,
+                {"cost": 0.0, "tokens": 0.0, "cost_known": False, "cost_partial": False},
+            )
+            if raw_cost is None:
+                bucket["cost_partial"] = True
+            else:
+                cost = float(raw_cost)
+                if math.isfinite(cost):
+                    bucket["cost"] = float(bucket["cost"]) + cost
+                    bucket["cost_known"] = True
+                else:
+                    bucket["cost_partial"] = True
+            bucket["tokens"] = float(bucket["tokens"]) + float(model.get("totalTokens") or 0.0)
         self._rebuild_list(
             self.models_box,
             "Models",
             [
-                (name, self._money(values[0], source), format_tokens(int(values[1])))
-                for name, values in sorted(models.items(), key=lambda kv: kv[1][0], reverse=True)[:12]
+                (
+                    name,
+                    (
+                        ("≥ " if values["cost_partial"] else "")
+                        + self._money(float(values["cost"]), source)
+                        if values["cost_known"]
+                        else "unpriced"
+                    ),
+                    format_tokens(int(values["tokens"])),
+                )
+                for name, values in sorted(models.items(), key=lambda kv: float(kv[1]["cost"]), reverse=True)[:12]
             ],
         )
 
@@ -542,6 +569,138 @@ class SpendView(Gtk.Box):
         notice = error or spend.error
         self.notice_label.set_text(notice or "")
         self.notice_label.set_visible(bool(notice))
+
+    def update_projection(self, model: dict) -> None:
+        """Render the Rust-owned spend DTO without reapplying data policy."""
+        self._select_time_range(model.get("selected_range", "30 days"))
+        currency_code = model.get("display_currency") or model.get("source_currency") or "USD"
+
+        def amount_text(amount: dict) -> str:
+            if not amount.get("known") or amount.get("display_amount") is None:
+                return "—"
+            prefix = "≥ " if amount.get("partial") else ""
+            return prefix + format_currency(amount["display_amount"], currency_code)
+
+        def count_text(count: dict) -> str:
+            value = count.get("value")
+            if not count.get("known") or value is None:
+                return "—"
+            prefix = "≥ " if count.get("partial") else ""
+            return prefix + format_tokens(int(value))
+
+        total = model.get("total") or {}
+        session = model.get("session") or {}
+        last30 = model.get("last30") or {}
+        self.total_tile.set_value(
+            amount_text(total),
+            "Known subtotal · some costs unavailable"
+            if total.get("known") and total.get("partial")
+            else model.get("history_label") or model.get("reporting_period") or "",
+        )
+        self.session_tile.set_value(
+            amount_text(session),
+            f"{count_text(model.get('session_tokens') or {})} tokens",
+        )
+        last30_label = (
+            amount_text(last30) + " last 30 days"
+            if last30.get("known")
+            else "cost unavailable"
+        )
+        if (last30_tokens := model.get("last30_tokens") or {}).get("known"):
+            last30_label += " · " + count_text(last30_tokens) + " tokens"
+        self.tokens_tile.set_value(count_text(model.get("tokens") or {}), last30_label)
+
+        coverage = model.get("coverage") or {}
+        priced = int(coverage.get("priced") or 0)
+        unpriced = int(coverage.get("unpriced") or 0)
+        if coverage.get("has_counts"):
+            self.coverage_tile.set_value(f"{priced}/{priced + unpriced}", "priced entries")
+        else:
+            provenance = coverage.get("provenance") or model.get("provenance") or "—"
+            self.coverage_tile.set_value("—", str(provenance).replace("_", " "))
+
+        self.heatmap.set_entries(model.get("heatmap_daily") or [])
+        chart_entries = [
+            (str(point.get("date") or "")[5:10], point.get("display_amount"))
+            for point in model.get("daily_chart") or []
+        ]
+        self.chart.set_entries(chart_entries, currency_code)
+
+        self._render_projection_rows(
+            self.providers_box,
+            "By provider",
+            model.get("providers") or [],
+            "provider",
+            currency_code,
+        )
+        self._render_projection_rows(
+            self.projects_box,
+            "Projects",
+            model.get("projects") or [],
+            "name",
+            currency_code,
+        )
+        self._render_projection_rows(
+            self.models_box,
+            "Models",
+            model.get("models") or [],
+            "name",
+            currency_code,
+        )
+        has_summary = bool(model.get("spend_present"))
+        loading = not has_summary and model.get("backend_status") in ("idle", "refreshing")
+        self.empty_label.set_text("Loading local cost data…" if loading else "No local cost data yet")
+        self.empty_label.set_visible(bool(model.get("empty")) or (not has_summary and not loading))
+        notice = {
+            "refresh_failed": "Refresh failed; showing the last available data.",
+            "cost_sources_unavailable": "Some cost sources are unavailable.",
+        }.get(model.get("notice"), "")
+        self.notice_label.set_text(notice)
+        self.notice_label.set_visible(bool(notice))
+
+    def _render_projection_rows(
+        self,
+        box: Gtk.Box,
+        title: str,
+        entries: list[dict],
+        name_key: str,
+        currency_code: str,
+    ) -> None:
+        for child in list(iter_children(box)):
+            box.remove(child)
+        if not entries:
+            return
+        label = Gtk.Label(label=title)
+        label.add_css_class("cb-section-label")
+        label.set_halign(Gtk.Align.START)
+        box.append(label)
+        for entry in entries:
+            count = entry.get("tokens") or {}
+            tokens = "—"
+            if count.get("known") and count.get("value") is not None:
+                prefix = "≥ " if count.get("partial") else ""
+                tokens = prefix + format_tokens(int(count["value"]))
+            cost = "unpriced"
+            if entry.get("cost_known") and entry.get("display_cost") is not None:
+                prefix = "≥ " if entry.get("cost_partial") else ""
+                cost = prefix + format_currency(entry["display_cost"], currency_code)
+            row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+            row.add_css_class("cb-kv")
+            name = Gtk.Label(label=str(entry.get(name_key) or "—"))
+            name.add_css_class("cb-kv-key")
+            name.set_hexpand(True)
+            name.set_halign(Gtk.Align.START)
+            name.set_ellipsize(3)
+            row.append(name)
+            token_label = Gtk.Label(label=tokens)
+            token_label.add_css_class("cb-kv-key")
+            token_label.set_halign(Gtk.Align.END)
+            row.append(token_label)
+            cost_label = Gtk.Label(label=cost)
+            cost_label.add_css_class("cb-kv-value")
+            cost_label.set_halign(Gtk.Align.END)
+            row.append(cost_label)
+            box.append(row)
 
     def _rebuild_providers(self, spend: SpendSummary, currency_code: str) -> None:
         """One row per provider that has local usage data."""

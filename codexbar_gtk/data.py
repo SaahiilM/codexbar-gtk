@@ -886,7 +886,11 @@ class SpendProvider:
     provider: str
     cost: float = 0.0
     tokens: int = 0
+    tokens_known: bool = False
+    tokens_partial: bool = False
     session_tokens: int = 0
+    session_tokens_known: bool = False
+    session_tokens_partial: bool = False
     daily: list[dict[str, Any]] = field(default_factory=list)
     projects: list[dict[str, Any]] = field(default_factory=list)
     priced: bool = True
@@ -907,6 +911,8 @@ class SpendSummary:
     cost_partial: bool = False
     currency: str = "USD"
     total_tokens: int = 0
+    total_tokens_known: bool = False
+    total_tokens_partial: bool = False
     coverage: dict[str, int] = field(default_factory=dict)
     provenance: str = "unknown"
     reporting_period: str | None = None
@@ -917,11 +923,16 @@ class SpendSummary:
     models: list[dict[str, Any]] = field(default_factory=list)
     session_cost: float = 0.0
     session_cost_known: bool = False
+    session_cost_partial: bool = False
     session_tokens: int = 0
+    session_tokens_known: bool = False
+    session_tokens_partial: bool = False
     last30_cost: float = 0.0
     last30_cost_known: bool = False
     last30_cost_partial: bool = False
     last30_tokens: int = 0
+    last30_tokens_known: bool = False
+    last30_tokens_partial: bool = False
     incomplete_requests: int = 0
     error: str | None = None
     providers: list[SpendProvider] = field(default_factory=list)
@@ -941,6 +952,8 @@ def spend_from_payloads(payloads: list[dict[str, Any]]) -> SpendSummary:
                 cost_partial=parsed["cost_partial"],
                 currency=parsed["currency"],
                 total_tokens=parsed["total_tokens"],
+                total_tokens_known=parsed["total_tokens_known"],
+                total_tokens_partial=parsed["total_tokens_partial"],
                 coverage={k: int(v) for k, v in parsed["coverage"].items()},
                 provenance=parsed["provenance"] or "unknown",
                 reporting_period=parsed["reporting_period"],
@@ -951,11 +964,16 @@ def spend_from_payloads(payloads: list[dict[str, Any]]) -> SpendSummary:
                 models=json.loads(parsed["models"]) if parsed["models"] else [],
                 session_cost=parsed["session_cost"],
                 session_cost_known=parsed["session_cost_known"],
+                session_cost_partial=parsed["session_cost_partial"],
                 session_tokens=parsed["session_tokens"],
+                session_tokens_known=parsed["session_tokens_known"],
+                session_tokens_partial=parsed["session_tokens_partial"],
                 last30_cost=parsed["last30_cost"],
                 last30_cost_known=parsed["last30_cost_known"],
                 last30_cost_partial=parsed["last30_cost_partial"],
                 last30_tokens=parsed["last30_tokens"],
+                last30_tokens_known=parsed["last30_tokens_known"],
+                last30_tokens_partial=parsed["last30_tokens_partial"],
                 incomplete_requests=parsed["incomplete_requests"],
                 error=parsed["error"],
             )
@@ -965,7 +983,11 @@ def spend_from_payloads(payloads: list[dict[str, Any]]) -> SpendSummary:
                         provider=provider["provider"],
                         cost=provider["cost"],
                         tokens=int(provider["tokens"]),
+                        tokens_known=provider["tokens_known"],
+                        tokens_partial=provider["tokens_partial"],
                         session_tokens=int(provider["session_tokens"]),
+                        session_tokens_known=provider["session_tokens_known"],
+                        session_tokens_partial=provider["session_tokens_partial"],
                         daily=json.loads(provider["daily"]) if provider["daily"] else [],
                         projects=json.loads(provider["projects"]) if provider["projects"] else [],
                         priced=provider["priced"],
@@ -1015,19 +1037,38 @@ def spend_from_payloads(payloads: list[dict[str, Any]]) -> SpendSummary:
         if tokens is not None:
             summary.total_tokens += tokens
             entry.tokens = tokens
+            summary.total_tokens_known = True
+            entry.tokens_known = True
+        else:
+            summary.total_tokens_partial = True
+            entry.tokens_partial = True
         session_cost = _optional_float(payload.get("sessionCostUSD"))
         if session_cost is not None:
             summary.session_cost += session_cost
             summary.session_cost_known = True
-        summary.session_tokens += int(payload.get("sessionTokens") or 0)
-        entry.session_tokens += int(payload.get("sessionTokens") or 0)
+        else:
+            summary.session_cost_partial = True
+        session_tokens = _optional_int(payload.get("sessionTokens"))
+        if session_tokens is not None:
+            summary.session_tokens += session_tokens
+            entry.session_tokens += session_tokens
+            summary.session_tokens_known = True
+            entry.session_tokens_known = True
+        else:
+            summary.session_tokens_partial = True
+            entry.session_tokens_partial = True
         last30_cost = _optional_float(payload.get("last30DaysCostUSD"))
         if last30_cost is not None:
             summary.last30_cost += last30_cost
             summary.last30_cost_known = True
         else:
             summary.last30_cost_partial = True
-        summary.last30_tokens += int(payload.get("last30DaysTokens") or 0)
+        last30_tokens = _optional_int(payload.get("last30DaysTokens"))
+        if last30_tokens is not None:
+            summary.last30_tokens += last30_tokens
+            summary.last30_tokens_known = True
+        else:
+            summary.last30_tokens_partial = True
         summary.incomplete_requests += int(payload.get("incompleteRequestCount") or 0)
 
         summary.provenance = totals.get("provenance") or summary.provenance

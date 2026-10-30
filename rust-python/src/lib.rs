@@ -124,6 +124,8 @@ struct RustRefreshController {
     runtime: Option<Runtime>,
     handle: Mutex<Option<RefreshControllerHandle>>,
     state: watch::Receiver<codexbar_backend::BackendState<ControllerSnapshot>>,
+    preferences: Arc<preferences::PreferencesStore>,
+    currencies: codexbar_backend::currency::CurrencyService,
     force_refresh: mpsc::Sender<ControllerCommand>,
     notifications: Mutex<mpsc::Receiver<codexbar_backend::BackendEvent>>,
     shutdown_complete: Arc<AtomicBool>,
@@ -920,6 +922,7 @@ impl RustRefreshController {
         timezone: Option<String>,
         preferences: PyRef<'_, RustPreferencesStore>,
         history: PyRef<'_, RustHistoryStore>,
+        currencies: PyRef<'_, RustCurrencyConverter>,
     ) -> PyResult<Self> {
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
@@ -943,6 +946,8 @@ impl RustRefreshController {
             runtime: Some(runtime),
             handle: Mutex::new(Some(handle)),
             state,
+            preferences: preferences.inner.clone(),
+            currencies: currencies.inner.clone(),
             force_refresh,
             notifications: Mutex::new(notifications),
             shutdown_complete: Arc::new(AtomicBool::new(false)),
@@ -975,6 +980,56 @@ impl RustRefreshController {
             "last_error": state.last_error.map(backend_error_json),
         }))
         .map_err(|_| PyRuntimeError::new_err("controller_state_encode"))
+    }
+
+    /// Return the owned spend presentation DTO from the latest snapshot.
+    /// Currency conversion reads the facade's shared in-memory CurrencyService;
+    /// this projection never starts or waits for a rate refresh.
+    fn spend_view_model_json(&self, py: Python<'_>) -> PyResult<String> {
+        let state = self.state.borrow().clone();
+        let preferences = self.preferences.clone();
+        let currencies = self.currencies.clone();
+        py.detach(move || {
+            let selected_range = preferences
+                .get("spendTimeRange")
+                .and_then(|value| value.as_str().map(str::to_owned))
+                .unwrap_or_else(|| "30 days".to_owned());
+            let preferred_currency = preferences
+                .get("preferredCurrencyCode")
+                .and_then(|value| value.as_str().map(str::to_owned))
+                .unwrap_or_else(|| "auto".to_owned());
+            let request = codexbar_backend::presentation::SpendViewRequest {
+                selected_range,
+                preferred_currency,
+            };
+            let model =
+                codexbar_backend::presentation::spend_view_model(&state, &request, &currencies);
+            serde_json::to_string(&model).map_err(|_| "spend_view_model_encode")
+        })
+        .map_err(PyRuntimeError::new_err)
+    }
+
+    /// Return an owned tray projection for the same full snapshot vector used
+    /// by the stored B09 selection. No GTK objects or ranking policy cross here.
+    fn tray_summary_json(&self, py: Python<'_>) -> PyResult<String> {
+        let state = self.state.borrow().clone();
+        let preferences = self.preferences.clone();
+        py.detach(move || {
+            let preference = |key: &str, default: &str| {
+                preferences
+                    .get(key)
+                    .and_then(|value| value.as_str().map(str::to_owned))
+                    .unwrap_or_else(|| default.to_owned())
+            };
+            let request = codexbar_backend::presentation::TraySummaryRequest {
+                unified_icon_source: preference("unifiedIconSource", "highest"),
+                menu_bar_icon_style: preference("menuBarIconStyle", "meter"),
+                switcher_rows_option: preference("switcherRowsOption", "progress"),
+            };
+            let summary = codexbar_backend::presentation::tray_summary(&state, &request);
+            serde_json::to_string(&summary).map_err(|_| "tray_summary_encode")
+        })
+        .map_err(PyRuntimeError::new_err)
     }
 
     /// Queue one explicit refresh without blocking the GTK thread.
@@ -1453,6 +1508,10 @@ fn spend_from_json<'py>(payload: &str, py: Python<'py>) -> Option<Bound<'py, PyD
     dict.set_item("currency", summary.currency.as_str())
         .unwrap();
     dict.set_item("total_tokens", summary.total_tokens).unwrap();
+    dict.set_item("total_tokens_known", summary.total_tokens_known)
+        .unwrap();
+    dict.set_item("total_tokens_partial", summary.total_tokens_partial)
+        .unwrap();
 
     let coverage_dict = PyDict::new(py);
     for (key, value) in &summary.coverage {
@@ -1495,7 +1554,13 @@ fn spend_from_json<'py>(payload: &str, py: Python<'py>) -> Option<Bound<'py, PyD
     dict.set_item("session_cost", summary.session_cost).unwrap();
     dict.set_item("session_cost_known", summary.session_cost_known)
         .unwrap();
+    dict.set_item("session_cost_partial", summary.session_cost_partial)
+        .unwrap();
     dict.set_item("session_tokens", summary.session_tokens)
+        .unwrap();
+    dict.set_item("session_tokens_known", summary.session_tokens_known)
+        .unwrap();
+    dict.set_item("session_tokens_partial", summary.session_tokens_partial)
         .unwrap();
     dict.set_item("last30_cost", summary.last30_cost).unwrap();
     dict.set_item("last30_cost_known", summary.last30_cost_known)
@@ -1503,6 +1568,10 @@ fn spend_from_json<'py>(payload: &str, py: Python<'py>) -> Option<Bound<'py, PyD
     dict.set_item("last30_cost_partial", summary.last30_cost_partial)
         .unwrap();
     dict.set_item("last30_tokens", summary.last30_tokens)
+        .unwrap();
+    dict.set_item("last30_tokens_known", summary.last30_tokens_known)
+        .unwrap();
+    dict.set_item("last30_tokens_partial", summary.last30_tokens_partial)
         .unwrap();
     dict.set_item("incomplete_requests", summary.incomplete_requests)
         .unwrap();
@@ -1518,7 +1587,19 @@ fn spend_from_json<'py>(payload: &str, py: Python<'py>) -> Option<Bound<'py, PyD
             provider_dict.set_item("cost", provider.cost).unwrap();
             provider_dict.set_item("tokens", provider.tokens).unwrap();
             provider_dict
+                .set_item("tokens_known", provider.tokens_known)
+                .unwrap();
+            provider_dict
+                .set_item("tokens_partial", provider.tokens_partial)
+                .unwrap();
+            provider_dict
                 .set_item("session_tokens", provider.session_tokens)
+                .unwrap();
+            provider_dict
+                .set_item("session_tokens_known", provider.session_tokens_known)
+                .unwrap();
+            provider_dict
+                .set_item("session_tokens_partial", provider.session_tokens_partial)
                 .unwrap();
             provider_dict
                 .set_item(

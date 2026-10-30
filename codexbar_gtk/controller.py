@@ -10,6 +10,7 @@ import math
 import json
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Callable
@@ -37,10 +38,12 @@ from .data import (
 from .prefs import Preferences
 from .rust_bridge import extension
 from . import rust_bridge
+from . import currency as currency_service
 
 
 @dataclass
 class AppState:
+    backend_sequence: int = 0
     providers: list[ProviderUsage] = field(default_factory=list)
     spend: SpendSummary | None = None
     sessions: list[AgentSession] = field(default_factory=list)
@@ -196,6 +199,8 @@ def _spend_from_dto(value: dict | None) -> SpendSummary | None:
         cost_partial=value["cost_partial"],
         currency=value["currency"],
         total_tokens=value["total_tokens"],
+        total_tokens_known=value["total_tokens_known"],
+        total_tokens_partial=value["total_tokens_partial"],
         coverage=value["coverage"],
         provenance=value["provenance"],
         reporting_period=value.get("reporting_period"),
@@ -206,11 +211,16 @@ def _spend_from_dto(value: dict | None) -> SpendSummary | None:
         models=value["models"],
         session_cost=value["session_cost"],
         session_cost_known=value["session_cost_known"],
+        session_cost_partial=value["session_cost_partial"],
         session_tokens=value["session_tokens"],
+        session_tokens_known=value["session_tokens_known"],
+        session_tokens_partial=value["session_tokens_partial"],
         last30_cost=value["last30_cost"],
         last30_cost_known=value["last30_cost_known"],
         last30_cost_partial=value["last30_cost_partial"],
         last30_tokens=value["last30_tokens"],
+        last30_tokens_known=value["last30_tokens_known"],
+        last30_tokens_partial=value["last30_tokens_partial"],
         incomplete_requests=value["incomplete_requests"],
         error=value.get("error"),
         providers=[SpendProvider(**item) for item in value["providers"]],
@@ -244,6 +254,10 @@ class Controller:
         self._rust_sequence = -1
         self._rust_events: list[dict] = []
         self._rust_tray_selection: dict | None = None
+        self._presentation_executor = ThreadPoolExecutor(
+            max_workers=1, thread_name_prefix="codexbar-rust-presentation"
+        )
+        self._presentation_request_id = 0
 
     # -- listeners --------------------------------------------------------
 
@@ -273,11 +287,15 @@ class Controller:
             history_store = self.history._rust_store()
             if history_store is None:
                 raise RuntimeError("Rust history store is unavailable for the Rust refresh controller")
+            shared_currency = currency_service.shared()._rust
+            if shared_currency is None:
+                raise RuntimeError("Rust currency service is unavailable for the Rust refresh controller")
             self._rust_controller = rust.RefreshController(
                 self.cli.executable,
                 self.cli.timezone,
                 self.prefs._rust,
                 history_store,
+                shared_currency,
             )
             return
         if self._thread and self._thread.is_alive():
@@ -289,6 +307,7 @@ class Controller:
     def stop(self) -> None:
         if self._rust_controller is not None:
             self._rust_controller.request_shutdown()
+            self._presentation_executor.shutdown(wait=False, cancel_futures=True)
             return
         self._stop.set()
 
@@ -307,6 +326,7 @@ class Controller:
         if changed:
             envelope = json.loads(self._rust_controller.state_json())
             self._rust_sequence = envelope["sequence"]
+            self.state.backend_sequence = int(envelope["sequence"])
             snapshot = envelope.get("snapshot")
             status = envelope.get("status")
             self.state.refreshing = status == "refreshing"
@@ -344,16 +364,54 @@ class Controller:
         if not isinstance(provider_index, int) or not 0 <= provider_index < len(self.state.providers):
             return None
         provider = self.state.providers[provider_index]
-        if provider.provider_id != selection.get("provider_id") or not any(
+        if provider.has_error or provider.provider_id != selection.get("provider_id") or not any(
             item is provider for item in providers
         ):
             return None
         if not isinstance(window_index, int) or not 0 <= window_index < len(provider.windows):
             return None
         window = provider.windows[window_index]
-        if window.key != selection.get("window_key"):
+        if (
+            window.key != selection.get("window_key")
+            or not window.usage_known
+            or window.is_placeholder
+            or not math.isfinite(window.used_percent)
+            or window.used_percent < 0.0
+        ):
             return None
         return provider, window
+
+    def request_rust_presentation(self, callback: Callable[[dict | None, dict | None, str | None], None]) -> bool:
+        """Project current spend/tray DTOs off GTK's thread, then return them to its caller."""
+        if self._rust_controller is None:
+            return False
+        with self._lock:
+            self._presentation_request_id += 1
+            request_id = self._presentation_request_id
+        controller = self._rust_controller
+
+        def project() -> tuple[dict | None, dict | None, str | None]:
+            try:
+                spend = json.loads(controller.spend_view_model_json())
+                tray = json.loads(controller.tray_summary_json())
+                return spend, tray, None
+            except Exception:
+                return None, None, "projection_unavailable"
+
+        future = self._presentation_executor.submit(project)
+
+        def complete(result) -> None:
+            try:
+                spend, tray, error = result.result()
+            except Exception:
+                spend, tray, error = None, None, "projection_unavailable"
+            with self._lock:
+                current = request_id == self._presentation_request_id
+            if current:
+                callback(spend, tray, error)
+
+        future.add_done_callback(complete)
+        return True
 
     def _loop(self) -> None:
         while not self._stop.is_set():

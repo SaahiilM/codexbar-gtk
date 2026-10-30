@@ -61,6 +61,8 @@ class CodexBarApp(Adw.Application):
         self._pending_refresh = False
         self.extra_args: list[str] = []
         self._show_panel_when_ready = False
+        self._rust_spend_view_model: dict | None = None
+        self._rust_tray_summary: dict | None = None
 
     # -- lifecycle --------------------------------------------------------
 
@@ -139,8 +141,15 @@ class CodexBarApp(Adw.Application):
                 self.prefs,
                 self.controller.history,
                 on_open_settings=self._open_settings,
+                rust_presentation=self.controller.uses_rust_controller,
             )
             self.main_window.connect("close-request", self._on_main_closed)
+            if (
+                self._rust_spend_view_model is not None
+                and self._rust_spend_view_model.get("backend_sequence")
+                == self.controller.state.backend_sequence
+            ):
+                self.main_window.update_spend_projection(self._rust_spend_view_model)
         return self.main_window
 
     def _ensure_settings_window(self) -> SettingsWindow:
@@ -353,6 +362,8 @@ class CodexBarApp(Adw.Application):
         if self.main_window is not None:
             self.main_window.update(state)
         self._update_tray(state)
+        if self.controller.uses_rust_controller:
+            self.controller.request_rust_presentation(self._on_rust_presentation)
         self._check_notifications(state)
 
     def _show_tray_unavailable(self) -> None:
@@ -376,8 +387,28 @@ class CodexBarApp(Adw.Application):
         )
         self.tray.register()
 
+    def _on_rust_presentation(self, spend: dict | None, tray: dict | None, error: str | None) -> None:
+        GLib.idle_add(self._apply_rust_presentation, spend, tray, error)
+
+    def _apply_rust_presentation(self, spend: dict | None, tray: dict | None, _error: str | None) -> bool:
+        sequence = self.controller.state.backend_sequence
+        if spend is not None and spend.get("backend_sequence") == sequence:
+            self._rust_spend_view_model = spend
+            if self.main_window is not None:
+                self.main_window.update_spend_projection(spend)
+        if tray is not None and tray.get("backend_sequence") == sequence:
+            self._rust_tray_summary = tray
+            self._update_tray(self.controller.state)
+        return False
+
     def _update_tray(self, state) -> None:
         if not self.tray.available:
+            return
+        if self.controller.uses_rust_controller:
+            summary = self._rust_tray_summary
+            if summary is None or summary.get("backend_sequence") != state.backend_sequence:
+                summary = None
+            self._update_rust_tray(summary)
             return
         providers = [p for p in state.providers if not p.has_error]
         if not providers:
@@ -496,6 +527,51 @@ class CodexBarApp(Adw.Application):
         ]
         self.tray.set_menu(entries)
         # The icon is in place now, so the item can be published to the host.
+        self.tray.register()
+
+    def _update_rust_tray(self, summary: dict | None) -> None:
+        if summary is None:
+            self.tray.update(
+                "codexbar-gtk",
+                "CodexBar GTK",
+                "Provider data unavailable\nUse Refresh to check again.",
+            )
+            rows = []
+        else:
+            title = summary.get("title") or "CodexBar GTK"
+            tooltip = "\n".join(summary.get("tooltip_rows") or [])
+            used = summary.get("used_percent")
+            accent = summary.get("accent_color")
+            pixmap = None
+            icon_name = "codexbar-gtk"
+            if summary.get("available") and used is not None and accent:
+                if summary.get("menu_bar_icon_style") == "iconPercent":
+                    pixmap = icons.render_percent_pixmap(used, accent, summary.get("initial") or "?")
+                    icon_name = ""
+                else:
+                    level = summary.get("meter_level")
+                    levels = icons.write_icons(accent)
+                    icon_name = levels.get(level, icon_name)
+                    pixmap = icons.render_meter_pixmap(level, accent) if level is not None else None
+            self.tray.update(icon_name, title, tooltip, pixmap)
+            rows = [
+                (item.get("text") or "", self._open_dashboard)
+                for item in summary.get("switcher_rows") or []
+            ]
+        rows += [
+            (None, None),
+            ("Show usage panel", self._toggle_popup),
+            ("Refresh", self._refresh_now),
+            ("Open Dashboard", self._open_dashboard),
+            (None, None),
+            ("Check for updates…", self._check_for_updates),
+            ("Restart CodexBar", self._restart),
+            ("Settings…", self._open_settings),
+            (f"About CodexBar GTK {display_string()}", self._open_about),
+            (None, None),
+            ("Quit CodexBar", self._quit),
+        ]
+        self.tray.set_menu(rows)
         self.tray.register()
 
     def _check_notifications(self, state) -> None:

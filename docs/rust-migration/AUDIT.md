@@ -683,6 +683,38 @@ reproducible commands; report artifact limitations honestly.
 - Next exact action:
 ```
 
+### E029 — 2026-10-30: B04 spend normalization/aggregation (local handoff)
+
+- **Owner/branch/base:** current coding-agent session;
+  `backend/b04-spend-aggregation`, based on `29c970c`; no PR exists yet.
+- **Scope:** add Rust `spend_from_payloads` in `rust-core/src/domain.rs`, expose
+  it through `rust-python/src/lib.rs`, and route `codexbar_gtk/data.py` through
+  the opt-in adapter. Add Rust and Python integration coverage for totals,
+  unknown versus known-zero cost, errors, coverage/provenance, daily/project/
+  model ordering, and Python-reference parity. The interrupted adapter mismatch
+  (Python caller unpacked the PyO3 dictionary as a tuple) was corrected.
+- **Contract:** top-level totals take precedence over nested totals so the same
+  provider total is not counted twice. Unknown cost stays distinct from known
+  zero. Empty providers are filtered, error payloads are skipped, summary
+  provenance follows Python's top-level then nested-totals precedence, and
+  empty error fields do not count as failures. Coverage and session/last-30-day/
+  incomplete counters follow Python's `int(value or 0)` behavior for JSON
+  booleans, numbers and integer strings within the Rust `i64` contract.
+- **Checks actually run:** `cargo test --manifest-path rust-core/Cargo.toml
+  --locked` (49 passed); core, bridge and backend Clippy with warnings denied;
+  backend tests (3 passed); format checks for core/bridge/backend;
+  `./scripts/build-rust-core.sh`; B04 integration tests (23 passed with default
+  and Rust opt-in); Python suite (155 passed in each mode); tray D-Bus suite
+  (3 passed); `git diff --check`. No test skips reported.
+- **Runtime/UI smoke:** Rust opt-in synthetic GTK preview on Wayland rendered
+  `card.png`, `popup.png`, `dashboard.png`, `sessions.png`, and `spend.png` to
+  `/tmp/codexbar-b04-smoke/`. The SpendView displayed the synthetic daily cost
+  and project data. GTK emitted nonfatal Adwaita theme, EGL device-permission,
+  and accessibility-bus warnings. No real provider/account data was used.
+- **Status:** locally verified implementation prepared for a focused PR; no
+  CI/merge result observed. GTK build is `0.82.0 (35)` for this PR.
+- **Next:** commit and open the PR, then record its URL and observed checks here.
+
 After a task merges, the next entry/checkpoint should record the observed merge
 commit and CI result. Update the live TASKS handoff in each implementation PR;
 future models must verify the linked PR's status rather than trusting a stale

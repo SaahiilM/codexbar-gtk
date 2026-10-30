@@ -6,6 +6,22 @@ short version tracks, so "which version has what" maps cleanly onto both trees.
 
 ## Unreleased
 
+## 0.82.0 (35) — 2026-10-30
+
+Tracks upstream CodexBar 0.82.0.
+
+### Added
+
+- Port spend normalization and aggregation to Rust in opt-in mode, preserving
+  known-zero versus unknown cost, partial coverage, provenance, and CLI totals.
+- Add parity coverage for summary totals, provider rows, errors, and daily,
+  project, and model breakdown ordering.
+
+### Validation
+
+- See `docs/rust-migration/AUDIT.md` for B04 backend, Python, and synthetic GTK
+  preview evidence.
+
 ## 0.82.0 (34) — 2026-10-29
 
 Tracks upstream CodexBar 0.82.0.

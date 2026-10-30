@@ -9,16 +9,16 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Field | Current checkpoint |
 | --- | --- |
 | Goal | Fully native Rust GTK4/libadwaita app; backend first, UI second |
-| Current phase | B02 provider payload normalization; native UI implementation must wait |
+| Current phase | B04 spend normalization/aggregation; native UI implementation must wait |
 | Last merged implementation | B03 PR #35 merged, build `0.82.0 (34)` |
 | Planning change | [PR #18](https://github.com/SaahiilM/codexbar-gtk/pull/18), merged at `69c5496`, build `0.81.0 (17)` |
-| Backend tasks completed after that baseline | B00, B01, B02a, B02b1, B02b2a, B02b2b1, B02b2b2a, B02b2b2b, B03 verified, PR pending |
-| Active implementation task / owner | B03 review handoff, owner: current coding-agent session |
-| Active task | **B03** — agent-session normalization in Rust |
-| Next domain slice | **B03** — agent-session normalization
+| Backend tasks completed after that baseline | B00, B01, B02a, B02b1, B02b2a, B02b2b1, B02b2b2a, B02b2b2b, B03 merged |
+| Active implementation task / owner | B04 spend aggregation, owner: current coding-agent session |
+| Active task | **B04** — spend normalization/aggregation (locally verified; PR preparation) |
+| Next domain slice | **B04** — open focused PR; after review/merge, continue with B05 preferences |
 | Open external blockers | None known; task dependencies below still apply |
-| Latest checks | B03: 42 core + 3 backend tests; format/Clippy/build; 147 Python tests each mode; 3 D-Bus tests all passed (AUDIT E028) |
-| UI validation | Local typelibs load; synthetic X11/Wayland widget preview with extra windows succeeded; offscreen backend unavailable (AUDIT E017/E020) |
+| Latest checks | B04 local: 49 core + 3 backend tests, core/bridge/backend Clippy, extension build, 155 Python tests in each mode, 3 tray D-Bus tests, formatting and diff checks passed (AUDIT E029) |
+| UI validation | Synthetic B04 Rust-opt-in SpendView preview rendered spend/dashboard/card/popup/sessions PNGs on Wayland (AUDIT E029); nonfatal GTK/EGL/accessibility warnings |
 
 **First commands for a new model/session:**
 
@@ -75,7 +75,7 @@ into smaller PRs without declaring the parent complete early.
 | [x] **B00** Backend API and test seam | Foundation | Define snapshot/error contracts, Tokio/watch API and cancellation; record runtime/dependency decisions and headless fake-worker seam. Merged PR #19. |
 | [x] **B01** Timestamp/numeric contracts and domain models | B00 | Port `data.py` timestamp/numeric helpers, `RateWindow`, `Pace`, `CostInfo`, detail/credit/provider/session/spend model contracts and derived properties. Freeze UTC/local, missing-vs-zero, rounding and large-number behavior. Completed in PRs #20–#22; see B01a–c.
 | [ ] **B02** Provider usage normalization | B01 | Port provider envelopes, extra windows, pace, identity/plan, costs, details/charts, credits and reset-credit parsing. Preserve optional/raw fields, caps, order, placeholder/usage-known flags and error states. |
-| [ ] **B03** Agent-session normalization | B01 | Port session fields, timestamp handling, running-state classification and stable sorting; malformed/missing fields characterized. |
+| [x] **B03** Agent-session normalization | B01 | Port session fields, timestamp handling, running-state classification and stable sorting; merged PR #35. |
 | [ ] **B04** Spend normalization/aggregation | B01 | Port old/new CLI totals, coverage/provenance, partial/error handling, daily/project/model data and ordering; never double-count totals or turn unknown costs into zero. |
 | [ ] **B05** Preferences service | B00 | Port defaults, known-key loading/import, portable export, atomic 0600 writes, reset/update, thread safety and refresh settings. Test disk failures and existing documents. |
 | [ ] **B06** Currency service | B00, B05 | Port currency catalog, labels, conversion, TTL/cache load/write, single-flight refresh and offline fallback; inject HTTP/time; connect monthly pace and spend callers. |
@@ -109,7 +109,7 @@ credits and error semantics are integrated):
 - [x] **B02b2b2a** Detail chart normalization — merged PR #32.
 - [x] **B02b2b2b** Credits/status/error/plan context normalization — merged PR #33.
 - [x] **B03** — agent-session normalization — merged PR #35.
-- [ ] **B04** — spend normalization/aggregation
+- [ ] **B04** — spend normalization/aggregation — active on `backend/b04-spend-aggregation`; local verification and synthetic GTK preview complete, PR not created.
 
 B05/B07/B12 can proceed after B00 independently of payload parsing. B11/B13 are
 not optional just because their Python files sit near presentation code. Do not

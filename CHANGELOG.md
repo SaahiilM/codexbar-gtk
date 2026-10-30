@@ -4,6 +4,20 @@ Client-side changelog for the CodexBar GTK front-end. Each entry keys a build
 number (`CURRENT_PROJECT_VERSION`) to the upstream macOS CodexBar release its
 short version tracks, so "which version has what" maps cleanly onto both trees.
 
+## 0.82.0 (45) — 2026-10-30
+
+Tracks upstream CodexBar 0.82.0.
+
+### Added
+
+- Extract spend and tray presentation policies into Rust-owned DTO projections
+  callable through the B14 central facade.
+
+### Validation
+
+- See `docs/rust-migration/AUDIT.md` E067 for backend, Python and fixture GTK
+  verification evidence.
+
 ## 0.82.0 (44) — 2026-10-30
 
 Tracks upstream CodexBar 0.82.0.

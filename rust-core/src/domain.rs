@@ -660,7 +660,11 @@ pub struct SpendProvider {
     pub provider: String,
     pub cost: f64,
     pub tokens: i64,
+    pub tokens_known: bool,
+    pub tokens_partial: bool,
     pub session_tokens: i64,
+    pub session_tokens_known: bool,
+    pub session_tokens_partial: bool,
     pub daily: Vec<Value>,
     pub projects: Vec<Value>,
     pub priced: bool,
@@ -675,6 +679,8 @@ pub struct SpendSummary {
     pub cost_partial: bool,
     pub currency: String,
     pub total_tokens: i64,
+    pub total_tokens_known: bool,
+    pub total_tokens_partial: bool,
     pub coverage: HashMap<String, i64>,
     pub provenance: String,
     pub reporting_period: Option<String>,
@@ -685,11 +691,16 @@ pub struct SpendSummary {
     pub models: Vec<Value>,
     pub session_cost: f64,
     pub session_cost_known: bool,
+    pub session_cost_partial: bool,
     pub session_tokens: i64,
+    pub session_tokens_known: bool,
+    pub session_tokens_partial: bool,
     pub last30_cost: f64,
     pub last30_cost_known: bool,
     pub last30_cost_partial: bool,
     pub last30_tokens: i64,
+    pub last30_tokens_known: bool,
+    pub last30_tokens_partial: bool,
     pub incomplete_requests: i64,
     pub error: Option<String>,
     pub providers: Vec<SpendProvider>,
@@ -756,6 +767,8 @@ pub fn spend_from_payloads(payloads: &Value) -> SpendSummary {
         cost_partial: false,
         currency: "USD".to_owned(),
         total_tokens: 0,
+        total_tokens_known: false,
+        total_tokens_partial: false,
         coverage: HashMap::new(),
         provenance: "unknown".to_owned(),
         reporting_period: None,
@@ -766,11 +779,16 @@ pub fn spend_from_payloads(payloads: &Value) -> SpendSummary {
         models: Vec::new(),
         session_cost: 0.0,
         session_cost_known: false,
+        session_cost_partial: false,
         session_tokens: 0,
+        session_tokens_known: false,
+        session_tokens_partial: false,
         last30_cost: 0.0,
         last30_cost_known: false,
         last30_cost_partial: false,
         last30_tokens: 0,
+        last30_tokens_known: false,
+        last30_tokens_partial: false,
         incomplete_requests: 0,
         error: None,
         providers: Vec::new(),
@@ -796,7 +814,11 @@ pub fn spend_from_payloads(payloads: &Value) -> SpendSummary {
                 .to_owned(),
             cost: 0.0,
             tokens: 0,
+            tokens_known: false,
+            tokens_partial: false,
             session_tokens: 0,
+            session_tokens_known: false,
+            session_tokens_partial: false,
             daily: Vec::new(),
             projects: Vec::new(),
             priced: true,
@@ -910,16 +932,30 @@ pub fn spend_from_payloads(payloads: &Value) -> SpendSummary {
             .or_else(|| totals_obj.as_ref().and_then(|m| m.get("totalTokens")));
         if let Some(tokens) = optional_i64(raw_tokens) {
             summary.total_tokens += tokens;
+            summary.total_tokens_known = true;
             entry.tokens = tokens;
+            entry.tokens_known = true;
+        } else {
+            summary.total_tokens_partial = true;
+            entry.tokens_partial = true;
         }
 
         if let Some(session_cost) = optional_float(object.get("sessionCostUSD")) {
             summary.session_cost += session_cost;
             summary.session_cost_known = true;
+        } else {
+            summary.session_cost_partial = true;
         }
-        let session_tokens = spend_int_or_zero(object.get("sessionTokens"));
-        summary.session_tokens += session_tokens;
-        entry.session_tokens += session_tokens;
+        let session_tokens = optional_i64(object.get("sessionTokens"));
+        if let Some(session_tokens) = session_tokens {
+            summary.session_tokens_known = true;
+            entry.session_tokens_known = true;
+            summary.session_tokens += session_tokens;
+            entry.session_tokens += session_tokens;
+        } else {
+            summary.session_tokens_partial = true;
+            entry.session_tokens_partial = true;
+        }
 
         if let Some(last30_cost) = optional_float(object.get("last30DaysCostUSD")) {
             summary.last30_cost += last30_cost;
@@ -927,8 +963,12 @@ pub fn spend_from_payloads(payloads: &Value) -> SpendSummary {
         } else {
             summary.last30_cost_partial = true;
         }
-        let last30_tokens = spend_int_or_zero(object.get("last30DaysTokens"));
-        summary.last30_tokens += last30_tokens;
+        if let Some(last30_tokens) = optional_i64(object.get("last30DaysTokens")) {
+            summary.last30_tokens_known = true;
+            summary.last30_tokens += last30_tokens;
+        } else {
+            summary.last30_tokens_partial = true;
+        }
 
         let payload_incomplete = object.get("incompleteRequestCount");
         let payload_incomplete_count = spend_int_or_zero(payload_incomplete);
@@ -1887,13 +1927,20 @@ mod tests {
         assert_eq!(summary.total_cost, 19.75);
         assert!(summary.cost_known);
         assert_eq!(summary.total_tokens, 1500);
+        assert!(summary.total_tokens_known);
+        assert!(!summary.total_tokens_partial);
         assert_eq!(summary.session_cost, 3.50);
         assert!(summary.session_cost_known);
+        assert!(!summary.session_cost_partial);
         assert_eq!(summary.session_tokens, 150);
+        assert!(summary.session_tokens_known);
+        assert!(!summary.session_tokens_partial);
         assert_eq!(summary.last30_cost, 80.00);
         assert!(summary.last30_cost_known);
         assert!(!summary.last30_cost_partial);
         assert_eq!(summary.last30_tokens, 7500);
+        assert!(summary.last30_tokens_known);
+        assert!(!summary.last30_tokens_partial);
         assert_eq!(summary.incomplete_requests, 2);
         assert!(summary.cost_partial); // coverage unpriced + incomplete requests
         assert_eq!(summary.providers.len(), 2);

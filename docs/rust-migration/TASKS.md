@@ -9,16 +9,16 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Field | Current checkpoint |
 | --- | --- |
 | Goal | Fully native Rust GTK4/libadwaita app; backend first, UI second |
-| Current phase | Backend correction follow-up; native UI implementation must wait for BG |
-| Last merged implementation | B10 PR #44 merged at `a66e677`, build `0.82.0 (43)` |
+| Current phase | B13 backend extraction; native UI implementation must wait for BG |
+| Last merged implementation | B09a PR #45 merged at `d1eff677`, build `0.82.0 (44)` |
 | Planning change | [PR #18](https://github.com/SaahiilM/codexbar-gtk/pull/18), merged at `69c5496`, build `0.81.0 (17)` |
-| Backend tasks completed after that baseline | B00–B12 and B01/B02 sub-slices merged; B09a correction active |
-| Active implementation task / owner | B09a unknown/error quota eligibility correction, current coding-agent session |
-| Active task | **B09a** — branch `backend/b09-tray-unknown-state`, based on `a66e677`; build `0.82.0 (44)` provisionally reserved ahead of B13a |
-| Next domain slice | **B09a** — finish regression/parity tests and GTK smoke, open a focused PR, and merge only after checks, UI/head and clean mergeability pass |
-| Open external blockers | No dependency or contract blockers. B10, B13 and B14 confirmed original-vector indexing and eligibility semantics. No PR is open for this correction. |
-| Latest checks | Rustfmt and strict Clippy passed for all three crates; 72 core and 37 backend tests passed; bridge build passed; Python suites passed (186 each, 8 expected opt-in-only skips in default mode); tray D-Bus tests passed (3 in each mode); version test, Python compile and `git diff --check` passed. |
-| UI validation | Rust-opt-in fixture GTK smoke called the actual tray update path with a fake sink; trusted ETA selection and unavailable unknown-only state passed. Screenshots: [b09-tray-synthetic.png](screenshots/b09-tray-synthetic.png) and [b09-tray-unknown-unavailable.png](screenshots/b09-tray-unknown-unavailable.png). Fake sink only; no live SNI host. |
+| Backend tasks completed after that baseline | B00–B12 merged; B09a merge evidence and exact checks are in E067 |
+| Active implementation task / owner | B13a spend/tray projections, current coding-agent session |
+| Active task | **B13a** — branch `backend/b13a-spend-tray-projections`, rebased onto `d1eff677`; build `0.82.0 (45)` reserved |
+| Next domain slice | **B13b** — settings actions, login/update/restart and launch-at-login extraction after B13a review/merge |
+| Open external blockers | None. Dependencies B04–B12 are merged; B14 confirmed the typed DTO/service boundary and tray source-index contract (E067). |
+| Latest checks | B09a PR #45 `test` and `tray-dbus` succeeded on exact head `f19036e`; B13a Rust, Python, tray D-Bus and format/Clippy checks pass on rebased candidate (E067). |
+| UI validation | B09a evidence is in E066. B13a fixture GTK smoke passed with a fake tray sink; [b13-spend-tray-synthetic.png](screenshots/b13-spend-tray-synthetic.png) is visually inspected (E067). |
 
 **First commands for a new model/session:**
 
@@ -81,11 +81,11 @@ into smaller PRs without declaring the parent complete early.
 | [x] **B06** Currency service | B00, B05 | Port currency catalog, labels, conversion, TTL/cache load/write, single-flight refresh and offline fallback; inject HTTP/time; connect monthly pace and spend callers. PR #38 merged at `5e4af06`; both checks passed on head `75bba44`. |
 | [x] **B07** CLI service | B00 | Port executable discovery, argv/TZ handling, timeout/reaping, stdout/stderr/errors, JSON envelopes and command wrappers. Merged PR #42 at `e9dda26`; both checks passed. See AUDIT E054–E056. |
 | [x] **B08** Notification policies | B01, B02, B05 | Port threshold transitions, session-exhaustion tracking, predictive pace cycles and credit-expiry deduplication. PR #40 merged at `9d272fd`; checks passed (see AUDIT E049). OS notification delivery remains frontend/platform work. |
-| [x] **B09** Provider ordering and tray selection | B01, B02, B05 | Port visibility/order, automatic quota ranking and ETA trust/filtering; preserve deterministic ties, depleted quotas and placeholder exclusion. Merged PR #39 at `93b62bb`; checks passed. Follow-up B09a corrects unknown/error eligibility. |
+| [x] **B09** Provider ordering and tray selection | B01, B02, B05 | Port visibility/order, automatic quota ranking and ETA trust/filtering; preserve deterministic ties, depleted quotas and placeholder exclusion. PR #39 merged at `93b62bb`; B09a PR #45 merged at `d1eff677` with both required checks successful (E067). |
 | [x] **B10** Refresh controller | B02–B05, B07–B09 | Port immediate/dynamic polling, manual mode, one queued forced-refresh follow-up, joined shutdown, account collection, partial cost fallback, retained sessions/spend, successful-scan history samples and snapshot/event publication. Complete top-level B02 provider-envelope composition with shared-fixture Python parity; no I/O/callbacks under GUI locks. PR #44 merged at `a66e677`; both required checks passed on `b85348d`. |
-| [x] **B11** Login/auth process service | B00, B07 | PR #43 merged at `a33f0977`. Build-42 local Rust/Python/GTK verification passed (AUDIT E058–E059); GitHub run #41111847909 ended `startup_failure` with zero jobs, so no CI pass is claimed. |
+| [x] **B11** Login/auth process service | B00, B07 | PR #43 merged at `a33f0977`. Exact-head local workflow and GTK fixture smoke passed; GitHub run #41110771700 ended `startup_failure` with zero jobs, so no CI pass is claimed (E064). |
 | [x] **B12** Read-only update service | B00 | Port public VERSION parsing/comparison and bounded HTTP fetch; test invalid/oversized/network-failure responses. PR #41 merged at `bd58f46`; both checks passed on head `21537ba` (AUDIT E053). No code download/install behavior. |
-| [ ] **B13** Extract backend work embedded in UI | B04–B12 | Audit all `ui/*.py` workers and policies: spend model grouping/time ranges/currency/partial-state presentation, tray summaries, settings CLI actions, launch-at-login actions, restart/update workers. Move non-widget responsibilities behind the Rust API; log remaining frontend-only behavior explicitly. |
+| [ ] **B13** Extract backend work embedded in UI | B04–B12 | Audit all `ui/*.py` workers and policies: spend model grouping/time ranges/currency/partial-state presentation, tray summaries, settings CLI actions, launch-at-login actions, restart/update workers. Move non-widget responsibilities behind the Rust API; log remaining frontend-only behavior explicitly. Split into B13a/B13b; parent remains pending until every sub-slice is verified and merged. |
 | [ ] **B14** Full transitional backend integration | B06, B10–B13 | Python GTK uses a single Rust service facade and thin conversion/marshalling adapters. Settings actions and login flows use it too. Prove no Python subprocess/HTTP/polling/notification-policy backend remains. |
 | [ ] **B15** Close original-port gaps | B01–B06, B14 | Audit F01–F06 edge/timezone/Unicode/numeric fallbacks and duplicated catalogs. Define/test Rust-only behavior and resolve all production fallback dependencies. Keep Python parity references until cutover. |
 | [ ] **BG** Backend completion gate | B00–B15 | Rust-only headless end-to-end fake CLI/HTTP/PTY tests require neither Python nor GTK/PyO3; transitional GTK fixture smoke passes; review residual-Python inventory and record gate decision in AUDIT. |
@@ -109,15 +109,17 @@ credits and error semantics are integrated):
 - [x] **B02b2b2a** Detail chart normalization — merged PR #32.
 - [x] **B02b2b2b** Credits/status/error/plan context normalization — merged PR #33.
 
-B09 follow-up:
+B13 sub-slices (the parent stays pending until both slices and all caller routes
+are verified and merged; coordinate Rust DTO/method names with B14):
 
-- [ ] **B09a** Unknown/error tray eligibility correction — keep the stable
-  B09 ranking, but exclude errored providers, placeholders and unknown-usage
-  windows while retaining known zero. Preserve indexes into the exact ordered
-  snapshot provider/window vectors and show unavailable when no candidate is
-  eligible. Python's previous unknown-as-zero behavior is an intentional
-  parity correction, not a preserved contract. Branch
-  `backend/b09-tray-unknown-state`, build 44 provisional; see AUDIT E065 onward.
+- [ ] **B13a** Spend/tray projections — Rust DTOs for spend time-range filtering,
+  currency conversion, coverage/partial state, provider/model/project grouping,
+  and tray summaries from B10's B09-ordered snapshot/selection. Keep GTK/Cairo
+  drawing and list widgets in Python.
+- [ ] **B13b** Settings and application actions — route settings CLI actions,
+  login, update/restart and launch-at-login through B07/B11/B12 and the central
+  facade; keep dialogs/file chooser and GLib marshalling in Python, documenting
+  any platform-only launch adapter.
 
 B05/B07/B12 can proceed after B00 independently of payload parsing. B11/B13 are
 not optional just because their Python files sit near presentation code. Do not

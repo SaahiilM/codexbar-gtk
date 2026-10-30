@@ -800,3 +800,15 @@ After a task merges, the next entry/checkpoint should record the observed merge
 commit and CI result. Update the live TASKS handoff in each implementation PR;
 future models must verify the linked PR's status rather than trusting a stale
 `verified/PR-pending` record as either a failure or a successful merge.
+
+### E035 — 2026-10-30: B05 PR opened
+
+- **PR:** [PR #37](https://github.com/SaahiilM/codexbar-gtk/pull/37), branch
+  `backend/b05-preferences`, head `1768d52b3bd2472a59fa373f6627c0ab369282b8`,
+  base `main`.
+- **Scope:** B05 Preferences implementation and local verification are recorded
+  in E034. The PR includes the synthetic Settings screenshot in its description.
+- **Observed GitHub state:** at 15:46 UTC, `test` and `tray-dbus` were both
+  running; no review decision was present. No merge is recorded here.
+- **Next:** wait for both required checks; merge only after both pass, then
+  record GitHub's merge commit and verify `origin/main`.

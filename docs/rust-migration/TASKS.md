@@ -14,10 +14,10 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Planning change | [PR #18](https://github.com/SaahiilM/codexbar-gtk/pull/18), merged at `69c5496`, build `0.81.0 (17)` |
 | Backend tasks completed after that baseline | B00, B01, B02a, B02b1, B02b2a, B02b2b1, B02b2b2a, B02b2b2b, B03 and B04 merged |
 | Active implementation task / owner | B05 preferences service, owner: current coding-agent session |
-| Active task | **B05** — preferences service on `backend/b05-preferences` (locally verified; PR preparation) |
-| Next domain slice | **B05** — open focused PR and observe review/CI |
+| Active task | **B05** — preferences service; [PR #37](https://github.com/SaahiilM/codexbar-gtk/pull/37), head `1768d52`, open with required checks running |
+| Next domain slice | **B05** — observe PR #37 checks; merge after required checks pass, then continue with B06 currency |
 | Open external blockers | None known; task dependencies below still apply |
-| Latest checks | B05 local: 56 core + 3 backend tests, all Clippy/format checks, extension build, 159 Python tests in each mode, and 3 tray D-Bus tests passed (AUDIT E034) |
+| Latest checks | B05 local: 56 core + 3 backend tests, all Clippy/format checks, extension build, 159 Python tests in each mode, and 3 tray D-Bus tests passed (AUDIT E034); PR #37 checks running as of 15:46 UTC |
 | UI validation | Rust-opt-in synthetic GTK Settings General page; toggling refresh-on-open persisted to the isolated settings file. [Screenshot](screenshots/b05-settings-synthetic.png); nonfatal GTK/EGL/accessibility warnings (AUDIT E034) |
 
 **First commands for a new model/session:**

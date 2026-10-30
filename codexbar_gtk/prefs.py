@@ -12,6 +12,8 @@ import os
 import threading
 from typing import Any
 
+from . import rust_bridge
+
 CONFIG_DIR = os.path.expanduser("~/.config/codexbar-gtk")
 SETTINGS_PATH = os.path.join(CONFIG_DIR, "settings.json")
 
@@ -84,12 +86,25 @@ class Preferences:
     def __init__(self, path: str = SETTINGS_PATH) -> None:
         self.path = path
         self._lock = threading.RLock()
-        self._values: dict[str, Any] = dict(DEFAULTS)
-        self.load()
+        self._values: dict[str, Any] | None = None
+        core = rust_bridge.extension()
+        self._rust = core.PreferencesStore(path) if core is not None else None
+        if self._rust is None:
+            self._values = dict(DEFAULTS)
+            self.load()
+
+    def _use_python_reference(self) -> None:
+        """Keep unsupported Python-only values on the parity implementation."""
+        if self._rust is not None:
+            self._values = json.loads(self._rust.as_json())
+            self._rust = None
 
     # -- persistence ------------------------------------------------------
 
     def load(self) -> None:
+        if self._rust is not None:
+            self._rust.load()
+            return
         with self._lock:
             values = dict(DEFAULTS)
             try:
@@ -104,6 +119,9 @@ class Preferences:
             self._values = values
 
     def save(self) -> None:
+        if self._rust is not None:
+            self._rust.save()
+            return
         with self._lock:
             os.makedirs(os.path.dirname(self.path), exist_ok=True)
             tmp = f"{self.path}.tmp"
@@ -115,33 +133,76 @@ class Preferences:
     # -- access -----------------------------------------------------------
 
     def get(self, key: str, default: Any = None) -> Any:
+        if self._rust is not None:
+            if not isinstance(key, str):
+                self._use_python_reference()
+            else:
+                serialized = self._rust.get_json(key)
+                return json.loads(serialized) if serialized is not None else DEFAULTS.get(key, default)
         with self._lock:
             return self._values.get(key, DEFAULTS.get(key, default))
 
     def set(self, key: str, value: Any, persist: bool = True) -> None:
+        if self._rust is not None:
+            if not isinstance(key, str):
+                self._use_python_reference()
+            else:
+                try:
+                    value_json = json.dumps(value, allow_nan=False)
+                except (TypeError, ValueError):
+                    self._use_python_reference()
+                else:
+                    try:
+                        self._rust.set_json(key, value_json, persist)
+                    except ValueError:
+                        self._use_python_reference()
+                    else:
+                        return
         with self._lock:
             self._values[key] = value
         if persist:
             self.save()
 
     def update(self, values: dict[str, Any]) -> None:
+        if self._rust is not None:
+            if not isinstance(values, dict):
+                self._use_python_reference()
+            else:
+                try:
+                    values_json = json.dumps(values, allow_nan=False)
+                except (TypeError, ValueError):
+                    self._use_python_reference()
+                else:
+                    try:
+                        self._rust.update_json(values_json)
+                    except ValueError:
+                        self._use_python_reference()
+                    else:
+                        return
         with self._lock:
             self._values.update(values)
         self.save()
 
     def reset(self) -> None:
+        if self._rust is not None:
+            self._rust.reset()
+            return
         with self._lock:
             self._values = dict(DEFAULTS)
         self.save()
 
     def as_dict(self) -> dict[str, Any]:
+        if self._rust is not None:
+            return json.loads(self._rust.as_json())
         with self._lock:
-            return dict(self._values)
+            return dict(self._values or {})
 
     # -- derived ----------------------------------------------------------
 
     @property
     def refresh_seconds(self) -> int:
+        if self._rust is not None:
+            return self._rust.refresh_seconds()
         key = str(self.get("refreshFrequency", "adaptive"))
         if key == "adaptive":
             return REFRESH_INTERVALS["adaptive"]
@@ -149,13 +210,29 @@ class Preferences:
 
     @property
     def refresh_is_manual(self) -> bool:
+        if self._rust is not None:
+            return self._rust.refresh_is_manual()
         return self.get("refreshFrequency") == "manual"
 
     def export_document(self) -> dict[str, Any]:
         """Export in the upstream portable preference format."""
+        if self._rust is not None:
+            return json.loads(self._rust.export_json())
         return {"version": 1, "preferences": self.as_dict()}
 
     def import_document(self, document: dict[str, Any]) -> None:
+        if self._rust is not None:
+            try:
+                document_json = json.dumps(document, allow_nan=False)
+            except (TypeError, ValueError):
+                self._use_python_reference()
+            else:
+                try:
+                    self._rust.import_json(document_json)
+                except ValueError:
+                    self._use_python_reference()
+                else:
+                    return
         prefs = document.get("preferences") if isinstance(document, dict) else None
         if isinstance(prefs, dict):
             self.update({k: v for k, v in prefs.items() if k in DEFAULTS})

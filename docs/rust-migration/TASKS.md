@@ -9,16 +9,16 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Field | Current checkpoint |
 | --- | --- |
 | Goal | Fully native Rust GTK4/libadwaita app; backend first, UI second |
-| Current phase | B04 spend normalization/aggregation; native UI implementation must wait |
-| Last merged implementation | B03 PR #35 merged, build `0.82.0 (34)` |
+| Current phase | B05 preferences service; native UI implementation must wait |
+| Last merged implementation | B04 PR #36 merged at `8649c88`, build `0.82.0 (35)` |
 | Planning change | [PR #18](https://github.com/SaahiilM/codexbar-gtk/pull/18), merged at `69c5496`, build `0.81.0 (17)` |
-| Backend tasks completed after that baseline | B00, B01, B02a, B02b1, B02b2a, B02b2b1, B02b2b2a, B02b2b2b, B03 merged |
-| Active implementation task / owner | B04 spend aggregation, owner: current coding-agent session |
-| Active task | **B04** — spend normalization/aggregation ([PR #36](https://github.com/SaahiilM/codexbar-gtk/pull/36), review/CI pending) |
-| Next domain slice | **B04** — observe PR #36 review/CI; after merge, continue with B05 preferences |
+| Backend tasks completed after that baseline | B00, B01, B02a, B02b1, B02b2a, B02b2b1, B02b2b2a, B02b2b2b, B03 and B04 merged |
+| Active implementation task / owner | B05 preferences service, owner: current coding-agent session |
+| Active task | **B05** — preferences service; [PR #37](https://github.com/SaahiilM/codexbar-gtk/pull/37), head `1768d52`, open with required checks running |
+| Next domain slice | **B05** — observe PR #37 checks; merge after required checks pass, then continue with B06 currency |
 | Open external blockers | None known; task dependencies below still apply |
-| Latest checks | B04 local checks passed (AUDIT E029); PR #36 `test` in progress and `tray-dbus` queued on 2026-10-30 |
-| UI validation | Synthetic B04 Rust-opt-in SpendView preview rendered spend/dashboard/card/popup/sessions PNGs on Wayland (AUDIT E029); [SpendView](screenshots/b04-spend-synthetic.png) and [dashboard](screenshots/b04-dashboard-synthetic.png) screenshots are in PR #36 (AUDIT E031) |
+| Latest checks | B05 local: 56 core + 3 backend tests, all Clippy/format checks, extension build, 159 Python tests in each mode, and 3 tray D-Bus tests passed (AUDIT E034); PR #37 checks running as of 15:46 UTC |
+| UI validation | Rust-opt-in synthetic GTK Settings General page; toggling refresh-on-open persisted to the isolated settings file. [Screenshot](screenshots/b05-settings-synthetic.png); nonfatal GTK/EGL/accessibility warnings (AUDIT E034) |
 
 **First commands for a new model/session:**
 
@@ -74,10 +74,10 @@ into smaller PRs without declaring the parent complete early.
 | --- | --- | --- |
 | [x] **B00** Backend API and test seam | Foundation | Define snapshot/error contracts, Tokio/watch API and cancellation; record runtime/dependency decisions and headless fake-worker seam. Merged PR #19. |
 | [x] **B01** Timestamp/numeric contracts and domain models | B00 | Port `data.py` timestamp/numeric helpers, `RateWindow`, `Pace`, `CostInfo`, detail/credit/provider/session/spend model contracts and derived properties. Freeze UTC/local, missing-vs-zero, rounding and large-number behavior. Completed in PRs #20–#22; see B01a–c.
-| [ ] **B02** Provider usage normalization | B01 | Port provider envelopes, extra windows, pace, identity/plan, costs, details/charts, credits and reset-credit parsing. Preserve optional/raw fields, caps, order, placeholder/usage-known flags and error states. |
+| [x] **B02** Provider usage normalization | B01 | Port provider envelopes, extra windows, pace, identity/plan, costs, details/charts, credits and reset-credit parsing. Completed in the B02 sub-slices below. |
 | [x] **B03** Agent-session normalization | B01 | Port session fields, timestamp handling, running-state classification and stable sorting; merged PR #35. |
-| [ ] **B04** Spend normalization/aggregation | B01 | Port old/new CLI totals, coverage/provenance, partial/error handling, daily/project/model data and ordering; never double-count totals or turn unknown costs into zero. |
-| [ ] **B05** Preferences service | B00 | Port defaults, known-key loading/import, portable export, atomic 0600 writes, reset/update, thread safety and refresh settings. Test disk failures and existing documents. |
+| [x] **B04** Spend normalization/aggregation | B01 | Port old/new CLI totals, coverage/provenance, partial/error handling, daily/project/model data and ordering; merged PR #36. |
+| [ ] **B05** Preferences service | B00 | Port defaults, known-key loading/import, portable export, atomic 0600 writes, reset/update, thread safety and refresh settings. Test disk failures and existing documents. Active on `backend/b05-preferences`; local verification complete. |
 | [ ] **B06** Currency service | B00, B05 | Port currency catalog, labels, conversion, TTL/cache load/write, single-flight refresh and offline fallback; inject HTTP/time; connect monthly pace and spend callers. |
 | [ ] **B07** CLI service | B00 | Port executable discovery, argv/TZ handling, timeout/reaping, stdout/stderr/errors, JSON envelopes, usage/cost/sessions/config/hooks/plugins/account commands. Use fake executables, including failure and cancellation. |
 | [ ] **B08** Notification policies | B01, B02, B05 | Port threshold transitions, session-exhaustion tracking, predictive pace cycles and credit-expiry deduplication. Rust owns state; tests use explicit clocks and accounts. OS notification delivery remains frontend/platform work. |
@@ -108,8 +108,6 @@ credits and error semantics are integrated):
 - [x] **B02b2b1** Provider cost normalization — merged PR #30.
 - [x] **B02b2b2a** Detail chart normalization — merged PR #32.
 - [x] **B02b2b2b** Credits/status/error/plan context normalization — merged PR #33.
-- [x] **B03** — agent-session normalization — merged PR #35.
-- [ ] **B04** — spend normalization/aggregation — PR #36 open; local verification and synthetic GTK preview complete; CI/review pending.
 
 B05/B07/B12 can proceed after B00 independently of payload parsing. B11/B13 are
 not optional just because their Python files sit near presentation code. Do not

@@ -6,6 +6,21 @@ short version tracks, so "which version has what" maps cleanly onto both trees.
 
 ## Unreleased
 
+## 0.82.0 (36) — 2026-10-30
+
+Tracks upstream CodexBar 0.82.0.
+
+### Added
+
+- Port preference defaults, persistence, import/export, reset/update, and
+  refresh-interval derivation to Rust in opt-in mode.
+- Preserve existing settings documents and secure atomic writes.
+
+### Validation
+
+- See `docs/rust-migration/AUDIT.md` for B05 parity, storage-failure, and GTK
+  settings-flow evidence.
+
 ## 0.82.0 (35) — 2026-10-30
 
 Tracks upstream CodexBar 0.82.0.

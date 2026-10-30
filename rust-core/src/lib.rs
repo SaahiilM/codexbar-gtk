@@ -9,4 +9,5 @@ pub mod domain;
 pub mod formatting;
 pub mod history;
 pub mod pace;
+pub mod preferences;
 pub mod providers;

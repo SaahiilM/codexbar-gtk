@@ -2,7 +2,7 @@ use chrono::{DateTime, NaiveDate, Utc};
 use codexbar_core::{activity, charts, domain, formatting, history, pace, providers};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use pyo3::types::{PyAny, PyBool, PyDict, PyFloat, PyInt};
+use pyo3::types::{PyAny, PyBool, PyDict, PyFloat, PyInt, PyList};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -374,6 +374,116 @@ fn detail_chart_peak(points: Vec<(String, f64)>) -> f64 {
 #[pyfunction]
 fn agent_session_is_running(state: &str) -> bool {
     domain::AgentSession::state_is_running(state)
+}
+
+#[pyfunction]
+fn spend_from_json<'py>(payload: &str, py: Python<'py>) -> Option<Bound<'py, PyDict>> {
+    let payload: Value = serde_json::from_str(payload).ok()?;
+    let summary = domain::spend_from_payloads(&payload);
+    let dict = PyDict::new(py);
+    dict.set_item("total_cost", summary.total_cost).unwrap();
+    dict.set_item("cost_known", summary.cost_known).unwrap();
+    dict.set_item("cost_partial", summary.cost_partial).unwrap();
+    dict.set_item("currency", summary.currency.as_str())
+        .unwrap();
+    dict.set_item("total_tokens", summary.total_tokens).unwrap();
+
+    let coverage_dict = PyDict::new(py);
+    for (key, value) in &summary.coverage {
+        coverage_dict.set_item(key.as_str(), *value).unwrap();
+    }
+    dict.set_item("coverage", coverage_dict).unwrap();
+
+    dict.set_item("provenance", summary.provenance.as_str())
+        .unwrap();
+    dict.set_item("reporting_period", summary.reporting_period.as_deref())
+        .unwrap();
+    dict.set_item("history_label", summary.history_label.as_deref())
+        .unwrap();
+    dict.set_item(
+        "history_coverage_established",
+        summary.history_coverage_established,
+    )
+    .unwrap();
+    dict.set_item(
+        "daily",
+        serde_json::to_string(&summary.daily)
+            .unwrap_or_default()
+            .as_str(),
+    )
+    .unwrap();
+    dict.set_item(
+        "projects",
+        serde_json::to_string(&summary.projects)
+            .unwrap_or_default()
+            .as_str(),
+    )
+    .unwrap();
+    dict.set_item(
+        "models",
+        serde_json::to_string(&summary.models)
+            .unwrap_or_default()
+            .as_str(),
+    )
+    .unwrap();
+    dict.set_item("session_cost", summary.session_cost).unwrap();
+    dict.set_item("session_cost_known", summary.session_cost_known)
+        .unwrap();
+    dict.set_item("session_tokens", summary.session_tokens)
+        .unwrap();
+    dict.set_item("last30_cost", summary.last30_cost).unwrap();
+    dict.set_item("last30_cost_known", summary.last30_cost_known)
+        .unwrap();
+    dict.set_item("last30_cost_partial", summary.last30_cost_partial)
+        .unwrap();
+    dict.set_item("last30_tokens", summary.last30_tokens)
+        .unwrap();
+    dict.set_item("incomplete_requests", summary.incomplete_requests)
+        .unwrap();
+    dict.set_item("error", summary.error.as_deref()).unwrap();
+
+    let providers_list = PyList::new(
+        py,
+        summary.providers.iter().map(|provider| {
+            let provider_dict = PyDict::new(py);
+            provider_dict
+                .set_item("provider", provider.provider.as_str())
+                .unwrap();
+            provider_dict.set_item("cost", provider.cost).unwrap();
+            provider_dict.set_item("tokens", provider.tokens).unwrap();
+            provider_dict
+                .set_item("session_tokens", provider.session_tokens)
+                .unwrap();
+            provider_dict
+                .set_item(
+                    "daily",
+                    serde_json::to_string(&provider.daily)
+                        .unwrap_or_default()
+                        .as_str(),
+                )
+                .unwrap();
+            provider_dict
+                .set_item(
+                    "projects",
+                    serde_json::to_string(&provider.projects)
+                        .unwrap_or_default()
+                        .as_str(),
+                )
+                .unwrap();
+            provider_dict.set_item("priced", provider.priced).unwrap();
+            provider_dict
+                .set_item("provenance", provider.provenance.as_str())
+                .unwrap();
+            provider_dict
+                .set_item("cost_known", provider.cost_known)
+                .unwrap();
+            provider_dict
+        }),
+    )
+    .unwrap();
+    dict.set_item("providers", providers_list).unwrap();
+
+    Some(dict)
 }
 
 #[pyfunction]
@@ -764,6 +874,7 @@ fn _rust_core(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(provider_usage_subtitle, module)?)?;
     module.add_function(wrap_pyfunction!(detail_chart_peak, module)?)?;
     module.add_function(wrap_pyfunction!(agent_session_is_running, module)?)?;
+    module.add_function(wrap_pyfunction!(spend_from_json, module)?)?;
     module.add_function(wrap_pyfunction!(pace_stage_is_deficit, module)?)?;
     module.add_function(wrap_pyfunction!(pace_stage_is_reserve, module)?)?;
     module.add_function(wrap_pyfunction!(pace_stage_label, module)?)?;

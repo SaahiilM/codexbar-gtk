@@ -683,6 +683,67 @@ reproducible commands; report artifact limitations honestly.
 - Next exact action:
 ```
 
+### E029 — 2026-10-30: B04 spend normalization/aggregation (local handoff)
+
+- **Owner/branch/base:** current coding-agent session;
+  `backend/b04-spend-aggregation`, based on `29c970c`; no PR exists yet.
+- **Scope:** add Rust `spend_from_payloads` in `rust-core/src/domain.rs`, expose
+  it through `rust-python/src/lib.rs`, and route `codexbar_gtk/data.py` through
+  the opt-in adapter. Add Rust and Python integration coverage for totals,
+  unknown versus known-zero cost, errors, coverage/provenance, daily/project/
+  model ordering, and Python-reference parity. The interrupted adapter mismatch
+  (Python caller unpacked the PyO3 dictionary as a tuple) was corrected.
+- **Contract:** top-level totals take precedence over nested totals so the same
+  provider total is not counted twice. Unknown cost stays distinct from known
+  zero. Empty providers are filtered, error payloads are skipped, summary
+  provenance follows Python's top-level then nested-totals precedence, and
+  empty error fields do not count as failures. Coverage and session/last-30-day/
+  incomplete counters follow Python's `int(value or 0)` behavior for JSON
+  booleans, numbers and integer strings within the Rust `i64` contract.
+- **Checks actually run:** `cargo test --manifest-path rust-core/Cargo.toml
+  --locked` (49 passed); core, bridge and backend Clippy with warnings denied;
+  backend tests (3 passed); format checks for core/bridge/backend;
+  `./scripts/build-rust-core.sh`; B04 integration tests (23 passed with default
+  and Rust opt-in); Python suite (155 passed in each mode); tray D-Bus suite
+  (3 passed); `git diff --check`. No test skips reported.
+- **Runtime/UI smoke:** Rust opt-in synthetic GTK preview on Wayland rendered
+  `card.png`, `popup.png`, `dashboard.png`, `sessions.png`, and `spend.png` to
+  `/tmp/codexbar-b04-smoke/`. The SpendView displayed the synthetic daily cost
+  and project data. GTK emitted nonfatal Adwaita theme, EGL device-permission,
+  and accessibility-bus warnings. No real provider/account data was used.
+- **Status:** locally verified implementation prepared for a focused PR; no
+  CI/merge result observed. GTK build is `0.82.0 (35)` for this PR.
+- **Next:** commit and open the PR, then record its URL and observed checks here.
+
+### E031 — 2026-10-30: B04 synthetic UI screenshots added to PR
+
+- **PR:** [PR #36](https://github.com/SaahiilM/codexbar-gtk/pull/36).
+- **Artifacts:** `docs/rust-migration/screenshots/b04-spend-synthetic.png` and
+  `docs/rust-migration/screenshots/b04-dashboard-synthetic.png` are rendered
+  from the GTK widget tree with the Rust opt-in and synthetic CLI payloads.
+  They contain no account identifiers or live data and are embedded in the PR
+  description as a reference for the SpendView and dashboard.
+- **Scope/limits:** confirms the synthetic spend values flow into the GTK
+  SpendView and dashboard widgets. This is a fixture render, not a full manual
+  interaction pass. The Cairo snapshot renderer shows transparent surfaces on a
+  black canvas in this environment; nonfatal theme/EGL/accessibility warnings
+  were also observed.
+- **Status:** screenshots are committed in this PR; updated checks must pass
+  before merge.
+- **Next:** observe the checks for the screenshot commit; merge PR #36 only when
+  both required checks pass.
+
+### E030 — 2026-10-30: B04 PR opened
+
+- **PR:** [PR #36](https://github.com/SaahiilM/codexbar-gtk/pull/36), open,
+  head `c3092b44a949d22b0f218d889e90f5dc0fde5cbb`, base branch `main`.
+- **Scope:** records the B04 implementation in E029; this entry only records
+  the PR handoff and live GitHub state.
+- **Observed checks:** at 2026-10-30 15:17 UTC, `test` was in progress and
+  `tray-dbus` was queued. No review decision or merge commit was present.
+- **Next:** observe CI/review on PR #36. Do not mark B04 merged until GitHub
+  reports the merged commit and successful required checks.
+
 After a task merges, the next entry/checkpoint should record the observed merge
 commit and CI result. Update the live TASKS handoff in each implementation PR;
 future models must verify the linked PR's status rather than trusting a stale

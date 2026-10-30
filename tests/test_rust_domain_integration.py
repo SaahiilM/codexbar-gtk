@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import unittest
+from unittest.mock import patch
 from datetime import datetime, timezone
 
 from codexbar_gtk.data import (
@@ -11,8 +12,11 @@ from codexbar_gtk.data import (
     Pace,
     ProviderUsage,
     RateWindow,
+    SpendProvider,
+    SpendSummary,
     agent_sessions_from_payloads,
     provider_usage_from_payload,
+    spend_from_payloads,
     _optional_float,
     _optional_int,
     parse_timestamp,
@@ -490,6 +494,211 @@ class DomainPrimitiveIntegrationTests(unittest.TestCase):
         )
         self.assertIsNone(RateWindow("unknown", "Unknown", window_minutes=0).duration_label)
         self.assertEqual(RateWindow("bad", "Bad", used_percent=math.nan).remaining_percent, 0)
+
+class SpendAggregationTests(unittest.TestCase):
+    def test_spend_aggregation_matches_python_reference(self):
+        payloads = [
+            {
+                "provider": "claude",
+                "currencyCode": "USD",
+                "totalCost": 12.5,
+                "totalTokens": 1000,
+                "sessionCostUSD": 2.5,
+                "sessionTokens": 100,
+                "last30DaysCostUSD": 50.0,
+                "last30DaysTokens": "5000",
+                "sessionTokens": 100.8,
+                "incompleteRequestCount": True,
+                "coverage": {"unpriced": 1.9, "unmetered": 1.9},
+                "provenance": "scan",
+                "totals": {"provenance": "totals"},
+                "daily": [
+                    {
+                        "date": "2026-10-20",
+                        "totalCost": 5.0,
+                        "modelBreakdowns": [{"model": "m1", "cost": 3.0}],
+                    }
+                ],
+                "projects": [{"name": "proj-a", "totalCost": 7.5}],
+                "models": [{"model": "m2", "totalCost": 2.0}],
+            },
+            {"provider": "known-zero", "totalCost": 0.0, "totalTokens": 0},
+            {"provider": "unknown-cost", "totalTokens": 42},
+            {"provider": "empty-provider"},
+            {"provider": "no-error", "error": None},
+            {"provider": "also-no-error", "error": {}},
+        ]
+        with patch("codexbar_gtk.data.extension", return_value=None):
+            python_summary = spend_from_payloads(payloads)
+
+        self.assertEqual(spend_from_payloads(payloads), python_summary)
+
+    def test_spend_aggregation_preserves_totals_and_coverage(self):
+        summary = spend_from_payloads(
+            [
+                {
+                    "provider": "claude",
+                    "currencyCode": "USD",
+                    "totalCost": 12.50,
+                    "totalTokens": 1000,
+                    "sessionCostUSD": 2.50,
+                    "sessionTokens": 100,
+                    "last30DaysCostUSD": 50.00,
+                    "last30DaysTokens": 5000,
+                    "incompleteRequestCount": 0,
+                    "coverage": {"unpriced": 0, "unmetered": 0},
+                    "provenance": "scan",
+                    "daily": [{"date": "2026-10-20", "totalCost": 5.0}],
+                    "projects": [{"name": "proj-a", "totalCost": 7.5}],
+                    "models": [{"cost": 3.0}],
+                },
+                {
+                    "provider": "codex",
+                    "totalCost": 7.25,
+                    "totalTokens": 500,
+                    "sessionCostUSD": 1.0,
+                    "sessionTokens": 50,
+                    "last30DaysCostUSD": 30.00,
+                    "last30DaysTokens": 2500,
+                    "incompleteRequestCount": 2,
+                    "coverage": {"unpriced": 1},
+                    "provenance": "scan",
+                },
+            ]
+        )
+
+        self.assertEqual(summary.total_cost, 19.75)
+        self.assertTrue(summary.cost_known)
+        self.assertEqual(summary.total_tokens, 1500)
+        self.assertEqual(summary.session_cost, 3.50)
+        self.assertTrue(summary.session_cost_known)
+        self.assertEqual(summary.session_tokens, 150)
+        self.assertEqual(summary.last30_cost, 80.00)
+        self.assertTrue(summary.last30_cost_known)
+        self.assertFalse(summary.last30_cost_partial)
+        self.assertEqual(summary.last30_tokens, 7500)
+        self.assertEqual(summary.incomplete_requests, 2)
+        self.assertTrue(summary.cost_partial)
+        self.assertEqual(len(summary.providers), 2)
+        self.assertEqual(summary.providers[0].provider, "claude")
+        self.assertEqual(summary.providers[0].cost, 12.50)
+        self.assertEqual(summary.providers[1].provider, "codex")
+        self.assertEqual(summary.providers[1].cost, 7.25)
+        self.assertEqual(summary.coverage.get("unpriced"), 1)
+        self.assertEqual(summary.provenance, "scan")
+
+    def test_spend_aggregation_skips_error_payload(self):
+        summary = spend_from_payloads(
+            [
+                {"provider": "claude", "error": {"message": "rate limited"}},
+                {"provider": "codex", "totalCost": 5.0, "totalTokens": 100},
+            ]
+        )
+
+        self.assertEqual(summary.error, "rate limited")
+        self.assertTrue(summary.cost_partial)
+        self.assertEqual(len(summary.providers), 1)
+        self.assertEqual(summary.providers[0].provider, "codex")
+        self.assertEqual(summary.providers[0].cost, 5.0)
+
+    def test_spend_aggregation_unknown_vs_known_zero(self):
+        summary = spend_from_payloads(
+            [
+                {"provider": "known-zero", "totalCost": 0.0, "totalTokens": 0},
+                {"provider": "unknown-cost", "totalTokens": 42},
+                {"provider": "empty-provider"},
+            ]
+        )
+
+        # known-zero is kept (cost_known=true); unknown-cost kept; empty-provider filtered out
+        self.assertEqual(len(summary.providers), 2)
+        # Sorted by (cost, tokens) desc: unknown-cost before known-zero
+        self.assertEqual(summary.providers[0].provider, "unknown-cost")
+        self.assertFalse(summary.providers[0].cost_known)
+        self.assertEqual(summary.providers[0].tokens, 42)
+        self.assertEqual(summary.providers[1].provider, "known-zero")
+        self.assertTrue(summary.providers[1].cost_known)
+        self.assertEqual(summary.total_cost, 0.0)
+        self.assertTrue(summary.cost_known)
+
+    def test_spend_aggregation_totals_not_double_counted(self):
+        summary = spend_from_payloads(
+            [
+                {
+                    "provider": "cli",
+                    "totalCost": 10.0,
+                    "totalTokens": 100,
+                    "totals": {"totalCost": 999.0, "totalTokens": 999},
+                }
+            ]
+        )
+
+        self.assertEqual(summary.total_cost, 10.0)
+        self.assertEqual(summary.total_tokens, 100)
+        self.assertTrue(summary.cost_known)
+
+    def test_spend_aggregation_empty_and_non_dict(self):
+        summary = spend_from_payloads([])
+        self.assertEqual(summary.total_cost, 0.0)
+        self.assertFalse(summary.cost_known)
+        self.assertEqual(len(summary.providers), 0)
+        self.assertIsNone(summary.error)
+
+        summary = spend_from_payloads(["not a dict", 42, None])
+        self.assertEqual(len(summary.providers), 0)
+        self.assertIsNone(summary.error)
+
+    def test_spend_aggregation_daily_projects_models_sorted(self):
+        summary = spend_from_payloads(
+            [
+                {
+                    "provider": "cli",
+                    "daily": [
+                        {"date": "2026-10-22", "totalCost": 2.0},
+                        {"date": "2026-10-20", "totalCost": 1.0},
+                        {"date": "2026-10-21", "totalCost": 3.0},
+                    ],
+                    "projects": [
+                        {"name": "b", "totalCost": 1.0},
+                        {"name": "a", "totalCost": "5.0"},
+                    ],
+                    "models": [
+                        {"cost": 2.0},
+                        {"totalCost": 10.0},
+                        {"cost": 0.0, "totalCost": "8.0"},
+                    ],
+                }
+            ]
+        )
+
+        self.assertEqual(len(summary.daily), 3)
+        self.assertEqual(summary.daily[0].get("date"), "2026-10-20")
+        self.assertEqual(summary.daily[2].get("date"), "2026-10-22")
+
+        self.assertEqual(len(summary.projects), 2)
+        self.assertEqual(summary.projects[0].get("name"), "a")
+        self.assertEqual(summary.projects[1].get("name"), "b")
+
+        self.assertEqual(len(summary.models), 3)
+        self.assertEqual(summary.models[0].get("totalCost"), 10.0)
+        self.assertEqual(summary.models[1].get("totalCost"), "8.0")
+        self.assertEqual(summary.models[2].get("cost"), 2.0)
+
+    def test_spend_aggregation_history_coverage_and_provenance(self):
+        summary = spend_from_payloads(
+            [
+                {
+                    "provider": "cli",
+                    "historyCoverageIsEstablished": False,
+                    "provenance": "",
+                    "totals": {"provenance": "from-totals"},
+                }
+            ]
+        )
+
+        self.assertFalse(summary.history_coverage_established)
+        self.assertEqual(summary.provenance, "from-totals")
+        self.assertTrue(summary.cost_partial)
 
 if __name__ == "__main__":
     unittest.main()

@@ -928,6 +928,52 @@ class SpendSummary:
 
 
 def spend_from_payloads(payloads: list[dict[str, Any]]) -> SpendSummary:
+    rust = extension()
+    if rust is not None:
+        try:
+            parsed = rust.spend_from_json(json.dumps(payloads or []))
+        except (TypeError, ValueError):
+            parsed = None
+        if parsed is not None:
+            summary = SpendSummary(
+                total_cost=parsed["total_cost"],
+                cost_known=parsed["cost_known"],
+                cost_partial=parsed["cost_partial"],
+                currency=parsed["currency"],
+                total_tokens=parsed["total_tokens"],
+                coverage={k: int(v) for k, v in parsed["coverage"].items()},
+                provenance=parsed["provenance"] or "unknown",
+                reporting_period=parsed["reporting_period"],
+                history_label=parsed["history_label"],
+                history_coverage_established=parsed["history_coverage_established"],
+                daily=json.loads(parsed["daily"]) if parsed["daily"] else [],
+                projects=json.loads(parsed["projects"]) if parsed["projects"] else [],
+                models=json.loads(parsed["models"]) if parsed["models"] else [],
+                session_cost=parsed["session_cost"],
+                session_cost_known=parsed["session_cost_known"],
+                session_tokens=parsed["session_tokens"],
+                last30_cost=parsed["last30_cost"],
+                last30_cost_known=parsed["last30_cost_known"],
+                last30_cost_partial=parsed["last30_cost_partial"],
+                last30_tokens=parsed["last30_tokens"],
+                incomplete_requests=parsed["incomplete_requests"],
+                error=parsed["error"],
+            )
+            for provider in parsed["providers"]:
+                summary.providers.append(
+                    SpendProvider(
+                        provider=provider["provider"],
+                        cost=provider["cost"],
+                        tokens=int(provider["tokens"]),
+                        session_tokens=int(provider["session_tokens"]),
+                        daily=json.loads(provider["daily"]) if provider["daily"] else [],
+                        projects=json.loads(provider["projects"]) if provider["projects"] else [],
+                        priced=provider["priced"],
+                        provenance=provider["provenance"] or "",
+                        cost_known=provider["cost_known"],
+                    )
+                )
+            return summary
     summary = SpendSummary()
     for payload in payloads:
         if not isinstance(payload, dict):

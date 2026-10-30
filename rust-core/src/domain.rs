@@ -694,6 +694,353 @@ pub struct SpendSummary {
     pub providers: Vec<SpendProvider>,
 }
 
+fn spend_json_truthy(value: &Value) -> bool {
+    match value {
+        Value::Null => false,
+        Value::Bool(value) => *value,
+        Value::Number(value) => value.as_f64().is_some_and(|number| number != 0.0),
+        Value::String(value) => !value.is_empty(),
+        Value::Array(value) => !value.is_empty(),
+        Value::Object(value) => !value.is_empty(),
+    }
+}
+
+/// Match the Python spend parser's `int(value or 0)` fields within the Rust
+/// summary's i64 range. CLI counters are normally integer JSON values.
+fn spend_int_or_zero(value: Option<&Value>) -> i64 {
+    match value {
+        None | Some(Value::Null) => 0,
+        Some(Value::Bool(value)) => i64::from(*value),
+        Some(Value::Number(value)) => {
+            if let Some(integer) = value.as_i64() {
+                integer
+            } else if let Some(unsigned) = value.as_u64().filter(|n| *n <= i64::MAX as u64) {
+                unsigned as i64
+            } else {
+                value
+                    .as_f64()
+                    .filter(|number| {
+                        number.is_finite()
+                            && *number >= i64::MIN as f64
+                            && *number < -(i64::MIN as f64)
+                    })
+                    .map(|number| number.trunc() as i64)
+                    .unwrap_or(0)
+            }
+        }
+        Some(Value::String(value)) => value.parse().unwrap_or(0),
+        Some(_) => 0,
+    }
+}
+
+fn spend_sort_float(value: Option<&Value>) -> f64 {
+    match value {
+        Some(Value::Number(value)) => value.as_f64().unwrap_or(0.0),
+        Some(Value::String(value)) if !value.is_empty() => value.parse().unwrap_or(0.0),
+        Some(Value::Bool(value)) => f64::from(u8::from(*value)),
+        _ => 0.0,
+    }
+}
+
+/// Aggregate spend payloads from ``codexbar cost`` into a single summary.
+///
+/// Matches Python's ``spend_from_payloads``: top-level totals take precedence
+/// over nested ``totals`` (never double-counted), unknown costs stay
+/// distinguishable from known zero, and providers without tokens or known
+/// cost are dropped after aggregation.
+pub fn spend_from_payloads(payloads: &Value) -> SpendSummary {
+    let mut summary = SpendSummary {
+        total_cost: 0.0,
+        cost_known: false,
+        cost_partial: false,
+        currency: "USD".to_owned(),
+        total_tokens: 0,
+        coverage: HashMap::new(),
+        provenance: "unknown".to_owned(),
+        reporting_period: None,
+        history_label: None,
+        history_coverage_established: true,
+        daily: Vec::new(),
+        projects: Vec::new(),
+        models: Vec::new(),
+        session_cost: 0.0,
+        session_cost_known: false,
+        session_tokens: 0,
+        last30_cost: 0.0,
+        last30_cost_known: false,
+        last30_cost_partial: false,
+        last30_tokens: 0,
+        incomplete_requests: 0,
+        error: None,
+        providers: Vec::new(),
+    };
+
+    let array = match payloads.as_array() {
+        Some(array) => array,
+        None => return summary,
+    };
+
+    for payload in array {
+        let object = match payload.as_object() {
+            Some(object) => object,
+            None => continue,
+        };
+
+        let mut entry = SpendProvider {
+            provider: object
+                .get("provider")
+                .and_then(Value::as_str)
+                .filter(|provider| !provider.is_empty())
+                .unwrap_or("unknown")
+                .to_owned(),
+            cost: 0.0,
+            tokens: 0,
+            session_tokens: 0,
+            daily: Vec::new(),
+            projects: Vec::new(),
+            priced: true,
+            provenance: String::new(),
+            cost_known: false,
+        };
+
+        // A failing cost scan sets the error and skips the rest of this payload.
+        if object.get("error").is_some_and(spend_json_truthy) {
+            let error = object.get("error").map(|e| {
+                if e.is_object() {
+                    e.get("message")
+                        .map(|message| match message {
+                            Value::Null => "None".to_owned(),
+                            Value::Bool(true) => "True".to_owned(),
+                            Value::Bool(false) => "False".to_owned(),
+                            Value::String(message) => message.clone(),
+                            message => message.to_string(),
+                        })
+                        .unwrap_or_else(|| "None".to_owned())
+                } else {
+                    match e {
+                        Value::Bool(true) => "True".to_owned(),
+                        Value::Bool(false) => "False".to_owned(),
+                        Value::String(message) => message.clone(),
+                        message => message.to_string(),
+                    }
+                }
+            });
+            summary.error = error;
+            continue;
+        }
+
+        entry.provenance = object
+            .get("provenance")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_owned();
+        if let Some(currency) = object
+            .get("currencyCode")
+            .and_then(Value::as_str)
+            .filter(|currency| !currency.is_empty())
+        {
+            summary.currency = currency.to_owned();
+        }
+        if let Some(prov) = object
+            .get("provenance")
+            .and_then(Value::as_str)
+            .filter(|s| !s.is_empty())
+        {
+            summary.provenance = prov.to_owned();
+        }
+
+        let totals_obj = object.get("totals").and_then(Value::as_object);
+
+        let coverage_obj = object
+            .get("coverage")
+            .and_then(Value::as_object)
+            .or_else(|| {
+                totals_obj
+                    .as_ref()
+                    .and_then(|m| m.get("coverage"))
+                    .and_then(Value::as_object)
+            });
+        if let Some(coverage) = coverage_obj {
+            for (key, value) in coverage {
+                let count = spend_int_or_zero(Some(value));
+                *summary.coverage.entry(key.clone()).or_insert(0) += count;
+            }
+        }
+
+        if let Some(period) = object
+            .get("reportingPeriod")
+            .and_then(Value::as_str)
+            .filter(|s| !s.is_empty())
+        {
+            if summary.reporting_period.is_none() {
+                summary.reporting_period = Some(period.to_owned());
+            }
+        }
+        if let Some(label) = object
+            .get("historyLabel")
+            .and_then(Value::as_str)
+            .filter(|s| !s.is_empty())
+        {
+            if summary.history_label.is_none() {
+                summary.history_label = Some(label.to_owned());
+            }
+        }
+        if object
+            .get("historyCoverageIsEstablished")
+            .and_then(Value::as_bool)
+            == Some(false)
+        {
+            summary.history_coverage_established = false;
+        }
+
+        // Choose one representation of totals per provider; never sum two views.
+        let raw_cost = object
+            .get("totalCost")
+            .or_else(|| totals_obj.as_ref().and_then(|m| m.get("totalCost")));
+        if let Some(cost) = optional_float(raw_cost) {
+            summary.total_cost += cost;
+            summary.cost_known = true;
+            entry.cost = cost;
+            entry.cost_known = true;
+        }
+
+        let raw_tokens = object
+            .get("totalTokens")
+            .or_else(|| totals_obj.as_ref().and_then(|m| m.get("totalTokens")));
+        if let Some(tokens) = optional_i64(raw_tokens) {
+            summary.total_tokens += tokens;
+            entry.tokens = tokens;
+        }
+
+        if let Some(session_cost) = optional_float(object.get("sessionCostUSD")) {
+            summary.session_cost += session_cost;
+            summary.session_cost_known = true;
+        }
+        let session_tokens = spend_int_or_zero(object.get("sessionTokens"));
+        summary.session_tokens += session_tokens;
+        entry.session_tokens += session_tokens;
+
+        if let Some(last30_cost) = optional_float(object.get("last30DaysCostUSD")) {
+            summary.last30_cost += last30_cost;
+            summary.last30_cost_known = true;
+        } else {
+            summary.last30_cost_partial = true;
+        }
+        let last30_tokens = spend_int_or_zero(object.get("last30DaysTokens"));
+        summary.last30_tokens += last30_tokens;
+
+        let payload_incomplete = object.get("incompleteRequestCount");
+        let payload_incomplete_count = spend_int_or_zero(payload_incomplete);
+        summary.incomplete_requests += payload_incomplete_count;
+
+        if let Some(prov) = totals_obj
+            .as_ref()
+            .and_then(|m| m.get("provenance"))
+            .and_then(Value::as_str)
+            .filter(|s| !s.is_empty())
+        {
+            summary.provenance = prov.to_owned();
+        }
+        entry.priced = entry.cost_known;
+
+        let unpriced =
+            coverage_obj.is_some_and(|m| m.get("unpriced").is_some_and(spend_json_truthy));
+        let unmetered =
+            coverage_obj.is_some_and(|m| m.get("unmetered").is_some_and(spend_json_truthy));
+        let incomplete_truthy = payload_incomplete.is_some_and(spend_json_truthy)
+            || totals_obj
+                .as_ref()
+                .and_then(|m| m.get("incompleteRequestCount"))
+                .is_some_and(spend_json_truthy);
+
+        summary.cost_partial |= !entry.cost_known
+            || !summary.history_coverage_established
+            || unpriced
+            || unmetered
+            || incomplete_truthy;
+
+        if payload_incomplete.is_none() {
+            let totals_incomplete = spend_int_or_zero(
+                totals_obj
+                    .as_ref()
+                    .and_then(|m| m.get("incompleteRequestCount")),
+            );
+            summary.incomplete_requests += totals_incomplete;
+        }
+
+        if let Some(days) = object.get("daily").and_then(Value::as_array) {
+            for day in days {
+                if let Some(day_obj) = day.as_object() {
+                    summary.daily.push(Value::Object(day_obj.clone()));
+                    entry.daily.push(Value::Object(day_obj.clone()));
+                    if let Some(models) = day_obj.get("modelBreakdowns").and_then(Value::as_array) {
+                        for model in models {
+                            if let Some(model_obj) = model.as_object() {
+                                summary.models.push(Value::Object(model_obj.clone()));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if let Some(projects) = object.get("projects").and_then(Value::as_array) {
+            for project in projects {
+                if let Some(project_obj) = project.as_object() {
+                    summary.projects.push(Value::Object(project_obj.clone()));
+                    entry.projects.push(Value::Object(project_obj.clone()));
+                }
+            }
+        }
+        if let Some(models) = object.get("models").and_then(Value::as_array) {
+            for model in models {
+                if let Some(model_obj) = model.as_object() {
+                    summary.models.push(Value::Object(model_obj.clone()));
+                }
+            }
+        }
+
+        summary.providers.push(entry);
+    }
+
+    summary.cost_partial |= summary.error.is_some();
+    summary.providers.retain(|p| p.tokens != 0 || p.cost_known);
+    summary.providers.sort_by(|a, b| {
+        b.cost
+            .partial_cmp(&a.cost)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| b.tokens.cmp(&a.tokens))
+    });
+    summary.daily.sort_by(|a, b| {
+        let a_date = a.get("date").and_then(Value::as_str).unwrap_or("");
+        let b_date = b.get("date").and_then(Value::as_str).unwrap_or("");
+        a_date.cmp(b_date)
+    });
+    summary.projects.sort_by(|a, b| {
+        let a_cost = spend_sort_float(a.get("totalCost").filter(|v| spend_json_truthy(v)));
+        let b_cost = spend_sort_float(b.get("totalCost").filter(|v| spend_json_truthy(v)));
+        b_cost
+            .partial_cmp(&a_cost)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    summary.models.sort_by(|a, b| {
+        let a_cost = spend_sort_float(
+            a.get("cost")
+                .filter(|v| spend_json_truthy(v))
+                .or_else(|| a.get("totalCost").filter(|v| spend_json_truthy(v))),
+        );
+        let b_cost = spend_sort_float(
+            b.get("cost")
+                .filter(|v| spend_json_truthy(v))
+                .or_else(|| b.get("totalCost").filter(|v| spend_json_truthy(v))),
+        );
+        b_cost
+            .partial_cmp(&a_cost)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    summary
+}
+
 /// Aggregate provider data consumed by dashboard and tray presentation.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ProviderUsage {
@@ -1340,5 +1687,220 @@ mod tests {
         );
         assert_eq!(window(Some(0), 0.0).duration_label(), None);
         assert_eq!(window(None, 0.0).duration_label(), None);
+    }
+
+    #[test]
+    fn spend_aggregation_preserves_totals_tokens_and_coverage() {
+        let summary = spend_from_payloads(&json!([
+            {
+                "provider": "claude",
+                "currencyCode": "USD",
+                "totalCost": 12.50,
+                "totalTokens": 1000,
+                "sessionCostUSD": 2.50,
+                "sessionTokens": 100,
+                "last30DaysCostUSD": 50.00,
+                "last30DaysTokens": 5000,
+                "incompleteRequestCount": 0,
+                "coverage": {"unpriced": 0, "unmetered": 0},
+                "provenance": "scan",
+                "daily": [{"date": "2026-10-20", "totalCost": 5.0}],
+                "projects": [{"name": "proj-a", "totalCost": 7.5}],
+                "models": [{"cost": 3.0}],
+            },
+            {
+                "provider": "codex",
+                "totalCost": 7.25,
+                "totalTokens": 500,
+                "sessionCostUSD": 1.0,
+                "sessionTokens": 50,
+                "last30DaysCostUSD": 30.00,
+                "last30DaysTokens": 2500,
+                "incompleteRequestCount": 2,
+                "coverage": {"unpriced": 1},
+                "provenance": "scan",
+            },
+        ]));
+
+        assert_eq!(summary.total_cost, 19.75);
+        assert!(summary.cost_known);
+        assert_eq!(summary.total_tokens, 1500);
+        assert_eq!(summary.session_cost, 3.50);
+        assert!(summary.session_cost_known);
+        assert_eq!(summary.session_tokens, 150);
+        assert_eq!(summary.last30_cost, 80.00);
+        assert!(summary.last30_cost_known);
+        assert!(!summary.last30_cost_partial);
+        assert_eq!(summary.last30_tokens, 7500);
+        assert_eq!(summary.incomplete_requests, 2);
+        assert!(summary.cost_partial); // coverage unpriced + incomplete requests
+        assert_eq!(summary.providers.len(), 2);
+        // Providers sorted by cost desc: claude (12.50) first, codex (7.25) second
+        assert_eq!(summary.providers[0].provider, "claude");
+        assert_eq!(summary.providers[0].cost, 12.50);
+        assert_eq!(summary.providers[1].provider, "codex");
+        assert_eq!(summary.providers[1].cost, 7.25);
+        assert_eq!(summary.coverage.get("unpriced"), Some(&1));
+        assert_eq!(summary.provenance, "scan");
+    }
+
+    #[test]
+    fn spend_aggregation_skips_error_payload_and_sets_error() {
+        let summary = spend_from_payloads(&json!([
+            {
+                "provider": "claude",
+                "error": {"message": "rate limited"},
+            },
+            {
+                "provider": "codex",
+                "totalCost": 5.0,
+                "totalTokens": 100,
+            },
+        ]));
+
+        assert_eq!(summary.error.as_deref(), Some("rate limited"));
+        assert!(summary.cost_partial); // error sets cost_partial
+        assert_eq!(summary.providers.len(), 1);
+        assert_eq!(summary.providers[0].provider, "codex");
+        assert_eq!(summary.providers[0].cost, 5.0);
+    }
+
+    #[test]
+    fn spend_aggregation_unknown_vs_known_zero_and_provider_filtering() {
+        let summary = spend_from_payloads(&json!([
+            {
+                "provider": "known-zero",
+                "totalCost": 0.0,
+                "totalTokens": 0,
+            },
+            {
+                "provider": "unknown-cost",
+                "totalTokens": 42,
+            },
+            {
+                "provider": "empty-provider",
+            },
+        ]));
+
+        // known-zero: cost_known=true -> kept despite zero tokens
+        // unknown-cost: cost_known=false but tokens=42 -> kept
+        // empty-provider: neither cost_known nor tokens -> filtered out
+        assert_eq!(summary.providers.len(), 2);
+        // Sorted by (cost, tokens) desc: unknown-cost (42 tokens) before known-zero (0 tokens)
+        assert_eq!(summary.providers[0].provider, "unknown-cost");
+        assert!(!summary.providers[0].cost_known);
+        assert_eq!(summary.providers[0].tokens, 42);
+        assert_eq!(summary.providers[1].provider, "known-zero");
+        assert!(summary.providers[1].cost_known);
+        assert_eq!(summary.providers[1].tokens, 0);
+        // total_cost stays 0.0 (known zero from known-zero)
+        assert_eq!(summary.total_cost, 0.0);
+        assert!(summary.cost_known);
+    }
+
+    #[test]
+    fn spend_aggregation_totals_not_double_counted() {
+        // Top-level totalCost takes precedence over nested totals.totalCost.
+        let summary = spend_from_payloads(&json!([
+            {
+                "provider": "cli",
+                "totalCost": 10.0,
+                "totalTokens": 100,
+                "totals": {
+                    "totalCost": 999.0,
+                    "totalTokens": 999,
+                },
+            },
+        ]));
+
+        assert_eq!(summary.total_cost, 10.0);
+        assert_eq!(summary.total_tokens, 100);
+        assert!(summary.cost_known);
+    }
+
+    #[test]
+    fn spend_aggregation_empty_and_non_dict_payloads() {
+        let summary = spend_from_payloads(&json!([]));
+        assert_eq!(summary.total_cost, 0.0);
+        assert!(!summary.cost_known);
+        assert!(summary.providers.is_empty());
+        assert!(summary.error.is_none());
+
+        let summary = spend_from_payloads(&json!(["not a dict", 42, null]));
+        assert_eq!(summary.providers.len(), 0);
+        assert!(summary.error.is_none());
+    }
+
+    #[test]
+    fn spend_aggregation_daily_projects_models_sorted() {
+        let summary = spend_from_payloads(&json!([
+            {
+                "provider": "cli",
+                "daily": [
+                    {"date": "2026-10-22", "totalCost": 2.0},
+                    {"date": "2026-10-20", "totalCost": 1.0},
+                    {"date": "2026-10-21", "totalCost": 3.0},
+                ],
+                "projects": [
+                    {"name": "b", "totalCost": 1.0},
+                    {"name": "a", "totalCost": "5.0"},
+                ],
+                "models": [
+                    {"cost": 2.0},
+                    {"totalCost": 10.0},
+                    {"cost": 0.0, "totalCost": "8.0"},
+                ],
+            },
+        ]));
+
+        assert_eq!(summary.daily.len(), 3);
+        assert_eq!(
+            summary.daily[0].get("date").and_then(Value::as_str),
+            Some("2026-10-20")
+        );
+        assert_eq!(
+            summary.daily[2].get("date").and_then(Value::as_str),
+            Some("2026-10-22")
+        );
+
+        assert_eq!(summary.projects.len(), 2);
+        assert_eq!(
+            summary.projects[0].get("name").and_then(Value::as_str),
+            Some("a")
+        );
+        assert_eq!(
+            summary.projects[1].get("name").and_then(Value::as_str),
+            Some("b")
+        );
+
+        assert_eq!(summary.models.len(), 3);
+        assert_eq!(
+            summary.models[0].get("totalCost").and_then(Value::as_f64),
+            Some(10.0)
+        );
+        assert_eq!(
+            summary.models[1].get("totalCost").and_then(Value::as_str),
+            Some("8.0")
+        );
+        assert_eq!(
+            summary.models[2].get("cost").and_then(Value::as_f64),
+            Some(2.0)
+        );
+    }
+
+    #[test]
+    fn spend_aggregation_history_coverage_and_provenance_fallback() {
+        let summary = spend_from_payloads(&json!([
+            {
+                "provider": "cli",
+                "historyCoverageIsEstablished": false,
+                "provenance": "",
+                "totals": {"provenance": "from-totals"},
+            },
+        ]));
+
+        assert!(!summary.history_coverage_established);
+        assert_eq!(summary.provenance, "from-totals");
+        assert!(summary.cost_partial); // history coverage not established
     }
 }

@@ -1019,3 +1019,17 @@ future models must verify the linked PR's status rather than trusting a stale
 - **Next:** commit and push the main integration, observe fresh CI and clean
   GitHub mergeability, then coordinate the merge with orchestration. Do not
   treat the previous `f6db236` checks as checks on the updated head.
+
+### E044 — 2026-10-30: B09 merge update committed locally
+
+- **Integration commit:** `cb867747f653d78ee6781c66ccc923ee73370460`
+  merges B06 main `5e4af068254959c07e9a932c42bed0679788b146` into the B09
+  branch after resolving the shared metadata/audit conflicts described in E043.
+- **Build:** B06 remains build 37 and B09 remains build 38. B06's successful
+  checks were on PR head `75bba44`; B09's prior passing checks were on
+  `f6db236`, before the B06 integration.
+- **Current status:** this integration commit has not yet been pushed, so no
+  GitHub checks or mergeability result have been observed for it. B09 stays
+  open and unmerged.
+- **Next:** push the refreshed branch, wait for checks on its latest head, and
+  merge only with clean mergeability and after coordinating the slot.

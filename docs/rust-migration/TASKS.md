@@ -14,7 +14,7 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Planning change | [PR #18](https://github.com/SaahiilM/codexbar-gtk/pull/18), merged at `69c5496`, build `0.81.0 (17)` |
 | Backend tasks completed after that baseline | B00, B01, B02a, B02b1, B02b2a, B02b2b1, B02b2b2a, B03, B04, B05 and B06 merged |
 | Active implementation task / owner | B09 provider ordering and tray selection, owner: current coding-agent session |
-| Active task | **B09** — provider ordering and tray selection; [PR #39](https://github.com/SaahiilM/codexbar-gtk/pull/39), refreshed branch pending push; build `0.82.0 (38)` |
+| Active task | **B09** — provider ordering and tray selection; [PR #39](https://github.com/SaahiilM/codexbar-gtk/pull/39), local integration head `cb86774` pending push; build `0.82.0 (38)` |
 | Next domain slice | **B09** — push the B06 integration, observe fresh checks/mergeability, coordinate, then merge if clean |
 | Open external blockers | No dependency blockers; new PR head needs GitHub checks and clean mergeability |
 | Latest checks | Combined-source local checks passed (AUDIT E043); GitHub checks on the updated head have not run yet |

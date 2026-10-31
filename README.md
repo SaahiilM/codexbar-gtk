@@ -121,16 +121,18 @@ CodexBar 0.82.0 provider behavior; the provider catalog remains at 110 providers
 ### Native Rust migration roadmap
 
 The approved destination is a **fully native Rust GTK4/libadwaita app**, with the
-remaining backend migrated **before** the UI. The PyO3 bridge and Python shell
-are temporary. Backend work is not complete, and native UI work has not started.
+backend migrated **before** the UI. The PyO3 bridge and Python shell are
+temporary. Backend gate BG passed in PR #54; native UI work has not started and
+Phase U may now begin.
 
 - [Architecture, source inventory and stage gates](docs/rust-migration/README.md)
 - [Task checklist and current model handoff](docs/rust-migration/TASKS.md)
 - [Decisions, verification evidence and audit trail](docs/rust-migration/AUDIT.md)
 
-Future coding agents should start with [`AGENTS.md`](AGENTS.md). B00, B01,
-and B02 are complete; B04 spend normalization/aggregation is the next backend
-task.
+Future coding agents should start with [`AGENTS.md`](AGENTS.md). B00–B15 and BG
+are accepted. Coordinate U01, the native application/bootstrap crate, as the
+first Phase U task. See E086 for the live merge, B11 CI limitation and B15
+compatibility bounds.
 
 ### Existing opt-in module integrations
 
@@ -150,13 +152,15 @@ task.
   extra rate-window, provider cost, detail chart, provider context
   (credits/status/error/plan), and agent-session payload normalization are
   Rust-backed in opt-in mode (B01a–c/B02a–b2b2b/B03); spend normalization
-  (B04) and remaining UI backend extraction remain transitional.
+  (B04) and B13–B15 transitional backend work are complete. GTK widgets and
+  platform integration remain in Python until their native UI tasks are accepted.
 
 The six original Rust ports have opt-in runtime integrations, with additional
 `data.py` behavior routed through Rust in opt-in mode. This checklist
 is not the full backend/native migration checklist above. Python implementations
 remain available as parity references until the backend, native UI and cutover
-gates are passed; the application is not yet entirely Rust.
+gates are passed; the application is not yet entirely Rust. BG has passed; the
+UI gate and cutover gate remain open.
 
 Build the extension and opt in for the app process with:
 
@@ -210,7 +214,7 @@ The GTK front-end uses the same version pair as the macOS bundle:
   this client is feature-compatible with (`0.82.0`).
 * `CURRENT_PROJECT_VERSION` is the build number of the Linux front-end.
 * `codexbar_gtk/version.py` turns the pair into the macOS-style
-  `"0.82.0 (53)"` string shown under Settings → About, in the tray menu and by
+  `"0.82.0 (54)"` string shown under Settings → About, in the tray menu and by
   `./run.sh --about`.
 
 Increment `CURRENT_PROJECT_VERSION` for each merged PR and keep it in sync with

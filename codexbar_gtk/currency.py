@@ -55,9 +55,6 @@ CURRENCIES: list[tuple[str, str, float]] = [
 ]
 
 _RUST = rust_bridge.extension()
-_RUST_CATALOG = _RUST.CurrencyConverter(CACHE_PATH) if _RUST is not None else None
-if _RUST_CATALOG is not None:
-    CURRENCIES = _RUST_CATALOG.entries()
 
 SUPPORTED = tuple(code for code, _symbol, _rate in CURRENCIES)
 _SYMBOLS = {code: symbol for code, symbol, _rate in CURRENCIES}
@@ -71,10 +68,7 @@ def picker_label(code: str) -> str:
 
 
 def requires_live_rates(preferred: str) -> bool:
-    if _RUST_CATALOG is not None:
-        return _RUST_CATALOG.requires_live_rates(preferred)
-    code = (preferred or "").strip().upper()
-    return code not in ("", "AUTO", "USD") and code in _OFFLINE
+    return shared().requires_live_rates(preferred)
 
 
 class CurrencyConverter:
@@ -82,6 +76,7 @@ class CurrencyConverter:
 
     def __init__(self, cache_path: str = CACHE_PATH) -> None:
         self._rust = _RUST.CurrencyConverter(cache_path) if _RUST is not None else None
+        self._facade = None
         self._lock = threading.Lock()
         self._cache_path = cache_path
         self._rates = dict(_OFFLINE)
@@ -91,6 +86,21 @@ class CurrencyConverter:
             self._load_cache()
 
     # -- rates ------------------------------------------------------------
+
+    def entries(self) -> list[tuple[str, str, float]]:
+        """Return the current catalog through the bound facade when present."""
+        facade = self._facade
+        if facade is not None:
+            return facade.catalog_async()
+        if self._rust is not None:
+            return self._rust.entries()
+        return list(CURRENCIES)
+
+    def requires_live_rates(self, preferred: str) -> bool:
+        code = (preferred or "").strip().upper()
+        if code in ("", "AUTO", "USD"):
+            return False
+        return self.rate(code) is not None
 
     def _load_cache(self) -> None:
         if self._rust is not None:
@@ -124,8 +134,11 @@ class CurrencyConverter:
         except OSError:
             pass
 
-    def ensure_rates(self, preferred: str) -> None:
+    def ensure_rates(self, preferred: str):
         """Fetch fresh rates in the background when the preferred code needs them."""
+        facade = self._facade
+        if facade is not None:
+            return facade.ensure_rates(preferred)
         if self._rust is not None:
             self._rust.ensure_rates(preferred)
             return
@@ -163,6 +176,9 @@ class CurrencyConverter:
         threading.Thread(target=worker, name="codexbar-rates", daemon=True).start()
 
     def rate(self, code: str) -> float | None:
+        facade = self._facade
+        if facade is not None:
+            return facade.rate_async(code)
         if self._rust is not None:
             return self._rust.rate(code)
         code = (code or "").strip().upper()
@@ -175,6 +191,9 @@ class CurrencyConverter:
 
     def convert(self, amount: float, source: str, target: str) -> float | None:
         """Convert ``amount`` between supported codes, pivoting through USD."""
+        facade = self._facade
+        if facade is not None:
+            return facade.convert_async(amount, source, target)
         if self._rust is not None:
             return self._rust.convert(amount, source, target)
         src = (source or "").strip().upper()
@@ -187,9 +206,30 @@ class CurrencyConverter:
             return None
         return amount / src_rate * dst_rate
 
+    def status_async(self) -> dict | None:
+        """Return current fetched time/source/failure through the facade."""
+        facade = self._facade
+        if facade is not None:
+            return facade.status_async()
+        if self._rust is None:
+            return None
+        fetched_at, source, failed = self._rust.status()
+        return {
+            "fetched_at": fetched_at,
+            "source": source,
+            "last_refresh_failed": failed,
+        }
+
     def status(self):
-        """Return Rust cache source metadata when opt-in mode is active."""
-        return self._rust.status() if self._rust is not None else None
+        """Preserve the legacy Python tuple shape for parity callers."""
+        status = self.status_async()
+        if status is None:
+            return None
+        return (
+            status["fetched_at"],
+            status["source"],
+            status["last_refresh_failed"],
+        )
 
 
 _SHARED: CurrencyConverter | None = None
@@ -198,17 +238,20 @@ _SHARED: CurrencyConverter | None = None
 def shared() -> CurrencyConverter:
     global _SHARED
     if _SHARED is None:
-        if _RUST_CATALOG is None:
-            _SHARED = CurrencyConverter()
-        else:
-            _SHARED = object.__new__(CurrencyConverter)
-            _SHARED._rust = _RUST_CATALOG
-            _SHARED._lock = threading.Lock()
-            _SHARED._cache_path = CACHE_PATH
-            _SHARED._rates = dict(_OFFLINE)
-            _SHARED._fetched_at = 0.0
-            _SHARED._loading = False
+        _SHARED = CurrencyConverter()
     return _SHARED
+
+
+def bind_facade(facade) -> None:
+    """Route the shared adapter through the active central controller facade."""
+    shared()._facade = facade
+
+
+def unbind_facade(facade) -> None:
+    """Clear only the facade instance that was previously bound."""
+    converter = shared()
+    if converter._facade is facade:
+        converter._facade = None
 
 
 def convert(amount: float, source: str, target: str) -> float | None:

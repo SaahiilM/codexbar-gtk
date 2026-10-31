@@ -13,7 +13,7 @@ from collections.abc import Callable
 
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk
 
-from .. import currency, display_string
+from .. import display_string
 from .. import providers as provider_meta
 from ..login import terminal_command_argv
 from . import icon_names
@@ -204,7 +204,8 @@ class SettingsWindow(Adw.PreferencesWindow):
         general = Adw.PreferencesGroup(title="General")
         currency_options = [("Automatic (as reported)", "auto")]
         currency_options += [
-            (currency.picker_label(code), code) for code in currency.SUPPORTED
+            (f"{code} ({symbol})", code)
+            for code, symbol, _rate in self.controller.catalog_async()
         ]
         currency_row = _combo_row(
             "Preferred currency",
@@ -212,6 +213,7 @@ class SettingsWindow(Adw.PreferencesWindow):
             str(self.prefs.get("preferredCurrencyCode")),
             self._set_currency,
         )
+        self._currency_row = currency_row
         general.add(currency_row)
         page.add(general)
         return page
@@ -879,7 +881,7 @@ class SettingsWindow(Adw.PreferencesWindow):
 
     def _set_currency(self, value: str) -> None:
         self.prefs.set("preferredCurrencyCode", value)
-        currency.shared().ensure_rates(value)
+        self.controller.ensure_rates(value)
         self._request_refresh()
 
     @staticmethod

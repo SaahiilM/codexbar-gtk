@@ -201,27 +201,55 @@ def main() -> int:
     prefs.set("refreshFrequency", "manual")
     prefs.set("cliPath", fake_cli)
     prefs.set("costUsageBucketTimeZone", "UTC")
+    prefs.set("preferredCurrencyCode", "EUR")
     history = HistoryStore(os.path.join(config, "history.jsonl"))
     controller = Controller(prefs, CodexBarCLI(fake_cli, timezone="UTC"))
     controller.history = history
 
     application = Adw.Application(application_id=f"com.codexbar.B13Settings{backend}")
     application.register(None)
-    window = SettingsWindow(application, prefs, controller)
-    application.connect("activate", lambda app: window.present())
-    window.set_default_size(900, 760)
-    window.set_visible_page(window.general_page)
+    window = None
     notices: list[str] = []
-    window._notify = notices.append
     failures: list[BaseException] = []
 
-    def run_smoke() -> bool:
-        started = False
+    def on_activate(app: Adw.Application) -> None:
+        nonlocal window
         try:
             controller.start()
-            started = True
             if controller.uses_rust_controller != (backend == "rust"):
                 raise RuntimeError("settings smoke controller did not use the selected backend")
+            window = SettingsWindow(app, prefs, controller)
+            window._notify = notices.append
+            window.set_default_size(900, 760)
+            window.set_visible_page(window.general_page)
+            GLib.idle_add(run_smoke)
+        except BaseException as error:
+            failures.append(error)
+            app.quit()
+
+    def run_smoke() -> bool:
+        nonlocal window
+        started = controller.uses_rust_controller or controller._thread is not None
+        try:
+            if window is None:
+                raise RuntimeError("settings window was not constructed after application startup")
+            currency_model = window._currency_row.get_model()
+            currency_labels = [
+                currency_model.get_string(index)
+                for index in range(currency_model.get_n_items())
+            ]
+            if "EUR (€)" not in currency_labels:
+                raise RuntimeError(
+                    f"settings currency catalog did not include the EUR label: {currency_labels!r}"
+                )
+            if backend == "rust":
+                currency_status = controller.status_async()
+                if currency_status is None or currency_status["source"] not in {
+                    "offline",
+                    "cache",
+                    "live",
+                }:
+                    raise RuntimeError("shared Rust currency source status is unavailable")
 
             context = GLib.MainContext.default()
             window.present()
@@ -295,7 +323,8 @@ def main() -> int:
         except BaseException as error:
             failures.append(error)
         finally:
-            window.destroy()
+            if window is not None:
+                window.destroy()
             if started:
                 controller.stop()
                 if controller._rust_controller is not None:
@@ -311,7 +340,7 @@ def main() -> int:
             application.quit()
         return GLib.SOURCE_REMOVE
 
-    GLib.idle_add(run_smoke)
+    application.connect("activate", on_activate)
     application.run([])
     if failures:
         raise failures[0]

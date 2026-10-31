@@ -2037,3 +2037,95 @@ future models must verify the linked PR's status rather than trusting a stale
   already merged fixture-only GTK screenshots above instead of claiming a new
   GTK smoke. The PR's required workflow remains the exact-branch authority for
   Rust core/backend tests and both required GitHub checks.
+
+### E077 — 2026-10-31: PR #49 merge observed; B14 build-49 slot claimed
+
+- **Dependency merge evidence:** PR #49, [B13 final inventory handoff](https://github.com/SaahiilM/codexbar-gtk/pull/49), is MERGED at
+  `a42a29972e2894ef82fdbdc1430aeb4608d24c0f`; fetched `origin/main` matches.
+  Exact PR head `df97e8f8cfc46d7f47e870a93f28af59e8d36f98` passed both required
+  GitHub checks (`test` and `tray-dbus`). It had no reviews or comments. There
+  were no open PRs when B14 resumed. B13's full accepted inventory and all
+  implementation slices are therefore unblocked; B14 does not infer any
+  additional B13 source changes.
+- **Claim/base:** B14 build `0.82.0 (49)` is active on branch
+  `orchestrated/luna-b14`, based directly on the observed main merge
+  `a42a29972e2894ef82fdbdc1430aeb4608d24c0f`. The first implementation slice
+  is B14a: expose `catalog_async`, `rate_async`, `convert_async`,
+  `status_async`, `ensure_rates` and `ensure_rates_at` through the central
+  RefreshController facade and route the existing currency callers through it.
+- **Preserved contract:** the facade uses the same `CurrencyService` instance
+  already passed into RefreshController, including its shared rate state and
+  single-flight refresh. Status retains `fetched_at`, `RateSource` (offline,
+  cache or live) and `last_refresh_failed`. Rust continues to own HTTP/cache
+  behavior; the Python default implementation remains the parity path. No API
+  contract changes were required.
+- **Next exact step:** finish B14a implementation and verification on this
+  build-49 branch, complete the single-facade/production caller audit, update
+  version and migration handoff files, and open one focused PR only after the
+  fixture-only GTK evidence is visually checked. This claim does not mark B14
+  complete or claim the new PR's CI/merge status.
+
+### E078 — 2026-10-31: B14a currency facade and caller audit verified locally
+
+- **Branch/base/build:** `orchestrated/luna-b14`, based on observed
+  `origin/main` at `a42a29972e2894ef82fdbdc1430aeb4608d24c0f`; build
+  `0.82.0 (49)`. B14a is locally verified; no B14 implementation PR has been
+  opened yet, so no remote check, review or merge result is claimed.
+- **Facade/service behavior:** `RustRefreshController` now exposes
+  `catalog_async`, `rate_async`, `convert_async`, `status_async`, `ensure_rates`
+  and `ensure_rates_at`, all backed by its `CurrencyService` clone. The clone
+  shares the same rate snapshot and single-flight refresh lock as the
+  `RustCurrencyConverter` passed by `Controller.start()`. Python binds the
+  existing `currency.shared()` adapter to this controller once the Rust
+  controller starts; no second cache/network service is constructed. Status
+  maps `fetched_at`, `RateSource::{Offline,Cache,Live}` and
+  `last_refresh_failed` into an owned Python dictionary. `ensure_rates` runs on
+  a controller-owned worker and awaits the shared service on the controller's
+  Tokio runtime; quick in-memory catalog/rate/conversion reads do not start
+  network work.
+- **Caller routing:** `ui/app.py` and `ui/settings.py` use controller currency
+  methods for refresh and the settings picker. Existing conversion consumers
+  in cards/window/spend and monthly pace continue using the thin
+  `currency.py` compatibility adapter, which delegates to the bound central
+  facade in Rust mode. The SettingsWindow fixture now constructs after
+  controller start and asserts the EUR label came from the selected backend.
+- **Residual caller inventory:** Rust opt-in refresh, settings/actions,
+  spend/tray projections, login, updates, restart and icon-cache work route
+  through `Controller`/`RustRefreshController`; Rust opt-in currency callers now
+  do as well. `ui/app.py` systemd/re-exec, `ui/settings.py` terminal launch and
+  `ui/icons.py` icon-cache subprocess calls remain only in their Python
+  fallback branches. The Python `currency.py` and `updates.py` HTTP clients are
+  compatibility implementations; Rust opt-in uses Rust services. GTK widgets,
+  Cairo/SVG rendering, native chooser/dialog interaction, GLib marshalling,
+  browser opening and OS notifications remain frontend/platform work. The
+  static Python currency table remains for parity and existing formatting
+  helpers; Settings uses the facade catalog in Rust mode. This audit found no
+  additional B14 integration gap; B15 retains the catalog/edge-parity review.
+- **Checks:** Rust format checks passed for all three crates. Locked Rust suites
+  passed: 75 core and 69 backend tests. Strict Clippy with `-D warnings`
+  passed for core, backend and PyO3 bridge; `scripts/build-rust-core.sh`
+  produced the opt-in extension. Default Python discovery passed 203 tests with
+  21 expected Rust-opt-in skips; Rust-opt-in discovery passed all 203 tests.
+  The focused application-actions integration module passed 11 tests, including
+  shared CurrencyService instance, cache value, USD-pivot conversion, status
+  and no-network refresh behavior. The tray signal suite passed 3 tests both
+  normally and inside `dbus-run-session`. `git diff --check` and version-pair
+  synchronization passed.
+- **Fixture-only GTK evidence:** settings-window smoke passed on active Wayland
+  in Python and Rust opt-in modes using a temporary HOME, synthetic CLI and
+  synthetic EUR preference. Rust mode verified the settings currency catalog
+  and source status through the facade. Visually inspected captures are
+  `screenshots/b14-currency-python-wayland.png` and
+  `screenshots/b14-currency-rust-wayland.png`; no real account, credential or
+  external currency request was used. Nonfatal EGL and accessibility-bus
+  warnings were emitted by this host. These screenshots evidence the focused
+  currency/settings path, not exhaustive GTK interaction or native UI
+  completion.
+- **Handoff:** VERSION, `codexbar_gtk/version.py`, README's displayed build,
+  CHANGELOG and the TASKS top-row now use build 49; E077 records PR #49's
+  observed merge/check evidence. The caller audit and B14a are locally complete
+  but remain PR-pending. Next: send exact readiness to orchestration, open the
+  focused build-49 PR, then recheck its exact head, required checks, reviews,
+  mergeability and serialized merge slot before any merge. B14 remains partial
+  until that PR is verified and merged; no B15/BG/native UI completion is
+  claimed.

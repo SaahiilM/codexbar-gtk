@@ -1951,3 +1951,89 @@ future models must verify the linked PR's status rather than trusting a stale
   `main`, final head, checks, reviews, screenshot body and mergeability. Merge
   only through the normal GitHub path when final-head verification is clean;
   B13 remains partial until B13b2 and the full caller inventory are accepted.
+
+### E076 — 2026-10-31: B13 slices merged; final inventory accepted
+
+- **Live merge evidence:** fetched `origin/main` is
+  `be370b63b94c186262606dcbf70e16353300b0e5`, the normal merge commit for PR
+  #48. Exact head `4d1aff43f18a8e1bdbc8166b38e03df54a79031a` has both required
+  GitHub checks (`test`, `tray-dbus`) SUCCESS. PR #48 is MERGED; it had no
+  reviews or comments. The complete slice chain is:
+  - B13a PR #46, head `0fe3349f4205602129218b4f6d09888f070da1df`, merge commit
+    `1650646ffee23015ec9f5f640a0470755d7f247c`; `test` and `tray-dbus`
+    SUCCESS.
+  - B13b1 PR #47, head `327f593ef5701596c0cec51c6215776eab1f7ae4`, merge commit
+    `490b4b641282fe87a632d31e83864c9067e3e10f`; `test` and `tray-dbus`
+    SUCCESS.
+  - B13b2 PR #48, head `4d1aff43f18a8e1bdbc8166b38e03df54a79031a`, merge
+    commit `be370b63b94c186262606dcbf70e16353300b0e5`; `test` and `tray-dbus`
+    SUCCESS.
+  There were no open PRs when this handoff began.
+- **B14 acceptance:** B14 accepted the merged B13a/B13b1/B13b2 implementation
+  coverage, conditional on this accurate build-48 reconciliation PR merging.
+  With that condition reflected in TASKS, B13 is checked as implementation
+  complete; B14 remains gated until this handoff PR merges.
+- **Accepted B13 caller inventory:**
+  - Spend/tray: Rust presentation DTOs own spend time-range selection,
+    target-currency conversion/coverage and partial-state semantics, grouping,
+    stable row order/limits, and tray selection/presentation policy. The
+    controller obtains projections from its current B10 state and shared
+    CurrencyService off GTK; Python renders the owned DTOs. The full daily
+    series remains available to the GTK heatmap independently of chart range.
+  - Settings: Rust facade/B07 operations own provider configuration/actions,
+    hooks/plugins, checked CLI reads, shared CLI reconfiguration, launch-at-login
+    state/set, and PreferencesStore import/export/reset/file I/O. GTK owns the
+    native chooser and result marshalling. Reconfiguration preserves path-only
+    and timezone-only patches, rejects an invalid executable before commit,
+    swaps the shared CLI slot after transactional persistence and queues B10
+    refresh; its intentional Python-parity correction is documented in E071.
+  - Application actions: Rust opt-in routes Claude login through B11's separate
+    session, Codex terminal login through the facade, update check through B12,
+    restart and icon-cache process refresh through the facade. Worker results
+    return to GTK by GLib. Python subprocess/HTTP implementations are retained
+    only as the default Python parity branch.
+  - Frontend/platform behavior left in Python: GTK/Cairo drawing and widget
+    layout, GLib marshalling and nonblocking watch/event drains, native dialogs
+    and file chooser interaction, browser opening and OS notification delivery,
+    SVG generation/writes and icon rendering, and display-readiness retries.
+    These are the explicitly accepted UI/platform boundary, not B13 backend
+    policy.
+- **Explicit B14 follow-up (not a B13 blocker):** `codexbar_gtk/currency.py`
+  creates a module-level Rust `CurrencyConverter`/CurrencyService wrapper. The
+  same inner Rust service is cloned into `RustRefreshController` at
+  `controller.py`; this is one service instance, not a second network service.
+  Rust-opt-in UI adapters in `ui/app.py` and `ui/settings.py` still call
+  `currency.shared().ensure_rates`, while `ui/cards.py`, `ui/window.py`, and
+  legacy `ui/spend.py` paths call `requires_live_rates`/`convert`. The central
+  `RustRefreshController` facade currently does not expose the shared service's
+  catalog, rate, conversion, status and refresh operations. B14 owns adding
+  `catalog_async`, `rate_async`, `convert_async`, `status_async`, `ensure_rates`
+  and `ensure_rates_at` on that facade and routing these current UI adapters
+  through it. These direct adapter calls must not be mislabeled as Python HTTP
+  parity. B14 is gated until the build-48 handoff PR merges; currency facade
+  routing is its first implementation item.
+- **Fixtures and UI evidence:** B13a's active Wayland spend/tray fixtures are
+  `screenshots/b13-spend-tray-python-wayland.png` and
+  `screenshots/b13-spend-tray-rust-wayland.png` (E069); B13b1 settings fixtures
+  are `screenshots/b13-settings-python-wayland.png` and
+  `screenshots/b13-settings-rust-wayland.png` (E071); B13b2 action fixtures
+  are `screenshots/b13b2-actions-python-wayland.png` and
+  `screenshots/b13b2-actions-rust-wayland.png` (E074). They were captured with
+  synthetic data and no real account or credential output. This final handoff
+  changes no UI/runtime code, so it reuses those merged screenshot records and
+  does not claim a new GTK smoke.
+- **Build and handoff:** the final handoff uses build `0.82.0 (48)`; `VERSION`,
+  `codexbar_gtk/version.py`, README and CHANGELOG are synchronized. The B13
+  implementation parent is complete based on the three merged slices and
+  B14's acceptance; B14 stays unchecked/gated until this reconciliation PR is
+  merged. After that merge, the next task is B14's shared CurrencyService
+  facade routing described above. No B14 implementation or B15/BG/native UI
+  completion is claimed here.
+- **Handoff validation:** default Python discovery passed 202 tests with 20
+  expected Rust-opt-in skips; `CODEXBAR_RUST_CORE=1` discovery passed 202 tests;
+  the focused private-D-Bus tray suite passed 3. The version-pair/README/
+  CHANGELOG synchronization check and `git diff --check` passed. No Rust or UI
+  runtime source changed in this docs/status handoff, so the PR reuses the
+  already merged fixture-only GTK screenshots above instead of claiming a new
+  GTK smoke. The PR's required workflow remains the exact-branch authority for
+  Rust core/backend tests and both required GitHub checks.

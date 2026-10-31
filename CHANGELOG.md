@@ -4,6 +4,22 @@ Client-side changelog for the CodexBar GTK front-end. Each entry keys a build
 number (`CURRENT_PROJECT_VERSION`) to the upstream macOS CodexBar release its
 short version tracks, so "which version has what" maps cleanly onto both trees.
 
+## 0.82.0 (48) — 2026-10-31
+
+Tracks upstream CodexBar 0.82.0.
+
+### Changed
+
+- Reconcile and accept the complete B13 extraction across merged spend/tray,
+  settings and application-action slices. B14's remaining currency facade work
+  is recorded separately and remains gated until this handoff merges.
+
+### Validation
+
+- No application runtime code changed in this handoff. See AUDIT E076 for the
+  observed B13 merges, accepted caller inventory and linked synthetic UI
+  screenshots; B14 currency facade routing is the next backend task.
+
 ## 0.82.0 (47) — 2026-10-31
 
 Tracks upstream CodexBar 0.82.0.

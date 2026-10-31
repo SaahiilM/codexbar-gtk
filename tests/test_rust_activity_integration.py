@@ -8,6 +8,7 @@ import os
 import unittest
 from datetime import date
 from pathlib import Path
+from unittest.mock import patch
 
 from codexbar_gtk import activity, rust_bridge
 
@@ -85,3 +86,42 @@ class RustActivityIntegrationTests(unittest.TestCase):
             "on",
         }
         self.assertEqual(rust_bridge.backend_name(), "rust" if enabled else "python")
+
+    def test_daily_series_accepts_basic_iso_calendar_dates(self) -> None:
+        core = importlib.import_module("codexbar_gtk._rust_core")
+        entries = [
+            {"date": "20261021", "totalCost": 2.5},
+            {"date": "2026W434", "totalCost": 0.5},
+        ]
+        expected = [
+            (date(2026, 10, 21), 2.5),
+            (date(2026, 10, 22), 0.5),
+        ]
+        with patch("codexbar_gtk.activity.rust_bridge.extension", return_value=core):
+            self.assertEqual(activity.daily_series(entries), expected)
+        with patch("codexbar_gtk.activity.rust_bridge.extension", return_value=None):
+            self.assertEqual(activity.daily_series(entries), expected)
+
+    def test_rust_activity_contract_reports_input_and_aggregate_overflow(self) -> None:
+        core = importlib.import_module("codexbar_gtk._rust_core")
+        limits = json.loads(
+            (ROOT / "tests/fixtures/b15/numeric_boundaries.json").read_text()
+        )
+        largest = limits["activity_i64_max"]
+        with patch("codexbar_gtk.activity.rust_bridge.extension", return_value=core):
+            with self.assertRaisesRegex(OverflowError, "cumulative total exceeds signed 64-bit"):
+                activity.cumulative_totals([largest, largest])
+            start = date(2026, 10, 18)
+            with self.assertRaisesRegex(OverflowError, "weekly total exceeds signed 64-bit"):
+                activity.weekly_totals(
+                    start,
+                    {start: largest, date(2026, 10, 19): largest},
+                    date(2026, 10, 19),
+                )
+            with self.assertRaisesRegex(OverflowError, "signed 64-bit"):
+                activity.cumulative_totals([2**70])
+        with patch("codexbar_gtk.activity.rust_bridge.extension", return_value=None):
+            self.assertEqual(
+                activity.cumulative_totals([largest, largest]),
+                [largest, largest * 2],
+            )

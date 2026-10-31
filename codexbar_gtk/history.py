@@ -44,17 +44,15 @@ class HistoryStore:
 
     def _rust_store(self):
         core = rust_bridge.extension()
-        if core is None or self._python_only:
+        if core is None:
             return None
         path = os.fspath(self.path)
-        # Keep the legacy behavior for filename-only paths and exotic settings.
-        if (
-            not isinstance(path, str)
-            or not os.path.dirname(path)
-            or not isinstance(self.retention_days, int)
-            or not -(2**63) <= self.retention_days < 2**63
-        ):
-            return None
+        if not isinstance(path, str):
+            raise TypeError("Rust history paths must be text paths")
+        if not isinstance(self.retention_days, int) or not -(2**63) <= self.retention_days < 2**63:
+            raise OverflowError("Rust history retention must fit in signed 64-bit range")
+        if self._python_only:
+            raise RuntimeError("Rust history store cannot switch to Python mode")
         key = (path, self.retention_days)
         with self._lock:
             if self._rust_key != key:
@@ -70,29 +68,34 @@ class HistoryStore:
             return
         core = self._rust_store()
         if core is not None:
-            if all(
-                isinstance(sample.provider, str)
-                and isinstance(sample.window, str)
-                and all(
-                    type(value) in (int, float)
-                    and not (isinstance(value, int) and abs(value) > 2**53)
-                    and math.isfinite(value)
-                    for value in (sample.timestamp, sample.used_percent)
+            try:
+                compatible = all(
+                    isinstance(sample.provider, str)
+                    and isinstance(sample.window, str)
+                    and all(
+                        isinstance(value, (int, float)) and math.isfinite(value)
+                        for value in (sample.timestamp, sample.used_percent)
+                    )
+                    for sample in samples
                 )
-                for sample in samples
-            ):
-                core.append(
-                    [
-                        (s.timestamp, s.provider, s.window, s.used_percent)
-                        for s in samples
-                    ]
-                )
-                return
-            # Do not mix native and Python caches after an unsupported write.
-            with self._lock:
-                self._python_only = True
-                self._rust = None
-                self._cache = None
+            except OverflowError as exc:
+                raise OverflowError(
+                    "Rust history samples must fit finite floating-point range"
+                ) from exc
+            if not compatible:
+                raise TypeError("Rust history samples require finite text and numeric fields")
+            core.append(
+                [
+                    (
+                        float(round(s.timestamp, 2)),
+                        s.provider,
+                        s.window,
+                        float(round(s.used_percent, 2)),
+                    )
+                    for s in samples
+                ]
+            )
+            return
         try:
             os.makedirs(os.path.dirname(self.path), exist_ok=True)
             with self._lock, open(self.path, "a", encoding="utf-8") as handle:
@@ -188,14 +191,14 @@ class HistoryStore:
     ) -> list[tuple[float, float]]:
         """Return ``[(timestamp, used_percent)]`` for one provider window."""
         core = self._rust_store()
-        if (
-            core is not None
-            and isinstance(provider, str)
-            and isinstance(window, str)
-            and type(hours) in (int, float)
-            and not (isinstance(hours, int) and abs(hours) > 2**53)
-        ):
-            return core.series(provider, window, hours, time.time())
+        if core is not None:
+            if (
+                not isinstance(provider, str)
+                or not isinstance(window, str)
+                or not isinstance(hours, (int, float))
+            ):
+                raise TypeError("Rust history queries require text keys and numeric hours")
+            return core.series(provider, window, float(hours), time.time())
         cutoff = time.time() - hours * 3600
         points = [
             (s.timestamp, s.used_percent)

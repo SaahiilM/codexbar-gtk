@@ -9,16 +9,16 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Field | Current checkpoint |
 | --- | --- |
 | Goal | Fully native Rust GTK4/libadwaita app; backend first, UI second |
-| Current phase | B14 is complete in PR #50; build-50 closeout publishes the merge evidence, with B15 next. Native UI implementation must wait for BG. |
-| Last merged implementation | B14 PR #50 merged at `0252420f`, build `0.82.0 (49)` |
+| Current phase | B15 original-port parity work is active on build 51; native UI implementation must wait for BG. |
+| Last merged implementation | B14 build-50 closeout PR #51 merged at `b229a408`, build `0.82.0 (50)` |
 | Planning change | [PR #18](https://github.com/SaahiilM/codexbar-gtk/pull/18), merged at `69c5496`, build `0.81.0 (17)` |
-| Backend tasks completed after that baseline | B00–B14 implementation scope is complete; B14 acceptance and exact PR #50 merge evidence are in E080 |
-| Active implementation task / owner | B15 is next after this build-50 handoff; no B15 implementation slice is claimed here |
-| Active task | **B14 complete** — implementation and caller audit merged in PR #50 at `0252420f048f3c2859fa19aa35a1632941e24956`; this build-50 documentation closeout publishes its observed checks and releases B15 after normal merge. |
-| Next domain slice | B15 closes original-port edge/timezone/Unicode/numeric fallbacks after this handoff is live. BG remains open until B00–B15 headless and transitional runtime gates are verified. |
-| Open external blockers | B14 has no dependency/API blocker. This build-50 handoff needs its standard checks and normal merge before B15 begins; BG remains open for B15 and final gate verification. |
-| Latest checks | PR #50 merged normally at `0252420f048f3c2859fa19aa35a1632941e24956`, live `origin/main`; exact head `576d81f03f9d30d3b4e064ee33586c6819b04f00` passed `test` and `tray-dbus`, with no reviews/comments. See E080. |
-| UI validation | B14 currency settings smoke with synthetic fixtures and active Wayland: [Python mode](screenshots/b14-currency-python-wayland.png) and [Rust opt-in](screenshots/b14-currency-rust-wayland.png), visually inspected (E078; included in PR #50). B13 screenshots remain recorded in E069/E071/E074. This build-50 documentation closeout reuses the merged B14 screenshot evidence and makes no new UI runtime claim. |
+| Backend tasks completed after that baseline | B00–B14; B14 acceptance and exact PR #51 merge evidence are in E080 |
+| Active implementation task / owner | B15 on `orchestrated/luna-b15`, build 51; PR #52 is open at head `780d8450` |
+| Active task | **B15 implemented, PR checks pending** — characterize F01–F06 inputs and production reachability; preserve Python references; close Rust opt-in fallback gaps without narrowing accepted values silently. |
+| Next domain slice | Finish B15 review, PR and normal serialized merge. BG remains open until B00–B15 headless and transitional runtime gates are verified. |
+| Open external blockers | B01–B06 and B14 are live; own PR #52's exact-head checks are pending and normal merge awaits UI verification and the orchestrator's serialized slot. BG stays open. |
+| Latest checks | Base is `b229a4085a8dd45f0fbcb85be5a4afc0659a42fc`. PR #52 head `780d845008357c132526dd0791d58c4bb5aed9d3` is OPEN/MERGEABLE; `test` is IN_PROGRESS and `tray-dbus` is QUEUED in run `41164254714`. No reviews or comments. See E082. |
+| UI validation | Fixture-only spend/tray smoke on active Wayland, both Python and Rust opt-in: [Python](screenshots/b15-compat-python-wayland.png), [Rust opt-in](screenshots/b15-compat-rust-wayland.png); both visually inspected. Rust retains the pre-existing B13 `last30Tokens` label difference recorded in E081. Synthetic CLI, temporary HOME, no real account or credentials. |
 
 **First commands for a new model/session:**
 
@@ -86,9 +86,52 @@ into smaller PRs without declaring the parent complete early.
 | [x] **B11** Login/auth process service | B00, B07 | PR #43 merged at `a33f0977`. Exact-head local workflow and GTK fixture smoke passed; GitHub run #41110771700 ended `startup_failure` with zero jobs, so no CI pass is claimed (E064). |
 | [x] **B12** Read-only update service | B00 | Port public VERSION parsing/comparison and bounded HTTP fetch; test invalid/oversized/network-failure responses. PR #41 merged at `bd58f46`; both checks passed on head `21537ba` (AUDIT E053). No code download/install behavior. |
 | [x] **B13** Extract backend work embedded in UI | B04–B12 | Accepted B13a/B13b1/B13b2 slices are all verified and merged (#46/#47/#48); final caller inventory and exact merge evidence are recorded in E076. Remaining same-service currency adapter calls are explicitly assigned to B14, not described as Python HTTP. |
-| [x] **B14** Full transitional backend integration | B06, B10–B13 | Expose shared CurrencyService operations/status on RefreshController, route currency adapters through that same service, and complete the single-facade/production Python-residual audit. B14a and B14b are verified in E078 and merged in PR #50 at `0252420f`; exact-head `test` and `tray-dbus` passed. B15 remains next; BG stays open. |
-| [ ] **B15** Close original-port gaps | B01–B06, B14 | Audit F01–F06 edge/timezone/Unicode/numeric fallbacks and duplicated catalogs. Define/test Rust-only behavior and resolve all production fallback dependencies. Keep Python parity references until cutover. |
+| [x] **B14** Full transitional backend integration | B06, B10–B13 | Expose shared CurrencyService operations/status on RefreshController, route currency adapters through that same service, and complete the single-facade/production Python-residual audit. B14a and B14b merged in PR #50 at `0252420f`; build-50 closeout PR #51 is live at `b229a408` (E080). B15 is active; BG stays open. |
+| [ ] **B15** Close original-port gaps | B01–B06, B14 | Active on `orchestrated/luna-b15`, build 51. Characterize numeric/date-time/chart/history reference inputs and production reachability; preserve Python behavior; define explicit native limits/errors; use one Rust provider/currency catalog source in opt-in; add parity fixtures and GTK smoke. Do not close BG or start UI migration here. |
 | [ ] **BG** Backend completion gate | B00–B15 | Rust-only headless end-to-end fake CLI/HTTP/PTY tests require neither Python nor GTK/PyO3; transitional GTK fixture smoke passes; review residual-Python inventory and record gate decision in AUDIT. |
+
+### B15 characterization and active contract
+
+Implementation is local on `orchestrated/luna-b15`, based on the live B14
+closeout merge `b229a4085a8dd45f0fbcb85be5a4afc0659a42fc`. The prior local E036
+draft remains preserved but was not applied; E081 appends after live E080. B15
+has no B06/B14 contract changes. PR #52 is open; checks and merge remain
+pending as recorded in E082.
+
+- Python `_optional_int` uses float conversion (`2**53 + 1` rounds to
+  `2**53`; `2**70` is accepted; `2**63 - 1` rounds up to `2**63`; `10**1000`
+  returns `None`). Rust opt-in
+  `i64` window/counter DTOs and checked activity/spend aggregation raise
+  explicit overflow errors; backend operation IDs are
+  `cli_usage_window_overflow` and `cli_cost_counter_overflow`, preserving the
+  last good snapshot. Token display accepts signed `i128`; larger Python ints
+  still format in Python and fail explicitly in Rust opt-in.
+- Rust timestamp parsing matches the Python 3.12 `fromisoformat` shapes in the
+  parity fixtures and returns UTC; naive provider values mean UTC. Pace keeps
+  local-calendar-day behavior across DST. Direct formatting datetime helpers
+  accept UTC-aware values only; production timestamps arrive normalized via
+  `parse_timestamp`.
+- `Fraction` and wide finite numbers are supported in direct chart-helper tests
+  after normalization; production charts use floats from JSONL plus integer GTK
+  dimensions. Out-of-f64-range chart inputs overflow in both paths. Persisted
+  JSONL history fixture and New York spring/fall DST fixture are in
+  `tests/fixtures/b15/`.
+- A Python history append can serialize an integer such as `10**1000`, but its
+  reader drops it because it cannot become a finite float; Rust opt-in reports
+  the finite-float limit before writing.
+- Rust opt-in provider and currency catalogs remain authoritative at runtime;
+  their Python copies stay as default-mode references. Unknown provider fallback
+  casing uses Unicode 15.0 data and is exhaustively compared to Python 3.12.
+  Python 3.10/3.11 use earlier UCD versions, so unknown non-ASCII labels can
+  differ there; known catalog IDs are ASCII.
+- Rust-only representational limits are concrete and clear: signed 64-bit
+  window/activity/spend counters and retention days, signed 128-bit token
+  formatting, text-only history paths, UTC-aware direct formatting inputs and
+  finite-float chart coordinates. The normal app writes current Unix timestamps,
+  finite percentages and known provider/currency IDs. Python remains unchanged.
+
+See README's B15 edge-input characterization and AUDIT E081 for full evidence,
+check results, screenshots and the pre-PR compatibility report.
 
 B01 sub-slices (the parent stays pending until all models/contracts and caller
 integration are complete):

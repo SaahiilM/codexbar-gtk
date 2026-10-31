@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import shutil
 import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
@@ -65,6 +66,31 @@ class RustHistoryIntegrationTests(unittest.TestCase):
             [round(value, 2) for value in values],
         )
 
+    def test_large_integer_samples_use_the_reference_float_rounding(self) -> None:
+        value = 2**60 + 1
+        results = []
+        for core in (None, self.core):
+            with self.backend(core):
+                store = HistoryStore(self.folder / f"wide-{core is not None}.jsonl")
+                store.append([Sample(value, "codex", "primary", value)])
+                results.append(store.read_all())
+        expected = Sample(float(round(value, 2)), "codex", "primary", float(round(value, 2)))
+        self.assertEqual(results, [[expected], [expected]])
+
+    def test_history_write_reports_python_integer_outside_float_range(self) -> None:
+        value = 10**1000
+        python_path = self.folder / "python-huge.jsonl"
+        with self.backend(None):
+            python_store = HistoryStore(python_path)
+            python_store.append([Sample(value, "codex", "primary", 1.0)])
+            self.assertTrue(python_path.is_file())
+            self.assertEqual(python_store.read_all(), [])
+
+        with self.backend(self.core):
+            rust_store = HistoryStore(self.folder / "rust-huge.jsonl")
+            with self.assertRaisesRegex(OverflowError, "finite floating-point range"):
+                rust_store.append([Sample(value, "codex", "primary", 1.0)])
+
     def test_file_remains_readable_when_switching_backends(self) -> None:
         path = self.folder / "history.jsonl"
         first = Sample(1000.0, "codex", "primary", 10.0)
@@ -107,11 +133,7 @@ class RustHistoryIntegrationTests(unittest.TestCase):
 
     def test_corrupt_records_do_not_break_history(self) -> None:
         path = self.folder / "history.jsonl"
-        path.write_text(
-            '\nnot json\n[]\nnull\n{"t":null}\n{"u":"bad"}\n'
-            '{"p":[]}\n{"u":1e999}\n{"t":" NaN "}\n{}\n'
-            '{"t":" 10.25 ","p":"codex","w":"primary","u":"20"}\n'
-        )
+        shutil.copyfile(ROOT / "tests/fixtures/b15/persisted_history.jsonl", path)
         results = []
         for core in (None, self.core):
             with self.backend(core):
@@ -119,7 +141,12 @@ class RustHistoryIntegrationTests(unittest.TestCase):
         self.assertEqual(results[0], results[1])
         self.assertEqual(
             results[1],
-            [Sample(0.0, "", "", 0.0), Sample(10.25, "codex", "primary", 20.0)],
+            [
+                Sample(0.0, "", "", 0.0),
+                Sample(10.25, "codex", "primary", 20.0),
+                Sample(1.0, "codex", "primary", 0.0),
+                Sample(float(2**60), "codex", "wide", float(2**60)),
+            ],
         )
 
     def test_filesystem_errors_remain_nonfatal(self) -> None:
@@ -133,15 +160,16 @@ class RustHistoryIntegrationTests(unittest.TestCase):
                     store.prune()
                     self.assertEqual(store.read_all(), [])
 
-    def test_unsupported_write_stays_on_python_without_a_stale_native_cache(
+    def test_unsupported_write_is_rejected_without_switching_backends(
         self,
     ) -> None:
         with self.backend(self.core):
             store = HistoryStore(self.folder / "history.jsonl")
             store.append([Sample(1000.0, "codex", "primary", 10.0)])
             self.assertEqual(len(store.read_all()), 1)
-            store.append([Sample(1100.0, "codex", "primary", float("nan"))])
-            self.assertTrue(store._python_only)
+            with self.assertRaisesRegex(TypeError, "Rust history samples"):
+                store.append([Sample(1100.0, "codex", "primary", float("nan"))])
+            self.assertFalse(store._python_only)
             store.append([Sample(1200.0, "codex", "primary", 30.0)])
             self.assertEqual(
                 [sample.used_percent for sample in store.read_all()], [10.0, 30.0]

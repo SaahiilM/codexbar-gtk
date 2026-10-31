@@ -63,8 +63,21 @@ _OFFLINE = {code: rate for code, _symbol, rate in CURRENCIES}
 
 def picker_label(code: str) -> str:
     """``"EUR (€)"``-style label used in the preferences picker."""
-    symbol = _SYMBOLS.get(code.upper())
-    return f"{code.upper()} ({symbol})" if symbol else code.upper()
+    normalized = code.upper()
+    symbols = (
+        {entry_code: symbol for entry_code, symbol, _rate in shared().entries()}
+        if _RUST is not None
+        else _SYMBOLS
+    )
+    symbol = symbols.get(normalized)
+    return f"{normalized} ({symbol})" if symbol else normalized
+
+
+def supported_codes() -> tuple[str, ...]:
+    """Return codes from the selected backend's active currency catalog."""
+    if _RUST is not None:
+        return tuple(code for code, _symbol, _rate in shared().entries())
+    return SUPPORTED
 
 
 def requires_live_rates(preferred: str) -> bool:

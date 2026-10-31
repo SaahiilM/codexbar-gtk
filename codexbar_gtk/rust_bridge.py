@@ -30,3 +30,12 @@ def extension() -> ModuleType | None:
 def backend_name() -> str:
     """Return the business-logic backend selected for this Python process."""
     return "rust" if _RUST_CORE is not None else "python"
+
+
+def reject_unsupported(
+    core: ModuleType | None, operation: str, detail: str | None = None
+) -> None:
+    """Fail closed when a Rust-mode adapter cannot represent an input."""
+    if core is not None:
+        requirement = detail or "input type or value range is outside the supported representation"
+        raise TypeError(f"{operation} cannot use this input in Rust opt-in: {requirement}")

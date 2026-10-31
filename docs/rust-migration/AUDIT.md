@@ -2208,3 +2208,144 @@ future models must verify the linked PR's status rather than trusting a stale
   live main `0252420f048f3c2859fa19aa35a1632941e24956`; its own CI and merge
   status are not yet known. After it is opened, verify its exact head, required
   checks, reviews and normal merge before telling B15 to begin.
+
+### E081 — 2026-10-30: B15 edge characterization and local implementation; PR pending
+
+- **Observed base and dependency status:** Resumed on branch
+  `orchestrated/luna-b15` at the latest `origin/main` B14 closeout merge
+  `b229a4085a8dd45f0fbcb85be5a4afc0659a42fc`. PR #51's exact head was
+  `964ff747cc9f7810047c6c791304b44b572fd75a`; required `test` and `tray-dbus`
+  passed in run `41158198969`. B01–B06 and B14 are merged. The prior uncommitted
+  audit draft remains preserved and was not reapplied; E081 follows E080 in the
+  live append-only audit sequence. The overlapping root checkout was not edited.
+- **Active scope:** B15 revisits F01–F06 opt-in boundaries while keeping the
+  default Python implementations as parity references. It adds checked Rust
+  errors at the PyO3/controller boundary, preserves last good refresh state on
+  counter/window overflow, and routes Rust-mode provider/currency lookup to
+  Rust-owned catalogs. No B06 or B14 API contract change was needed. BG remains
+  open and no UI migration is started.
+- **Characterized numeric behavior:** Python `_optional_int` accepts only
+  non-boolean `int`/`float`, converts through binary64, then requires an
+  integral finite value. The fixture records `2**53 + 1 -> 2**53`, accepts
+  `2**70`, maps `10**1000` to `None`, and shows `2**63 - 1` rounding up to
+  `2**63`. Rust window/count DTOs use signed 64-bit values. The service now
+  surfaces `cli_usage_window_overflow` for an unrepresentable quota window and
+  `cli_cost_counter_overflow` for an unrepresentable count or spend aggregate;
+  controller tests prove both return the prior snapshot. Rust activity accepts
+  i64 day values and checked weekly/cumulative i64 totals. Python token display
+  can format larger arbitrary ints, while Rust supports signed i128 and raises
+  `OverflowError` outside that range. Finite numeric formatting follows the
+  Python helpers' float-conversion semantics (for example, `2**70 + 1` rounds
+  to the same display value); values beyond finite float range fail clearly.
+- **Timestamps and DST:** Python 3.12 `datetime.fromisoformat` reference cases
+  cover extended/basic calendar and week dates; hour-only, hour/minute and
+  second times; one-character separators including a non-ASCII separator;
+  fractional seconds; and hour/minute/second/fractional offsets. Parsed naive
+  provider values are assigned UTC and all parsed values normalize to UTC.
+  Current provider fixtures use ordinary RFC3339 extended timestamps. Pace
+  naive input, offset-second input, and New York spring-forward, fall-back and
+  repeated 01:30 behavior match Python's local-calendar-day calculation; the
+  DST cases are persisted in `tests/fixtures/b15/dst_pace_cases.json`.
+- **Charts and history reachability:** Python chart helpers accept finite
+  `Fraction` values and wide integers; the Rust adapter filters invalid points
+  first, subtracts the first time before float conversion, and matches helper
+  geometry for fractions, wide epochs, >2**53 widget dimensions, and
+  nonpositive spans. Inputs that cannot become finite Python floats overflow in
+  both implementations. The live chart path reads Unix-time/percentage floats
+  from history and receives integer GTK dimensions; `Fraction` cannot be
+  represented in CLI JSON or the persisted JSONL format. Production history
+  writes float timestamps and percentages rounded to two decimals. The new
+  `tests/fixtures/b15/persisted_history.jsonl` covers blank/corrupt records,
+  malformed fields/defaults, numeric strings, booleans, non-finite values and
+  large integer JSON values; Rust and Python read the same sample list. The
+  direct Python writer can serialize `10**1000` as JSON integer text and then
+  reads no sample, while Rust rejects that unrepresentable float sample before
+  writing with an explicit overflow error. The
+  Rust store requires text paths and i64 retention days; app defaults use a
+  text path and 30 days. Python reference behavior remains unchanged.
+- **Catalog and Unicode policy:** In Rust opt-in, provider metadata/aliases and
+  currency conversion/picker operations read the corresponding Rust catalog;
+  tests compare 110 providers, aliases and all currencies to the default-mode
+  Python tables. Unknown-provider title fallback uses checked-in UCD 15.0
+  `Cased`, `Case_Ignorable`, lowercase and titlecase data generated from
+  UnicodeData, SpecialCasing and DerivedCoreProperties. The source/version is
+  recorded in `rust-core/src/unicode_case.rs`. Exhaustive integration parity
+  checks all 4,526 Python 3.12 cased codepoints and representative
+  Case_Ignorable/category boundaries, including the comma regression. Known
+  provider IDs are ASCII. Python 3.10/3.11 use older Unicode databases, so
+  only unknown non-ASCII fallback labels can differ on those runtimes.
+- **Explicit Rust opt-in compatibility changes:** Direct helper calls with
+  window/activity/spend values outside signed i64, token values outside signed
+  i128, history byte paths or retention outside i64, and direct formatting
+  datetimes that are not UTC-aware now fail with clear errors instead of
+  falling back to Python. Python accepts some such direct calls. Normal app
+  provider timestamps are parsed to UTC; current history uses text paths,
+  30-day retention and float samples; ordinary token/window/count data stays
+  inside the documented DTO ranges. These direct-helper changes and the UCD
+  15.0 unknown-label difference were reported before PR preparation. The
+  Python default path and Python reference code are unchanged.
+- **Changed paths:** opt-in adapters in `codexbar_gtk/{activity,charts,
+  currency,data,format,history,pace,rust_bridge}.py`; numeric, timestamp,
+  activity, chart, format, history, pace, Unicode case and provider behavior in
+  `rust-core/src/`; controller overflow preservation in
+  `rust-backend/src/controller.rs`; typed bridge errors in
+  `rust-python/src/lib.rs`; parity tests in `tests/test_rust_*`; named fixtures
+  under `tests/fixtures/b15/`; fixture smoke script and screenshots; README,
+  TASKS, CHANGELOG, VERSION and `version.py` (build 51). No Rust dependency or
+  lockfile change remains.
+- **Local verification:** all three Rust format checks passed. Locked tests
+  passed: 78 core and 71 backend. Strict Clippy passed for core, PyO3 and
+  backend with `--all-targets --all-features -- -D warnings`. The atomic
+  `scripts/build-rust-core.sh` build passed. Default Python discovery passed
+  213 tests with 21 expected Rust-opt-in skips; Rust-opt-in discovery passed
+  all 213 tests with no skips. Tray signals passed 3 normally and 3 under
+  `dbus-run-session`. `git diff --check` and build 51 synchronization among
+  VERSION, `codexbar_gtk/version.py`, and README passed.
+- **Fixture-only GTK evidence:** `GDK_BACKEND=wayland CODEXBAR_RUST_CORE=0
+  python3 tools/gtk_smoke_b13_spend_tray.py
+  docs/rust-migration/screenshots/b15-compat-python-wayland.png` and the same
+  command with `CODEXBAR_RUST_CORE=1` both exited 0 using a temporary HOME and
+  synthetic CLI. Both captures rendered 2 heatmap cells / 1,400 tokens and a
+  chart with one known-positive and one unknown point; the UI showed unknown
+  cost separately from known zero. Both screenshots were visually inspected
+  and are included as synthetic evidence. The Rust screenshot also shows an
+  additional `· 4.0K tokens` suffix on the last-30-days label; Python omits this
+  suffix. The same difference appears in the already-merged B13 captures
+  `b13-spend-tray-python-wayland.png` and `b13-spend-tray-synthetic.png` and
+  comes from B13's Rust spend projection, not a B15 change. This is an existing
+  visual parity difference for BG to review; B15 does not migrate or alter the
+  UI. Smoke covers the spend/tray display path, not exhaustive interaction or
+  native UI completion. The host emitted
+  nonfatal EGL device-permission and AT-SPI bus warnings; no account, credential
+  or external currency request was used.
+- **Handoff:** Build 51 is provisional for this PR. B15 remains unchecked and
+  partial until the focused PR passes its own exact-head checks, receives UI
+  verification, and is normally merged after orchestration serializes the
+  merge. BG remains open. Before opening the PR, refresh `origin/main` and open
+  PR state, send the final compatibility/contract report to the orchestration
+  thread, and include both screenshots plus this audit entry. No PR, remote CI
+  result, review or own-branch merge is claimed here.
+
+### E082 — 2026-10-30: B15 PR #52 opened; exact-head checks pending
+
+- **PR/base/head:** [PR #52 — B15: close original-port parity gaps](https://github.com/SaahiilM/codexbar-gtk/pull/52)
+  targets `main` at observed base `b229a4085a8dd45f0fbcb85be5a4afc0659a42fc`.
+  Branch `orchestrated/luna-b15` is at exact head
+  `780d845008357c132526dd0791d58c4bb5aed9d3`. The PR includes the B15 numeric,
+  DST and persisted-history fixtures, append-only audit/handoff, and the two
+  synthetic Wayland screenshots. It is linked to the orchestration thread.
+- **Initial live GitHub state:** PR OPEN and MERGEABLE, with
+  `mergeStateStatus=UNSTABLE` while required checks run. `test` is IN_PROGRESS
+  and `tray-dbus` is QUEUED in workflow run `41164254714`. There are no reviews,
+  review requests or comments. `gh pr checks 52` reports both pending. This is
+  the observed initial state only; refresh the exact head and checks before any
+  merge.
+- **Screenshot review:** both B15 screenshots were visually inspected. The
+  Rust capture's `last30Tokens` suffix is a pre-existing B13 visual difference,
+  also visible in the merged B13 screenshots; it is called out in E081 and no
+  UI change is included here.
+- **Next step:** keep BG open; wait for exact-head required checks and UI
+  verification, then coordinate the normal build-51 merge with orchestration.
+  Do not merge while checks are pending or before the serialized merge slot is
+  confirmed. B15 is not complete until the merge and live-main verification are
+  observed.

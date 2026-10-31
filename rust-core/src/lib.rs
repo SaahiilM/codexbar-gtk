@@ -14,3 +14,4 @@ pub mod ordering;
 pub mod pace;
 pub mod preferences;
 pub mod providers;
+pub mod unicode_case;

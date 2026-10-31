@@ -456,12 +456,28 @@ async fn refresh_once(
         }
     };
 
-    let providers: Vec<ProviderUsage> = usage
-        .iter()
-        .cloned()
-        .map(sanitize_usage_payload)
-        .filter_map(|payload| domain::provider_usage_from_value(&payload))
-        .collect();
+    let mut providers = Vec::with_capacity(usage.len());
+    for payload in usage.iter().cloned().map(sanitize_usage_payload) {
+        match domain::provider_usage_from_value(&payload) {
+            Ok(Some(provider)) => providers.push(provider),
+            Ok(None) => {}
+            Err(error) => {
+                let operation = match error {
+                    domain::NumericError::Overflow => "cli_usage_window_overflow",
+                    domain::NumericError::Invalid => "cli_usage_invalid_window",
+                };
+                let backend_error = BackendError::new(BackendErrorKind::Protocol, operation);
+                if let Some(previous) = data.snapshot.as_mut() {
+                    previous.revision = previous.next_revision();
+                    previous.last_error = Some(ControllerError::from(backend_error));
+                    publisher.fail_with_snapshot(previous.clone(), backend_error);
+                } else {
+                    publisher.fail(backend_error);
+                }
+                return Ok(());
+            }
+        }
+    }
     let provider_order = string_array(config.preferences.get("providerOrder"));
     let hidden_providers = string_array(config.preferences.get("hiddenProviders"));
     let mut providers = order_providers(&providers, &provider_order, &hidden_providers);
@@ -687,7 +703,22 @@ async fn collect_spend(
             had_scan_error = true;
         }
     }
-    let mut fresh = domain::spend_from_payloads(&Value::Array(payloads));
+    let mut fresh = match domain::spend_from_payloads(&Value::Array(payloads)) {
+        Ok(summary) => summary,
+        Err(error) => {
+            let operation = match error {
+                domain::NumericError::Overflow => "cli_cost_counter_overflow",
+                domain::NumericError::Invalid => "cli_cost_invalid_counter",
+            };
+            return (
+                previous,
+                Some(CliError {
+                    kind: CliErrorKind::InvalidJson,
+                    operation,
+                }),
+            );
+        }
+    };
     if had_scan_error {
         fresh.error = Some("Partial provider cost data".to_owned());
         fresh.cost_partial = true;
@@ -819,7 +850,11 @@ fn controller_error_to_backend(error: &ControllerError) -> BackendError {
     };
     let operation = match error.operation.as_str() {
         "cli_usage" => "cli_usage",
+        "cli_usage_window_overflow" => "cli_usage_window_overflow",
+        "cli_usage_invalid_window" => "cli_usage_invalid_window",
         "cli_cost" => "cli_cost",
+        "cli_cost_counter_overflow" => "cli_cost_counter_overflow",
+        "cli_cost_invalid_counter" => "cli_cost_invalid_counter",
         "cli_sessions" => "cli_sessions",
         "cli_version" => "cli_version",
         "notification_event_publish" => "notification_event_publish",
@@ -1068,6 +1103,72 @@ mod tests {
         assert_eq!(after.sessions, before.sessions);
         assert_eq!(after.cost_error.as_ref().unwrap().operation, "cli_cost");
         assert_eq!(after.history.len(), 2);
+        handle.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn spend_counter_overflow_is_clear_and_retains_the_last_spend() {
+        let fake = Arc::new(FakeCli::new());
+        fake.usage.lock().unwrap().extend([
+            Ok(vec![provider_payload(60.0)]),
+            Ok(vec![provider_payload(65.0)]),
+        ]);
+        fake.cost.lock().unwrap().extend([
+            Ok(vec![cost_payload(8.75)]),
+            Ok(vec![json!({"provider": "codex", "totalTokens": u64::MAX})]),
+        ]);
+        let handle = RefreshControllerHandle::start(test_config(fake, "cost-counter-overflow"));
+        let mut state = handle.state();
+        wait_revision(&mut state, 1).await;
+        handle.force_refresh().await.unwrap();
+        wait_revision(&mut state, 2).await;
+        let before = state.borrow().snapshot.as_ref().unwrap().spend.clone();
+        handle.force_refresh().await.unwrap();
+        wait_revision(&mut state, 3).await;
+        let current = state.borrow();
+        let snapshot = current.snapshot.as_ref().unwrap();
+        assert_eq!(snapshot.spend, before);
+        assert_eq!(
+            snapshot.cost_error.as_ref().unwrap().operation,
+            "cli_cost_counter_overflow"
+        );
+        assert_eq!(
+            current.last_error.as_ref().unwrap().operation,
+            "cli_cost_counter_overflow"
+        );
+        drop(current);
+        handle.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn usage_window_overflow_is_clear_and_retains_the_last_snapshot() {
+        let fake = Arc::new(FakeCli::new());
+        fake.usage.lock().unwrap().extend([
+            Ok(vec![provider_payload(60.0)]),
+            Ok(vec![json!({
+                "provider": "codex",
+                "usage": {"primary": {"usedPercent": 65.0, "windowMinutes": u64::MAX}}
+            })]),
+        ]);
+        let handle = RefreshControllerHandle::start(test_config(fake, "usage-window-overflow"));
+        let mut state = handle.state();
+        wait_revision(&mut state, 1).await;
+        let before = state.borrow().snapshot.as_ref().unwrap().clone();
+        handle.force_refresh().await.unwrap();
+        wait_revision(&mut state, 2).await;
+        let current = state.borrow();
+        let snapshot = current.snapshot.as_ref().unwrap();
+        assert_eq!(snapshot.providers, before.providers);
+        assert_eq!(snapshot.spend, before.spend);
+        assert_eq!(
+            snapshot.last_error.as_ref().unwrap().operation,
+            "cli_usage_window_overflow"
+        );
+        assert_eq!(
+            current.last_error.as_ref().unwrap().operation,
+            "cli_usage_window_overflow"
+        );
+        drop(current);
         handle.shutdown().await.unwrap();
     }
 

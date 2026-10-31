@@ -279,7 +279,6 @@ def main() -> int:
     )
     main_window.set_default_size(980, 1200)
     main_window.show_page("spend")
-    main_window.present()
 
     app = CodexBarApp()
     app.prefs = prefs
@@ -299,14 +298,18 @@ def main() -> int:
             controller.poll()
         while context.pending():
             context.iteration(False)
+        sequence = controller.state.backend_sequence
+        spend_model = app._rust_spend_view_model or {}
+        tray_model = app._rust_tray_summary or {}
         rust_projection_ready = not controller.uses_rust_controller or (
-            app._rust_spend_view_model is not None and app._rust_tray_summary is not None
+            spend_model.get("backend_sequence") == sequence
+            and spend_model.get("total", {}).get("known")
+            and tray_model.get("backend_sequence") == sequence
         )
         if (
             controller.state.last_updated is not None
             and not controller.state.refreshing
             and rust_projection_ready
-            and drawing_callbacks_have_data()
         ):
             break
         time.sleep(0.01)
@@ -315,13 +318,24 @@ def main() -> int:
     if controller.state.spend is None or controller.state.spend.total_cost != 42.5:
         raise RuntimeError("synthetic spend data did not reach the GTK window")
 
+    # Apply the completed fixture snapshot through the same MainWindow update
+    # entry point used by CodexBarApp, on GTK's main thread.
+    main_window.update(controller.state)
+    if app._rust_spend_view_model is not None:
+        main_window.update_spend_projection(app._rust_spend_view_model)
+    main_window.present()
+
     spend = app._rust_spend_view_model
     tray = app._rust_tray_summary
     if controller.uses_rust_controller:
         if spend is None or tray is None:
             raise RuntimeError("Rust spend/tray projection did not return to GTK")
         if spend.get("selected_range") != "7 days" or spend.get("display_currency") != "USD":
-            raise RuntimeError("GTK facade projection ignored the shared spend preferences")
+            raise RuntimeError(
+                "GTK facade projection ignored the shared spend preferences: "
+                f"range={spend.get('selected_range')!r}, "
+                f"currency={spend.get('display_currency')!r}"
+            )
         if spend.get("total", {}).get("display_amount") != 42.5:
             raise RuntimeError("GTK spend projection did not preserve the known total")
         unknown_project = next(
@@ -378,6 +392,14 @@ def main() -> int:
     ):
         raise RuntimeError("Python GTK did not render the selected range and synthetic provider")
 
+    # The first mapped frame now contains the fixture snapshot instead of the
+    # initial empty state. Process that Wayland frame before inspecting it.
+    draw_deadline = time.monotonic() + 2
+    while not drawing_callbacks_have_data() and time.monotonic() < draw_deadline:
+        while context.pending():
+            context.iteration(False)
+        time.sleep(0.01)
+
     if main_window.spend_view.total_tile.value_label.get_text() != "≥ $42.50":
         raise RuntimeError(
             "GTK spend tile did not render the fixture partial amount: "
@@ -423,16 +445,11 @@ def main() -> int:
         raise RuntimeError("heatmap has no synthetic token activity")
     if not any(value is not None and value > 0 for _label, value in chart.entries):
         raise RuntimeError("daily chart has no known positive cost series")
-    if not any(
-        event["width"] > 0 and event["height"] > 0 and event["active_cells"] > 0
-        for event in DRAW_CALLBACKS["heatmap"]
-    ):
-        raise RuntimeError(f"heatmap callback drew no active cells: {DRAW_CALLBACKS['heatmap']}")
-    if not any(
-        event["width"] > 0 and event["height"] > 0 and event["known_positive"] > 0
-        for event in DRAW_CALLBACKS["chart"]
-    ):
-        raise RuntimeError(f"chart callback drew no positive bars: {DRAW_CALLBACKS['chart']}")
+    if not drawing_callbacks_have_data():
+        raise RuntimeError(
+            "heatmap and chart callbacks did not draw in the presented window: "
+            f"heatmap={DRAW_CALLBACKS['heatmap']} chart={DRAW_CALLBACKS['chart']}"
+        )
 
     capture_presented_window(main_window, output)
     main_window.destroy()

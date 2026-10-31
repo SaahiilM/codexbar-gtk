@@ -6,6 +6,11 @@ use std::collections::{HashMap, HashSet};
 pub const WEEK_COUNT: usize = 53;
 pub const DAY_COUNT: usize = 7;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ActivityError {
+    Overflow,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct DailyCostEntry {
     /// ISO date text from the CLI; only the leading `YYYY-MM-DD` is used.
@@ -50,7 +55,7 @@ pub fn weekly_totals(
     start: NaiveDate,
     values: &HashMap<NaiveDate, i64>,
     today: NaiveDate,
-) -> Vec<i64> {
+) -> Result<Vec<i64>, ActivityError> {
     (0..WEEK_COUNT)
         .map(|week| {
             (0..DAY_COUNT)
@@ -63,19 +68,23 @@ pub fn weekly_totals(
                         values.get(&current).copied().unwrap_or(0).max(0)
                     }
                 })
-                .sum()
+                .try_fold(0_i64, |total, value| {
+                    total.checked_add(value).ok_or(ActivityError::Overflow)
+                })
         })
         .collect()
 }
 
 /// Running total per week, ignoring negative values.
-pub fn cumulative_totals(values: &[i64]) -> Vec<i64> {
-    let mut total = 0;
+pub fn cumulative_totals(values: &[i64]) -> Result<Vec<i64>, ActivityError> {
+    let mut total = 0_i64;
     values
         .iter()
         .map(|value| {
-            total += (*value).max(0);
-            total
+            total = total
+                .checked_add((*value).max(0))
+                .ok_or(ActivityError::Overflow)?;
+            Ok(total)
         })
         .collect()
 }
@@ -90,10 +99,29 @@ pub fn daily_series(
     let mut unknown: HashSet<NaiveDate> = HashSet::new();
 
     for entry in entries {
-        let Some(date_text) = entry.date.get(..10) else {
-            continue;
-        };
-        let Ok(date) = NaiveDate::parse_from_str(date_text, "%Y-%m-%d") else {
+        let date_text = &entry.date;
+        let parsed_date = date_text
+            .get(..10)
+            .and_then(|prefix| {
+                NaiveDate::parse_from_str(prefix, "%Y-%m-%d")
+                    .or_else(|_| NaiveDate::parse_from_str(prefix, "%G-W%V-%u"))
+                    .ok()
+            })
+            .or_else(|| {
+                date_text.get(..8).and_then(|prefix| {
+                    NaiveDate::parse_from_str(prefix, "%Y%m%d")
+                        .or_else(|_| NaiveDate::parse_from_str(prefix, "%GW%V%u"))
+                        .ok()
+                })
+            })
+            .or_else(|| {
+                NaiveDate::parse_from_str(date_text, "%Y-%m-%d")
+                    .or_else(|_| NaiveDate::parse_from_str(date_text, "%G-W%V-%u"))
+                    .or_else(|_| NaiveDate::parse_from_str(date_text, "%Y%m%d"))
+                    .or_else(|_| NaiveDate::parse_from_str(date_text, "%GW%V%u"))
+                    .ok()
+            });
+        let Some(date) = parsed_date else {
             continue;
         };
         match entry.total_cost {
@@ -189,11 +217,19 @@ mod tests {
             (start + Duration::days(7), 4),
             (start + Duration::days(10), 99), // future relative to today
         ]);
-        let weekly = weekly_totals(start, &values, today);
+        let weekly = weekly_totals(start, &values, today).unwrap();
         assert_eq!(weekly.len(), WEEK_COUNT);
         assert_eq!(weekly[0], 8);
         assert_eq!(weekly[1], 4);
-        assert_eq!(cumulative_totals(&[3, -2, 5, 4]), [3, 3, 8, 12]);
+        assert_eq!(cumulative_totals(&[3, -2, 5, 4]).unwrap(), [3, 3, 8, 12]);
+    }
+
+    #[test]
+    fn weekly_and_cumulative_totals_report_i64_overflow() {
+        let start = date("2026-10-18");
+        let values = HashMap::from([(start, i64::MAX), (start + Duration::days(1), i64::MAX)]);
+        assert!(weekly_totals(start, &values, start + Duration::days(1)).is_err());
+        assert!(cumulative_totals(&[i64::MAX, i64::MAX]).is_err());
     }
 
     #[test]

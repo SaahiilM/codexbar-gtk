@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import importlib
+import json
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from unittest.mock import patch
 
 from codexbar_gtk import format as fmt
 
@@ -54,8 +56,28 @@ class RustFormatIntegrationTests(unittest.TestCase):
             )
         for value in (None, -12.5, 12.345, 1234.5):
             self.assertEqual(fmt.format_credits(value), core.format_credits(value))
-        for value in (None, 0, 1500, 4_348_597_276):
+        limits = json.loads(
+            (ROOT / "tests/fixtures/b15/numeric_boundaries.json").read_text()
+        )
+        for value in (
+            None,
+            0,
+            1500,
+            4_348_597_276,
+            2**70,
+            -(2**70),
+            limits["token_i128_max"],
+        ):
             self.assertEqual(fmt.format_tokens(value), core.format_tokens(value))
+        with patch("codexbar_gtk.format.rust_bridge.extension", return_value=None):
+            self.assertEqual(fmt.format_tokens(2**70), "1180591620717.41B")
+            self.assertEqual(fmt.format_tokens(-(2**70)), str(-(2**70)))
+        with patch("codexbar_gtk.format.rust_bridge.extension", return_value=core):
+            with self.assertRaisesRegex(OverflowError, "signed 128-bit"):
+                fmt.format_tokens(limits["token_i128_overflow"])
+        with patch("codexbar_gtk.format.rust_bridge.extension", return_value=None):
+            python_wide_token_format = fmt.format_tokens(limits["token_i128_overflow"])
+        self.assertTrue(python_wide_token_format.endswith("B"))
 
         self.assertEqual(
             fmt.format_updated(now - timedelta(minutes=5), now),
@@ -99,16 +121,35 @@ class RustFormatIntegrationTests(unittest.TestCase):
             core.project_usage_at_reset(10.0, samples, target_iso, now_iso),
         )
 
-    def test_python_fallback_preserves_unsupported_numeric_edges(self) -> None:
-        with self.assertRaises(OverflowError):
-            fmt.format_percent(10**1000)
-        self.assertEqual(fmt.format_tokens(True), "True")
-        self.assertEqual(fmt.format_credits(float("nan")), "nan")
-        with self.assertRaises(ValueError):
-            fmt.format_currency(float("nan"))
+    def test_rust_mode_rejects_inputs_outside_its_numeric_contract(self) -> None:
+        core = importlib.import_module("codexbar_gtk._rust_core")
+        with patch("codexbar_gtk.format.rust_bridge.extension", return_value=core):
+            self.assertEqual(fmt.format_currency(2**70), "$1,180,591,620,717,411,303,424")
+            self.assertEqual(fmt.format_percent(2**70), "1180591620717411303424%")
+            with self.assertRaisesRegex(TypeError, "Rust opt-in"):
+                fmt.format_percent(10**1000)
+            with self.assertRaisesRegex(TypeError, "Rust opt-in"):
+                fmt.format_tokens(True)
+            with self.assertRaisesRegex(TypeError, "Rust opt-in"):
+                fmt.format_credits(float("nan"))
+            with self.assertRaisesRegex(TypeError, "Rust opt-in"):
+                fmt.format_currency(float("nan"))
 
-    def test_non_utc_datetimes_keep_the_python_timezone_behavior(self) -> None:
+        with patch("codexbar_gtk.format.rust_bridge.extension", return_value=None):
+            with self.assertRaises(OverflowError):
+                fmt.format_percent(10**1000)
+            self.assertEqual(fmt.format_tokens(True), "True")
+            self.assertEqual(fmt.format_credits(float("nan")), "nan")
+            with self.assertRaises(ValueError):
+                fmt.format_currency(float("nan"))
+
+    def test_non_utc_datetimes_remain_in_the_python_reference(self) -> None:
+        core = importlib.import_module("codexbar_gtk._rust_core")
         local_zone = timezone(timedelta(hours=9))
         now = datetime(2026, 10, 22, 12, tzinfo=local_zone)
         target = now + timedelta(hours=4)
-        self.assertEqual(fmt.format_absolute(target, now), "16:00")
+        with patch("codexbar_gtk.format.rust_bridge.extension", return_value=None):
+            self.assertEqual(fmt.format_absolute(target, now), "16:00")
+        with patch("codexbar_gtk.format.rust_bridge.extension", return_value=core):
+            with self.assertRaisesRegex(TypeError, "UTC-aware"):
+                fmt.format_absolute(target, now)

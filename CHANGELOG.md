@@ -4,19 +4,24 @@ Client-side changelog for the CodexBar GTK front-end. Each entry keys a build
 number (`CURRENT_PROJECT_VERSION`) to the upstream macOS CodexBar release its
 short version tracks, so "which version has what" maps cleanly onto both trees.
 
-## 0.82.0 (54) — 2026-10-31
+## 0.82.0 (55) — 2026-10-31
 
 Tracks upstream CodexBar 0.82.0.
 
 ### Changed
 
-- Record the observed merge and acceptance of backend gate BG; unblock the
-  Phase U handoff while retaining B11 CI and B15 compatibility limitations.
+- Start Phase U with a native GTK4/libadwaita bootstrap, direct Rust backend
+  worker, single-instance command routing and build metadata.
+- Keep Python as the default application until UG passes; native placeholder
+  routes are bootstrap scaffolding, not full-screen parity.
 
 ### Validation
 
-- PR #54 exact-head `test` and `tray-dbus` success and the synthetic GTK
-  screenshot references are recorded in AUDIT E086. No runtime code changed.
+- Local locked Rust tests passed for core (78), backend (71 unit + 1 integration)
+  and the native GTK bootstrap (8). Strict Clippy and both default/Rust-opt-in
+  Python suites passed. Xvfb/private-D-Bus routing/cancellation smoke passed;
+  the synthetic Wayland capture shows backend-ready revision 2. Exact-head CI
+  remains pending with the focused U01 PR.
 
 ## 0.82.0 (53) — 2026-10-31
 

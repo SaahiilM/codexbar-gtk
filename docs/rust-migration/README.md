@@ -22,9 +22,10 @@ original-port parity work is merged in PR #52 at `63eb17c8`, and B13c's focused
 last-30 caption parity fix is merged in PR #53 at `0fc5cbb`. BG passed after
 PR #54 merged at `e1abf7b`; its headless integration, transitional GTK smoke
 and residual-Python audit are recorded in AUDIT E085/E086. Phase U is now
-unblocked, though no native UI implementation is claimed here. Some Python
-edge-input behavior remains available only through the default Python path as
-described below.
+unblocked. U01's separate native GTK bootstrap is in progress on build 55; its
+placeholder routes are not screen parity, and the Python launcher remains the
+default until UG passes. Some Python edge-input behavior remains available only
+through the default Python path as described below.
 
 The file inventory and named functions below were inspected, not just inferred
 from filenames. Test results and limitations are recorded separately in AUDIT.
@@ -56,9 +57,13 @@ Python GTK widgets                        Rust GTK4/libadwaita widgets
 - Keep `rust-python/` a temporary, thin adapter over those APIs. Python dataclass
   construction is allowed during transition, but it must not conceal duplicated
   policy, fetching, scheduling, aggregation, or notification state.
-- Plan a `rust-gtk/` binary after gate BG. It must consume the same backend API
-  directly, not embed Python or invoke a Python backend process. This crate
-  also does **not** exist yet. A workspace layout can be introduced separately.
+- `rust-gtk/` is the native GTK4/libadwaita binary introduced by U01 after BG.
+  It consumes `rust-backend` directly, starts one controller on a dedicated
+  Tokio worker, polls immutable watch state and drains lossless events on the
+  GLib context. It has no PyO3/Python bridge; the Rust `codexbar` CLI service
+  remains its only subprocess integration. Its current routes are explicitly
+  placeholders for U02–U05, not completed screens. The existing Python
+  launcher remains the default until UG passes.
 - The backend publishes immutable snapshots/state; the frontend marshals them
   to its GUI thread. `watch` deliberately coalesces intermediate updates; if a
   future user-visible operation needs a lossless event stream, define a bounded

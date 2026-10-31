@@ -1,0 +1,22 @@
+[package]
+name = "codexbar-gtk-native"
+version = "0.82.0"
+edition = "2021"
+description = "Native GTK4/libadwaita bootstrap for CodexBar GTK"
+
+[lib]
+name = "codexbar_gtk_native"
+path = "src/lib.rs"
+
+[[bin]]
+name = "codexbar-gtk-native"
+path = "src/main.rs"
+
+[dependencies]
+codexbar-backend = { path = "../rust-backend" }
+codexbar-core = { path = "../rust-core" }
+gio = "0.20"
+glib = "0.20"
+gtk = { package = "gtk4", version = "0.9.6" }
+libadwaita = { package = "libadwaita", version = "0.7.2", features = ["v1_2"] }
+tokio = { version = "1", features = ["rt-multi-thread", "sync"] }

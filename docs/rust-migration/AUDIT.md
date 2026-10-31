@@ -2325,3 +2325,27 @@ future models must verify the linked PR's status rather than trusting a stale
   PR state, send the final compatibility/contract report to the orchestration
   thread, and include both screenshots plus this audit entry. No PR, remote CI
   result, review or own-branch merge is claimed here.
+
+### E082 — 2026-10-30: B15 PR #52 opened; exact-head checks pending
+
+- **PR/base/head:** [PR #52 — B15: close original-port parity gaps](https://github.com/SaahiilM/codexbar-gtk/pull/52)
+  targets `main` at observed base `b229a4085a8dd45f0fbcb85be5a4afc0659a42fc`.
+  Branch `orchestrated/luna-b15` is at exact head
+  `780d845008357c132526dd0791d58c4bb5aed9d3`. The PR includes the B15 numeric,
+  DST and persisted-history fixtures, append-only audit/handoff, and the two
+  synthetic Wayland screenshots. It is linked to the orchestration thread.
+- **Initial live GitHub state:** PR OPEN and MERGEABLE, with
+  `mergeStateStatus=UNSTABLE` while required checks run. `test` is IN_PROGRESS
+  and `tray-dbus` is QUEUED in workflow run `41164254714`. There are no reviews,
+  review requests or comments. `gh pr checks 52` reports both pending. This is
+  the observed initial state only; refresh the exact head and checks before any
+  merge.
+- **Screenshot review:** both B15 screenshots were visually inspected. The
+  Rust capture's `last30Tokens` suffix is a pre-existing B13 visual difference,
+  also visible in the merged B13 screenshots; it is called out in E081 and no
+  UI change is included here.
+- **Next step:** keep BG open; wait for exact-head required checks and UI
+  verification, then coordinate the normal build-51 merge with orchestration.
+  Do not merge while checks are pending or before the serialized merge slot is
+  confirmed. B15 is not complete until the merge and live-main verification are
+  observed.

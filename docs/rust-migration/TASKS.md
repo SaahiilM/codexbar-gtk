@@ -13,11 +13,11 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Last merged implementation | B14 build-50 closeout PR #51 merged at `b229a408`, build `0.82.0 (50)` |
 | Planning change | [PR #18](https://github.com/SaahiilM/codexbar-gtk/pull/18), merged at `69c5496`, build `0.81.0 (17)` |
 | Backend tasks completed after that baseline | B00–B14; B14 acceptance and exact PR #51 merge evidence are in E080 |
-| Active implementation task / owner | B15 on `orchestrated/luna-b15`, build 51; local characterization and implementation are underway, no B15 PR is open |
-| Active task | **B15 active, PR pending** — characterize F01–F06 inputs and production reachability; preserve Python references; close Rust opt-in fallback gaps without narrowing accepted values silently. |
+| Active implementation task / owner | B15 on `orchestrated/luna-b15`, build 51; PR #52 is open at head `780d8450` |
+| Active task | **B15 implemented, PR checks pending** — characterize F01–F06 inputs and production reachability; preserve Python references; close Rust opt-in fallback gaps without narrowing accepted values silently. |
 | Next domain slice | Finish B15 review, PR and normal serialized merge. BG remains open until B00–B15 headless and transitional runtime gates are verified. |
-| Open external blockers | No B15 dependency or API blocker; B01–B06 and B14 are live. Own PR checks/UI review and the orchestrator's serialized merge slot remain. BG stays open. |
-| Latest checks | Dependency PR #51 merged normally at `b229a4085a8dd45f0fbcb85be5a4afc0659a42fc`, live `origin/main`; exact head `964ff747cc9f7810047c6c791304b44b572fd75a` passed `test` and `tray-dbus` in run `41158198969`. Own PR has not been opened. |
+| Open external blockers | B01–B06 and B14 are live; own PR #52's exact-head checks are pending and normal merge awaits UI verification and the orchestrator's serialized slot. BG stays open. |
+| Latest checks | Base is `b229a4085a8dd45f0fbcb85be5a4afc0659a42fc`. PR #52 head `780d845008357c132526dd0791d58c4bb5aed9d3` is OPEN/MERGEABLE; `test` is IN_PROGRESS and `tray-dbus` is QUEUED in run `41164254714`. No reviews or comments. See E082. |
 | UI validation | Fixture-only spend/tray smoke on active Wayland, both Python and Rust opt-in: [Python](screenshots/b15-compat-python-wayland.png), [Rust opt-in](screenshots/b15-compat-rust-wayland.png); both visually inspected. Rust retains the pre-existing B13 `last30Tokens` label difference recorded in E081. Synthetic CLI, temporary HOME, no real account or credentials. |
 
 **First commands for a new model/session:**
@@ -95,7 +95,8 @@ into smaller PRs without declaring the parent complete early.
 Implementation is local on `orchestrated/luna-b15`, based on the live B14
 closeout merge `b229a4085a8dd45f0fbcb85be5a4afc0659a42fc`. The prior local E036
 draft remains preserved but was not applied; E081 appends after live E080. B15
-has no B06/B14 contract changes and no PR or merge evidence yet.
+has no B06/B14 contract changes. PR #52 is open; checks and merge remain
+pending as recorded in E082.
 
 - Python `_optional_int` uses float conversion (`2**53 + 1` rounds to
   `2**53`; `2**70` is accepted; `2**63 - 1` rounds up to `2**63`; `10**1000`

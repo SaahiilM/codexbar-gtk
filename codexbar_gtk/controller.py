@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import math
 import json
+import os
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -15,7 +16,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Callable
 
-from .cli import CLIError, CodexBarCLI
+from .cli import CLIError, CodexBarCLI, ProviderStatusEntry, default_cli_path
 from .format import format_countdown
 from .history import HistoryStore, Sample
 from .data import (
@@ -296,6 +297,7 @@ class Controller:
                 self.prefs._rust,
                 history_store,
                 shared_currency,
+                default_cli_path(),
             )
             return
         if self._thread and self._thread.is_alive():
@@ -412,6 +414,182 @@ class Controller:
 
         future.add_done_callback(complete)
         return True
+
+    # -- settings facade -------------------------------------------------
+
+    @staticmethod
+    def _settings_error(category: str, operation: str) -> dict[str, str]:
+        return {"category": category, "operation": operation}
+
+    @classmethod
+    def _settings_section(cls, value=None, error: dict | None = None) -> dict:
+        return {"value": value if error is None else None, "error": error}
+
+    def settings_snapshot(self) -> dict:
+        """Return owned settings DTOs from the Rust facade or Python parity path.
+
+        GTK calls this from a worker and only marshals the completed snapshot
+        back to the main context.
+        """
+        rust = self._rust_controller
+        if rust is not None:
+            return json.loads(rust.settings_snapshot_json())
+
+        def load(operation: str, action):
+            try:
+                value = action()
+                return self._settings_section(value=value)
+            except Exception:
+                return self._settings_section(
+                    error=self._settings_error("cli_process", operation)
+                )
+
+        providers = load(
+            "settings_providers",
+            lambda: [
+                {
+                    "provider_id": entry.provider_id,
+                    "enabled": entry.enabled,
+                    "display_name": entry.display_name,
+                    "is_default": entry.is_default,
+                }
+                for entry in self.cli.config_providers()
+            ],
+        )
+        hooks = load("settings_hooks", self.cli.hooks)
+        plugins = load("settings_plugins", self.cli.plugins)
+        try:
+            home = os.path.expanduser("~")
+            launch_state = {"enabled": os.path.exists(os.path.join(
+                home, ".config", "autostart", "codexbar-gtk.desktop"
+            ))}
+            launch = self._settings_section(value=launch_state)
+        except Exception:
+            launch = self._settings_section(
+                error=self._settings_error("autostart_io", "settings_launch_at_login_state")
+            )
+        return {
+            "providers": providers,
+            "hooks": hooks,
+            "plugins": plugins,
+            "launch_at_login": launch,
+        }
+
+    @staticmethod
+    def _require_cli_success(result, operation: str) -> None:
+        if getattr(result, "returncode", 0) != 0:
+            raise RuntimeError(f"command_rejected ({operation})")
+
+    def settings_provider_action(self, action: str, provider_id: str, source: str | None = None) -> None:
+        rust = self._rust_controller
+        if rust is not None:
+            rust.settings_provider_action(action, provider_id, source)
+            return
+        if action == "enable":
+            result = self.cli.enable_provider(provider_id)
+        elif action == "disable":
+            result = self.cli.disable_provider(provider_id)
+        elif action == "set-source" and source is not None:
+            result = self.cli.set_source(provider_id, source)
+        else:
+            raise RuntimeError("invalid_input (settings_provider_action)")
+        self._require_cli_success(result, "settings_provider_action")
+
+    def settings_set_api_key(self, provider_id: str, secret: str) -> None:
+        rust = self._rust_controller
+        if rust is not None:
+            rust.settings_set_api_key(provider_id, secret)
+            return
+        self._require_cli_success(
+            self.cli.set_api_key(provider_id, secret), "settings_set_api_key"
+        )
+
+    def settings_set_hooks_enabled(self, enabled: bool) -> None:
+        rust = self._rust_controller
+        if rust is not None:
+            rust.settings_set_hooks_enabled(enabled)
+            return
+        self._require_cli_success(
+            self.cli.set_hooks_enabled(enabled), "settings_set_hooks_enabled"
+        )
+
+    def preferences_export_to(self, path: str) -> None:
+        rust = self._rust_controller
+        if rust is not None:
+            rust.preferences_export_to(path)
+            return
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(self.prefs.export_document(), handle, indent=2)
+
+    def preferences_import_from(self, path: str) -> None:
+        rust = self._rust_controller
+        if rust is not None:
+            rust.preferences_import_from(path)
+            return
+        with open(path, "r", encoding="utf-8") as handle:
+            self.prefs.import_document(json.load(handle))
+
+    def preferences_reset(self) -> None:
+        rust = self._rust_controller
+        if rust is not None:
+            rust.preferences_reset()
+            return
+        self.prefs.reset()
+
+    def launch_at_login_state(self) -> dict[str, bool]:
+        rust = self._rust_controller
+        if rust is not None:
+            return rust.launch_at_login_state()
+        home = os.path.expanduser("~")
+        return {
+            "enabled": os.path.exists(
+                os.path.join(home, ".config", "autostart", "codexbar-gtk.desktop")
+            )
+        }
+
+    def set_launch_at_login(self, enabled: bool, app_exec: str) -> dict[str, bool]:
+        rust = self._rust_controller
+        if rust is not None:
+            return rust.set_launch_at_login(enabled, app_exec)
+        home = os.path.expanduser("~")
+        autostart_dir = os.path.join(home, ".config", "autostart")
+        autostart_file = os.path.join(autostart_dir, "codexbar-gtk.desktop")
+        self.prefs.set("launchAtLogin", enabled)
+        if enabled:
+            os.makedirs(autostart_dir, exist_ok=True)
+            with open(autostart_file, "w", encoding="utf-8") as handle:
+                handle.write(
+                    "[Desktop Entry]\nType=Application\nName=CodexBar\n"
+                    f"Exec={app_exec}\nX-GNOME-Autostart-enabled=true\nTerminal=false\n"
+                )
+        elif os.path.exists(autostart_file):
+            os.remove(autostart_file)
+        return {"enabled": enabled}
+
+    def settings_reconfigure_cli(
+        self, cli_path: str | None, timezone: str | None
+    ) -> dict[str, bool]:
+        """Update CLI configuration and request an immediate refresh.
+
+        Rust mode commits both settings in its serialized facade actor. The
+        Python parity path deliberately retains its historical permissive
+        mutable service behavior, including accepting a missing executable.
+        """
+        if cli_path is None and timezone is None:
+            raise RuntimeError("invalid_input (settings_cli_reconfigure)")
+        rust = self._rust_controller
+        if rust is not None:
+            return rust.settings_reconfigure_cli(cli_path, timezone)
+
+        if cli_path is not None:
+            configured_path = cli_path.strip()
+            self.prefs.set("cliPath", configured_path)
+            self.cli.executable = configured_path or default_cli_path()
+        if timezone is not None:
+            self.prefs.set("costUsageBucketTimeZone", timezone)
+            self.cli.timezone = timezone or None
+        self.refresh(force=True)
+        return {"applied": True, "refresh_queued": True}
 
     def _loop(self) -> None:
         while not self._stop.is_set():

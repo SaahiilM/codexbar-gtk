@@ -1,5 +1,5 @@
 use chrono::{DateTime, NaiveDate, TimeZone, Utc};
-use codexbar_backend::cli::{self, CliError, CliService};
+use codexbar_backend::cli::{self, CliError, CliService, SharedCliService};
 use codexbar_backend::controller::{
     ControllerCommand, ControllerSnapshot, RefreshControllerConfig, RefreshControllerHandle,
 };
@@ -124,6 +124,8 @@ struct RustRefreshController {
     runtime: Option<Runtime>,
     handle: Mutex<Option<RefreshControllerHandle>>,
     state: watch::Receiver<codexbar_backend::BackendState<ControllerSnapshot>>,
+    cli: Arc<SharedCliService>,
+    cli_reconfigure: codexbar_backend::settings::CliReconfigureActor,
     preferences: Arc<preferences::PreferencesStore>,
     currencies: codexbar_backend::currency::CurrencyService,
     force_refresh: mpsc::Sender<ControllerCommand>,
@@ -541,6 +543,10 @@ fn login_error_to_python(error: LoginError) -> PyErr {
     PyRuntimeError::new_err(format!("login {:?} (claude_login)", error.kind))
 }
 
+fn settings_error_to_python(error: codexbar_backend::settings::SettingsError) -> PyErr {
+    PyRuntimeError::new_err(error.to_string())
+}
+
 #[pymethods]
 impl RustLoginSession {
     #[new]
@@ -916,6 +922,7 @@ fn backend_error_json(error: BackendError) -> Value {
 
 #[pymethods]
 impl RustRefreshController {
+    #[pyo3(signature = (executable, timezone, preferences, history, currencies, default_executable=None))]
     #[new]
     fn new(
         executable: PathBuf,
@@ -923,13 +930,19 @@ impl RustRefreshController {
         preferences: PyRef<'_, RustPreferencesStore>,
         history: PyRef<'_, RustHistoryStore>,
         currencies: PyRef<'_, RustCurrencyConverter>,
+        default_executable: Option<PathBuf>,
     ) -> PyResult<Self> {
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .build()
             .map_err(|_| PyRuntimeError::new_err("could not start refresh runtime"))?;
-        let config = RefreshControllerConfig::new(
-            CliService::new(executable, timezone.map(OsString::from)),
+        let default_executable = default_executable.unwrap_or_else(|| executable.clone());
+        let cli = Arc::new(SharedCliService::new(Arc::new(CliService::new(
+            executable,
+            timezone.map(OsString::from),
+        ))));
+        let config = RefreshControllerConfig::with_shared_cli(
+            cli.clone(),
             preferences.inner.clone(),
             history.inner.clone(),
         );
@@ -939,6 +952,13 @@ impl RustRefreshController {
         };
         let state = handle.state();
         let force_refresh = handle.force_refresh_sender();
+        let cli_reconfigure = codexbar_backend::settings::CliReconfigureActor::start(
+            runtime.handle(),
+            cli.clone(),
+            preferences.inner.clone(),
+            default_executable,
+            force_refresh.clone(),
+        );
         let notifications = handle
             .take_notification_receiver()
             .expect("new controller owns its notification receiver");
@@ -946,6 +966,8 @@ impl RustRefreshController {
             runtime: Some(runtime),
             handle: Mutex::new(Some(handle)),
             state,
+            cli,
+            cli_reconfigure,
             preferences: preferences.inner.clone(),
             currencies: currencies.inner.clone(),
             force_refresh,
@@ -1030,6 +1052,189 @@ impl RustRefreshController {
             serde_json::to_string(&summary).map_err(|_| "tray_summary_encode")
         })
         .map_err(PyRuntimeError::new_err)
+    }
+
+    /// Load independent typed settings sections through the facade's shared
+    /// CLI and preference services. This adapter only serializes the owned DTO.
+    fn settings_snapshot_json(&self, py: Python<'_>) -> PyResult<String> {
+        let cli = self.cli.snapshot();
+        let home = std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("."));
+        let runtime = self
+            .runtime
+            .as_ref()
+            .ok_or_else(|| PyRuntimeError::new_err("settings_runtime_stopped"))?;
+        let snapshot = run_cli_future(py, runtime, async move {
+            codexbar_backend::settings::settings_snapshot(&cli, &home, Duration::from_secs(60))
+                .await
+        });
+        serde_json::to_string(&snapshot)
+            .map_err(|_| PyRuntimeError::new_err("settings_snapshot_encode"))
+    }
+
+    fn settings_provider_action(
+        &self,
+        py: Python<'_>,
+        action: &str,
+        provider_id: &str,
+        source: Option<&str>,
+    ) -> PyResult<()> {
+        use codexbar_backend::settings::{ProviderAction, ProviderSource, SettingsError};
+        let invalid =
+            || settings_error_to_python(SettingsError::invalid_input("settings_provider_action"));
+        let action = match (action, source) {
+            ("enable", None) => ProviderAction::Enable,
+            ("disable", None) => ProviderAction::Disable,
+            ("set-source", Some("auto")) => ProviderAction::SetSource {
+                source: ProviderSource::Auto,
+            },
+            ("set-source", Some("web")) => ProviderAction::SetSource {
+                source: ProviderSource::Web,
+            },
+            ("set-source", Some("cli")) => ProviderAction::SetSource {
+                source: ProviderSource::Cli,
+            },
+            ("set-source", Some("oauth")) => ProviderAction::SetSource {
+                source: ProviderSource::Oauth,
+            },
+            ("set-source", Some("api")) => ProviderAction::SetSource {
+                source: ProviderSource::Api,
+            },
+            _ => return Err(invalid()),
+        };
+        let runtime = self
+            .runtime
+            .as_ref()
+            .ok_or_else(|| PyRuntimeError::new_err("settings_runtime_stopped"))?;
+        let cli = self.cli.snapshot();
+        run_cli_future(
+            py,
+            runtime,
+            codexbar_backend::settings::provider_action(
+                &cli,
+                action,
+                provider_id,
+                Duration::from_secs(180),
+            ),
+        )
+        .map_err(settings_error_to_python)
+    }
+
+    fn settings_set_api_key(
+        &self,
+        py: Python<'_>,
+        provider_id: &str,
+        secret: &str,
+    ) -> PyResult<()> {
+        let runtime = self
+            .runtime
+            .as_ref()
+            .ok_or_else(|| PyRuntimeError::new_err("settings_runtime_stopped"))?;
+        let cli = self.cli.snapshot();
+        run_cli_future(
+            py,
+            runtime,
+            codexbar_backend::settings::set_api_key(
+                &cli,
+                provider_id,
+                secret,
+                Duration::from_secs(180),
+            ),
+        )
+        .map_err(settings_error_to_python)
+    }
+
+    fn settings_set_hooks_enabled(&self, py: Python<'_>, enabled: bool) -> PyResult<()> {
+        let runtime = self
+            .runtime
+            .as_ref()
+            .ok_or_else(|| PyRuntimeError::new_err("settings_runtime_stopped"))?;
+        let cli = self.cli.snapshot();
+        run_cli_future(
+            py,
+            runtime,
+            codexbar_backend::settings::set_hooks_enabled(&cli, enabled, Duration::from_secs(30)),
+        )
+        .map_err(settings_error_to_python)
+    }
+
+    fn settings_reconfigure_cli(
+        &self,
+        py: Python<'_>,
+        cli_path: Option<String>,
+        timezone: Option<String>,
+    ) -> PyResult<Py<PyDict>> {
+        let runtime = self
+            .runtime
+            .as_ref()
+            .ok_or_else(|| PyRuntimeError::new_err("settings_runtime_stopped"))?;
+        let result = run_cli_future(
+            py,
+            runtime,
+            self.cli_reconfigure.reconfigure(cli_path, timezone),
+        )
+        .map_err(settings_error_to_python)?;
+        let dict = PyDict::new(py);
+        dict.set_item("applied", result.applied)?;
+        dict.set_item("refresh_queued", result.refresh_queued)?;
+        Ok(dict.unbind())
+    }
+
+    fn preferences_export_to(&self, py: Python<'_>, path: PathBuf) -> PyResult<()> {
+        let preferences = self.preferences.clone();
+        py.detach(move || codexbar_backend::settings::preferences_export_to(&preferences, &path))
+            .map_err(settings_error_to_python)
+    }
+
+    fn preferences_import_from(&self, py: Python<'_>, path: PathBuf) -> PyResult<()> {
+        let preferences = self.preferences.clone();
+        py.detach(move || codexbar_backend::settings::preferences_import_from(&preferences, &path))
+            .map_err(settings_error_to_python)
+    }
+
+    fn preferences_reset(&self, py: Python<'_>) -> PyResult<()> {
+        let preferences = self.preferences.clone();
+        py.detach(move || codexbar_backend::settings::preferences_reset(&preferences))
+            .map_err(settings_error_to_python)
+    }
+
+    fn launch_at_login_state(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
+        let home = std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("."));
+        let state = py
+            .detach(move || codexbar_backend::settings::launch_at_login_state(&home))
+            .map_err(settings_error_to_python)?;
+        let dict = PyDict::new(py);
+        dict.set_item("enabled", state.enabled)?;
+        Ok(dict.unbind())
+    }
+
+    fn set_launch_at_login(
+        &self,
+        py: Python<'_>,
+        enabled: bool,
+        app_exec: &str,
+    ) -> PyResult<Py<PyDict>> {
+        let home = std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("."));
+        let preferences = self.preferences.clone();
+        let app_exec = app_exec.to_owned();
+        let state = py
+            .detach(move || {
+                codexbar_backend::settings::set_launch_at_login(
+                    &preferences,
+                    &home,
+                    enabled,
+                    &app_exec,
+                )
+            })
+            .map_err(settings_error_to_python)?;
+        let dict = PyDict::new(py);
+        dict.set_item("enabled", state.enabled)?;
+        Ok(dict.unbind())
     }
 
     /// Queue one explicit refresh without blocking the GTK thread.

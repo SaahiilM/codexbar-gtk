@@ -4,6 +4,28 @@ Client-side changelog for the CodexBar GTK front-end. Each entry keys a build
 number (`CURRENT_PROJECT_VERSION`) to the upstream macOS CodexBar release its
 short version tracks, so "which version has what" maps cleanly onto both trees.
 
+## 0.82.0 (46) — 2026-10-30
+
+Tracks upstream CodexBar 0.82.0.
+
+### Added
+
+- Route provider configuration/actions, hooks/plugins, preference import/export/reset,
+  launch-at-login and CLI reconfiguration through the shared Rust settings facade.
+- Preserve immediate CLI path/timezone changes with a serialized shared-service
+  reconfiguration actor and transactional preference updates.
+
+### Fixed
+
+- Reject an invalid Rust-mode CLI executable before changing preferences or the
+  live controller service; Python parity behavior remains unchanged.
+- Reflect accepted CLI path and timezone changes in the settings controls.
+
+### Validation
+
+- See `docs/rust-migration/AUDIT.md` E071 for Rust/Python checks and synthetic
+  Wayland settings smoke evidence.
+
 ## 0.82.0 (45) — 2026-10-30
 
 Tracks upstream CodexBar 0.82.0.

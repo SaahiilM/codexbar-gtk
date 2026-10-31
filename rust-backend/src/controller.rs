@@ -25,7 +25,7 @@ use tokio::{
 };
 
 use crate::{
-    cli::{CliError, CliErrorKind, CliService},
+    cli::{CliError, CliErrorKind, CliService, SharedCliService},
     event_channel, BackendError, BackendErrorKind, BackendEvent, BackendHandle, Cancellation,
     EventPublisher,
 };
@@ -96,6 +96,51 @@ impl RefreshCli for CliService {
         cancellation: Option<Cancellation>,
     ) -> CommandFuture<'a, String> {
         Box::pin(self.version(timeout, cancellation))
+    }
+}
+
+impl RefreshCli for SharedCliService {
+    fn usage<'a>(
+        &'a self,
+        provider: Option<&'a str>,
+        all_accounts: bool,
+        timeout: Duration,
+        cancellation: Option<Cancellation>,
+    ) -> CommandFuture<'a, Vec<Value>> {
+        let service = self.snapshot();
+        Box::pin(async move {
+            service
+                .usage(provider, None, all_accounts, timeout, cancellation)
+                .await
+        })
+    }
+
+    fn cost<'a>(
+        &'a self,
+        provider: Option<&'a str>,
+        timeout: Duration,
+        cancellation: Option<Cancellation>,
+    ) -> CommandFuture<'a, Vec<Value>> {
+        let service = self.snapshot();
+        Box::pin(async move { service.cost(provider, None, timeout, cancellation).await })
+    }
+
+    fn sessions<'a>(
+        &'a self,
+        timeout: Duration,
+        cancellation: Option<Cancellation>,
+    ) -> CommandFuture<'a, Vec<Value>> {
+        let service = self.snapshot();
+        Box::pin(async move { service.sessions(timeout, cancellation).await })
+    }
+
+    fn version<'a>(
+        &'a self,
+        timeout: Duration,
+        cancellation: Option<Cancellation>,
+    ) -> CommandFuture<'a, String> {
+        let service = self.snapshot();
+        Box::pin(async move { service.version(timeout, cancellation).await })
     }
 }
 
@@ -185,8 +230,23 @@ impl RefreshControllerConfig {
         preferences: Arc<PreferencesStore>,
         history: Arc<HistoryStore>,
     ) -> Self {
+        Self::with_shared_cli(
+            Arc::new(SharedCliService::new(Arc::new(cli))),
+            preferences,
+            history,
+        )
+    }
+
+    /// Build refresh orchestration from the same B07 CLI service Arc that the
+    /// application facade uses for settings operations.
+    pub fn with_shared_cli(
+        cli: Arc<SharedCliService>,
+        preferences: Arc<PreferencesStore>,
+        history: Arc<HistoryStore>,
+    ) -> Self {
+        let refresh_cli: Arc<dyn RefreshCli> = cli;
         Self {
-            cli: Arc::new(cli),
+            cli: refresh_cli,
             preferences,
             history,
             usage_timeout: Duration::from_secs(180),

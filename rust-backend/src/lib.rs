@@ -8,6 +8,7 @@ pub mod controller;
 pub mod currency;
 pub mod login;
 pub mod presentation;
+pub mod settings;
 pub mod updates;
 
 use std::{

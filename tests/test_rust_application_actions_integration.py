@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import tempfile
@@ -12,7 +13,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from unittest.mock import patch
 
-from codexbar_gtk import rust_bridge
+from codexbar_gtk import currency, rust_bridge
 from codexbar_gtk.cli import CodexBarCLI
 from codexbar_gtk.controller import Controller
 from codexbar_gtk.login import ClaudeLoginSession
@@ -59,15 +60,21 @@ class RustApplicationActionsIntegrationTests(unittest.TestCase):
         history = self.core.HistoryStore(
             str(self.root / ".local/share/codexbar/history.jsonl"), 365
         )
-        currencies = self.core.CurrencyConverter(
-            str(self.root / ".cache/codexbar/rates.json")
+        currency_cache = self.root / ".cache/codexbar/rates.json"
+        currency_cache.parent.mkdir(parents=True, exist_ok=True)
+        currency_cache.write_text(
+            json.dumps({"fetchedAt": 4_000_000_000.0, "rates": {"EUR": 1.25}}),
+            encoding="utf-8",
         )
+        self.previous_shared_currency = currency._SHARED
+        currency._SHARED = currency.CurrencyConverter(str(currency_cache))
+        self.currencies = currency._SHARED._rust
         self.rust_controller = self.core.RefreshController(
             str(self.refresh_cli),
             None,
             preferences,
             history,
-            currencies,
+            self.currencies,
             str(self.refresh_cli),
             str(Path(__file__).resolve().parents[1] / "codexbar_gtk"),
         )
@@ -84,12 +91,41 @@ class RustApplicationActionsIntegrationTests(unittest.TestCase):
         self.controller.stop()
         self.env.stop()
         self.temp.cleanup()
+        currency._SHARED = self.previous_shared_currency
 
     def _fake_executable(self, name: str, contents: str) -> Path:
         path = self.root / name
         path.write_text(contents, encoding="utf-8")
         path.chmod(0o700)
         return path
+
+    def test_currency_adapter_uses_shared_controller_facade_and_status(self) -> None:
+        currency.bind_facade(self.controller)
+        self.assertIs(currency.shared()._rust, self.currencies)
+        catalog = self.controller.catalog_async()
+        euro = next(item for item in catalog if item[0] == "EUR")
+        self.assertEqual(euro[:2], ("EUR", "€"))
+        self.assertEqual(euro[2], 1.25)
+        self.assertEqual(currency.shared().rate("EUR"), 1.25)
+        self.assertEqual(currency.convert(100.0, "USD", "EUR"), 125.0)
+        self.assertTrue(currency.requires_live_rates("EUR"))
+        self.assertFalse(currency.requires_live_rates("auto"))
+        self.assertFalse(currency.shared().ensure_rates("USD").result(timeout=3))
+        self.assertFalse(
+            self.controller.ensure_rates_at("EUR", 4_000_000_001.0).result(timeout=3)
+        )
+        self.assertEqual(
+            self.controller.status_async(),
+            {
+                "fetched_at": 4_000_000_000.0,
+                "source": "cache",
+                "last_refresh_failed": False,
+            },
+        )
+        self.assertEqual(
+            currency.shared().status(),
+            (4_000_000_000.0, "cache", False),
+        )
 
     def test_update_check_uses_b12_facade_and_returns_current_latest_relation(self) -> None:
         body = b"MARKETING_VERSION=0.82.0\nCURRENT_PROJECT_VERSION=48\n"

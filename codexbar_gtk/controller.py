@@ -264,6 +264,9 @@ class Controller:
         self._presentation_executor = ThreadPoolExecutor(
             max_workers=1, thread_name_prefix="codexbar-rust-presentation"
         )
+        self._currency_executor = ThreadPoolExecutor(
+            max_workers=1, thread_name_prefix="codexbar-rust-currency"
+        )
         self._presentation_request_id = 0
 
     # -- listeners --------------------------------------------------------
@@ -306,6 +309,7 @@ class Controller:
                 default_cli_path(),
                 os.path.dirname(os.path.abspath(__file__)),
             )
+            currency_service.bind_facade(self)
             return
         if self._thread and self._thread.is_alive():
             return
@@ -316,13 +320,67 @@ class Controller:
     def stop(self) -> None:
         if self._rust_controller is not None:
             self._rust_controller.request_shutdown()
+            currency_service.unbind_facade(self)
             self._presentation_executor.shutdown(wait=False, cancel_futures=True)
+            self._currency_executor.shutdown(wait=False, cancel_futures=True)
             return
         self._stop.set()
+        self._currency_executor.shutdown(wait=False, cancel_futures=True)
 
     @property
     def uses_rust_controller(self) -> bool:
         return self._rust_controller is not None
+
+    # -- shared currency facade ----------------------------------------
+
+    def catalog_async(self) -> list[tuple[str, str, float]]:
+        """Read the shared currency catalog through the central facade."""
+        rust = self._rust_controller
+        if rust is not None:
+            return rust.catalog_async()
+        return currency_service.shared().entries()
+
+    def rate_async(self, code: str) -> float | None:
+        """Read a rate from the shared cached/offline currency snapshot."""
+        rust = self._rust_controller
+        if rust is not None:
+            return rust.rate_async(code)
+        return currency_service.shared().rate(code)
+
+    def convert_async(self, amount: float, source: str, target: str) -> float | None:
+        """Convert using the shared currency snapshot without fetching rates."""
+        rust = self._rust_controller
+        if rust is not None:
+            return rust.convert_async(amount, source, target)
+        return currency_service.shared().convert(amount, source, target)
+
+    def status_async(self) -> dict | None:
+        """Return shared rate source/failure metadata when Rust is active."""
+        rust = self._rust_controller
+        if rust is None:
+            return None
+        return rust.status_async()
+
+    def ensure_rates(self, preferred: str):
+        """Refresh through the controller runtime without blocking GTK."""
+        rust = self._rust_controller
+        if rust is None:
+            return currency_service.shared().ensure_rates(preferred)
+        try:
+            return self._currency_executor.submit(rust.ensure_rates, preferred)
+        except RuntimeError:
+            # Shutdown races are best-effort, matching the currency fallback.
+            return None
+
+    def ensure_rates_at(self, preferred: str, now: float):
+        """Injectable-time refresh entry point, normally used by tests."""
+        rust = self._rust_controller
+        if rust is None:
+            return None
+        try:
+            return self._currency_executor.submit(rust.ensure_rates_at, preferred, now)
+        except RuntimeError:
+            return None
 
     def start_claude_login(self, executable: str, timeout_seconds: int):
         """Create the separate B11 login handle through the central facade."""

@@ -937,6 +937,18 @@ fn backend_status_name(status: BackendStatus) -> &'static str {
     }
 }
 
+fn currency_rate_source_name(source: codexbar_backend::currency::RateSource) -> &'static str {
+    match source {
+        codexbar_backend::currency::RateSource::Offline => "offline",
+        codexbar_backend::currency::RateSource::Cache => "cache",
+        codexbar_backend::currency::RateSource::Live => "live",
+    }
+}
+
+fn currency_runtime_error(operation: &'static str) -> PyErr {
+    PyRuntimeError::new_err(format!("cancelled ({operation})"))
+}
+
 fn backend_error_json(error: BackendError) -> Value {
     let kind = match error.kind {
         codexbar_backend::BackendErrorKind::Cancelled => "cancelled",
@@ -1041,6 +1053,103 @@ impl RustRefreshController {
             "last_error": state.last_error.map(backend_error_json),
         }))
         .map_err(|_| PyRuntimeError::new_err("controller_state_encode"))
+    }
+
+    /// Read the catalog from the CurrencyService shared with refresh and spend
+    /// projection. CurrencyCatalog is a quick in-memory snapshot; no network
+    /// work is started here.
+    fn catalog_async(&self, py: Python<'_>) -> PyResult<Vec<(String, String, f64)>> {
+        let runtime = self
+            .runtime
+            .as_ref()
+            .ok_or_else(|| currency_runtime_error("currency_catalog"))?;
+        let currencies = self.currencies.clone();
+        let catalog = run_cli_future(py, runtime, async move { currencies.catalog_async().await });
+        Ok(catalog
+            .codes()
+            .into_iter()
+            .filter_map(|code| {
+                catalog
+                    .get(&code)
+                    .map(|rate| (rate.code.clone(), rate.symbol.clone(), rate.value))
+            })
+            .collect())
+    }
+
+    /// Read one cached/offline/live rate from the shared in-memory service.
+    fn rate_async(&self, py: Python<'_>, code: &str) -> PyResult<Option<f64>> {
+        let runtime = self
+            .runtime
+            .as_ref()
+            .ok_or_else(|| currency_runtime_error("currency_rate"))?;
+        let currencies = self.currencies.clone();
+        let code = code.to_owned();
+        Ok(run_cli_future(py, runtime, async move {
+            currencies.rate_async(&code).await
+        }))
+    }
+
+    /// Convert through the shared CurrencyService's current USD-pivot snapshot.
+    fn convert_async(
+        &self,
+        py: Python<'_>,
+        amount: f64,
+        source: &str,
+        target: &str,
+    ) -> PyResult<Option<f64>> {
+        let runtime = self
+            .runtime
+            .as_ref()
+            .ok_or_else(|| currency_runtime_error("currency_convert"))?;
+        let currencies = self.currencies.clone();
+        let source = source.to_owned();
+        let target = target.to_owned();
+        Ok(run_cli_future(py, runtime, async move {
+            currencies.convert_async(amount, &source, &target).await
+        }))
+    }
+
+    /// Expose fetched time, source and last-refresh failure without requiring
+    /// Python to infer whether the current rates are bundled, cached or live.
+    fn status_async(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
+        let runtime = self
+            .runtime
+            .as_ref()
+            .ok_or_else(|| currency_runtime_error("currency_status"))?;
+        let currencies = self.currencies.clone();
+        let status = run_cli_future(py, runtime, async move { currencies.status_async().await });
+        let result = PyDict::new(py);
+        result.set_item("fetched_at", status.fetched_at)?;
+        result.set_item("source", currency_rate_source_name(status.source))?;
+        result.set_item("last_refresh_failed", status.last_refresh_failed)?;
+        Ok(result.unbind())
+    }
+
+    /// Refresh rates using the central runtime. The bool reports whether this
+    /// call fetched a new snapshot; failure state remains in status_async().
+    fn ensure_rates(&self, py: Python<'_>, preferred: &str) -> PyResult<bool> {
+        let runtime = self
+            .runtime
+            .as_ref()
+            .ok_or_else(|| currency_runtime_error("currency_refresh"))?;
+        let currencies = self.currencies.clone();
+        let preferred = preferred.to_owned();
+        Ok(run_cli_future(py, runtime, async move {
+            currencies.ensure_rates(&preferred).await
+        }))
+    }
+
+    /// Explicit-time refresh seam used by deterministic facade tests.
+    fn ensure_rates_at(&self, py: Python<'_>, preferred: &str, now: f64) -> PyResult<bool> {
+        let runtime = self
+            .runtime
+            .as_ref()
+            .ok_or_else(|| currency_runtime_error("currency_refresh"))?;
+        let currencies = self.currencies.clone();
+        let preferred = preferred.to_owned();
+        Ok(run_cli_future(py, runtime, async move {
+            currencies.ensure_rates_at(&preferred, now).await
+        }))
     }
 
     /// Return the owned spend presentation DTO from the latest snapshot.

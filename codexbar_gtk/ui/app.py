@@ -9,7 +9,7 @@ import threading
 
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk
 
-from .. import APP_ID, currency, display_string
+from .. import APP_ID, display_string
 from ..cli import CodexBarCLI
 from ..controller import Controller
 from ..format import compact_window_label
@@ -75,7 +75,7 @@ class CodexBarApp(Adw.Application):
 
         self.controller.subscribe(self._on_state)
         self.controller.start()
-        currency.shared().ensure_rates(
+        self.controller.ensure_rates(
             str(self.prefs.get("preferredCurrencyCode") or "auto")
         )
 

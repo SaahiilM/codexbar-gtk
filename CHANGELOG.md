@@ -4,6 +4,21 @@ Client-side changelog for the CodexBar GTK front-end. Each entry keys a build
 number (`CURRENT_PROJECT_VERSION`) to the upstream macOS CodexBar release its
 short version tracks, so "which version has what" maps cleanly onto both trees.
 
+## 0.82.0 (56) — 2026-10-31
+
+Tracks upstream CodexBar 0.82.0.
+
+### Changed
+
+- Record the observed U01 native bootstrap merge and move the Phase U handoff
+  to U02 while retaining the Python default and partial native screens.
+
+### Validation
+
+- Documentation/version closeout only. U01 PR #56 exact head `3b99d3e` passed
+  `test` and `tray-dbus`; the normal merge at `3eea06f` is live `origin/main`.
+  Merge evidence is recorded in AUDIT E089.
+
 ## 0.82.0 (55) — 2026-10-31
 
 Tracks upstream CodexBar 0.82.0.

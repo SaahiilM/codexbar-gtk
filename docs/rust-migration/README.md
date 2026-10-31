@@ -22,10 +22,11 @@ original-port parity work is merged in PR #52 at `63eb17c8`, and B13c's focused
 last-30 caption parity fix is merged in PR #53 at `0fc5cbb`. BG passed after
 PR #54 merged at `e1abf7b`; its headless integration, transitional GTK smoke
 and residual-Python audit are recorded in AUDIT E085/E086. Phase U is now
-unblocked. U01's separate native GTK bootstrap is in progress on build 55; its
-placeholder routes are not screen parity, and the Python launcher remains the
-default until UG passes. Some Python edge-input behavior remains available only
-through the default Python path as described below.
+unblocked. U01's separate native GTK bootstrap merged in PR #56 at `3eea06f`;
+its placeholder routes are not screen parity, and the Python launcher remains
+the default until UG passes. U02 is the next Phase U task. Some Python
+edge-input behavior remains available only through the default Python path as
+described below.
 
 The file inventory and named functions below were inspected, not just inferred
 from filenames. Test results and limitations are recorded separately in AUDIT.
@@ -258,8 +259,8 @@ no workspace commands are assumed.
   Actions startup failure and the separately verified local evidence.
 - **UG — native UI complete:** all U tasks accepted against the same backend;
   functional/visual parity and Wayland/X11/D-Bus behavior verified. Preserve the
-  old app until this gate is passed. BG has passed, so Phase U may begin; UG is
-  not yet passed.
+  old app until this gate is passed. BG and U01 have passed; U02–U08 remain, so
+  UG is not yet passed and the Python app remains the default.
 - **CG — cutover complete:** native release/install works without Python,
   PyGObject or `_rust_core.so`; preferences/history survive the switch; native
   CI and packaging are proven. Remove bridge, fallback implementations, Python

@@ -9,16 +9,16 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Field | Current checkpoint |
 | --- | --- |
 | Goal | Fully native Rust GTK4/libadwaita app; backend first, UI second |
-| Current phase | B15 is merged at build 51; B13c last-30 caption parity correction is active on build 52. Native UI implementation must wait for BG. |
-| Last merged implementation | B15 PR #52 merged at `63eb17c8`, build `0.82.0 (51)` |
+| Current phase | B13 is accepted after B13c; BG gate verification is active on provisional build 53. Native UI implementation must wait for BG. |
+| Last merged implementation | B13c PR #53 merged at `0fc5cbbbe653b513a3abbda226e3649e8edf2cb8`, build `0.82.0 (52)` |
 | Planning change | [PR #18](https://github.com/SaahiilM/codexbar-gtk/pull/18), merged at `69c5496`, build `0.81.0 (17)` |
-| Backend tasks completed after that baseline | B00–B15 implementation slices; B13c parity correction and BG gate verification remain. B15 merge evidence is in E083. |
-| Active implementation task / owner | B13c on `fix/b13-last30-label-build52`, provisional build 52; local commit rebased on `63eb17c8` |
-| Active task | **B13c locally verified, PR pending** — align Rust-opt-in last-30 spend caption with Python, preserve `last30_tokens`, add a live GTK caption assertion and screenshots. |
-| Next domain slice | Open and merge the focused B13c PR after exact-head checks and screenshot review. Then obtain BG acceptance; BG remains open until headless and transitional runtime gates pass. |
-| Open external blockers | B13c PR and BG gate verification remain. B15 PR #52 is merged normally with both checks passing. |
-| Latest checks | PR #52 exact head `791154691213b9592e799e4b5cdec962409ed995` passed `test` and `tray-dbus`; merge `63eb17c8ea13c563c587cf9687a4877f1b5b47ff` is live main. B13c local results are recorded in E084. |
-| UI validation | B15's fixture smoke on active Wayland: [Python](screenshots/b15-compat-python-wayland.png), [Rust opt-in](screenshots/b15-compat-rust-wayland.png). B13c captures [Python](screenshots/b13-last30-python-wayland.png) and [Rust opt-in](screenshots/b13-last30-rust-wayland.png) show the matching caption and populated grid/chart. Temporary HOME and synthetic CLI; no real account or credentials. |
+| Backend tasks completed after that baseline | B00–B15 and B13c are merged; BG gate verification is active. B15 merge evidence is in E083; B13c merge and BG acceptance evidence are being reconciled in E085. |
+| Active implementation task / owner | BG on `backend/bg-completion-gate-build53`, provisional build 53; based on live main `0fc5cbbbe653b513a3abbda226e3649e8edf2cb8` |
+| Active task | **BG locally verified, PR pending** — Rust-only fake CLI/controller + loopback currency/update HTTP + fake PTY lifecycle; Rust-opt-in GTK fixture smoke; residual Python inventory. BG remains unchecked until the focused PR passes checks, is UI-verified and merges. |
+| Next domain slice | Report the local evidence and B11 CI limitation to orchestration, then open the build-53 BG PR. Recheck exact-head CI/UI evidence and serialized merge conditions before merging; do not start native UI before BG passes. |
+| Open external blockers | BG implementation PR, its exact-head checks/UI review and merge remain. No open PR existed at the verified base. B11's zero-job Actions startup failures remain documented, not CI successes. |
+| Latest checks | PR #53 exact head `6bd84ad49abf308b9b81098b677c0de0520bd185` passed `test` and `tray-dbus` in run `41165255819`; merge `0fc5cbbbe653b513a3abbda226e3649e8edf2cb8` is live main. BG local checks and gate status are recorded in E085. |
+| UI validation | B13c pair [Python](screenshots/b13-last30-python-wayland.png) / [Rust opt-in](screenshots/b13-last30-rust-wayland.png); BG pair [Python reference](screenshots/bg-python-reference-wayland.png) / [Rust opt-in](screenshots/bg-rust-opt-in-wayland.png). Isolated temporary HOME and synthetic CLI; no real account or credentials. |
 
 **First commands for a new model/session:**
 
@@ -65,7 +65,7 @@ These checked tasks were revisited under B15 for the final Rust-only contract.
 Keep the explicit compatibility limits below visible; do not remove fallbacks
 simply because F01–F06 are checked.
 
-## Phase B — backend (B13c and BG remain; UI migration is blocked)
+## Phase B — backend (BG gate verification active; UI migration is blocked)
 
 Each B item requires native tests, transitional caller integration, application
 smoke evidence where applicable, CI and a focused merged PR. Each can be split
@@ -86,10 +86,10 @@ into smaller PRs without declaring the parent complete early.
 | [x] **B10** Refresh controller | B02–B05, B07–B09 | Port immediate/dynamic polling, manual mode, one queued forced-refresh follow-up, joined shutdown, account collection, partial cost fallback, retained sessions/spend, successful-scan history samples and snapshot/event publication. Complete top-level B02 provider-envelope composition with shared-fixture Python parity; no I/O/callbacks under GUI locks. PR #44 merged at `a66e677`; both required checks passed on `b85348d`. |
 | [x] **B11** Login/auth process service | B00, B07 | PR #43 merged at `a33f0977`. Exact-head local workflow and GTK fixture smoke passed; GitHub run #41110771700 ended `startup_failure` with zero jobs, so no CI pass is claimed (E064). |
 | [x] **B12** Read-only update service | B00 | Port public VERSION parsing/comparison and bounded HTTP fetch; test invalid/oversized/network-failure responses. PR #41 merged at `bd58f46`; both checks passed on head `21537ba` (AUDIT E053). No code download/install behavior. |
-| [ ] **B13** Extract backend work embedded in UI | B04–B12 | B13a/B13b1/B13b2 are merged and B14 accepted the final inventory (E076). BG reopened B13 acceptance for the last-30 caption mismatch; B13c is active on build 52. Keep unchecked until the focused correction is merged and accepted. |
-| [x] **B14** Full transitional backend integration | B06, B10–B13 | Shared CurrencyService facade and caller audit merged in PRs #50/#51 at `b229a408` (E080). B14 accepted the prior B13 implementation; B13c is the remaining visual parity correction. |
+| [x] **B13** Extract backend work embedded in UI | B04–B12 | B13a/B13b1/B13b2 plus B13c are merged; PR #53 at `0fc5cbb` closes the last-30 caption parity gap while retaining the structured token DTO. BG's source audit accepts B13; see E085. |
+| [x] **B14** Full transitional backend integration | B06, B10–B13 | Shared CurrencyService facade and caller audit merged in PRs #50/#51 at `b229a408` (E080). The B13c caption correction is accepted under BG evidence E085. |
 | [x] **B15** Close original-port gaps | B01–B06, B14 | PR #52 merged at `63eb17c8`; exact head `7911546` passed `test` and `tray-dbus`. Preserve its explicit compatibility limits and fixtures in E081/E083. |
-| [ ] **BG** Backend completion gate | B00–B15 | Rust-only headless end-to-end fake CLI/HTTP/PTY tests require neither Python nor GTK/PyO3; transitional GTK fixture smoke passes; review residual-Python inventory and record gate decision in AUDIT. |
+| [ ] **BG** Backend completion gate | B00–B15 | Active on build 53. The combined Rust-only fake CLI/controller + loopback currency/update HTTP + fake PTY lifecycle test, opt-in GTK fixture smoke and residual-Python inventory are locally verified in E085. Keep unchecked until the focused PR passes exact-head checks, UI verification and merge; B11 Actions startup failures are not CI successes. |
 
 ### B15 characterization and accepted contract
 
@@ -151,9 +151,9 @@ credits and error semantics are integrated):
 - [x] **B02b2b2a** Detail chart normalization — merged PR #32.
 - [x] **B02b2b2b** Credits/status/error/plan context normalization — merged PR #33.
 
-B13 original slices are merged; the parent was reopened for the build-52 caption
-parity correction. Final caller inventory is in E076; B13c and BG acceptance
-remain outstanding:
+B13 original slices and the build-52 caption correction are merged. Final caller
+inventory is in E076; B13 is accepted after PR #53 and the BG source inventory
+in E085:
 
 - [x] **B13a** Spend/tray projections — Rust DTOs for spend time-range filtering,
   currency conversion, coverage/partial state, provider/model/project grouping,
@@ -185,11 +185,11 @@ remain outstanding:
   `a42a29972e2894ef82fdbdc1430aeb4608d24c0f` (E077). The follow-up currency
   facade work was completed and merged as B14 PR #50 (E080).
 
-- [ ] **B13c** Last-30 caption parity — make the Rust-opt-in caption match
+- [x] **B13c** Last-30 caption parity — make the Rust-opt-in caption match
   Python's `$18.75 last 30 days` while keeping the structured `last30_tokens`
-  DTO. Build 52 is locally verified and awaiting its focused PR; the updated
-  GTK smoke asserts both the caption and the 4,000-token DTO value. Keep B13
-  unchecked until the PR is merged and the BG owner accepts the parity evidence.
+  DTO. PR #53 merged at `0fc5cbb`; exact head `6bd84ad` passed both required
+  checks. B13c smoke asserts the matching caption and retained 4,000-token DTO
+  value; BG rechecked both display modes in E085.
 
 B14 sub-slices (all implementation and audit scope is verified and merged in
 PR #50):

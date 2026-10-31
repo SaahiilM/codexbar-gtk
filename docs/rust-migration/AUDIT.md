@@ -2402,3 +2402,98 @@ future models must verify the linked PR's status rather than trusting a stale
   this caption, and Python omits it. B13 remains unchecked and BG remains open
   until the focused PR is merged and the BG owner accepts the parity evidence.
   PR creation, remote CI and merge are not claimed here.
+
+### E085 — 2026-10-31: BG gate evidence locally verified; build-53 PR pending
+
+- **Reconciled base and merge evidence:** branch
+  `backend/bg-completion-gate-build53` in the dedicated BG worktree was
+  fast-forwarded from `d1eff67` to live `origin/main`
+  `0fc5cbbbe653b513a3abbda226e3649e8edf2cb8`. The preserved, uncommitted BG
+  draft was copied before that update and reconciled here: its stale B15-pending
+  status is superseded by E083, and its B13 label finding is resolved below.
+  The overlapping root checkout was not edited. At the checked base, the live
+  open-PR query was empty.
+- **B13 acceptance:** PR #53,
+  [B13c last-30 caption parity](https://github.com/SaahiilM/codexbar-gtk/pull/53),
+  merged normally at `0fc5cbbbe653b513a3abbda226e3649e8edf2cb8` from exact head
+  `6bd84ad49abf308b9b81098b677c0de0520bd185`. GitHub run `41165255819` reports
+  `test` and `tray-dbus` SUCCESS on that exact head. It removes only the extra
+  Rust display suffix; the structured `last30_tokens` field remains intact.
+  The Python and Rust captions now both read `$18.75 last 30 days`. BG rechecked
+  the displayed parity in both fixture modes. The earlier suffix was a
+  pre-existing B13 view-model difference visible in B13/B15 captures, not a
+  B15 regression. B13 is accepted and checked in TASKS.
+- **Combined headless gate test:**
+  `rust-backend/tests/bg_gate_end_to_end.rs` drives the public Rust
+  `CliService` and `RefreshControllerHandle` against an executable synthetic
+  CLI. It asserts provider/spend/session/history/tray snapshot data, ordered
+  notification events, a loopback CurrencyService rate refresh and loopback
+  read-only VERSION fetch/comparison, then starts a fake PTY login, observes
+  its synthetic code prompt, cancels it, waits for typed cancellation and
+  verifies the child PID was reaped. Controller shutdown joins its task and
+  publishes `Stopped`. No Python, GTK, PyO3, real CLI/account or external HTTP
+  service participates. `rust-backend/Cargo.toml`'s normal dependency tree has
+  no GTK/PyO3 package, and `.github/workflows/rust-core.yml` runs backend
+  format, tests and strict Clippy for `rust-backend/**` changes.
+- **Rust-opt-in GTK fixture smoke:** the built extension was produced with the
+  atomic `scripts/build-rust-core.sh`. Both
+  `env CODEXBAR_RUST_CORE=0 GDK_BACKEND=wayland python3
+  tools/gtk_smoke_b13_spend_tray.py docs/rust-migration/screenshots/bg-python-reference-wayland.png`
+  and the same command with `CODEXBAR_RUST_CORE=1` and
+  `bg-rust-opt-in-wayland.png` exited 0 on Wayland display `wayland-1`. The
+  smoke uses its isolated temporary HOME and synthetic CLI. Both runs reported
+  Cairo drawing active, two heatmap cells / 1,400 tokens and one known-positive
+  chart bar plus one unknown point; the Rust view displays the corrected
+  last-30 label. Both screenshots were visually inspected and are staged as
+  synthetic evidence. The private-D-Bus capture attempt reached the draw checks
+  but Spectacle returned exit 1; successful compositor captures used the active
+  desktop bus. Nonfatal EGL device-permission and AT-SPI bus warnings appeared.
+  The worktree temporarily reused the existing GTK/Cairo `.deps` cache through
+  a local symlink; the symlink was removed before review.
+- **Residual Python inventory:** in Rust opt-in, `Controller.start()` starts
+  `RefreshController`; watch snapshots and typed events are polled and marshalled
+  through GLib. CLI, currency, preferences, login, update, settings, spend/tray
+  projections, notification policy and tray selection route through Rust
+  services/facades. `SpendView.update_projection()` renders the Rust-owned DTO;
+  the Python policy/model path in `SpendView.update()` remains for default mode.
+  Remaining Python in the active UI path is GTK/libadwaita widget construction,
+  Cairo drawing and layout, display formatting, dashboard labels derived from
+  already-normalized DTOs, GLib worker-to-main-thread callbacks, native
+  chooser/browser/terminal integration, OS notification delivery and writing
+  theme SVG assets (icon-cache refresh itself routes to Rust). Python service
+  implementations remain the unchanged default backend/parity references;
+  B15's documented unsupported direct-input and Unicode limits remain explicit
+  below and in E081/E083. The source audit found no additional active
+  Rust-opt-in fetch, policy aggregation, persistence or CLI-worker path hidden
+  in the GTK layer. This does not claim a Python-free application or native UI.
+- **B15 limits retained for gate review:** Rust opt-in quota windows, activity
+  and spend counters, and history retention use checked signed `i64`; token
+  formatting accepts signed `i128`; numeric formatting requires finite
+  float-convertible values. Direct date-format helpers require UTC-aware
+  datetimes, while production provider timestamps normalize to UTC. Direct
+  history APIs require text paths and `i64` retention days. Unknown non-ASCII
+  provider fallback labels use UCD 15.0 and can differ from Python 3.10/3.11's
+  older Unicode database. Python remains unchanged and default; these opt-in
+  bounds are explicit, not universal Python parity. Full boundary evidence is
+  in E081/E083.
+- **B11 Actions evidence:** PR #43 run `41110771700` ended `startup_failure`
+  with zero jobs; the separate merge-SHA run `41111847909` also ended
+  `startup_failure` with zero jobs. Neither is CI success. The exact-head local
+  workflow-equivalent checks and fixture GTK login smoke passed under explicit
+  user authorization as recorded in E058–E064; keep that local evidence
+  separate from GitHub Actions in gate summaries. B11 is merged, but its remote
+  CI limitation remains visible rather than being rewritten as a pass.
+- **Local checks:** all three `cargo fmt -- --check` commands passed; locked
+  tests passed with 78 `rust-core` tests, 71 `rust-backend` unit tests and the
+  new BG integration test (1 passed, no skips); strict Clippy passed for
+  core/PyO3/backend; the atomic extension build passed. Default Python discovery
+  passed 213 tests with 21 expected Rust-opt-in skips; opt-in discovery passed
+  all 213 tests; private-D-Bus tray signals passed 3/3; `git diff --check`
+  passed. The BG test is included in the existing backend CI job. No external
+  network, provider credentials or real account data were used.
+- **Gate status and next step:** B00–B15 are merged and B13 parity is accepted.
+  The headless E2E, Rust-opt-in GTK path and residual-Python inventory are
+  locally verified. BG is **not passed**: this build-53 closeout still needs
+  orchestration status before opening its focused PR, then exact-head remote
+  checks, screenshot/UI verification, normal merge and live-main verification.
+  Keep BG unchecked and native UI work blocked until those steps succeed.

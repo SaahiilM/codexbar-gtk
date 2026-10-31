@@ -19,9 +19,10 @@ The application still starts with `python3 -m codexbar_gtk`. Python is the defau
 backend. `CODEXBAR_RUST_CORE=1` enables Rust-backed services through
 `rust-python/`; it does **not** select a complete native Rust application. B15's
 original-port parity work is merged in PR #52 at `63eb17c8`, and B13c's focused
-last-30 caption parity fix is merged in PR #53 at `0fc5cbb`. B13 is accepted;
-BG's headless integration, transitional GTK smoke and residual-Python audit are
-under verification. Native UI work remains blocked by BG. Some Python
+last-30 caption parity fix is merged in PR #53 at `0fc5cbb`. BG passed after
+PR #54 merged at `e1abf7b`; its headless integration, transitional GTK smoke
+and residual-Python audit are recorded in AUDIT E085/E086. Phase U is now
+unblocked, though no native UI implementation is claimed here. Some Python
 edge-input behavior remains available only through the default Python path as
 described below.
 
@@ -243,13 +244,17 @@ no workspace commands are assumed.
 
 ## Stage gates
 
-- **BG — backend complete:** B00–B15 accepted; Rust-only headless end-to-end
-  tests cover fake CLI/HTTP/PTY flows without Python, GTK, or PyO3. Existing GTK
-  app consumes the Rust backend in opt-in mode with fixture smoke evidence.
-  No hidden Python policy/service work remains. This gate is currently open.
+- **BG — backend complete:** PASSED after PR #54 merged at
+  `e1abf7b3e1db0e7f23e3be063a3ef067d85be1a1`. B00–B15 accepted; Rust-only
+  headless end-to-end tests cover fake CLI/HTTP/PTY flows without Python, GTK,
+  or PyO3. Existing GTK app consumes the Rust backend in opt-in mode with
+  fixture smoke evidence.
+  No hidden Python policy/service work remains. See AUDIT E085/E086 for B11's
+  Actions startup failure and the separately verified local evidence.
 - **UG — native UI complete:** all U tasks accepted against the same backend;
   functional/visual parity and Wayland/X11/D-Bus behavior verified. Preserve the
-  old app until this gate is passed. This gate is currently blocked by BG.
+  old app until this gate is passed. BG has passed, so Phase U may begin; UG is
+  not yet passed.
 - **CG — cutover complete:** native release/install works without Python,
   PyGObject or `_rust_core.so`; preferences/history survive the switch; native
   CI and packaging are proven. Remove bridge, fallback implementations, Python

@@ -2497,3 +2497,68 @@ future models must verify the linked PR's status rather than trusting a stale
   orchestration status before opening its focused PR, then exact-head remote
   checks, screenshot/UI verification, normal merge and live-main verification.
   Keep BG unchecked and native UI work blocked until those steps succeed.
+
+### E086 — 2026-10-31: BG merge observed and gate accepted
+
+- **Observed merge:** PR #54,
+  [BG build-53 verification](https://github.com/SaahiilM/codexbar-gtk/pull/54),
+  merged normally at `e1abf7b3e1db0e7f23e3be063a3ef067d85be1a1`. Its exact head
+  was `993df09c2a00a6e66ddf6e4dae38da7e6e36db1a`, based on live main
+  `0fc5cbbbe653b513a3abbda226e3649e8edf2cb8`; the merge commit is now live
+  `origin/main`. PR #54 was CLEAN/MERGEABLE with no reviews or comments before
+  merge. This entry records the observed outcome; E085 remains the accurate
+  pre-merge snapshot.
+- **Exact-head checks:** GitHub Actions run
+  [#41166519056](https://github.com/SaahiilM/codexbar-gtk/actions/runs/41166519056)
+  completed successfully for the PR head. Both `test` and `tray-dbus` passed.
+  The `test` job completed Rust formatting, locked core/backend tests (78 core
+  tests, 71 backend unit tests plus the BG integration test), PyO3 extension
+  build, default and Rust-opt-in Python suites, and strict Clippy. `tray-dbus`
+  passed on its private session bus. No skipped/failing CI jobs were reported
+  for this PR.
+- **Gate criteria:** B00–B15 implementation dependencies are merged and
+  accepted. The integrated Rust-only headless test in
+  `rust-backend/tests/bg_gate_end_to_end.rs` covers synthetic CLI/controller
+  state and ordered events, loopback currency and read-only update HTTP, fake
+  PTY prompt/cancel/reap, and joined controller shutdown without Python, GTK,
+  PyO3 or external services. The same exact-head backend test ran in CI and
+  passed. The Rust-opt-in GTK fixture smoke and residual-Python source inventory
+  are recorded in E085. No hidden active Rust-opt-in fetch, policy aggregation,
+  persistence or CLI-worker path remained in the GTK layer.
+- **Synthetic UI evidence:** PR #54 includes and links
+  [Python reference](screenshots/bg-python-reference-wayland.png) and
+  [Rust opt-in](screenshots/bg-rust-opt-in-wayland.png) Wayland captures. Both
+  were generated from the synthetic CLI/temporary HOME and visually verified;
+  the caption matches `$18.75 last 30 days`, with known-positive, unknown and
+  known-zero examples visible. The Rust-mode screenshot is not evidence of a
+  native Rust UI: GTK widgets, Cairo drawing, display formatting and platform
+  glue remain Python. The private-D-Bus screenshot attempt and nonfatal EGL/
+  AT-SPI warnings remain as recorded in E085; successful captures used the
+  active Wayland desktop bus.
+- **B13 parity assessment:** PR #53 merged at `0fc5cbbbe653b513a3abbda226e3649e8edf2cb8`;
+  exact head `6bd84ad49abf308b9b81098b677c0de0520bd185` passed `test` and
+  `tray-dbus` in run `41165255819`. The extra Rust display suffix is removed,
+  Python and Rust captions now match, and the structured `last30_tokens` DTO
+  stays intact. The earlier screenshot difference was a pre-existing B13 view
+  model gap observed during B15 review, not a B15 regression. B13 is accepted.
+- **B11 CI limitation preserved:** PR #43 run `41110771700` and merge-SHA run
+  `41111847909` ended `startup_failure` with zero jobs. Neither is CI success.
+  Exact-head local workflow-equivalent checks and the fixture GTK login smoke
+  passed separately under explicit user authorization (E058–E064). B11 remains
+  merged/accepted with this remote CI limitation visible in the handoff.
+- **B15 compatibility bounds preserved:** Rust opt-in checked `i64` counters
+  and history retention, signed `i128` token formatting, finite-float numeric
+  formatting, UTC-aware direct date helpers, text history paths, and possible
+  unknown Unicode fallback-label differences from older Python runtimes remain
+  documented in E081/E083. Python remains the unchanged default and parity
+  path; acceptance does not claim universal Python-input parity.
+- **Gate decision:** BG is **passed** at live main `e1abf7b3e1db0e7f23e3be063a3ef067d85be1a1`.
+  The pre-merge evidence, exact-head CI, synthetic GTK evidence and source audit
+  together satisfy the documented gate. Phase U is unblocked; U01, the native
+  application/bootstrap crate, is the next ready task after orchestration
+  assigns its owner and serialized slot. Native UI implementation has not
+  started. UG remains open and CG remains blocked by UG.
+- **Closeout:** build 54 updates the current handoff after observing PR #54's
+  merge. This is a documentation/version closeout only; no runtime behavior or
+  backend contract changed. No real account data, credentials or external HTTP
+  service were used.

@@ -9,15 +9,15 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Field | Current checkpoint |
 | --- | --- |
 | Goal | Fully native Rust GTK4/libadwaita app; backend first, UI second |
-| Current phase | B13 is accepted after B13c; BG gate verification is active on provisional build 53. Native UI implementation must wait for BG. |
-| Last merged implementation | B13c PR #53 merged at `0fc5cbbbe653b513a3abbda226e3649e8edf2cb8`, build `0.82.0 (52)` |
+| Current phase | BG passed in PR #54 at `e1abf7b3e1db0e7f23e3be063a3ef067d85be1a1`, build 53. Phase U is unblocked; native UI implementation has not started. |
+| Last merged implementation | BG PR #54 merged at `e1abf7b3e1db0e7f23e3be063a3ef067d85be1a1`, build `0.82.0 (53)` |
 | Planning change | [PR #18](https://github.com/SaahiilM/codexbar-gtk/pull/18), merged at `69c5496`, build `0.81.0 (17)` |
-| Backend tasks completed after that baseline | B00–B15 and B13c are merged; BG gate verification is active. B15 merge evidence is in E083; B13c merge and BG acceptance evidence are being reconciled in E085. |
-| Active implementation task / owner | BG on `backend/bg-completion-gate-build53`, provisional build 53; based on live main `0fc5cbbbe653b513a3abbda226e3649e8edf2cb8` |
-| Active task | **BG locally verified, PR pending** — Rust-only fake CLI/controller + loopback currency/update HTTP + fake PTY lifecycle; Rust-opt-in GTK fixture smoke; residual Python inventory. BG remains unchecked until the focused PR passes checks, is UI-verified and merges. |
-| Next domain slice | Report the local evidence and B11 CI limitation to orchestration, then open the build-53 BG PR. Recheck exact-head CI/UI evidence and serialized merge conditions before merging; do not start native UI before BG passes. |
-| Open external blockers | BG implementation PR, its exact-head checks/UI review and merge remain. No open PR existed at the verified base. B11's zero-job Actions startup failures remain documented, not CI successes. |
-| Latest checks | PR #53 exact head `6bd84ad49abf308b9b81098b677c0de0520bd185` passed `test` and `tray-dbus` in run `41165255819`; merge `0fc5cbbbe653b513a3abbda226e3649e8edf2cb8` is live main. BG local checks and gate status are recorded in E085. |
+| Backend tasks completed after that baseline | B00–B15 and BG are accepted and merged. B11's Actions startup failures remain documented as failures; see E086. |
+| Active implementation task / owner | None. U01 is the next ready task after orchestration assigns its owner and slot. |
+| Latest gate result | **BG passed** — PR #54 merged and verified on live main. Headless Rust-only integration, Rust-opt-in GTK fixture smoke and residual-Python inventory are recorded in E085/E086. |
+| Next domain slice | Coordinate and claim U01, the native application/bootstrap crate. Preserve the Python application until UG passes; do not start cutover work before UG. |
+| Open external blockers | No BG blockers remain. Phase U awaits its owner/serialized slot. B11's zero-job Actions startup failures remain documented, not CI successes. |
+| Latest checks | PR #54 exact head `993df09c2a00a6e66ddf6e4dae38da7e6e36db1a` passed `test` and `tray-dbus` in run `41166519056`; merge `e1abf7b3e1db0e7f23e3be063a3ef067d85be1a1` is live main. |
 | UI validation | B13c pair [Python](screenshots/b13-last30-python-wayland.png) / [Rust opt-in](screenshots/b13-last30-rust-wayland.png); BG pair [Python reference](screenshots/bg-python-reference-wayland.png) / [Rust opt-in](screenshots/bg-rust-opt-in-wayland.png). Isolated temporary HOME and synthetic CLI; no real account or credentials. |
 
 **First commands for a new model/session:**
@@ -40,9 +40,8 @@ B00 PR #19 (`956ffd3`), B01a PR #20 (`6fa18c9`), B01b PR #21 (`70f295a`),
 B01c PR #22 (`4213503`), B02a PR #23 (`da215b1`), B02b1 PR #25 (`51cd4b8`),
 B02b2a PR #27 (`965b592`), B02b2b1 PR #30 (`e5963c6`), B02b2b2a PR #32 (`96ed3d2`),
 B02b2b2b PR #33 (`5aee61f`), and B03 PR #35 are merged with CI passing.
-GTK4/libadwaita typelibs are available locally through ignored `.deps/` (E017);
-synthetic X11/Wayland widget previews succeeded. B04 is next: spend
-normalization/aggregation. UI migration remains blocked by BG.
+GTK4/libadwaita typelibs were previously made available through ignored `.deps/`
+(E017); this note is historical. The current handoff is in the Resume here table.
 For active work record task/subtask ID, owner/session, branch, PR if available,
 changed files, checks performed/skipped, blockers and the next exact action.
 
@@ -89,7 +88,7 @@ into smaller PRs without declaring the parent complete early.
 | [x] **B13** Extract backend work embedded in UI | B04–B12 | B13a/B13b1/B13b2 plus B13c are merged; PR #53 at `0fc5cbb` closes the last-30 caption parity gap while retaining the structured token DTO. BG's source audit accepts B13; see E085. |
 | [x] **B14** Full transitional backend integration | B06, B10–B13 | Shared CurrencyService facade and caller audit merged in PRs #50/#51 at `b229a408` (E080). The B13c caption correction is accepted under BG evidence E085. |
 | [x] **B15** Close original-port gaps | B01–B06, B14 | PR #52 merged at `63eb17c8`; exact head `7911546` passed `test` and `tray-dbus`. Preserve its explicit compatibility limits and fixtures in E081/E083. |
-| [ ] **BG** Backend completion gate | B00–B15 | Active on build 53. The combined Rust-only fake CLI/controller + loopback currency/update HTTP + fake PTY lifecycle test, opt-in GTK fixture smoke and residual-Python inventory are locally verified in E085. Keep unchecked until the focused PR passes exact-head checks, UI verification and merge; B11 Actions startup failures are not CI successes. |
+| [x] **BG** Backend completion gate | B00–B15 | Passed after PR #54 merged at `e1abf7b3e1db0e7f23e3be063a3ef067d85be1a1`; exact head `993df09` passed `test` and `tray-dbus` in run `41166519056`. Rust-only CLI/controller + loopback HTTP + fake PTY integration, opt-in GTK fixture screenshots and residual-Python inventory are accepted (E085/E086). B11's zero-job Actions startup failures are not CI successes; authorized local workflow-equivalent evidence is recorded separately. |
 
 ### B15 characterization and accepted contract
 
@@ -152,8 +151,8 @@ credits and error semantics are integrated):
 - [x] **B02b2b2b** Credits/status/error/plan context normalization — merged PR #33.
 
 B13 original slices and the build-52 caption correction are merged. Final caller
-inventory is in E076; B13 is accepted after PR #53 and the BG source inventory
-in E085:
+inventory is in E076; B13 and BG are accepted after PRs #53/#54 and the source
+inventory in E085/E086:
 
 - [x] **B13a** Spend/tray projections — Rust DTOs for spend time-range filtering,
   currency conversion, coverage/partial state, provider/model/project grouping,
@@ -205,11 +204,10 @@ PR #50):
   Python branches are parity, conversion, GTK/GLib or platform integration.
   The audit found no additional B14 gap and is accepted in E080.
 
-B05/B07/B12 can proceed after B00 independently of payload parsing. B11/B13 are
-not optional just because their Python files sit near presentation code. Do not
-start the UI crate merely because several backend slices are green.
+The earlier B04-first checkpoint above is historical; the current handoff is in
+the Resume here table. BG passed after PR #54; Phase U may now be coordinated.
 
-## Phase U — native GTK4/libadwaita UI (blocked by BG)
+## Phase U — native GTK4/libadwaita UI (ready; BG passed)
 
 - [ ] **U01** Native application/bootstrap crate, direct backend connection,
   GTK main-context dispatch, single-instance/command-line behavior and version

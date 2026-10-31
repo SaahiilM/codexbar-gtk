@@ -2639,3 +2639,39 @@ future models must verify the linked PR's status rather than trusting a stale
   review and normal merge are verified. Python remains the default and UG stays
   open. The next action is to verify the current PR head/checks after the
   handoff update, then merge normally only when GitHub reports clean status.
+
+### E089 — 2026-10-31: U01 PR #56 merge observed; U01 verified
+
+- **Observed merge:** PR #56, [Native Rust GTK bootstrap](https://github.com/SaahiilM/codexbar-gtk/pull/56),
+  merged normally at `3eea06f99760048b51407b446781981e5edb49db`; that commit is
+  live `origin/main`. Exact head `3b99d3e759477557828960626276f2633df9ebcc`
+  was based on `23651ecf47b902c57a753a4e3fb0955184412a32`. GitHub reported
+  `MERGEABLE`, no reviews/comments, and both required checks passed in run
+  `41170186549`: `test` and `tray-dbus`.
+- **Accepted U01 scope:** `rust-gtk/` now provides a standalone GTK4/libadwaita
+  binary that starts one B10 controller on a dedicated Tokio worker, dispatches
+  immutable watch state and losslessly queued backend events to the GLib main
+  context, and asynchronously cancels/joins in-flight backend work on quit.
+  Gio primary/secondary command-line routing preserves `--settings`, `--about`,
+  `--panel`, `--page` precedence and unknown/missing-page Usage fallback. The
+  Python launcher remains the default until UG; no runtime cutover occurred.
+- **Partial UI boundary:** native Dashboard, Panel, Settings and page routes are
+  explicit placeholders for U02–U05; this merge is bootstrap, not full-screen
+  parity. Native OS notification delivery remains U07. Native builds require
+  GTK4/libadwaita development headers/pkg-config metadata; the local host lacks
+  `libgtk-4-dev`/`libadwaita-1-dev`, the build used an ignored extracted SDK,
+  and CI explicitly installs both packages.
+- **Verification and visual evidence:** local locked Rust tests, strict Clippy,
+  default and Rust-opt-in Python suites, native build and Xvfb/private-D-Bus
+  command-routing/responsiveness/cancellation smoke are recorded in E087. The
+  smoke confirmed one controller, invalid-page fallback, panel readiness
+  gating, responsive secondary routing during a held CLI command and joined
+  in-flight cancellation. The merged PR includes the visually checked
+  [synthetic Wayland screenshot](screenshots/u01-native-bootstrap-wayland.png)
+  from temporary HOME and fake CLI, showing version `0.82.0 (55)` and backend
+  ready revision 2. No real account, credentials or external service was used.
+- **Handoff:** U01 is verified and checked in TASKS.md. U02, the native
+  dashboard/provider-card slice, is next for orchestration to coordinate.
+  Python remains the default, UG and CG remain open, and no native cutover or
+  completed screen parity is claimed. Build 56 records this documentation-only
+  closeout after observing the merge.

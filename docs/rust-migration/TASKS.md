@@ -9,16 +9,16 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Field | Current checkpoint |
 | --- | --- |
 | Goal | Fully native Rust GTK4/libadwaita app; backend first, UI second |
-| Current phase | B13 backend extraction; native UI implementation must wait for BG |
-| Last merged implementation | B13b1 PR #47 merged at `490b4b64`, build `0.82.0 (46)` |
+| Current phase | B14 transitional backend integration; native UI implementation must wait for BG |
+| Last merged implementation | B13b2 PR #48 merged at `be370b63`, build `0.82.0 (47)` |
 | Planning change | [PR #18](https://github.com/SaahiilM/codexbar-gtk/pull/18), merged at `69c5496`, build `0.81.0 (17)` |
-| Backend tasks completed after that baseline | B00–B12 and B13a/B13b1 merged; B13b1 exact merge/check evidence is in E073 |
-| Active implementation task / owner | B13b2 application actions, current coding-agent session |
-| Active task | **B13b2** — login, update check, restart, icon-cache operation and residual caller audit, branch `backend/b13b2-application-actions-rust`, based on `490b4b641282fe87a632d31e83864c9067e3e10f`; provisional build `0.82.0 (47)`. B14 approved and froze the typed facade surfaces; exact names/results are recorded in E074. |
-| Next domain slice | PR #48 is open. Verify fresh exact-head checks/reviews/mergeability, then merge normally when all required checks and UI evidence are clean. Keep B13 parent partial until all slices and caller routes are verified and merged. |
-| Open external blockers | No dependency or contract blocker. PR #48 `test` is pending while `tray-dbus` passed; B14 remains gated on the full B13 parent. |
-| Latest checks | B13b2 local evidence is E074. PR #48 initial submitted head `4eae00c5cdb7210bdbfcb06fe39ec2475256b0c2` targets current main `490b4b641282fe87a632d31e83864c9067e3e10f`; initial `tray-dbus` SUCCESS, `test` IN_PROGRESS, PR MERGEABLE/UNSTABLE with no reviews or comments. See E075 and recheck after any head change. |
-| UI validation | B13a screenshots are in E069. B13b1 fixture-only settings screenshots: [Python mode](screenshots/b13-settings-python-wayland.png) and [Rust opt-in](screenshots/b13-settings-rust-wayland.png) (E071). B13b2 update-result screenshots: [Python mode](screenshots/b13b2-actions-python-wayland.png) and [Rust opt-in](screenshots/b13b2-actions-rust-wayland.png), captured from the active Wayland window and visually inspected (E074). |
+| Backend tasks completed after that baseline | B00–B13 implementation scope is complete; exact B13 merge and acceptance evidence is in E076 |
+| Active implementation task / owner | B13 final handoff, current coding-agent session; then B14 integration |
+| Active task | **B13 final handoff** — branch `backend/b13-final-handoff-build48`, based on `be370b63b94c186262606dcbf70e16353300b0e5`; reconcile merged PR #48 and the accepted B13 caller inventory in this build-48 PR. B14 accepted the B13a/B13b1/B13b2 implementation coverage, conditional on this accurate reconciliation PR merging. |
+| Next domain slice | After this handoff PR merges, B14 begins with currency operations on the same CurrencyService already shared with RefreshController: `catalog_async`, `rate_async`, `convert_async`, `status_async`, `ensure_rates` and `ensure_rates_at`; route the current currency adapter callers through that facade. |
+| Open external blockers | This final build-48 handoff PR must merge before B14 is unblocked. No B13 implementation-scope gap remains in the accepted inventory. |
+| Latest checks | PR #48 was merged normally at `be370b63b94c186262606dcbf70e16353300b0e5`; both required checks passed on exact head `4d1aff43f18a8e1bdbc8166b38e03df54a79031a`; no reviews/comments, and live `origin/main` matches. See E076. |
+| UI validation | B13a fixture-only Wayland screenshots: [Python mode](screenshots/b13-spend-tray-python-wayland.png) and [Rust opt-in](screenshots/b13-spend-tray-rust-wayland.png) (E069). B13b1 settings screenshots: [Python mode](screenshots/b13-settings-python-wayland.png) and [Rust opt-in](screenshots/b13-settings-rust-wayland.png) (E071). B13b2 update-result screenshots: [Python mode](screenshots/b13b2-actions-python-wayland.png) and [Rust opt-in](screenshots/b13b2-actions-rust-wayland.png), captured from the active Wayland window and visually inspected (E074). This docs-only handoff reuses the merged screenshots; no new UI code changed. |
 
 **First commands for a new model/session:**
 
@@ -85,8 +85,8 @@ into smaller PRs without declaring the parent complete early.
 | [x] **B10** Refresh controller | B02–B05, B07–B09 | Port immediate/dynamic polling, manual mode, one queued forced-refresh follow-up, joined shutdown, account collection, partial cost fallback, retained sessions/spend, successful-scan history samples and snapshot/event publication. Complete top-level B02 provider-envelope composition with shared-fixture Python parity; no I/O/callbacks under GUI locks. PR #44 merged at `a66e677`; both required checks passed on `b85348d`. |
 | [x] **B11** Login/auth process service | B00, B07 | PR #43 merged at `a33f0977`. Exact-head local workflow and GTK fixture smoke passed; GitHub run #41110771700 ended `startup_failure` with zero jobs, so no CI pass is claimed (E064). |
 | [x] **B12** Read-only update service | B00 | Port public VERSION parsing/comparison and bounded HTTP fetch; test invalid/oversized/network-failure responses. PR #41 merged at `bd58f46`; both checks passed on head `21537ba` (AUDIT E053). No code download/install behavior. |
-| [ ] **B13** Extract backend work embedded in UI | B04–B12 | Audit all `ui/*.py` workers and policies: spend model grouping/time ranges/currency/partial-state presentation, tray summaries, settings CLI actions, launch-at-login actions, restart/update workers. Move non-widget responsibilities behind the Rust API; log remaining frontend-only behavior explicitly. Split into B13a/B13b; parent remains pending until every sub-slice is verified and merged. |
-| [ ] **B14** Full transitional backend integration | B06, B10–B13 | Python GTK uses a single Rust service facade and thin conversion/marshalling adapters. Settings actions and login flows use it too. Prove no Python subprocess/HTTP/polling/notification-policy backend remains. |
+| [x] **B13** Extract backend work embedded in UI | B04–B12 | Accepted B13a/B13b1/B13b2 slices are all verified and merged (#46/#47/#48); final caller inventory and exact merge evidence are recorded in E076. Remaining same-service currency adapter calls are explicitly assigned to B14, not described as Python HTTP. |
+| [ ] **B14** Full transitional backend integration | B06, B10–B13 | After the build-48 B13 handoff merges, expose shared CurrencyService operations/status on RefreshController and route `currency.py` UI adapters through it; then finish the single-facade/Python-residual audit. Keep Python GTK as thin conversion/marshalling and platform adapter. |
 | [ ] **B15** Close original-port gaps | B01–B06, B14 | Audit F01–F06 edge/timezone/Unicode/numeric fallbacks and duplicated catalogs. Define/test Rust-only behavior and resolve all production fallback dependencies. Keep Python parity references until cutover. |
 | [ ] **BG** Backend completion gate | B00–B15 | Rust-only headless end-to-end fake CLI/HTTP/PTY tests require neither Python nor GTK/PyO3; transitional GTK fixture smoke passes; review residual-Python inventory and record gate decision in AUDIT. |
 
@@ -109,8 +109,8 @@ credits and error semantics are integrated):
 - [x] **B02b2b2a** Detail chart normalization — merged PR #32.
 - [x] **B02b2b2b** Credits/status/error/plan context normalization — merged PR #33.
 
-B13 sub-slices (the parent stays pending until all slices and caller routes are
-verified and merged; coordinate Rust DTO/method names with B14):
+B13 sub-slices (all implementation slices verified and merged; final acceptance
+and caller inventory reconciled with B14 in E076):
 
 - [x] **B13a** Spend/tray projections — Rust DTOs for spend time-range filtering,
   currency conversion, coverage/partial state, provider/model/project grouping,
@@ -128,7 +128,7 @@ verified and merged; coordinate Rust DTO/method names with B14):
   and commits both fields transactionally before swapping the shared CLI slot
   and queuing B10 refresh. B14 approved this contract; PR #47 merged at
   `490b4b64` with both required checks passing (E071, E073).
-- [ ] **B13b2** Application actions — route login through the separate B11
+- [x] **B13b2** Application actions — route login through the separate B11
   handle, update checking through B12 Updates, and restart through a Rust facade
   operation; route icon-cache process refresh through the facade as well. GTK
   only marshals completed results, renders SVGs, handles native UI interactions
@@ -136,13 +136,10 @@ verified and merged; coordinate Rust DTO/method names with B14):
   `check_update(...)`, `launch_codex_login_terminal()`, `restart_application()`
   and `refresh_icon_cache()`; icon-cache outcomes include explicit best-effort
   `failed`; see E074.
-  Active branch `backend/b13b2-application-actions-rust`, provisional build 47;
-  implementation and caller inventory are locally verified, PR pending. Rust
-  opt-in routes Claude login, Codex terminal login, update checks, restart and
-  icon-cache refresh through the central facade; Python process/HTTP code stays
-  only on the Python parity path. GLib watch/event polling and display readiness
-  remain UI/platform adapters. B13 parent is still partial pending PR merge and
-  final parent inventory acceptance.
+  PR #48 merged at `be370b63b94c186262606dcbf70e16353300b0e5`; exact head
+  `4d1aff43f18a8e1bdbc8166b38e03df54a79031a` passed both `test` and `tray-dbus`.
+  The final B13 inventory is accepted by B14 subject to merging this build-48
+  handoff. The follow-up currency facade work is assigned to B14.
 
 B05/B07/B12 can proceed after B00 independently of payload parsing. B11/B13 are
 not optional just because their Python files sit near presentation code. Do not

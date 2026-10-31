@@ -16,8 +16,8 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Active implementation task / owner | B14 currency facade integration, current coding-agent session |
 | Active task | **B14a CurrencyService facade and UI routing** — branch `orchestrated/luna-b14`, based on verified PR #49 merge `a42a29972e2894ef82fdbdc1430aeb4608d24c0f`; build `0.82.0 (49)`. Expose the shared currency catalog/rate/conversion/status/refresh methods on RefreshController and route Rust-opt-in UI adapters through it. Implementation and local verification are complete; the focused PR and merge remain pending. |
 | Next domain slice | After B14a merges, finish the B14 single-facade/production Python-residual audit on latest `main`, record any concrete gaps as a scoped B14 follow-up, then reassess the BG gate. |
-| Open external blockers | No dependency or API blockers remain. B14a still requires a serialized PR slot, exact-head CI and merge verification; the B14 parent remains partial through the caller audit. |
-| Latest checks | PR #49 merged normally at `a42a29972e2894ef82fdbdc1430aeb4608d24c0f`; exact head `df97e8f8cfc46d7f47e870a93f28af59e8d36f98` passed `test` and `tray-dbus`; no reviews/comments/open PRs, and live `origin/main` matches. See E077. |
+| Open external blockers | No dependency or API blockers remain. PR #50 is open in build 49 and waits for exact-head checks; merge requires final checks/review/mergeability verification and orchestration serialization. The B14 parent remains partial until the PR merges. |
+| Latest checks | B13 handoff PR #49 merged at `a42a29972e2894ef82fdbdc1430aeb4608d24c0f`; exact head `df97e8f8cfc46d7f47e870a93f28af59e8d36f98` passed `test` and `tray-dbus` (E077). B14 PR #50 opened MERGEABLE at initial head `a27a7f7c5a799e85f8d220bfb898a26f2f3077a4`, based on that live main; its initial `test` and `tray-dbus` checks were IN_PROGRESS, with no reviews/comments (E079). Recheck the current exact head after any push before merge. |
 | UI validation | B14 currency settings smoke with synthetic fixtures and active Wayland: [Python mode](screenshots/b14-currency-python-wayland.png) and [Rust opt-in](screenshots/b14-currency-rust-wayland.png), visually inspected. B13a/B13b1/B13b2 screenshots remain recorded in E069/E071/E074. |
 
 **First commands for a new model/session:**
@@ -148,8 +148,7 @@ production caller audit are complete):
 - [ ] **B14a** Shared CurrencyService facade — expose catalog, rate, convert,
   status and refresh operations from the CurrencyService already cloned into
   RefreshController; route the current currency UI adapters through the
-  controller. Build 49 implementation is locally verified and awaits its
-  focused PR/merge.
+  controller. Build 49 is locally verified in [PR #50](https://github.com/SaahiilM/codexbar-gtk/pull/50); initial exact-head checks are pending (E079).
 - [ ] **B14b** Single-facade and residual caller audit — local source inventory
   is recorded in E078; currency, settings, login, update, restart, icon-cache,
   refresh and presentation calls enter the central facade in Rust opt-in.

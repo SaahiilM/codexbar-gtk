@@ -4,6 +4,26 @@ Client-side changelog for the CodexBar GTK front-end. Each entry keys a build
 number (`CURRENT_PROJECT_VERSION`) to the upstream macOS CodexBar release its
 short version tracks, so "which version has what" maps cleanly onto both trees.
 
+## 0.82.0 (50) — 2026-10-31
+
+Tracks upstream CodexBar 0.82.0.
+
+### Changed
+
+- Record the verified B14 integration and the shared CurrencyService facade
+  merge. Route Rust-opt-in currency catalog, rate, conversion, status and
+  refresh calls through the central controller facade.
+- Update the migration handoff to B14 complete; B15 remains the next backend
+  audit and the BG/native UI gates remain open.
+
+### Validation
+
+- This closeout changes version/status documentation only. PR #50's merged
+  implementation checks and fixture-only GTK screenshots are cited in AUDIT
+  E080. The closeout's default/Rust-opt-in Python suites, private-D-Bus tray
+  tests, format and version synchronization checks passed locally; its remote
+  PR checks remain to be observed.
+
 ## 0.82.0 (49) — 2026-10-31
 
 Tracks upstream CodexBar 0.82.0.

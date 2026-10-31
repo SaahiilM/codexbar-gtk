@@ -2149,3 +2149,62 @@ future models must verify the linked PR's status rather than trusting a stale
   review state and mergeability. Merge only after exact-head checks succeed,
   screenshots remain attached, and orchestration confirms the serialized
   build-49 merge slot. B14 remains partial until the PR is verified and merged.
+
+### E080 — 2026-10-31: B14 PR #50 merged; full facade acceptance verified
+
+- **Observed merge/check evidence:** PR #50,
+  [B14 currency facade and caller audit](https://github.com/SaahiilM/codexbar-gtk/pull/50),
+  merged normally at `0252420f048f3c2859fa19aa35a1632941e24956`. Its exact head
+  `576d81f03f9d30d3b4e064ee33586c6819b04f00` was based on
+  `a42a29972e2894ef82fdbdc1430aeb4608d24c0f`; both required checks (`test`,
+  `tray-dbus`) passed in run `41157509759`. PR #50 was CLEAN/MERGEABLE with no
+  reviews, review requests or comments. A fresh fetch confirms
+  `origin/main` is the merge commit.
+- **Full B14 acceptance review:** the central `RustRefreshController` facade
+  composes B10's immediate/dynamic/manual refresh lifecycle, immutable watch
+  state, one queued force-refresh follow-up, joined shutdown and separate
+  bounded typed notification receiver. B10 snapshots retain owned provider,
+  spend, session, history, tray-selection and version/error context; B09
+  selection indexes resolve against the original ordered provider/window
+  vectors. Unknown/partial values remain distinct from known zero; failed
+  session scans retain prior sessions, usable partial spend survives source
+  fallback, and history adds one sample per successful usage scan. B08
+  notifications remain typed events on the separate event channel.
+  Currency operations now run through that same facade and the same cloned
+  `CurrencyService` instance used by refresh/spend projection, preserving
+  `fetched_at`, live/cache/offline source and `last_refresh_failed`. B13 settings,
+  CLI reconfiguration, login, update, restart, icon-cache and spend/tray methods
+  are also composed there; B11 login events remain separate from B10
+  notifications. B12 keeps its Unicode-decimal VERSION parity in Rust, with no
+  Python update request/comparison in Rust opt-in. DTOs stay backend-owned and
+  GTK/Python-free; bridge errors remain sanitized/static. E078's Rust-opt-in
+  caller inventory found no extra B14 service gap. Remaining UI-side Python is
+  limited to compatibility fallbacks, display conversion, GTK/GLib, native
+  dialog/browser integration and OS notification delivery.
+- **Verification evidence:** PR #50's exact-head checks passed. Its local
+  verification is detailed in E078: 75 core and 69 backend tests; strict
+  Clippy/format and extension build; default Python 203 with 21 expected
+  Rust-opt-in skips and Rust-opt-in Python 203; tray signals 3 normally and in
+  a private D-Bus session; fixture-only Python and Rust Wayland settings smoke.
+  The same E078 screenshots, [`Python`](screenshots/b14-currency-python-wayland.png)
+  and [`Rust opt-in`](screenshots/b14-currency-rust-wayland.png), were visually
+  inspected and are included in PR #50. No new GTK runtime code changed in this
+  closeout; it reuses that merged evidence and makes no broader UI-completion
+  claim.
+- **Completion/handoff:** B14a currency facade routing and B14b caller audit
+  are verified and merged; mark B14 complete. Build-50 closeout updates
+  VERSION, `codexbar_gtk/version.py`, README, CHANGELOG and TASKS. B15 is next
+  after this handoff PR merges. BG remains open pending B15 and the complete
+  headless/transitional backend gate; native UI migration remains blocked by
+  BG. No API contract changes were needed.
+- **Build-50 local checks:** default Python discovery passed 203 tests with 21
+  expected Rust-opt-in skips; `CODEXBAR_RUST_CORE=1` discovery passed all 203.
+  The tray signal suite passed 3 tests under `dbus-run-session`. Rust format
+  checks for all three crates, version-pair/README synchronization and
+  `git diff --check` passed. Runtime source did not change, so the closeout
+  reuses E078's merged B14 Rust/core/backend/Clippy/build and fixture GTK
+  evidence rather than repeating it or claiming a new runtime smoke.
+- **Closeout PR status:** this build-50 documentation PR is being prepared from
+  live main `0252420f048f3c2859fa19aa35a1632941e24956`; its own CI and merge
+  status are not yet known. After it is opened, verify its exact head, required
+  checks, reviews and normal merge before telling B15 to begin.

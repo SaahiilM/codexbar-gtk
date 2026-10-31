@@ -4,6 +4,21 @@ Client-side changelog for the CodexBar GTK front-end. Each entry keys a build
 number (`CURRENT_PROJECT_VERSION`) to the upstream macOS CodexBar release its
 short version tracks, so "which version has what" maps cleanly onto both trees.
 
+## 0.82.0 (57) — 2026-10-31
+
+Tracks upstream CodexBar 0.82.0.
+
+### Changed
+
+- Begin U02a native dashboard/provider-card implementation while keeping Python
+  as the default application until UG passes.
+
+### Validation
+
+- Local Rust/Python checks and synthetic native GTK smoke pass; PR #58 is open
+  with exact-head CI, review and merge pending. See migration handoff and AUDIT
+  E090.
+
 ## 0.82.0 (56) — 2026-10-31
 
 Tracks upstream CodexBar 0.82.0.

@@ -9,16 +9,16 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Field | Current checkpoint |
 | --- | --- |
 | Goal | Fully native Rust GTK4/libadwaita app; backend first, UI second |
-| Current phase | BG passed in PR #54 at `e1abf7b3e1db0e7f23e3be063a3ef067d85be1a1`; U01 PR #56 merged at `3eea06f99760048b51407b446781981e5edb49db`, build 55. Phase U is active and U01 is verified. |
-| Last merged implementation | U01 native bootstrap PR #56 merged at `3eea06f99760048b51407b446781981e5edb49db`, build `0.82.0 (55)` |
+| Current phase | BG passed in PR #54 at `e1abf7b3e1db0e7f23e3be063a3ef067d85be1a1`; U01 PR #56 merged at `3eea06f99760048b51407b446781981e5edb49db`, build 55; build-56 closeout PR #57 merged at `043e273b83053f02ffcd96b203ac9af5fd87f791`. Phase U is active. |
+| Last merged implementation | U01 native bootstrap PR #56 merged at `3eea06f99760048b51407b446781981e5edb49db`, build `0.82.0 (55)`; build-56 closeout is documentation-only. |
 | Planning change | [PR #18](https://github.com/SaahiilM/codexbar-gtk/pull/18), merged at `69c5496`, build `0.81.0 (17)` |
 | Backend tasks completed after that baseline | B00–B15 and BG are accepted and merged. B11's Actions startup failures remain documented as failures; see E086. |
-| Active implementation task / owner | None. U01 is verified and merged; U02 is next for orchestration to assign. |
+| Active implementation task / owner | U02a native Dashboard and provider-card core, `frontend/u02a-dashboard-build57`, build `0.82.0 (57)`; U02 parent remains partial. |
 | Latest gate result | **BG passed** — PR #54 merged and verified on live main. Headless Rust-only integration, Rust-opt-in GTK fixture smoke and residual-Python inventory are recorded in E085/E086. |
-| Next domain slice | Coordinate U02 native dashboard/provider cards, meters and history presentation. Keep the Python application as default until UG passes; do not start cutover work before UG. |
-| Open external blockers | No U01 blockers remain. Local GTK runtime libraries are installed, but system GTK4/libadwaita development packages and pkg-config files are absent; build 55 used an ignored worktree-local SDK extraction. CI installs `libgtk-4-dev` and `libadwaita-1-dev` explicitly. B11's zero-job Actions startup failures remain documented, not CI successes. |
-| Latest checks | U01 PR #56 exact head `3b99d3e759477557828960626276f2633df9ebcc` passed `test` and `tray-dbus` in run `41170186549`; the normal merge `3eea06f99760048b51407b446781981e5edb49db` is live main (E089). BG gate checks for PR #54 remain recorded in E086. |
-| UI validation | U01 synthetic native bootstrap [Wayland capture](screenshots/u01-native-bootstrap-wayland.png); B13c pair [Python](screenshots/b13-last30-python-wayland.png) / [Rust opt-in](screenshots/b13-last30-rust-wayland.png); BG pair [Python reference](screenshots/bg-python-reference-wayland.png) / [Rust opt-in](screenshots/bg-rust-opt-in-wayland.png). U01 used temporary HOME and synthetic CLI; no real account or credentials. |
+| Next domain slice | Complete U02a dashboard/card presentation and verification; then U02b history plots/burndown, followed by U03. Keep Python as default until UG passes; do not start cutover work before UG. |
+| Open external blockers | No U02a implementation blocker. Local GTK runtime libraries are installed, but system GTK4/libadwaita development packages and pkg-config files are absent; build 57 uses the ignored worktree-local SDK extraction. CI installs `libgtk-4-dev` and `libadwaita-1-dev` explicitly. B11's zero-job Actions startup failures remain documented, not CI successes. |
+| Latest checks | U01 PR #56 exact head `3b99d3e759477557828960626276f2633df9ebcc` passed `test` and `tray-dbus` in run `41170186549`; the normal merge `3eea06f99760048b51407b446781981e5edb49db` is live main (E089). Build-56 closeout PR #57 merged at `043e273b83053f02ffcd96b203ac9af5fd87f791`; exact head `608de41` passed both required checks. U02a PR #58 is open; GitHub checks are pending on its current revision. |
+| UI validation | U02a native dashboard [Wayland capture](screenshots/u02-dashboard-wayland.png); U01 synthetic native bootstrap [Wayland capture](screenshots/u01-native-bootstrap-wayland.png); B13c pair [Python](screenshots/b13-last30-python-wayland.png) / [Rust opt-in](screenshots/b13-last30-rust-wayland.png); BG pair [Python reference](screenshots/bg-python-reference-wayland.png) / [Rust opt-in](screenshots/bg-rust-opt-in-wayland.png). U02a/U01 used temporary HOME and synthetic CLI; no real account or credentials. |
 
 **First commands for a new model/session:**
 
@@ -215,6 +215,15 @@ the Resume here table. BG passed after PR #54; Phase U may now be coordinated.
   Merged in PR #56 at `3eea06f`; see E089. Native surfaces remain placeholders.
 - [ ] **U02** Dashboard, provider cards, quota meters, reset/pace/credit chips,
   charts/history and burndown presentation (`window.py`, `cards.py`).
+  - [ ] **U02a** Native dashboard overview and provider cards/meters/chips,
+    with loading, empty, error and refresh states. Build 57 on
+    `frontend/u02a-dashboard-build57`; local full checks and synthetic GTK
+    smoke passed; Wayland screenshot is captured. PR #58 is open; exact-head
+    checks, review and merge are pending.
+    Projection consumes B10 snapshot fields and preferences; GTK only renders.
+  - [ ] **U02b** History sparklines/detail charts and history-derived burndown;
+    next serialized slice after U02a merge. U02 remains partial until both are
+    verified and merged.
 - [ ] **U03** Compact panel, dismissal, anchoring and Wayland/X11 placement
   (`popup.py`, `x11_position.py`); preserve dashboard/settings navigation.
 - [ ] **U04** Usage & Spend and Sessions pages, heatmap interaction/tooltips,

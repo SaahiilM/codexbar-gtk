@@ -178,12 +178,14 @@ dependencies = [
 name = "codexbar-gtk-native"
 version = "0.82.0"
 dependencies = [
+ "chrono",
  "codexbar-backend",
  "codexbar-core",
  "gio",
  "glib",
  "gtk4",
  "libadwaita",
+ "serde_json",
  "tokio",
 ]
 

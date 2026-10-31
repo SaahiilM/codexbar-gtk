@@ -2675,3 +2675,47 @@ future models must verify the linked PR's status rather than trusting a stale
   Python remains the default, UG and CG remain open, and no native cutover or
   completed screen parity is claimed. Build 56 records this documentation-only
   closeout after observing the merge.
+
+### E090 — 2026-10-31: U02a native dashboard claimed; implementation in progress
+
+- **Starting point:** live `origin/main` is `043e273b83053f02ffcd96b203ac9af5fd87f791`,
+  the normal merge of U01 closeout PR #57. The worktree was clean before
+  starting; no open PRs were found. Claim is on
+  `frontend/u02a-dashboard-build57`, with build `0.82.0 (57)`.
+- **Scope split:** U02a covers the native dashboard overview, provider cards,
+  quota meters, reset/pace/credit chips, and loading/empty/error/refresh states.
+  U02b is reserved for history sparklines/detail charts and burndown; U02 stays
+  partial until both slices are verified and merged.
+- **Architecture:** keep U01's single controller/Tokio worker and GLib
+  snapshot polling. A pure native presentation projection consumes immutable
+  `BackendState<ControllerSnapshot>` plus cached preferences; it preserves B10
+  provider ordering, `usage_known`, optional reset/pace/credit/cost data, and
+  retained history semantics. GTK widgets render only the projected values;
+  native code performs no Python/PyO3 bridge or GTK-thread I/O. Python remains
+  the default until UG.
+- **Compatibility constraints:** unknown usage must display unavailable while
+  known zero remains a real 0%; loading without a snapshot, refresh failure
+  with retained snapshot, provider errors, and known-empty provider lists stay
+  distinct. Keep provider ordering and existing reset/pace/credit wording.
+- **Local verification:** all four Rust format checks passed. `cargo test`
+  passed for core (78), backend (71 unit + 1 integration), and native GTK (15).
+  Default Python tests passed (213, 21 skipped); Rust-opt-in Python tests passed
+  (213); tray signal tests passed (3). Clippy passed for core, Python bindings,
+  backend, and GTK with warnings denied. The PyO3 extension and native GTK
+  binary both built. Existing GTK command-line/cancellation smoke and the new
+  fixture-driven dashboard lifecycle smoke passed under private D-Bus/Xvfb.
+- **UI evidence:** the actual native application was launched on the active
+  Wayland desktop with a temporary HOME and synthetic CLI output. The captured
+  screenshot `screenshots/u02-dashboard-wayland.png` shows a known 72% quota,
+  known 0% quota, unknown usage as “Unavailable,” a synthetic reset-credit
+  badge, and synthetic spend/credit values. No account or credential data is
+  present. The host lacks system GTK4
+  and libadwaita development packages; local compilation used the existing
+  ignored worktree SDK extraction. CI installs both development packages.
+- **PR state:** focused [PR #58](https://github.com/SaahiilM/codexbar-gtk/pull/58)
+  was opened against `main` from initial head `57f6ed3312cf1f959e0551d075e3155b1737ccf2`.
+  The initial `tray-dbus` check passed and `test` was in progress when observed;
+  exact-current-head checks, review, and merge evidence remain pending. U02a is
+  not complete.
+  U02b charts/history/burndown remain unimplemented. No real account or
+  credentials are in scope.

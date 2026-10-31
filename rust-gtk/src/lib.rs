@@ -2,6 +2,9 @@
 
 use std::{collections::VecDeque, ffi::OsString};
 
+pub mod dashboard;
+pub mod dashboard_widget;
+
 pub const APPLICATION_ID: &str = "com.steipete.CodexBarGTK";
 const VERSION_FILE: &str = include_str!("../../VERSION");
 

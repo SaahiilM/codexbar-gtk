@@ -215,7 +215,7 @@ The GTK front-end uses the same version pair as the macOS bundle:
   this client is feature-compatible with (`0.82.0`).
 * `CURRENT_PROJECT_VERSION` is the build number of the Linux front-end.
 * `codexbar_gtk/version.py` turns the pair into the macOS-style
-  `"0.82.0 (56)"` string shown under Settings → About, in the tray menu and by
+  `"0.82.0 (57)"` string shown under Settings → About, in the tray menu and by
   `./run.sh --about`.
 
 Increment `CURRENT_PROJECT_VERSION` for each merged PR and keep it in sync with

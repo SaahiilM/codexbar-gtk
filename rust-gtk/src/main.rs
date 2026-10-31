@@ -4,7 +4,7 @@ use std::{
     rc::Rc,
     sync::mpsc::{self, Receiver, TryRecvError},
     thread::{self, JoinHandle},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use codexbar_backend::{
@@ -12,9 +12,14 @@ use codexbar_backend::{
     controller::{
         ControllerCommand, ControllerSnapshot, RefreshControllerConfig, RefreshControllerHandle,
     },
+    currency::CurrencyService,
     BackendEvent, BackendState, BackendStatus,
 };
-use codexbar_core::{history::HistoryStore, preferences::PreferencesStore};
+use codexbar_core::{
+    currency::CurrencyCatalog, history::HistoryStore, preferences::PreferencesStore,
+};
+use codexbar_gtk_native::dashboard::project_dashboard;
+use codexbar_gtk_native::dashboard_widget::DashboardView;
 use gio::prelude::*;
 use gtk::prelude::*;
 use libadwaita as adw;
@@ -28,6 +33,8 @@ struct BackendBridge {
     state: watch::Receiver<BackendState<ControllerSnapshot>>,
     events: tokio_mpsc::Receiver<BackendEvent>,
     refresh: tokio_mpsc::Sender<ControllerCommand>,
+    preferences: std::sync::Arc<PreferencesStore>,
+    currencies: std::sync::Arc<CurrencyService>,
 }
 
 struct BackendWorker {
@@ -58,12 +65,22 @@ impl BackendWorker {
                             HistoryStore::default_path(),
                             codexbar_core::history::RETENTION_DAYS,
                         ));
+                        let currencies =
+                            std::sync::Arc::new(CurrencyService::new(currency_cache_path()));
+                        let preferred = preferences
+                            .get("preferredCurrencyCode")
+                            .and_then(|value| value.as_str().map(ToOwned::to_owned))
+                            .unwrap_or_else(|| "auto".to_owned());
+                        let currency_refresh = currencies.clone();
+                        tokio::spawn(async move {
+                            let _ = currency_refresh.ensure_rates(&preferred).await;
+                        });
                         let cli = service_from_preferences(&preferences);
                         let shared_cli = std::sync::Arc::new(SharedCliService::new(cli));
                         let mut controller = RefreshControllerHandle::start(
                             RefreshControllerConfig::with_shared_cli(
                                 shared_cli,
-                                preferences,
+                                preferences.clone(),
                                 history,
                             ),
                         );
@@ -73,6 +90,8 @@ impl BackendWorker {
                                 .take_notification_receiver()
                                 .expect("controller owns one notification stream"),
                             refresh: controller.force_refresh_sender(),
+                            preferences,
+                            currencies,
                         };
                         if ready_tx.send(Ok(bridge)).is_err() {
                             let _ = controller.shutdown().await;
@@ -147,6 +166,9 @@ struct NativeApp {
     worker: Option<BackendWorker>,
     bridge: Option<BackendBridge>,
     window: Option<gtk::ApplicationWindow>,
+    dashboard: Option<DashboardView>,
+    dashboard_sequence: Option<u64>,
+    dashboard_rendered_at: Option<Instant>,
     state_label: Option<gtk::Label>,
     events_label: Option<gtk::Label>,
     route: LaunchRoute,
@@ -166,6 +188,9 @@ impl NativeApp {
             worker: None,
             bridge: None,
             window: None,
+            dashboard: None,
+            dashboard_sequence: None,
+            dashboard_rendered_at: None,
             state_label: None,
             events_label: None,
             route: LaunchRoute::Default,
@@ -213,6 +238,10 @@ impl NativeApp {
     }
 
     fn show_route(&mut self, route: LaunchRoute) {
+        if matches!(route, LaunchRoute::Default | LaunchRoute::Page(Page::Usage)) {
+            self.show_dashboard(route);
+            return;
+        }
         let window = self.ensure_main_window();
         let (title, body, width, height) = match route {
             LaunchRoute::Panel => (
@@ -234,10 +263,10 @@ impl NativeApp {
                 560,
             ),
             LaunchRoute::Default => (
-                format!("{APP_NAME} — Dashboard — Native UI bootstrap"),
-                "The native dashboard is a placeholder. Provider cards and dashboard parity are scheduled for U02.",
-                860,
-                560,
+                format!("{APP_NAME} — Dashboard"),
+                "Dashboard is not available.",
+                980,
+                720,
             ),
             LaunchRoute::About => unreachable!("about route is shown separately"),
         };
@@ -303,6 +332,51 @@ impl NativeApp {
         self.events_label = Some(events);
         self.install_window_actions(&refresh_button, &about_button, &quit_button);
         window.present();
+    }
+
+    fn show_dashboard(&mut self, route: LaunchRoute) {
+        let window = self.ensure_main_window();
+        let title = match route {
+            LaunchRoute::Page(Page::Usage) => format!("{APP_NAME} — Usage"),
+            _ => format!("{APP_NAME} — Dashboard"),
+        };
+        window.set_title(Some(&title));
+        window.set_default_size(980, 720);
+        if self.dashboard.is_none() {
+            self.dashboard = Some(DashboardView::new());
+        }
+        if self.backend_start_failed {
+            self.dashboard
+                .as_ref()
+                .expect("dashboard was created")
+                .show_backend_start_error();
+        } else if let Some(bridge) = &self.bridge {
+            let state = bridge.state.borrow().clone();
+            self.render_dashboard_state(&state);
+        }
+        let dashboard_widget = self
+            .dashboard
+            .as_ref()
+            .expect("dashboard was created")
+            .widget();
+        window.set_child(Some(&dashboard_widget));
+        window.present();
+    }
+
+    fn render_dashboard_state(&mut self, state: &BackendState<ControllerSnapshot>) {
+        let Some(bridge) = &self.bridge else {
+            return;
+        };
+        let preferences = bridge.preferences.values();
+        // `catalog()` is an in-memory cache clone. Rate refresh remains on the
+        // Tokio worker and can never block GTK's main context.
+        let currencies: CurrencyCatalog = bridge.currencies.catalog();
+        let model = project_dashboard(state, &preferences, &currencies, chrono::Utc::now());
+        if let Some(dashboard) = &self.dashboard {
+            dashboard.render(&model);
+        }
+        self.dashboard_sequence = Some(state.sequence);
+        self.dashboard_rendered_at = Some(Instant::now());
     }
 
     fn install_window_actions(
@@ -408,6 +482,14 @@ impl NativeApp {
                     self.event_inbox.len()
                 ));
             }
+            let should_render = self.dashboard.is_some()
+                && (self.dashboard_sequence != Some(state.sequence)
+                    || self
+                        .dashboard_rendered_at
+                        .is_none_or(|last| last.elapsed() >= Duration::from_secs(5)));
+            if should_render {
+                self.render_dashboard_state(&state);
+            }
             if self.pending_panel && state.status != BackendStatus::Idle {
                 let refresh_complete = matches!(
                     state.status,
@@ -423,6 +505,12 @@ impl NativeApp {
         if self.pending_panel && self.backend_start_failed {
             self.pending_panel = false;
             self.show_route(LaunchRoute::Panel);
+        }
+
+        if self.backend_start_failed {
+            if let Some(dashboard) = &self.dashboard {
+                dashboard.show_backend_start_error();
+            }
         }
 
         if self.shutting_down {
@@ -453,6 +541,10 @@ impl NativeApp {
 
     fn request_about(&self) {
         self.show_about();
+    }
+
+    fn request_settings(&mut self) {
+        self.dispatch_route(LaunchRoute::Settings);
     }
 
     fn begin_shutdown(&mut self) {
@@ -489,9 +581,7 @@ impl NativeApp {
 
 fn page_description(page: Page) -> &'static str {
     match page {
-        Page::Usage => {
-            "The native Usage page is a placeholder. Dashboard parity is scheduled for U02."
-        }
+        Page::Usage => "The native Usage dashboard. History charts and burndown remain in U02b.",
         Page::Sessions => {
             "The native Sessions page is a placeholder. Session history is scheduled for U04."
         }
@@ -499,6 +589,13 @@ fn page_description(page: Page) -> &'static str {
             "The native Usage & Spend page is a placeholder. Spend parity is scheduled for U04."
         }
     }
+}
+
+fn currency_cache_path() -> PathBuf {
+    std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join(".cache/codexbar-gtk/currency-rates.json")
 }
 
 fn status_label(state: &BackendState<ControllerSnapshot>) -> String {
@@ -549,6 +646,13 @@ fn main() {
         refresh_state.borrow_mut().request_refresh();
     });
     application.add_action(&refresh);
+
+    let settings = gio::SimpleAction::new("settings", None);
+    let settings_state = state.clone();
+    settings.connect_activate(move |_, _| {
+        settings_state.borrow_mut().request_settings();
+    });
+    application.add_action(&settings);
 
     let about = gio::SimpleAction::new("about", None);
     let about_state = state.clone();

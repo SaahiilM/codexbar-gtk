@@ -19,10 +19,11 @@ The application still starts with `python3 -m codexbar_gtk`. Python is the defau
 backend. `CODEXBAR_RUST_CORE=1` enables six module integrations through
 `rust-python/`; it does **not** select a complete Rust backend. The six existing
 ports are provider metadata, activity, formatting, monthly pace, history, and
-sparkline geometry. B15 is characterizing and closing their original-port gaps
-on `orchestrated/luna-b15`; the changes are local and pending review. Some
-Python edge-input/timezone behavior remains available only through the default
-Python path as described below.
+sparkline geometry. B15's original-port parity work is merged in PR #52 at
+`63eb17c8`; a focused B13 last-30 caption parity correction is active on build
+52. Backend completion and native UI work remain pending. Some Python
+edge-input behavior remains available only through the default Python path as
+described below.
 
 The file inventory and named functions below were inspected, not just inferred
 from filenames. Test results and limitations are recorded separately in AUDIT.
@@ -121,6 +122,15 @@ B13 explicitly searches `ui/` for leftover backend decisions and workers.
   existing pages. A backend task must not redesign the screens.
 
 ### B15 edge-input characterization
+
+B15 was merged normally in PR #52 at
+`63eb17c8ea13c563c587cf9687a4877f1b5b47ff`; exact head
+`791154691213b9592e799e4b5cdec962409ed995` passed `test` and `tray-dbus`.
+The compatibility limits below remain part of the accepted Rust opt-in
+contract (AUDIT E081/E083). B13's screenshot review also found a token-count
+suffix on the Rust last-30-days caption that Python does not render. B13c
+removes only that display suffix while preserving the structured DTO field;
+see the active handoff in TASKS.md.
 
 The Python implementations remain the default and unchanged parity references.
 In Rust opt-in mode, provider metadata and currency conversions read the Rust

@@ -392,6 +392,18 @@ def main() -> int:
     ):
         raise RuntimeError("Python GTK did not render the selected range and synthetic provider")
 
+    last30_caption = main_window.spend_view.tokens_tile.caption_widget.get_text()
+    if last30_caption != "$18.75 last 30 days":
+        raise RuntimeError(
+            "last-30 spend caption diverged from Python parity: "
+            + repr(last30_caption)
+        )
+    if controller.uses_rust_controller and (
+        not spend.get("last30_tokens", {}).get("known")
+        or spend["last30_tokens"].get("value") != 4000
+    ):
+        raise RuntimeError("Rust DTO dropped the structured last-30 token count")
+
     # The first mapped frame now contains the fixture snapshot instead of the
     # initial empty state. Process that Wayland frame before inspecting it.
     draw_deadline = time.monotonic() + 2

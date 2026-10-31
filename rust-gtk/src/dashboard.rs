@@ -11,6 +11,8 @@ use codexbar_core::{
     currency::CurrencyCatalog,
     domain::{parse_timestamp, Pace, ProviderUsage},
     formatting,
+    history::Sample,
+    pace::{self, AllowanceWindow, MonthlyCost},
 };
 use serde_json::{Map, Value};
 
@@ -41,6 +43,10 @@ pub struct ProviderCardModel {
     pub credits: Option<String>,
     pub spend: Option<String>,
     pub balance: Option<String>,
+    pub cost_target: Option<String>,
+    pub burndown: Option<BurndownModel>,
+    pub detail_charts: Vec<BarChartModel>,
+    pub credit_chart: Option<BarChartModel>,
     pub error: Option<String>,
     pub windows: Vec<QuotaWindowModel>,
 }
@@ -56,6 +62,31 @@ pub struct QuotaWindowModel {
     pub reset: Option<String>,
     pub pace: Option<String>,
     pub pace_severity: MeterSeverity,
+    pub warning_markers: Vec<f64>,
+    pub workday_tick: Option<f64>,
+    pub tick_appearance: String,
+    pub daily_target: Option<String>,
+    pub trend: Option<TrendModel>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct BurndownModel {
+    pub projected_percent: f64,
+    pub will_run_out: bool,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct TrendModel {
+    pub points: Vec<(f64, f64)>,
+    pub accessible_description: String,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct BarChartModel {
+    pub title: String,
+    pub unit: Option<String>,
+    pub points: Vec<(String, f64)>,
+    pub accessible_description: String,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -73,6 +104,10 @@ struct ProjectionOptions<'a> {
     show_used: bool,
     show_pace: bool,
     thresholds: &'a [f64],
+    markers_visible: bool,
+    work_days: u32,
+    tick_appearance: &'a str,
+    burndown_enabled: bool,
     reset_style: &'a str,
     preferred_currency: &'a str,
     currencies: &'a CurrencyCatalog,
@@ -140,6 +175,8 @@ pub fn project_dashboard(
     let show_pace = bool_pref(preferences, "paceVisible", true);
     let reset_style = string_pref(preferences, "resetTimesOption", "countdown");
     let thresholds = number_array_pref(preferences, "quotaWarningThresholds", &[50.0, 20.0]);
+    let work_days = number_pref(preferences, "weeklyProgressWorkDays", 5.0).clamp(0.0, 7.0) as u32;
+    let tick_appearance = string_pref(preferences, "workdayTickAppearance", "subtle");
     let preferred_currency = string_pref(preferences, "preferredCurrencyCode", "auto");
     let options = ProjectionOptions {
         now,
@@ -148,6 +185,10 @@ pub fn project_dashboard(
         show_used,
         show_pace,
         thresholds: &thresholds,
+        markers_visible: bool_pref(preferences, "quotaWarningMarkersVisible", true),
+        work_days,
+        tick_appearance: &tick_appearance,
+        burndown_enabled: bool_pref(preferences, "quotaBurndownEnabled", true),
         reset_style: &reset_style,
         preferred_currency: &preferred_currency,
         currencies,
@@ -155,7 +196,7 @@ pub fn project_dashboard(
     let providers = snapshot
         .providers
         .iter()
-        .map(|provider| project_provider(provider, &options))
+        .map(|provider| project_provider(provider, &options, &snapshot.history))
         .collect::<Vec<_>>();
 
     let known_usage = snapshot
@@ -230,6 +271,7 @@ pub fn project_dashboard(
 fn project_provider(
     provider: &ProviderUsage,
     options: &ProjectionOptions<'_>,
+    history: &[Sample],
 ) -> ProviderCardModel {
     let mut subtitle = Vec::new();
     if options.show_identity {
@@ -389,6 +431,25 @@ fn project_provider(
         None
     };
 
+    let convert = |amount: f64, source: &str, target: &str| {
+        options.currencies.convert(amount, source, target)
+    };
+    let cost_target = cost.and_then(|cost| {
+        let monthly = MonthlyCost {
+            used: cost.used,
+            limit: cost.limit,
+            currency: cost.currency.clone(),
+            period: cost.period.clone(),
+            resets_at: cost.resets_at,
+        };
+        pace::format_monthly_cost_target(
+            Some(&monthly),
+            options.preferred_currency,
+            options.now,
+            &convert,
+        )
+    });
+
     let windows = provider
         .windows
         .iter()
@@ -409,6 +470,38 @@ fn project_provider(
                     MeterSeverity::Warning => "#e0a030".to_owned(),
                     MeterSeverity::Critical => "#e05252".to_owned(),
                 }
+            };
+            let samples =
+                quota_history_series(history, &provider.provider_id, &window.key, options.now);
+            let trend =
+                (known && samples.len() >= 3).then(|| trend_model(&window.title, samples.clone()));
+            let allowance = AllowanceWindow {
+                is_placeholder: window.is_placeholder,
+                usage_known: known,
+                window_minutes: window.window_minutes,
+                used_percent: window.used_percent,
+                quota_limit: window.quota_limit,
+                quota_unit: window.quota_unit.clone(),
+                resets_at: window.resets_at,
+            };
+            let daily_target = if options.show_pace {
+                pace::format_window_target(
+                    &allowance,
+                    options.preferred_currency,
+                    options.now,
+                    &convert,
+                )
+            } else {
+                None
+            };
+            let workday_tick = if window.key == "secondary" && options.work_days > 0 {
+                formatting::workday_progress_percent(
+                    window.resets_at,
+                    options.now,
+                    options.work_days,
+                )
+            } else {
+                None
             };
             QuotaWindowModel {
                 title: window.title.clone(),
@@ -431,9 +524,72 @@ fn project_provider(
                     None
                 },
                 pace_severity,
+                warning_markers: if known && options.markers_visible {
+                    options.thresholds.to_vec()
+                } else {
+                    Vec::new()
+                },
+                workday_tick: workday_tick.filter(|_| options.tick_appearance != "hidden"),
+                tick_appearance: options.tick_appearance.to_owned(),
+                daily_target,
+                trend,
             }
         })
         .collect();
+
+    let burndown = if options.burndown_enabled {
+        provider.windows.first().and_then(|window| {
+            if !window.usage_known || window.is_placeholder || !window.used_percent.is_finite() {
+                return None;
+            }
+            let samples =
+                quota_history_series(history, &provider.provider_id, &window.key, options.now);
+            let projected = formatting::project_usage_at_reset(
+                window.used_percent,
+                &samples,
+                window.resets_at,
+                options.now,
+            )?;
+            Some(BurndownModel {
+                projected_percent: projected,
+                will_run_out: projected >= 95.0,
+            })
+        })
+    } else {
+        None
+    };
+
+    let detail_charts = provider
+        .details
+        .iter()
+        .filter_map(|section| section.chart.as_ref())
+        .filter(|chart| !chart.points.is_empty())
+        .map(|chart| {
+            let title = chart
+                .title
+                .clone()
+                .filter(|title| !title.trim().is_empty())
+                .unwrap_or_else(|| "Usage details".to_owned());
+            bar_chart_model(title, chart.unit.clone(), chart.points.clone())
+        })
+        .collect();
+    let credit_chart = (!provider.credit_events.is_empty()).then(|| {
+        let points = provider
+            .credit_events
+            .iter()
+            .rev()
+            .take(24)
+            .map(|event| {
+                let label = event.date.get(5..10).unwrap_or(&event.date).to_owned();
+                (label, event.used)
+            })
+            .collect::<Vec<_>>();
+        bar_chart_model(
+            "Credits used".to_owned(),
+            None,
+            points.into_iter().rev().collect(),
+        )
+    });
 
     ProviderCardModel {
         provider_id: provider.provider_id.clone(),
@@ -447,8 +603,84 @@ fn project_provider(
         credits,
         spend,
         balance,
+        cost_target,
+        burndown,
+        detail_charts,
+        credit_chart,
         error: provider.error.clone(),
         windows,
+    }
+}
+
+fn quota_history_series(
+    history: &[Sample],
+    provider_id: &str,
+    window_key: &str,
+    now: DateTime<Utc>,
+) -> Vec<(f64, f64)> {
+    let now_seconds = now.timestamp() as f64 + f64::from(now.timestamp_subsec_nanos()) / 1e9;
+    let cutoff = now_seconds - 24.0 * 60.0 * 60.0;
+    let mut points = history
+        .iter()
+        .filter(|sample| {
+            sample.provider == provider_id
+                && sample.window == window_key
+                && sample.timestamp.is_finite()
+                && sample.timestamp >= cutoff
+                && sample.used_percent.is_finite()
+        })
+        .map(|sample| (sample.timestamp, sample.used_percent))
+        .collect::<Vec<_>>();
+    points.sort_by(|left, right| left.0.total_cmp(&right.0));
+    points
+}
+
+fn trend_model(window_title: &str, points: Vec<(f64, f64)>) -> TrendModel {
+    let first = points.first().map(|point| point.1).unwrap_or_default();
+    let last = points.last().map(|point| point.1).unwrap_or_default();
+    TrendModel {
+        accessible_description: format!(
+            "{} quota history over the last 24 hours: {} readings, from {:.0}% to {:.0}%.",
+            window_title,
+            points.len(),
+            first,
+            last
+        ),
+        points,
+    }
+}
+
+fn bar_chart_model(
+    title: String,
+    unit: Option<String>,
+    points: Vec<(String, f64)>,
+) -> BarChartModel {
+    let points = points
+        .into_iter()
+        .filter(|(_, value)| value.is_finite())
+        .collect::<Vec<_>>();
+    let unit_description = unit
+        .as_deref()
+        .map(|unit| format!(" ({unit})"))
+        .unwrap_or_default();
+    let accessible_description = if points.is_empty() {
+        format!("{title}: no chart data{unit_description}")
+    } else {
+        let readings = points
+            .iter()
+            .map(|(label, value)| format!("{label}: {value:.2}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!(
+            "{title}, {} readings{unit_description}: {readings}",
+            points.len()
+        )
+    };
+    BarChartModel {
+        title,
+        unit,
+        points,
+        accessible_description,
     }
 }
 
@@ -626,6 +858,14 @@ fn number_array_pref(preferences: &Map<String, Value>, key: &str, fallback: &[f6
         .unwrap_or_else(|| fallback.to_vec())
 }
 
+fn number_pref(preferences: &Map<String, Value>, key: &str, fallback: f64) -> f64 {
+    preferences
+        .get(key)
+        .and_then(Value::as_f64)
+        .filter(|value| value.is_finite())
+        .unwrap_or(fallback)
+}
+
 fn capitalize(value: &str) -> String {
     let mut chars = value.chars();
     chars
@@ -638,7 +878,9 @@ fn capitalize(value: &str) -> String {
 mod tests {
     use super::*;
     use codexbar_backend::BackendStatus;
-    use codexbar_core::domain::{CostInfo, RateWindow, SpendSummary};
+    use codexbar_core::domain::{
+        CostInfo, CreditEvent, DetailChart, DetailSection, RateWindow, SpendSummary,
+    };
     use serde_json::json;
     use std::time::SystemTime;
 
@@ -700,6 +942,15 @@ mod tests {
             sessions: vec![],
             history: vec![],
             tray_selection: None,
+        }
+    }
+
+    fn sample(timestamp: f64, provider: &str, window: &str, used_percent: f64) -> Sample {
+        Sample {
+            timestamp,
+            provider: provider.to_owned(),
+            window: window.to_owned(),
+            used_percent,
         }
     }
 
@@ -830,6 +1081,171 @@ mod tests {
         );
         assert_eq!(model.providers[0].windows[0].fill_color, "#e05252");
         assert_eq!(model.overview_title, "high is running low");
+    }
+
+    #[test]
+    fn history_projection_keeps_known_usage_and_uses_only_recent_matching_samples() {
+        use chrono::{Duration, TimeZone};
+
+        let now = Utc.with_ymd_and_hms(2026, 10, 31, 12, 0, 0).unwrap();
+        let now_seconds = now.timestamp() as f64;
+        let mut primary = window("primary", true, 70.0);
+        primary.resets_at = Some(now + Duration::hours(2));
+        let mut secondary = window("secondary", true, 0.0);
+        secondary.window_minutes = Some(30 * 1_440);
+        secondary.quota_limit = Some(900.0);
+        secondary.quota_unit = Some("credits".into());
+        secondary.used_percent = 40.0;
+        secondary.resets_at = Some(now + Duration::days(20));
+        let mut weekly = window("secondary", true, 55.0);
+        weekly.window_minutes = Some(7 * 1_440);
+        weekly.resets_at = Some(now + Duration::days(5));
+
+        let mut fixture = provider("alpha", vec![primary, secondary]);
+        fixture.cost = Some(CostInfo {
+            used: 25.0,
+            limit: 100.0,
+            currency: "USD".into(),
+            period: Some("This month".into()),
+            balance: None,
+            personal_used: None,
+            resets_at: Some(now + Duration::days(20)),
+        });
+        fixture.details = vec![DetailSection {
+            title: Some("Synthetic model usage".into()),
+            rows: vec![],
+            chart: Some(DetailChart {
+                kind: "bars".into(),
+                title: Some("Tokens by model".into()),
+                unit: Some("tokens".into()),
+                points: (0..26)
+                    .map(|index| (format!("m{index}"), index as f64))
+                    .collect(),
+            }),
+        }];
+        fixture.credit_events = (0..26)
+            .map(|index| CreditEvent {
+                id: format!("e{index}"),
+                date: format!("2026-10-{:02}", index + 1),
+                service: "synthetic".into(),
+                used: index as f64,
+            })
+            .collect();
+
+        let mut fixture_snapshot = snapshot(vec![fixture, provider("beta", vec![weekly])]);
+        fixture_snapshot.history = vec![
+            sample(now_seconds - 25.0 * 3_600.0, "alpha", "primary", 10.0),
+            sample(now_seconds - 7_200.0, "alpha", "primary", 20.0),
+            sample(now_seconds - 3_600.0, "alpha", "primary", 25.0),
+            sample(now_seconds - 1_800.0, "alpha", "primary", 30.0),
+            sample(now_seconds - 1_800.0, "other", "primary", 95.0),
+            sample(now_seconds - 1_800.0, "alpha", "secondary", 0.0),
+        ];
+
+        let model = project_dashboard(
+            &state(BackendStatus::Ready, Some(fixture_snapshot)),
+            &Map::new(),
+            &CurrencyCatalog::default(),
+            now,
+        );
+        let card = &model.providers[0];
+        let primary = &card.windows[0];
+        let trend = primary.trend.as_ref().expect("three recent readings");
+        assert_eq!(trend.points.len(), 3);
+        assert_eq!(trend.points.first().unwrap().1, 20.0);
+        assert_eq!(trend.points.last().unwrap().1, 30.0);
+        assert!(trend.accessible_description.contains("3 readings"));
+        let burndown = card.burndown.as_ref().expect("known primary with history");
+        assert!(burndown.projected_percent > 82.0 && burndown.projected_percent < 85.0);
+        assert!(!burndown.will_run_out);
+        assert_eq!(primary.warning_markers, [50.0, 20.0]);
+        assert!(card.windows[1]
+            .daily_target
+            .as_deref()
+            .is_some_and(|target| target.starts_with("≈ ")));
+        assert_eq!(model.providers[1].windows[0].workday_tick, Some(40.0));
+        assert!(card
+            .cost_target
+            .as_deref()
+            .is_some_and(|target| target.starts_with("≈ $")));
+        let detail = &card.detail_charts[0];
+        assert_eq!(detail.points.len(), 26);
+        assert_eq!(detail.points.first().unwrap().0, "m0");
+        assert!(detail.accessible_description.contains("26 readings"));
+        assert!(detail.accessible_description.contains("(tokens)"));
+        let credits = card.credit_chart.as_ref().unwrap();
+        assert_eq!(credits.points.len(), 24);
+        assert_eq!(credits.points.first().unwrap().0, "10-03");
+        assert!(credits.accessible_description.contains("10-03: 2.00"));
+    }
+
+    #[test]
+    fn unknown_usage_and_empty_history_never_create_zero_trends_or_burndown() {
+        use chrono::{Duration, TimeZone};
+
+        let now = Utc.with_ymd_and_hms(2026, 10, 31, 12, 0, 0).unwrap();
+        let mut unknown = window("primary", false, 0.0);
+        unknown.resets_at = Some(now + Duration::hours(2));
+        let mut fixture_snapshot = snapshot(vec![provider("alpha", vec![unknown])]);
+        let now_seconds = now.timestamp() as f64;
+        fixture_snapshot.history = vec![
+            sample(now_seconds - 7_200.0, "alpha", "primary", 0.0),
+            sample(now_seconds - 3_600.0, "alpha", "primary", 0.0),
+            sample(now_seconds - 1_800.0, "alpha", "primary", 0.0),
+        ];
+        let model = project_dashboard(
+            &state(BackendStatus::Ready, Some(fixture_snapshot)),
+            &Map::new(),
+            &CurrencyCatalog::default(),
+            now,
+        );
+        let card = &model.providers[0];
+        assert_eq!(card.windows[0].usage, "Unavailable");
+        assert!(card.windows[0].trend.is_none());
+        assert!(card.burndown.is_none());
+
+        let mut known = window("primary", true, 0.0);
+        known.resets_at = Some(now + Duration::hours(2));
+        let model = project_dashboard(
+            &state(
+                BackendStatus::Ready,
+                Some(snapshot(vec![provider("alpha", vec![known])])),
+            ),
+            &Map::new(),
+            &CurrencyCatalog::default(),
+            now,
+        );
+        assert_eq!(model.providers[0].windows[0].usage, "0%");
+        assert!(model.providers[0].windows[0].trend.is_none());
+        assert!(model.providers[0].burndown.is_none());
+    }
+
+    #[test]
+    fn marker_preferences_and_tick_style_are_respected() {
+        use chrono::{Duration, TimeZone};
+
+        let now = Utc.with_ymd_and_hms(2026, 10, 31, 12, 0, 0).unwrap();
+        let mut secondary = window("secondary", true, 55.0);
+        secondary.resets_at = Some(now + Duration::days(5));
+        let preferences = serde_json::from_value::<Map<String, Value>>(json!({
+            "quotaWarningMarkersVisible": false,
+            "workdayTickAppearance": "hidden",
+            "weeklyProgressWorkDays": 5
+        }))
+        .unwrap();
+        let model = project_dashboard(
+            &state(
+                BackendStatus::Ready,
+                Some(snapshot(vec![provider("alpha", vec![secondary])])),
+            ),
+            &preferences,
+            &CurrencyCatalog::default(),
+            now,
+        );
+        let quota = &model.providers[0].windows[0];
+        assert!(quota.warning_markers.is_empty());
+        assert_eq!(quota.workday_tick, None);
+        assert_eq!(quota.tick_appearance, "hidden");
     }
 
     #[test]

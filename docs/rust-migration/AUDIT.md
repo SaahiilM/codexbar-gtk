@@ -2719,3 +2719,82 @@ future models must verify the linked PR's status rather than trusting a stale
   not complete.
   U02b charts/history/burndown remain unimplemented. No real account or
   credentials are in scope.
+
+### E091 — 2026-10-31: U02a PR #58 merge observed; U02b build-58 claimed
+
+- **Observed merge:** U02a PR #58 exact head
+  `c2a3078d7ec304ef94323749d68d21d59d9cc21b` passed required `test` and
+  `tray-dbus` checks in Actions run `41172651348`, then merged normally at
+  `549908e42195ce04479424c5fd22ca5ea52d8109`, now live `origin/main`. The
+  merged synthetic Wayland screenshot and runtime evidence are in E090; U02a
+  is now checked as merged in TASKS.
+- **U02b claim/base/build:** starting from the clean U02a worktree, branch
+  `frontend/u02b-history-build58` is based on the verified merge above and
+  claims build `0.82.0 (58)`. No PR or U02b code/test result is claimed yet.
+- **Scope and policy:** implement provider-window 24-hour sparklines and
+  history-derived burndown from the already-published B10 snapshot history;
+  render provider CLI detail charts and the most recent 24 credit events;
+  restore quota warning markers, secondary-window workday ticks, and daily
+  quota/monthly cost target labels. Preserve missing history as unavailable,
+  known zero as zero, history coverage as supplied by the snapshot, and use
+  Rust's existing chart/pace/projection policies. GTK widgets only render owned
+  projection data; there is no GTK-thread filesystem/network/CLI work.
+- **Verification plan:** synthetic history and known/unknown fixtures, native
+  GTK screenshot/runtime smoke under temporary HOME and private D-Bus, full
+  migration checks, then a focused PR with screenshot. Python remains the
+  default until UG; U02 and the parent phase remain partial.
+
+### E092 — 2026-10-31: U02b history charts and burndown implemented and locally verified
+
+- **Scope:** the native dashboard now projects quota-history sparklines from
+  the current B10 snapshot, history-derived reset burndown, all provider detail
+  chart points, the latest 24 credit events, quota warning markers, secondary
+  window workday ticks, and quota/monthly-cost daily targets. Owned chart DTOs
+  carry accessible descriptions and units; GTK draws and labels the points.
+  Target labels are rendered on their own wrapped row. Unknown quota meters
+  expose the unavailable description without an accessible numeric zero.
+  GTK callbacks perform no CLI, network, or filesystem I/O. Python remains the
+  default application.
+- **Unknown/history behavior:** trend and burndown are absent when current
+  quota usage is unknown; known zero remains a known `0%`; projection reads
+  only actual samples in the B10 history snapshot and does not synthesize
+  missing readings. Rust refresh now records only finite, known, non-placeholder
+  quota observations. The legacy JSON-lines format did not store knownness, so
+  older unknown-zero records remain readable but cannot be retroactively
+  distinguished from genuine known zero; this compatibility limitation is
+  recorded in TASKS.
+- **Fixtures:** `history_records_known_zero_but_skips_unknown_and_placeholder_windows`
+  protects the history write boundary. Native projection fixtures cover
+  recent matching sample selection, unknown/known-zero distinctions, missing
+  history, burndown, warning/tick preferences, daily targets, chart limits for
+  credit events, full detail chart data, and chart descriptions/units.
+- **Rust verification:** `cargo fmt --manifest-path rust-core/Cargo.toml -- --check`,
+  corresponding format checks for `rust-python`, `rust-backend`, and `rust-gtk`;
+  locked tests passed (core 78, backend 72 plus 1 headless integration test,
+  native GTK 18). Clippy passed for core, Python bridge, backend, and native
+  GTK with warnings denied. `scripts/build-rust-core.sh` and the locked native
+  GTK binary build passed. The local host lacks system GTK4/libadwaita
+  development pkg-config files; compilation used the ignored worktree SDK
+  extraction.
+- **Python verification:** default
+  `python3 -m unittest discover -s tests -v` passed 213 tests with 21 opt-in
+  tests skipped. `CODEXBAR_RUST_CORE=1 python3 -m unittest discover -s tests
+  -v` passed all 213 tests. The targeted tray D-Bus suite passed 3/3.
+- **Native UI verification:** `scripts/smoke-native-gtk.sh` passed command-line,
+  async cancellation, and shutdown checks. `scripts/smoke-native-dashboard.sh`
+  passed with the synthetic CLI, temporary HOME, and private D-Bus; it waited
+  for completed fixture commands and captured the actual GTK window after
+  refresh revision 2. An initial immediate window lookup exposed a startup
+  timing race; the smoke now waits up to ten seconds for the visible window,
+  and two post-fix dashboard smoke repetitions passed. The screenshot
+  `screenshots/u02-history-native-xvfb.png` visibly contains the quota-history
+  trend, burndown, labeled model bars, and credit-event bars; the image was
+  visually inspected. No real account or credentials were used. A separate
+  Wayland/Spectacle attempt captured a stale loading frame and was excluded
+  from verification; the native completed-state screenshot is from Xvfb.
+- **PR/handoff:** build 58 is the active serialized slot on
+  `frontend/u02b-history-build58`, based on live `origin/main` at
+  `549908e42195ce04479424c5fd22ca5ea52d8109`. At this audit update the focused
+  PR is not yet open, so GitHub checks, review, and merge are pending. U02b and
+  parent U02 remain partial until the focused PR is accepted and merged; the
+  next UI slice remains U03. No real credentials or account data are included.

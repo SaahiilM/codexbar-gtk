@@ -1927,3 +1927,27 @@ future models must verify the linked PR's status rather than trusting a stale
   report exact readiness to B14/orchestration, open the focused PR against
   current `main`, then verify its exact head, review state, mergeability and
   required checks before normal merge.
+
+### E075 — 2026-10-31: B13b2 PR #48 opened; initial CI pending
+
+- **PR/base/head:** [PR #48](https://github.com/SaahiilM/codexbar-gtk/pull/48)
+  targets `main` at observed SHA
+  `490b4b641282fe87a632d31e83864c9067e3e10f`. Initial submitted head was
+  `4eae00c5cdb7210bdbfcb06fe39ec2475256b0c2`, build 47. The body embeds both
+  synthetic active-Wayland update-result screenshots. The PR is linked to the
+  B13 thread; the GitHub connector create endpoint returned 403, so the same
+  authorized normal PR creation was completed with `gh pr create`.
+- **Initial live review/check state:** PR OPEN and MERGEABLE, with
+  `mergeStateStatus=UNSTABLE` because `test` was IN_PROGRESS. `tray-dbus` was
+  SUCCESS on the exact submitted head. No reviews or comments were present.
+  The exact PR API base/head response matched the fetched `origin/main` and the
+  submitted commit. These initial statuses are historical; refresh them against
+  the live final head before any merge.
+- **Local cancellation-test race resolution:** E074 records the cause and
+  fix. The standard Rust workflow sequence passed, followed by two additional
+  parallel backend runs; every backend run reported 69 passed. The head
+  includes the parseable-PID fixture synchronization fix.
+- **Next exact step:** wait for the PR check/review event, then recheck current
+  `main`, final head, checks, reviews, screenshot body and mergeability. Merge
+  only through the normal GitHub path when final-head verification is clean;
+  B13 remains partial until B13b2 and the full caller inventory are accepted.

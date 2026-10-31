@@ -15,9 +15,9 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Backend tasks completed after that baseline | B00–B12 and B13a/B13b1 merged; B13b1 exact merge/check evidence is in E073 |
 | Active implementation task / owner | B13b2 application actions, current coding-agent session |
 | Active task | **B13b2** — login, update check, restart, icon-cache operation and residual caller audit, branch `backend/b13b2-application-actions-rust`, based on `490b4b641282fe87a632d31e83864c9067e3e10f`; provisional build `0.82.0 (47)`. B14 approved and froze the typed facade surfaces; exact names/results are recorded in E074. |
-| Next domain slice | Open the locally verified B13b2 screenshot-bearing PR after the B14/orchestration readiness message, then verify exact-head checks/reviews/mergeability and merge normally. Keep B13 parent partial until all slices and caller routes are verified and merged. |
-| Open external blockers | No dependency or contract blocker. B14 remains gated on the full B13 parent; B13b2 awaits PR review/checks and normal merge. |
-| Latest checks | B13b2 local evidence is E074: Rust core 75 and backend 69 tests; Python default 202 (20 opt-in skips); Rust opt-in 202; tray D-Bus 3; format, strict Clippy, extension build and compile checks passed. |
+| Next domain slice | PR #48 is open. Verify fresh exact-head checks/reviews/mergeability, then merge normally when all required checks and UI evidence are clean. Keep B13 parent partial until all slices and caller routes are verified and merged. |
+| Open external blockers | No dependency or contract blocker. PR #48 `test` is pending while `tray-dbus` passed; B14 remains gated on the full B13 parent. |
+| Latest checks | B13b2 local evidence is E074. PR #48 initial submitted head `4eae00c5cdb7210bdbfcb06fe39ec2475256b0c2` targets current main `490b4b641282fe87a632d31e83864c9067e3e10f`; initial `tray-dbus` SUCCESS, `test` IN_PROGRESS, PR MERGEABLE/UNSTABLE with no reviews or comments. See E075 and recheck after any head change. |
 | UI validation | B13a screenshots are in E069. B13b1 fixture-only settings screenshots: [Python mode](screenshots/b13-settings-python-wayland.png) and [Rust opt-in](screenshots/b13-settings-rust-wayland.png) (E071). B13b2 update-result screenshots: [Python mode](screenshots/b13b2-actions-python-wayland.png) and [Rust opt-in](screenshots/b13b2-actions-rust-wayland.png), captured from the active Wayland window and visually inspected (E074). |
 
 **First commands for a new model/session:**

@@ -24,10 +24,10 @@ PR #54 merged at `e1abf7b`; its headless integration, transitional GTK smoke
 and residual-Python audit are recorded in AUDIT E085/E086. Phase U is now
 unblocked. U01's separate native GTK bootstrap merged in PR #56 at `3eea06f`;
 its placeholder routes are not screen parity, and the Python launcher remains
-the default until UG passes. U02a native dashboard/provider-card work is
-active; U02b covers history plots and burndown. Some Python
-edge-input behavior remains available only through the default Python path as
-described below.
+the default until UG passes. U02a native dashboard/provider-card work merged
+in PR #58 at `549908e`; U02b history plots and burndown is now active. Some
+Python edge-input behavior remains available only through the default Python
+path as described below.
 
 The file inventory and named functions below were inspected, not just inferred
 from filenames. Test results and limitations are recorded separately in AUDIT.

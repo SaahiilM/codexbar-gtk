@@ -522,17 +522,7 @@ async fn refresh_once(
 
     // Record one sample per provider window only after a successful usage scan.
     let timestamp = now.timestamp() as f64 + f64::from(now.timestamp_subsec_nanos()) / 1e9;
-    let new_samples: Vec<Sample> = providers
-        .iter()
-        .flat_map(|provider| {
-            provider.windows.iter().map(move |window| Sample {
-                timestamp,
-                provider: provider.provider_id.clone(),
-                window: window.key.clone(),
-                used_percent: window.used_percent,
-            })
-        })
-        .collect();
+    let new_samples = usage_history_samples(&providers, timestamp);
     let history_store = config.history.clone();
     let history = tokio::task::spawn_blocking(move || {
         if !new_samples.is_empty() {
@@ -746,6 +736,26 @@ async fn collect_spend(
 fn refresh_interval(preferences: &PreferencesStore) -> Option<Duration> {
     let seconds = preferences.refresh_seconds();
     (seconds > 0).then(|| Duration::from_secs(seconds as u64))
+}
+
+fn usage_history_samples(providers: &[ProviderUsage], timestamp: f64) -> Vec<Sample> {
+    providers
+        .iter()
+        .flat_map(|provider| {
+            provider
+                .windows
+                .iter()
+                .filter(|window| {
+                    window.usage_known && !window.is_placeholder && window.used_percent.is_finite()
+                })
+                .map(move |window| Sample {
+                    timestamp,
+                    provider: provider.provider_id.clone(),
+                    window: window.key.clone(),
+                    used_percent: window.used_percent,
+                })
+        })
+        .collect()
 }
 
 fn string_array(value: Option<Value>) -> Vec<String> {
@@ -965,6 +975,26 @@ mod tests {
                 "identity": { "accountEmail": "fixture@example.invalid" }
             }
         })
+    }
+
+    #[test]
+    fn history_records_known_zero_but_skips_unknown_and_placeholder_windows() {
+        let known = domain::provider_usage_from_value(&provider_payload(0.0))
+            .unwrap()
+            .unwrap();
+        let mut unknown_payload = provider_payload(0.0);
+        unknown_payload["usage"]["primary"]["usedPercent"] = Value::Null;
+        let unknown = domain::provider_usage_from_value(&unknown_payload)
+            .unwrap()
+            .unwrap();
+        let mut placeholder = known.clone();
+        placeholder.provider_id = "placeholder".into();
+        placeholder.windows[0].is_placeholder = true;
+
+        let samples = usage_history_samples(&[known, unknown, placeholder], 1_700_000_000.0);
+        assert_eq!(samples.len(), 1);
+        assert_eq!(samples[0].provider, "codex");
+        assert_eq!(samples[0].used_percent, 0.0);
     }
 
     fn cost_payload(cost: f64) -> Value {

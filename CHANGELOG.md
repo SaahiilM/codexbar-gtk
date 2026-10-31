@@ -4,6 +4,26 @@ Client-side changelog for the CodexBar GTK front-end. Each entry keys a build
 number (`CURRENT_PROJECT_VERSION`) to the upstream macOS CodexBar release its
 short version tracks, so "which version has what" maps cleanly onto both trees.
 
+## 0.82.0 (58) — 2026-10-31
+
+Tracks upstream CodexBar 0.82.0.
+
+### Changed
+
+- Continue U02 with native history charts, burndown and remaining provider-card
+  presentation; Python remains the default until UG passes.
+
+### Validation
+
+- Rust tests: core 78; backend 72 plus the headless integration test; native GTK
+  18. Clippy passed for all four Rust crates, and the optional extension build
+  passed. Python default and Rust-opt-in suites each ran 213 tests (21 skipped
+  in default mode; none skipped in opt-in mode); tray D-Bus tests passed 3/3.
+- Native GTK command-line/cancellation and synthetic dashboard refresh/drawing
+  smokes passed under Xvfb/private D-Bus. The screenshot is
+  `docs/rust-migration/screenshots/u02-history-native-xvfb.png`. See migration
+  handoff and AUDIT E092; U02 remains partial pending merge/acceptance.
+
 ## 0.82.0 (57) — 2026-10-31
 
 Tracks upstream CodexBar 0.82.0.
@@ -15,9 +35,10 @@ Tracks upstream CodexBar 0.82.0.
 
 ### Validation
 
-- Local Rust/Python checks and synthetic native GTK smoke pass; PR #58 is open
-  with exact-head CI, review and merge pending. See migration handoff and AUDIT
-  E090.
+- U02a PR #58 exact head `c2a3078d7ec304ef94323749d68d21d59d9cc21b` passed
+  `test` and `tray-dbus` in run `41172651348` and merged normally at
+  `549908e42195ce04479424c5fd22ca5ea52d8109`. Synthetic Wayland/GTK evidence
+  is recorded in AUDIT E090/E091; U02 remains partial pending U02b.
 
 ## 0.82.0 (56) — 2026-10-31
 

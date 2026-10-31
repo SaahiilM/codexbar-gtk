@@ -581,7 +581,9 @@ impl NativeApp {
 
 fn page_description(page: Page) -> &'static str {
     match page {
-        Page::Usage => "The native Usage dashboard. History charts and burndown remain in U02b.",
+        Page::Usage => {
+            "The native Usage dashboard with provider history charts and quota burndown."
+        }
         Page::Sessions => {
             "The native Sessions page is a placeholder. Session history is scheduled for U04."
         }

@@ -13,11 +13,11 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Last merged implementation | BG closeout PR #55 merged at `23651ecf47b902c57a753a4e3fb0955184412a32`, build `0.82.0 (54)` |
 | Planning change | [PR #18](https://github.com/SaahiilM/codexbar-gtk/pull/18), merged at `69c5496`, build `0.81.0 (17)` |
 | Backend tasks completed after that baseline | B00–B15 and BG are accepted and merged. B11's Actions startup failures remain documented as failures; see E086. |
-| Active implementation task / owner | **U01 in progress** — `frontend/u01-native-bootstrap-build55`, provisional build 55, isolated worktree. |
+| Active implementation task / owner | **U01 in progress** — `frontend/u01-native-bootstrap-build55`, build 55, PR [#56](https://github.com/SaahiilM/codexbar-gtk/pull/56) open from the isolated worktree. |
 | Latest gate result | **BG passed** — PR #54 merged and verified on live main. Headless Rust-only integration, Rust-opt-in GTK fixture smoke and residual-Python inventory are recorded in E085/E086. |
 | Next domain slice | Finish U01 native application/bootstrap, direct backend connection, GTK dispatch, single-instance/CLI routing and version metadata. Preserve Python as the default until UG passes; do not start cutover work before UG. |
 | Open external blockers | No BG blockers remain. Local GTK runtime libraries are installed, but system GTK4/libadwaita development packages and pkg-config files are absent; build 55 used an ignored worktree-local SDK extraction. CI now installs `libgtk-4-dev` and `libadwaita-1-dev` explicitly. B11's zero-job Actions startup failures remain documented, not CI successes. |
-| Latest checks | PR #55 exact head `a40c260` passed `test` and `tray-dbus`; merge `23651ecf47b902c57a753a4e3fb0955184412a32` is live main. BG gate checks for PR #54 remain recorded in E086. |
+| Latest checks | U01 local verification is recorded in E087; PR #56's exact-head `test` and `tray-dbus` checks are pending. Last verified merge remains PR #55 at `23651ecf47b902c57a753a4e3fb0955184412a32`; BG gate checks for PR #54 remain recorded in E086. |
 | UI validation | U01 synthetic native bootstrap [Wayland capture](screenshots/u01-native-bootstrap-wayland.png); B13c pair [Python](screenshots/b13-last30-python-wayland.png) / [Rust opt-in](screenshots/b13-last30-rust-wayland.png); BG pair [Python reference](screenshots/bg-python-reference-wayland.png) / [Rust opt-in](screenshots/bg-rust-opt-in-wayland.png). U01 used temporary HOME and synthetic CLI; no real account or credentials. |
 
 **First commands for a new model/session:**

@@ -2624,3 +2624,18 @@ future models must verify the linked PR's status rather than trusting a stale
   checks and screenshot before ordinary merge. Keep U02 next, Python default
   unchanged and UG open. No real account, credential, external provider or
   update endpoint was used.
+
+### E088 — 2026-10-31: U01 PR #56 opened; initial exact-head checks pending
+
+- **Observed PR:** [#56 Native Rust GTK bootstrap](https://github.com/SaahiilM/codexbar-gtk/pull/56)
+  is open against `main`. Initial head `aab25f7b2adfe01475b60b4c340ef499e44942e9`
+  is based on live `origin/main` `23651ecf47b902c57a753a4e3fb0955184412a32`.
+  GitHub reported `MERGEABLE`, with no reviews or comments.
+- **Initial remote checks:** `test` and `tray-dbus` started in Actions run
+  `41170145782`; both were `IN_PROGRESS` when inspected. This records only the
+  observed initial state; no CI success or merge is claimed. Exact-head local
+  evidence and the screenshot are recorded in E087 and linked in the PR body.
+- **Handoff:** U01 remains partial until exact-head checks, screenshot/UI
+  review and normal merge are verified. Python remains the default and UG stays
+  open. The next action is to verify the current PR head/checks after the
+  handoff update, then merge normally only when GitHub reports clean status.

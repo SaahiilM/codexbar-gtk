@@ -606,8 +606,6 @@ class SpendView(Gtk.Box):
             if last30.get("known")
             else "cost unavailable"
         )
-        if (last30_tokens := model.get("last30_tokens") or {}).get("known"):
-            last30_label += " · " + count_text(last30_tokens) + " tokens"
         self.tokens_tile.set_value(count_text(model.get("tokens") or {}), last30_label)
 
         coverage = model.get("coverage") or {}

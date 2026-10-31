@@ -106,6 +106,10 @@ esac
                 self.assertAlmostEqual(spend["total"]["display_amount"], 12.0 * 0.92)
                 self.assertTrue(spend["tokens"]["known"])
                 self.assertEqual(spend["tokens"]["value"], 900)
+                self.assertTrue(spend["last30_tokens"]["known"])
+                self.assertEqual(spend["last30_tokens"]["value"], 300)
+                self.assertTrue(spend["last30"]["known"])
+                self.assertEqual(spend["last30"]["source_amount"], 4.0)
                 unknown_project = next(
                     row for row in spend["projects"] if row["name"] == "unknown-cost-project"
                 )

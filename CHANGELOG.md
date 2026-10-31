@@ -4,6 +4,23 @@ Client-side changelog for the CodexBar GTK front-end. Each entry keys a build
 number (`CURRENT_PROJECT_VERSION`) to the upstream macOS CodexBar release its
 short version tracks, so "which version has what" maps cleanly onto both trees.
 
+## 0.82.0 (47) — 2026-10-31
+
+Tracks upstream CodexBar 0.82.0.
+
+### Added
+
+- Route B11 login, B12 update checking and application restart operations
+  through the shared Rust facade while leaving GTK responsible for rendering,
+  browser interaction, GLib marshalling and OS notification delivery.
+- Audit remaining Python UI service callers and document their compatibility
+  boundary for the backend completion gate.
+
+### Validation
+
+- See `docs/rust-migration/AUDIT.md` for exact Rust/Python checks and
+  synthetic GTK runtime evidence in E074.
+
 ## 0.82.0 (46) — 2026-10-30
 
 Tracks upstream CodexBar 0.82.0.

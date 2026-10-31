@@ -10,15 +10,15 @@ history. A checked box means **verified and merged**, not merely implemented.
 | --- | --- |
 | Goal | Fully native Rust GTK4/libadwaita app; backend first, UI second |
 | Current phase | B13 backend extraction; native UI implementation must wait for BG |
-| Last merged implementation | B13a PR #46 merged at `1650646f`, build `0.82.0 (45)` |
+| Last merged implementation | B13b1 PR #47 merged at `490b4b64`, build `0.82.0 (46)` |
 | Planning change | [PR #18](https://github.com/SaahiilM/codexbar-gtk/pull/18), merged at `69c5496`, build `0.81.0 (17)` |
-| Backend tasks completed after that baseline | B00–B12 and B13a merged; exact B13a merge/check evidence is in E070 |
-| Active implementation task / owner | B13b1 settings operations, current coding-agent session |
-| Active task | **B13b1** — settings operations and preference file actions, PR #47 open from branch `backend/b13b-settings-actions-rust`, based on B13a merge `1650646f`; build `0.82.0 (46)`. B14 approved the typed facade and optional CLI patch contract. Initial submitted head `1283ed0` is under CI; recheck the latest head before merge. |
-| Next domain slice | **B13b2** — B11 login, B12 update check and restart operations after B13b1; B13 parent remains partial until B13b1, B13b2 and the remaining caller inventory are verified and merged. |
-| Open external blockers | No implementation blockers. PR #47 required checks were running on initial head `1283ed0` when last observed; B14 remains gated on the full B13 parent. |
-| Latest checks | B13b1 local Rust tests/Clippy, Python discovery in both modes, tray D-Bus, extension build, Python compilation, and fixture Wayland smoke passed; exact details/screenshots are in E071. PR #47 initial submission state is recorded in E072. B13a PR #46 normal merge verified at `1650646ffee23015ec9f5f640a0470755d7f247c` (E070). |
-| UI validation | B13a screenshots are in E069. B13b1 fixture-only settings-window screenshots: [Python mode](screenshots/b13-settings-python-wayland.png) and [Rust opt-in](screenshots/b13-settings-rust-wayland.png); both were captured from the active Wayland window and visually inspected (E071). |
+| Backend tasks completed after that baseline | B00–B12 and B13a/B13b1 merged; B13b1 exact merge/check evidence is in E073 |
+| Active implementation task / owner | B13b2 application actions, current coding-agent session |
+| Active task | **B13b2** — login, update check, restart, icon-cache operation and residual caller audit, branch `backend/b13b2-application-actions-rust`, based on `490b4b641282fe87a632d31e83864c9067e3e10f`; provisional build `0.82.0 (47)`. B14 approved and froze the typed facade surfaces; exact names/results are recorded in E074. |
+| Next domain slice | Open the locally verified B13b2 screenshot-bearing PR after the B14/orchestration readiness message, then verify exact-head checks/reviews/mergeability and merge normally. Keep B13 parent partial until all slices and caller routes are verified and merged. |
+| Open external blockers | No dependency or contract blocker. B14 remains gated on the full B13 parent; B13b2 awaits PR review/checks and normal merge. |
+| Latest checks | B13b2 local evidence is E074: Rust core 75 and backend 69 tests; Python default 202 (20 opt-in skips); Rust opt-in 202; tray D-Bus 3; format, strict Clippy, extension build and compile checks passed. |
+| UI validation | B13a screenshots are in E069. B13b1 fixture-only settings screenshots: [Python mode](screenshots/b13-settings-python-wayland.png) and [Rust opt-in](screenshots/b13-settings-rust-wayland.png) (E071). B13b2 update-result screenshots: [Python mode](screenshots/b13b2-actions-python-wayland.png) and [Rust opt-in](screenshots/b13b2-actions-rust-wayland.png), captured from the active Wayland window and visually inspected (E074). |
 
 **First commands for a new model/session:**
 
@@ -118,7 +118,7 @@ verified and merged; coordinate Rust DTO/method names with B14):
   remain unavailable; explicit zero stays known, and `cost: 0` falls back to a
   nonzero `totalCost` for model rows. Keep GTK/Cairo drawing and list widgets in
   Python.
-- [ ] **B13b1** Settings operations — route provider configuration/actions,
+- [x] **B13b1** Settings operations — route provider configuration/actions,
   hooks/plugins, PreferencesStore import/export/reset, and launch-at-login
   query/set through the shared Rust facade. Rust owns file I/O, validation,
   serialization, preference mutation and stable sanitized errors; GTK owns the
@@ -126,10 +126,23 @@ verified and merged; coordinate Rust DTO/method names with B14):
   `settings_reconfigure_cli(Option<String>, Option<String>)`; the serialized
   actor resolves omitted fields from PreferencesStore, rejects an empty patch,
   and commits both fields transactionally before swapping the shared CLI slot
-  and queuing B10 refresh. B14 approved this contract; see E071.
+  and queuing B10 refresh. B14 approved this contract; PR #47 merged at
+  `490b4b64` with both required checks passing (E071, E073).
 - [ ] **B13b2** Application actions — route login through the separate B11
   handle, update checking through B12 Updates, and restart through a Rust facade
-  operation; GTK only marshals completed results and delivers OS notifications.
+  operation; route icon-cache process refresh through the facade as well. GTK
+  only marshals completed results, renders SVGs, handles native UI interactions
+  and delivers OS notifications. B14 approved `start_claude_login(...)`, typed
+  `check_update(...)`, `launch_codex_login_terminal()`, `restart_application()`
+  and `refresh_icon_cache()`; icon-cache outcomes include explicit best-effort
+  `failed`; see E074.
+  Active branch `backend/b13b2-application-actions-rust`, provisional build 47;
+  implementation and caller inventory are locally verified, PR pending. Rust
+  opt-in routes Claude login, Codex terminal login, update checks, restart and
+  icon-cache refresh through the central facade; Python process/HTTP code stays
+  only on the Python parity path. GLib watch/event polling and display readiness
+  remain UI/platform adapters. B13 parent is still partial pending PR merge and
+  final parent inventory acceptance.
 
 B05/B07/B12 can proceed after B00 independently of payload parsing. B11/B13 are
 not optional just because their Python files sit near presentation code. Do not

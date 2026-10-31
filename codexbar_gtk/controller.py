@@ -40,6 +40,12 @@ from .prefs import Preferences
 from .rust_bridge import extension
 from . import rust_bridge
 from . import currency as currency_service
+from .updates import (
+    UpdateCheckError,
+    UpdateCheckRequest,
+    UpdateCheckResult,
+    check_for_update,
+)
 
 
 @dataclass
@@ -298,6 +304,7 @@ class Controller:
                 history_store,
                 shared_currency,
                 default_cli_path(),
+                os.path.dirname(os.path.abspath(__file__)),
             )
             return
         if self._thread and self._thread.is_alive():
@@ -316,6 +323,59 @@ class Controller:
     @property
     def uses_rust_controller(self) -> bool:
         return self._rust_controller is not None
+
+    def start_claude_login(self, executable: str, timeout_seconds: int):
+        """Create the separate B11 login handle through the central facade."""
+        rust = self._rust_controller
+        if rust is None:
+            raise RuntimeError("login facade is unavailable")
+        return rust.start_claude_login(executable, int(timeout_seconds))
+
+    def check_update(self, request: UpdateCheckRequest) -> UpdateCheckResult:
+        """Use B12 through the shared Rust facade, or the Python parity service."""
+        rust = self._rust_controller
+        if rust is None:
+            return check_for_update(request)
+        try:
+            value = rust.check_update(
+                request.url,
+                request.current_version,
+                str(request.current_build),
+                request.timeout,
+            )
+        except (OSError, RuntimeError, ValueError) as error:
+            category = str(error).split(" ", 1)[0]
+            if category not in {"invalid_marker", "oversized", "network", "timeout"}:
+                category = "network"
+            raise UpdateCheckError(category) from None
+        try:
+            return UpdateCheckResult(
+                relation=str(value["relation"]),
+                latest_version=str(value["latest_version"]),
+                latest_build=int(value["latest_build"]),
+                current_version=str(value["current_version"]),
+                current_build=int(value["current_build"]),
+            )
+        except (KeyError, TypeError, ValueError):
+            raise UpdateCheckError("invalid_marker") from None
+
+    def launch_codex_login_terminal(self) -> dict[str, bool]:
+        rust = self._rust_controller
+        if rust is None:
+            raise RuntimeError("login facade is unavailable")
+        return rust.launch_codex_login_terminal()
+
+    def restart_application(self) -> dict[str, str]:
+        rust = self._rust_controller
+        if rust is None:
+            raise RuntimeError("restart facade is unavailable")
+        return rust.restart_application()
+
+    def refresh_icon_cache(self) -> dict[str, str]:
+        rust = self._rust_controller
+        if rust is None:
+            return {"status": "skipped_missing_tool"}
+        return rust.refresh_icon_cache()
 
     def poll(self) -> bool:
         """Poll Rust watch state/events without waiting; called on GTK's main loop."""

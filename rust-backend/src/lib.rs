@@ -4,8 +4,10 @@
 //! are introduced in `codexbar-core`; service integrations can then expose
 //! `BackendHandle<Snapshot>` to either frontend without moving policy into it.
 
+pub mod application;
 pub mod controller;
 pub mod currency;
+pub mod icon_cache;
 pub mod login;
 pub mod presentation;
 pub mod settings;

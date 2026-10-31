@@ -20,7 +20,6 @@ from ..updates import (
     UpdateCheckError,
     UpdateCheckRequest,
     UpdateCheckResult,
-    check_for_update,
 )
 from ..version import BUILD, SHORT_VERSION
 from . import icons
@@ -63,6 +62,7 @@ class CodexBarApp(Adw.Application):
         self._show_panel_when_ready = False
         self._rust_spend_view_model: dict | None = None
         self._rust_tray_summary: dict | None = None
+        self._update_dialog = None
 
     # -- lifecycle --------------------------------------------------------
 
@@ -270,6 +270,21 @@ class CodexBarApp(Adw.Application):
 
     def _restart(self) -> None:
         """Restart through the installed user unit, or re-exec in dev runs."""
+        if self.controller.uses_rust_controller:
+            def restart() -> None:
+                try:
+                    result = self.controller.restart_application()
+                    succeeded = result.get("mode") in {
+                        "systemd_restart_requested",
+                        "process_relaunch_started",
+                    }
+                except Exception:
+                    succeeded = False
+                GLib.idle_add(self._finish_rust_restart, succeeded)
+
+            threading.Thread(target=restart, name="codexbar-rust-restart", daemon=True).start()
+            return
+
         if os.environ.get("INVOCATION_ID"):
             try:
                 subprocess.Popen(
@@ -285,6 +300,14 @@ class CodexBarApp(Adw.Application):
         self.controller.stop()
         os.execv(sys.executable, [sys.executable, "-m", "codexbar_gtk", *sys.argv[1:]])
 
+    def _finish_rust_restart(self, succeeded: bool) -> bool:
+        if succeeded:
+            self.controller.stop()
+            self.quit()
+        else:
+            self._notify("CodexBar", "Could not restart CodexBar.")
+        return False
+
     def _check_for_updates(self) -> None:
         """Compare this build with the public VERSION marker without blocking GTK."""
         parent = self.get_active_window() or self.main_window or self.settings_window
@@ -295,10 +318,11 @@ class CodexBarApp(Adw.Application):
         dialog.set_default_response("close")
         dialog.connect("response", self._on_update_check_response)
         dialog.present()
+        self._update_dialog = dialog
 
         def check() -> None:
             try:
-                checked = check_for_update(UpdateCheckRequest(SHORT_VERSION, BUILD))
+                checked = self.controller.check_update(UpdateCheckRequest(SHORT_VERSION, BUILD))
                 result: tuple[str, UpdateCheckResult | UpdateCheckError] = ("ok", checked)
             except UpdateCheckError as error:
                 result = ("error", error)
@@ -306,14 +330,38 @@ class CodexBarApp(Adw.Application):
 
         threading.Thread(target=check, name="codexbar-update-check", daemon=True).start()
 
+    def _request_rust_icon_cache_refresh(self) -> None:
+        """Ask the facade to update the icon cache away from GTK's thread."""
+        def refresh() -> None:
+            try:
+                self.controller.refresh_icon_cache()
+            except Exception:
+                pass
+            GLib.idle_add(self._finish_rust_icon_cache_refresh)
+
+        threading.Thread(target=refresh, name="codexbar-icon-cache", daemon=True).start()
+
+    @staticmethod
+    def _finish_rust_icon_cache_refresh() -> bool:
+        # Cache refresh is intentionally best-effort and has no visible error.
+        return False
+
+    def _write_icons(self, accent: str) -> dict[int, str]:
+        if self.controller.uses_rust_controller:
+            return icons.write_icons(
+                accent,
+                refresh_cache=self._request_rust_icon_cache_refresh,
+            )
+        return icons.write_icons(accent)
+
     def _finish_update_check(
         self, dialog, result: tuple[str, UpdateCheckResult | UpdateCheckError]
     ) -> bool:
         status, value = result
         if status != "ok" or not isinstance(value, UpdateCheckResult):
             error = value if isinstance(value, UpdateCheckError) else UpdateCheckError("network")
-            dialog.set_heading("Couldn’t check for updates")
-            dialog.set_body(
+            heading = "Couldn’t check for updates"
+            body = (
                 f"The update check failed: {error}\n\n"
                 "You can still open the project page and check manually."
             )
@@ -321,21 +369,37 @@ class CodexBarApp(Adw.Application):
             current_display = display_string()
             latest_display = f"{value.latest_version} ({value.latest_build})"
             if value.relation == "available":
-                dialog.set_heading(f"Update available: {latest_display}")
-                dialog.set_body(
+                heading = f"Update available: {latest_display}"
+                body = (
                     f"You have {current_display}. This client is distributed as source; "
                     "pull the latest changes in your checkout, run "
                     "./scripts/install.sh --no-autostart, then restart the app."
                 )
             elif value.relation == "ahead":
-                dialog.set_heading("This build is newer than the public version")
-                dialog.set_body(f"Installed: {current_display}\nPublic main: {latest_display}")
+                heading = "This build is newer than the public version"
+                body = f"Installed: {current_display}\nPublic main: {latest_display}"
             elif value.relation == "current":
-                dialog.set_heading("You’re up to date")
-                dialog.set_body(f"CodexBar GTK {current_display} is the latest public build.")
+                heading = "You’re up to date"
+                body = f"CodexBar GTK {current_display} is the latest public build."
             else:
-                dialog.set_heading("Couldn’t check for updates")
-                dialog.set_body("The update check returned an unknown result.")
+                heading = "Couldn’t check for updates"
+                body = "The update check returned an unknown result."
+
+        # Replace the progress surface after the worker completes. On Wayland,
+        # resizing the already-presented MessageDialog can leave its first
+        # buffer visible even though its GTK labels have changed.
+        if not dialog.get_visible():
+            return False
+        parent = dialog.get_transient_for()
+        completed = Adw.MessageDialog.new(parent, heading, body)
+        completed.add_response("open", "Open project")
+        completed.add_response("close", "Close")
+        completed.set_response_appearance("open", Adw.ResponseAppearance.SUGGESTED)
+        completed.set_default_response("close")
+        completed.connect("response", self._on_update_check_response)
+        dialog.close()
+        completed.present()
+        self._update_dialog = completed
         return False
 
     @staticmethod
@@ -441,7 +505,7 @@ class CodexBarApp(Adw.Application):
                     tray_title = f"{highest.display_name} {label}"
         level = min(9, int(used_percent / 10.0))
         accent = highest.accent_color
-        levels = icons.write_icons(accent)
+        levels = self._write_icons(accent)
         icon_name = levels.get(level) or "codexbar-gtk"
 
         style = str(self.prefs.get("menuBarIconStyle") or "meter")
@@ -550,7 +614,7 @@ class CodexBarApp(Adw.Application):
                     icon_name = ""
                 else:
                     level = summary.get("meter_level")
-                    levels = icons.write_icons(accent)
+                    levels = self._write_icons(accent)
                     icon_name = levels.get(level, icon_name)
                     pixmap = icons.render_meter_pixmap(level, accent) if level is not None else None
             self.tray.update(icon_name, title, tooltip, pixmap)

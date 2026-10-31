@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import threading
 
-from gi.repository import Adw, GLib, Gtk
+from gi.repository import Adw, Gio, GLib, Gtk
 
 from .. import login
 
@@ -23,7 +23,8 @@ class LoginDialog(Adw.Window):
         self.set_default_size(520, 320)
         self.set_modal(True)
         self.provider = provider
-        self.session = login.ClaudeLoginSession()
+        controller = getattr(parent, "controller", None)
+        self.session = login.ClaudeLoginSession(controller=controller)
         self._last_url: str | None = None
         self._last_needs_code = False
 
@@ -104,7 +105,13 @@ class LoginDialog(Adw.Window):
     def _open_browser(self) -> None:
         url = self.url_entry.get_text()
         if url and url.startswith("http"):
-            login.open_in_browser(url)
+            if self.session._rust_mode:
+                try:
+                    Gio.AppInfo.launch_default_for_uri(url, None)
+                except GLib.Error:
+                    self.status_label.set_text("Could not open the browser")
+            else:
+                login.open_in_browser(url)
 
     def _copy_link(self) -> None:
         url = self.url_entry.get_text()

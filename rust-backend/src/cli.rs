@@ -153,6 +153,20 @@ fn is_executable_file(path: &Path) -> bool {
     }
 }
 
+/// Resolve a command from PATH only. Use this for optional platform tools such
+/// as terminal emulators; unlike `discover_executable`, it does not search
+/// app-local CLI bundles or user CLI install directories.
+pub fn find_executable_on_path(name: &str) -> Option<PathBuf> {
+    find_executable_in_path(name, std::env::var_os("PATH").as_deref())
+}
+
+fn find_executable_in_path(name: &str, path: Option<&std::ffi::OsStr>) -> Option<PathBuf> {
+    std::env::split_paths(path?)
+        .map(|folder| folder.join(name))
+        .find(|candidate| is_executable_file(candidate))
+        .map(|candidate| absolute_lexical(&candidate))
+}
+
 /// Whether an explicit CLI setting resolves to an executable. A bare command
 /// name is accepted when it is present on PATH; the configured spelling is
 /// retained so subprocess argv behavior remains compatible with Python.
@@ -726,6 +740,18 @@ mod tests {
         }
     }
 
+    async fn wait_for_fixture_pid(path: &Path) -> i32 {
+        for _ in 0..300 {
+            if let Ok(contents) = fs::read_to_string(path) {
+                if let Ok(pid) = contents.trim().parse() {
+                    return pid;
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        panic!("fixture process did not write a complete child PID");
+    }
+
     #[tokio::test]
     async fn command_uses_argv_boundaries_and_returns_both_streams_and_status() {
         let _guard = PROCESS_TEST_LOCK.lock().await;
@@ -750,11 +776,7 @@ mod tests {
             .await
             .unwrap_err();
         assert_eq!(error, CliError::new(CliErrorKind::Timeout, "cli_command"));
-        let pid: i32 = fs::read_to_string(fixture.dir.join("child.pid"))
-            .unwrap()
-            .trim()
-            .parse()
-            .unwrap();
+        let pid = wait_for_fixture_pid(&fixture.dir.join("child.pid")).await;
         assert!(!Path::new(&format!("/proc/{pid}")).exists());
     }
 
@@ -770,21 +792,10 @@ mod tests {
                 .run(&[], Duration::from_secs(10), Some(cancellation))
                 .await
         });
-        for _ in 0..100 {
-            if fixture.dir.join("child.pid").exists() {
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-        assert!(fixture.dir.join("child.pid").exists());
+        let pid = wait_for_fixture_pid(&fixture.dir.join("child.pid")).await;
         sender.send_replace(true);
         let error = task.await.unwrap().unwrap_err();
         assert_eq!(error.kind, CliErrorKind::Cancelled);
-        let pid: i32 = fs::read_to_string(fixture.dir.join("child.pid"))
-            .unwrap()
-            .trim()
-            .parse()
-            .unwrap();
         assert!(!Path::new(&format!("/proc/{pid}")).exists());
     }
 
@@ -856,5 +867,24 @@ mod tests {
         let path = discover_executable("claude", None, &package_dir).unwrap();
         assert_eq!(path, claude);
         assert!(path.is_absolute());
+    }
+
+    #[test]
+    fn path_only_discovery_returns_only_executable_matches() {
+        let fixture = Fixture::new("");
+        let first = fixture.dir.join("one");
+        let second = fixture.dir.join("two");
+        fs::create_dir_all(&first).unwrap();
+        fs::create_dir_all(&second).unwrap();
+        let not_executable = first.join("terminal");
+        fs::write(&not_executable, "fixture").unwrap();
+        let executable = second.join("terminal");
+        fs::write(&executable, "#!/bin/sh\nexit 0\n").unwrap();
+        fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
+        let path = std::env::join_paths([first, second]).unwrap();
+        assert_eq!(
+            find_executable_in_path("terminal", Some(path.as_os_str())),
+            Some(executable)
+        );
     }
 }

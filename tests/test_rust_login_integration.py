@@ -45,16 +45,36 @@ exit 8
 class RustLoginIntegrationTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory(prefix="codexbar-login-fixture-")
-        self.executable = Path(self.temp.name) / "claude"
+        self.root = Path(self.temp.name)
+        self.executable = self.root / "claude"
         self.executable.write_text(FAKE_CLAUDE, encoding="utf-8")
         self.executable.chmod(0o700)
+        refresh_cli = self.root / "codexbar-fixture"
+        refresh_cli.write_text(
+            "#!/bin/sh\ncase \"$1\" in --version) printf 'fixture\\n';; *) printf '[]\\n';; esac\n",
+            encoding="utf-8",
+        )
+        refresh_cli.chmod(0o700)
+        core = rust_bridge.extension()
+        preferences = core.PreferencesStore(str(self.root / "settings.json"))
+        history = core.HistoryStore(str(self.root / "history.jsonl"), 365)
+        currencies = core.CurrencyConverter(str(self.root / "rates.json"))
+        self.controller = core.RefreshController(
+            str(refresh_cli), None, preferences, history, currencies,
+            str(refresh_cli), str(self.root),
+        )
         self.env = patch.dict(
             os.environ,
-            {"CLAUDE_CLI": str(self.executable), "AUTH_FIXTURE_MODE": "valid"},
+            {
+                "HOME": str(self.root),
+                "CLAUDE_CLI": str(self.executable),
+                "AUTH_FIXTURE_MODE": "valid",
+            },
         )
         self.env.start()
 
     def tearDown(self) -> None:
+        self.controller.request_shutdown()
         self.env.stop()
         self.temp.cleanup()
 
@@ -65,7 +85,7 @@ class RustLoginIntegrationTests(unittest.TestCase):
                 self.assertEqual(claude_auth_status(), {})
 
     def test_pty_login_streams_fixture_url_prompt_and_completion(self) -> None:
-        session = ClaudeLoginSession(timeout=4)
+        session = ClaudeLoginSession(controller=self.controller, timeout=4)
         self.assertTrue(session.start())
         deadline = time.monotonic() + 2
         while time.monotonic() < deadline and not (session.url and session.needs_code):
@@ -82,7 +102,7 @@ class RustLoginIntegrationTests(unittest.TestCase):
         self.assertFalse(result.timed_out)
 
     def test_cancel_kills_fake_login(self) -> None:
-        session = ClaudeLoginSession(timeout=4)
+        session = ClaudeLoginSession(controller=self.controller, timeout=4)
         self.assertTrue(session.start())
         session.cancel()
         result = session.wait(timeout=2)
@@ -91,7 +111,7 @@ class RustLoginIntegrationTests(unittest.TestCase):
         self.assertEqual(result.message, "Login cancelled")
 
     def test_cancel_before_worker_starts_is_not_lost(self) -> None:
-        session = ClaudeLoginSession(timeout=4)
+        session = ClaudeLoginSession(controller=self.controller, timeout=4)
         session.cancel()
         self.assertTrue(session.start())
         result = session.wait(timeout=2)

@@ -99,7 +99,12 @@ class ClaudeLoginSession:
     authorisation code back with :meth:`submit`.
     """
 
-    def __init__(self, binary: str = "claude", timeout: float = 300) -> None:
+    def __init__(
+        self,
+        binary: str = "claude",
+        timeout: float = 300,
+        controller=None,
+    ) -> None:
         self.binary = binary
         self.timeout = timeout
         self.url: str | None = None
@@ -115,6 +120,7 @@ class ClaudeLoginSession:
         self._done = threading.Event()
         self._thread: threading.Thread | None = None
         self._rust_session = None
+        self._controller = controller
         self._rust_mode = False
         self._rust_discovery_failed = False
         self._rust_cancel_requested = threading.Event()
@@ -122,20 +128,16 @@ class ClaudeLoginSession:
         rust = rust_bridge.extension()
         if rust is not None:
             self._rust_mode = True
-            package_dir = os.path.dirname(os.path.abspath(__file__))
-            try:
-                executable = rust.discover_cli_executable(
-                    binary, "CLAUDE_CLI", package_dir
-                )
-                self._rust_session = rust.LoginSession(executable, int(timeout))
-            except (OSError, RuntimeError):
-                self._rust_discovery_failed = True
+            self._rust_discovery_failed = (
+                controller is None
+                or not callable(getattr(controller, "start_claude_login", None))
+            )
 
     # -- lifecycle --------------------------------------------------------
 
     def start(self) -> bool:
         if self._rust_mode:
-            if self._rust_discovery_failed or self._rust_session is None:
+            if self._rust_discovery_failed:
                 self.status = f"{self.binary} not found in PATH"
                 self.result = LoginResult(binary_missing=True, message=self.status)
                 self._done.set()
@@ -168,12 +170,13 @@ class ClaudeLoginSession:
             self._pending_input.append(text)
 
     def cancel(self) -> None:
-        if self._rust_session is not None:
+        if self._rust_mode:
             self._rust_cancel_requested.set()
-            try:
-                self._rust_session.cancel()
-            except RuntimeError:
-                pass
+            if self._rust_session is not None:
+                try:
+                    self._rust_session.cancel()
+                except RuntimeError:
+                    pass
             return
         self._write(b"\x03")  # ctrl-c
         self._done.set()
@@ -185,11 +188,30 @@ class ClaudeLoginSession:
     # -- internals --------------------------------------------------------
 
     def _run_rust(self) -> None:
-        assert self._rust_session is not None
         try:
             if self._rust_cancel_requested.is_set():
                 self.result = LoginResult(message="Login cancelled")
                 return
+            if self._rust_session is None:
+                rust = rust_bridge.extension()
+                if rust is None or self._controller is None:
+                    self.result = LoginResult(message="Login service unavailable")
+                    return
+                package_dir = os.path.dirname(os.path.abspath(__file__))
+                try:
+                    executable = rust.discover_cli_executable(
+                        self.binary, "CLAUDE_CLI", package_dir
+                    )
+                except (OSError, RuntimeError):
+                    self._rust_discovery_failed = True
+                    self.result = LoginResult(
+                        binary_missing=True,
+                        message=f"{self.binary} not found in PATH",
+                    )
+                    return
+                self._rust_session = self._controller.start_claude_login(
+                    str(executable), int(self.timeout)
+                )
             self._rust_session.start()
             if self._rust_cancel_requested.is_set():
                 self._rust_session.cancel()

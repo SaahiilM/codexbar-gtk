@@ -20,7 +20,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::ffi::OsString;
 use std::future::Future;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc, Mutex,
@@ -129,6 +129,7 @@ struct RustRefreshController {
     preferences: Arc<preferences::PreferencesStore>,
     currencies: codexbar_backend::currency::CurrencyService,
     force_refresh: mpsc::Sender<ControllerCommand>,
+    package_dir: PathBuf,
     notifications: Mutex<mpsc::Receiver<codexbar_backend::BackendEvent>>,
     shutdown_complete: Arc<AtomicBool>,
 }
@@ -543,16 +544,38 @@ fn login_error_to_python(error: LoginError) -> PyErr {
     PyRuntimeError::new_err(format!("login {:?} (claude_login)", error.kind))
 }
 
+fn login_operation_error_to_python(
+    error: codexbar_backend::application::LoginOperationError,
+) -> PyErr {
+    PyRuntimeError::new_err(format!("{} ({})", error.kind.as_str(), error.operation))
+}
+
+fn update_error_to_python(error: UpdateError) -> PyErr {
+    let category = match error {
+        UpdateError::InvalidMarker => "invalid_marker",
+        UpdateError::Oversized => "oversized",
+        UpdateError::Network => "network",
+        UpdateError::Timeout => "timeout",
+    };
+    PyRuntimeError::new_err(format!("{category} (update_check)"))
+}
+
+fn restart_error_to_python(error: codexbar_backend::application::RestartError) -> PyErr {
+    PyRuntimeError::new_err(format!("{} ({})", error.category, error.operation))
+}
+
+fn icon_cache_error_to_python(error: codexbar_backend::icon_cache::IconCacheError) -> PyErr {
+    PyRuntimeError::new_err(format!("{} ({})", error.category, error.operation))
+}
+
 fn settings_error_to_python(error: codexbar_backend::settings::SettingsError) -> PyErr {
     PyRuntimeError::new_err(error.to_string())
 }
 
-#[pymethods]
 impl RustLoginSession {
-    #[new]
-    fn new(executable: PathBuf, timeout_seconds: u64) -> PyResult<Self> {
+    fn create(executable: PathBuf, timeout_seconds: u64) -> PyResult<Self> {
         let runtime =
-            Runtime::new().map_err(|_| PyRuntimeError::new_err("could not start login runtime"))?;
+            Runtime::new().map_err(|_| PyRuntimeError::new_err("process (claude_login)"))?;
         Ok(Self {
             runtime,
             executable,
@@ -561,6 +584,14 @@ impl RustLoginSession {
             events: Mutex::new(None),
             state: Mutex::new(None),
         })
+    }
+}
+
+#[pymethods]
+impl RustLoginSession {
+    #[new]
+    fn new(executable: PathBuf, timeout_seconds: u64) -> PyResult<Self> {
+        Self::create(executable, timeout_seconds)
     }
 
     fn start(&self, py: Python<'_>) -> PyResult<bool> {
@@ -922,7 +953,7 @@ fn backend_error_json(error: BackendError) -> Value {
 
 #[pymethods]
 impl RustRefreshController {
-    #[pyo3(signature = (executable, timezone, preferences, history, currencies, default_executable=None))]
+    #[pyo3(signature = (executable, timezone, preferences, history, currencies, default_executable=None, package_dir=None))]
     #[new]
     fn new(
         executable: PathBuf,
@@ -931,12 +962,19 @@ impl RustRefreshController {
         history: PyRef<'_, RustHistoryStore>,
         currencies: PyRef<'_, RustCurrencyConverter>,
         default_executable: Option<PathBuf>,
+        package_dir: Option<PathBuf>,
     ) -> PyResult<Self> {
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .build()
             .map_err(|_| PyRuntimeError::new_err("could not start refresh runtime"))?;
         let default_executable = default_executable.unwrap_or_else(|| executable.clone());
+        let package_dir = package_dir.unwrap_or_else(|| {
+            std::env::current_exe()
+                .ok()
+                .and_then(|path| path.parent().map(Path::to_path_buf))
+                .unwrap_or_else(|| PathBuf::from("."))
+        });
         let cli = Arc::new(SharedCliService::new(Arc::new(CliService::new(
             executable,
             timezone.map(OsString::from),
@@ -971,6 +1009,7 @@ impl RustRefreshController {
             preferences: preferences.inner.clone(),
             currencies: currencies.inner.clone(),
             force_refresh,
+            package_dir,
             notifications: Mutex::new(notifications),
             shutdown_complete: Arc::new(AtomicBool::new(false)),
         })
@@ -1052,6 +1091,115 @@ impl RustRefreshController {
             serde_json::to_string(&summary).map_err(|_| "tray_summary_encode")
         })
         .map_err(PyRuntimeError::new_err)
+    }
+
+    /// Create a separate B11 PTY login handle; lifecycle/events do not enter
+    /// the B10 refresh snapshot or notification stream.
+    fn start_claude_login(
+        &self,
+        py: Python<'_>,
+        executable: PathBuf,
+        timeout_seconds: u64,
+    ) -> PyResult<Py<RustLoginSession>> {
+        let session = RustLoginSession::create(executable, timeout_seconds)?;
+        Py::new(py, session)
+    }
+
+    /// Run B12's bounded network/parser/comparison operation on the controller
+    /// runtime and return its owned result through this PyO3 adapter.
+    fn check_update(
+        &self,
+        py: Python<'_>,
+        url: &str,
+        current_version: &str,
+        current_build: &str,
+        timeout_seconds: f64,
+    ) -> PyResult<Py<PyDict>> {
+        if !timeout_seconds.is_finite() || timeout_seconds <= 0.0 {
+            return Err(update_error_to_python(UpdateError::Timeout));
+        }
+        let current =
+            Version::new(current_version, current_build).map_err(update_error_to_python)?;
+        let timeout = Duration::try_from_secs_f64(timeout_seconds.min(300.0))
+            .map_err(|_| update_error_to_python(UpdateError::Timeout))?;
+        let request = UpdateCheckRequest::new(current, url.to_owned(), timeout);
+        let runtime = self
+            .runtime
+            .as_ref()
+            .ok_or_else(|| update_error_to_python(UpdateError::Network))?;
+        let check =
+            run_cli_future(py, runtime, updates::check(request)).map_err(update_error_to_python)?;
+        let relation = match check.relation {
+            UpdateRelation::Available => "available",
+            UpdateRelation::Current => "current",
+            UpdateRelation::Ahead => "ahead",
+        };
+        let result = PyDict::new(py);
+        result.set_item("current_version", check.current.marketing)?;
+        result.set_item("current_build", check.current.build)?;
+        result.set_item("latest_version", check.latest.marketing)?;
+        result.set_item("latest_build", check.latest.build)?;
+        result.set_item("relation", relation)?;
+        Ok(result.unbind())
+    }
+
+    /// Launch `codex login` in the first supported terminal. Discovery,
+    /// argv construction and process creation remain in the Rust service.
+    fn launch_codex_login_terminal(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
+        let package_dir = self.package_dir.clone();
+        py.detach(move || {
+            let codex = cli::discover_executable("codex", Some("CODEX_CLI"), &package_dir).ok();
+            let terminal = ["konsole", "gnome-terminal", "xterm", "kitty", "alacritty"]
+                .iter()
+                .find_map(|candidate| cli::find_executable_on_path(candidate));
+            codexbar_backend::application::launch_codex_login_terminal_with(
+                codex,
+                terminal,
+                &mut codexbar_backend::application::SystemApplicationLauncher,
+            )
+            .map_err(login_operation_error_to_python)
+        })
+        .map(|result| {
+            let dict = PyDict::new(py);
+            dict.set_item("launched", result.launched)?;
+            Ok(dict.unbind())
+        })?
+    }
+
+    /// Request a systemd restart or relaunch the exact current executable and
+    /// OS argv. The GTK caller invokes this from a worker and quits on GLib.
+    fn restart_application(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
+        let result = py
+            .detach(codexbar_backend::application::restart_application)
+            .map_err(restart_error_to_python)?;
+        let dict = PyDict::new(py);
+        dict.set_item("mode", result.mode.as_str())?;
+        Ok(dict.unbind())
+    }
+
+    /// Best-effort B14 test seam: compare Rust's process context with argv
+    /// sampled by a Python-hosted test without returning/logging argv values.
+    #[pyo3(name = "_restart_context_matches")]
+    fn restart_context_matches(&self, executable: PathBuf, args: Vec<String>) -> bool {
+        let Ok(actual) = codexbar_backend::application::RestartInvocation::current() else {
+            return false;
+        };
+        actual.executable == executable
+            && actual.args == args.into_iter().map(OsString::from).collect::<Vec<_>>()
+    }
+
+    /// Refresh the user's hicolor icon cache after the GTK layer has written
+    /// rendered SVGs. All outcomes are best-effort and carry no paths.
+    fn refresh_icon_cache(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
+        let home = std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("."));
+        let result = py
+            .detach(move || codexbar_backend::icon_cache::refresh_icon_cache(&home))
+            .map_err(icon_cache_error_to_python)?;
+        let dict = PyDict::new(py);
+        dict.set_item("status", result.status.as_str())?;
+        Ok(dict.unbind())
     }
 
     /// Load independent typed settings sections through the facade's shared
@@ -2195,51 +2343,6 @@ fn python_string(value: Option<&Value>) -> String {
     }
 }
 
-#[pyfunction]
-fn check_latest_update(
-    py: Python<'_>,
-    url: &str,
-    current_marketing: &str,
-    current_build: &str,
-    timeout_seconds: f64,
-) -> PyResult<(String, String, String)> {
-    if !timeout_seconds.is_finite() || timeout_seconds <= 0.0 {
-        return Err(PyValueError::new_err(
-            "update timeout must be a positive finite number",
-        ));
-    }
-    let current = Version::new(current_marketing, current_build)
-        .map_err(|_| PyValueError::new_err("current version metadata is invalid"))?;
-    let url = url.to_owned();
-    let timeout = Duration::try_from_secs_f64(timeout_seconds.min(300.0))
-        .map_err(|_| PyValueError::new_err("update timeout must be a positive finite number"))?;
-    let result = py.detach(move || {
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .map_err(|_| UpdateError::Network)?;
-        runtime.block_on(updates::check(UpdateCheckRequest::new(
-            current, url, timeout,
-        )))
-    });
-    let check = result.map_err(|error| match error {
-        UpdateError::InvalidMarker => PyValueError::new_err(error.to_string()),
-        UpdateError::Oversized => PyValueError::new_err(error.to_string()),
-        UpdateError::Timeout => PyOSError::new_err(error.to_string()),
-        UpdateError::Network => PyOSError::new_err(error.to_string()),
-    })?;
-    let relation = match check.relation {
-        UpdateRelation::Available => "available",
-        UpdateRelation::Current => "current",
-        UpdateRelation::Ahead => "ahead",
-    };
-    Ok((
-        relation.to_owned(),
-        check.latest.marketing,
-        check.latest.build,
-    ))
-}
-
 fn python_float(value: Option<&Value>) -> Option<f64> {
     match value? {
         Value::Null => None,
@@ -2252,7 +2355,6 @@ fn python_float(value: Option<&Value>) -> Option<f64> {
 
 #[pymodule]
 fn _rust_core(module: &Bound<'_, PyModule>) -> PyResult<()> {
-    module.add_function(wrap_pyfunction!(check_latest_update, module)?)?;
     module.add_class::<RustHistoryStore>()?;
     module.add_class::<RustPreferencesStore>()?;
     module.add_class::<RustCurrencyConverter>()?;

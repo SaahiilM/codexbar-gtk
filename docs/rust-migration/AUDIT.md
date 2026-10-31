@@ -2349,3 +2349,56 @@ future models must verify the linked PR's status rather than trusting a stale
   Do not merge while checks are pending or before the serialized merge slot is
   confirmed. B15 is not complete until the merge and live-main verification are
   observed.
+
+### E083 — 2026-10-31: B15 PR #52 merge observed; build-52 B13c slot active
+
+- **Observed PR/base/head/merge:** PR #52 targeted `main` from build-51 head
+  `791154691213b9592e799e4b5cdec962409ed995` and merged normally at
+  `63eb17c8ea13c563c587cf9687a4877f1b5b47ff`. The user verified the exact-head
+  `test` and `tray-dbus` checks passed; live `origin/main` is the merge commit.
+- **Accepted B15 scope:** the numeric, timestamp/DST, history, chart, provider
+  casing and catalog findings and explicit Rust-opt-in compatibility limits
+  remain as recorded in E081. The Python default/reference paths are unchanged.
+  No B06/B14 API contract changed.
+- **Next work:** the B15 screenshots exposed a pre-existing B13 Rust-only
+  last-30 caption suffix. The serialized build-52 slot is assigned to a focused
+  B13 correction; BG remains blocked until the parity change is verified and
+  accepted. No UI migration is authorized before BG.
+
+### E084 — 2026-10-31: B13c last-30 caption parity locally verified
+
+- **Base/build/scope:** rebased the isolated branch
+  `fix/b13-last30-label-build52` onto live B15 merge
+  `63eb17c8ea13c563c587cf9687a4877f1b5b47ff`; provisional build 52. Removed
+  only the Rust-projection UI suffix ` · <count> tokens` from the last-30-days
+  caption. The Python path and Rust `last30_tokens` DTO are unchanged.
+- **Fixture coverage:** the PyO3 presentation fixture asserts last-30 cost
+  `4.0` and known last-30 token count `300`; the GTK fixture asserts the visible
+  caption is exactly `$18.75 last 30 days` in both modes and the Rust DTO still
+  carries `4,000` last-30 tokens. Unknown and known-zero row assertions remain
+  active.
+- **Local checks:** `cargo fmt --check` passed for core, PyO3 and backend;
+  locked Rust tests passed (78 core, 71 backend); strict Clippy passed for all
+  three crates; the atomic extension build passed. Default unittest discovery
+  passed 213 tests with 21 expected Rust-opt-in skips; Rust-opt-in discovery
+  passed all 213 tests. Tray signal tests passed 3/3 normally and 3/3 under
+  `dbus-run-session`. The targeted presentation integration test passed.
+- **GTK fixture evidence:** both
+  `GDK_BACKEND=wayland CODEXBAR_RUST_CORE=0/1
+  python3 tools/gtk_smoke_b13_spend_tray.py` runs passed using a temporary HOME,
+  synthetic CLI and the active Wayland compositor. `Cairo=True`; both live
+  draw callbacks reported two active heatmap cells / 1,400 tokens and one
+  known-positive chart bar plus one unknown point. The exact caption assertion
+  passed. Screenshots
+  `screenshots/b13-last30-python-wayland.png` and
+  `screenshots/b13-last30-rust-wayland.png` were visually inspected; both show
+  `$18.75 last 30 days`, the activity grid and daily bar. The old helper's
+  earlier failure occurred before capture because it sampled the initial empty
+  frame; B15's merged synchronization change waits for the refreshed snapshot,
+  and the rerun passed. The host emitted nonfatal EGL permission and AT-SPI bus
+  warnings. No real account, credentials, or external rates were used.
+- **Contract/readiness:** B13a requires structured known/partial token data,
+  which is preserved; no requirement was found to include the token count in
+  this caption, and Python omits it. B13 remains unchecked and BG remains open
+  until the focused PR is merged and the BG owner accepts the parity evidence.
+  PR creation, remote CI and merge are not claimed here.

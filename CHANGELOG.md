@@ -4,6 +4,22 @@ Client-side changelog for the CodexBar GTK front-end. Each entry keys a build
 number (`CURRENT_PROJECT_VERSION`) to the upstream macOS CodexBar release its
 short version tracks, so "which version has what" maps cleanly onto both trees.
 
+## 0.82.0 (52) — 2026-10-31
+
+Tracks upstream CodexBar 0.82.0.
+
+### Changed
+
+- Match the Rust-opt-in last-30-days spend caption to the Python UI while
+  retaining the structured last-30 token count in the Rust DTO.
+- Record the verified B15 merge and its explicit Rust opt-in compatibility
+  limits in the migration handoff.
+
+### Validation
+
+- Fixture parity assertions, both Python modes, Rust crate checks, and
+  synthetic Wayland GTK screenshots are recorded in AUDIT E084.
+
 ## 0.82.0 (51) — 2026-10-30
 
 Tracks upstream CodexBar 0.82.0.

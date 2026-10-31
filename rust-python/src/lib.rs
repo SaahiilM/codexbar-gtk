@@ -13,7 +13,7 @@ use codexbar_core::{
     activity, charts, currency, domain, formatting, history, notifications, ordering, pace,
     preferences, providers,
 };
-use pyo3::exceptions::{PyOSError, PyRuntimeError, PyValueError};
+use pyo3::exceptions::{PyOSError, PyOverflowError, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyAny, PyBool, PyDict, PyFloat, PyInt, PyList};
 use serde_json::Value;
@@ -40,6 +40,17 @@ type PaceTuple = (
     Option<f64>,
     Option<String>,
 );
+
+fn numeric_error_to_py(error: domain::NumericError, label: &str) -> PyErr {
+    match error {
+        domain::NumericError::Overflow => {
+            PyOverflowError::new_err(format!("{label} must fit in signed 64-bit range"))
+        }
+        domain::NumericError::Invalid => {
+            PyValueError::new_err(format!("{label} must be a valid integer"))
+        }
+    }
+}
 type RateWindowTuple = (
     String,
     String,
@@ -1693,10 +1704,16 @@ fn pace_from_json(payload: &str) -> Option<PaceTuple> {
 }
 
 #[pyfunction]
-fn extra_rate_window_from_json(payload: &str) -> Option<ExtraRateWindowTuple> {
-    let payload: Value = serde_json::from_str(payload).ok()?;
-    let window = domain::extra_rate_window_from_value(&payload)?;
-    Some((
+fn extra_rate_window_from_json(payload: &str) -> PyResult<Option<ExtraRateWindowTuple>> {
+    let Ok(payload) = serde_json::from_str(payload) else {
+        return Ok(None);
+    };
+    let Some(window) = domain::extra_rate_window_from_value(&payload)
+        .map_err(|error| numeric_error_to_py(error, "Rust window duration"))?
+    else {
+        return Ok(None);
+    };
+    Ok(Some((
         window.key,
         window.title,
         window.used_percent,
@@ -1710,7 +1727,7 @@ fn extra_rate_window_from_json(payload: &str) -> Option<ExtraRateWindowTuple> {
         window.quota_limit,
         window.quota_unit,
         window.usage_known,
-    ))
+    )))
 }
 
 #[pyfunction]
@@ -1782,10 +1799,16 @@ fn provider_context_from_json(payload: &str) -> Option<ProviderContextTuple> {
 }
 
 #[pyfunction]
-fn provider_usage_from_json(payload: &str) -> Option<String> {
-    let payload: Value = serde_json::from_str(payload).ok()?;
-    let provider = domain::provider_usage_from_value(&payload)?;
-    serde_json::to_string(&provider).ok()
+fn provider_usage_from_json(payload: &str) -> PyResult<Option<String>> {
+    let Ok(payload) = serde_json::from_str(payload) else {
+        return Ok(None);
+    };
+    let Some(provider) = domain::provider_usage_from_value(&payload)
+        .map_err(|error| numeric_error_to_py(error, "Rust window duration"))?
+    else {
+        return Ok(None);
+    };
+    Ok(serde_json::to_string(&provider).ok())
 }
 
 #[pyfunction]
@@ -1838,10 +1861,20 @@ fn agent_sessions_from_json(payload: &str) -> Option<Vec<AgentSessionTuple>> {
 }
 
 #[pyfunction]
-fn rate_window_from_json(payload: &str, key: &str, title: Option<&str>) -> Option<RateWindowTuple> {
-    let payload: Value = serde_json::from_str(payload).ok()?;
-    let window = domain::rate_window_from_value(&payload, key, title)?;
-    Some((
+fn rate_window_from_json(
+    payload: &str,
+    key: &str,
+    title: Option<&str>,
+) -> PyResult<Option<RateWindowTuple>> {
+    let Ok(payload) = serde_json::from_str(payload) else {
+        return Ok(None);
+    };
+    let Some(window) = domain::rate_window_from_value(&payload, key, title)
+        .map_err(|error| numeric_error_to_py(error, "Rust window duration"))?
+    else {
+        return Ok(None);
+    };
+    Ok(Some((
         window.key,
         window.title,
         window.used_percent,
@@ -1855,7 +1888,7 @@ fn rate_window_from_json(payload: &str, key: &str, title: Option<&str>) -> Optio
         window.quota_limit,
         window.quota_unit,
         window.usage_known,
-    ))
+    )))
 }
 
 #[pyfunction]
@@ -1880,8 +1913,25 @@ fn optional_float(value: &Bound<'_, PyAny>) -> Option<f64> {
 }
 
 #[pyfunction]
-fn optional_int(value: &Bound<'_, PyAny>) -> Option<i64> {
-    domain::optional_i64(python_number_as_json(value).as_ref())
+fn optional_int(value: &Bound<'_, PyAny>) -> PyResult<Option<i64>> {
+    if value.is_instance_of::<PyBool>() {
+        return Ok(None);
+    }
+    if !(value.is_instance_of::<PyInt>() || value.is_instance_of::<PyFloat>()) {
+        return Ok(None);
+    }
+    let Ok(number) = value.extract::<f64>() else {
+        return Ok(None);
+    };
+    if !number.is_finite() || number.fract() != 0.0 {
+        return Ok(None);
+    }
+    if number < i64::MIN as f64 || number >= -(i64::MIN as f64) {
+        return Err(PyOverflowError::new_err(
+            "Rust optional integer values must fit in the signed 64-bit range",
+        ));
+    }
+    Ok(Some(number as i64))
 }
 
 #[pyfunction]
@@ -1960,9 +2010,12 @@ fn agent_session_is_running(state: &str) -> bool {
 }
 
 #[pyfunction]
-fn spend_from_json<'py>(payload: &str, py: Python<'py>) -> Option<Bound<'py, PyDict>> {
-    let payload: Value = serde_json::from_str(payload).ok()?;
-    let summary = domain::spend_from_payloads(&payload);
+fn spend_from_json<'py>(payload: &str, py: Python<'py>) -> PyResult<Option<Bound<'py, PyDict>>> {
+    let Ok(payload) = serde_json::from_str(payload) else {
+        return Ok(None);
+    };
+    let summary = domain::spend_from_payloads(&payload)
+        .map_err(|error| numeric_error_to_py(error, "Rust spend counters"))?;
     let dict = PyDict::new(py);
     dict.set_item("total_cost", summary.total_cost).unwrap();
     dict.set_item("cost_known", summary.cost_known).unwrap();
@@ -2092,7 +2145,7 @@ fn spend_from_json<'py>(payload: &str, py: Python<'py>) -> Option<Bound<'py, PyD
     .unwrap();
     dict.set_item("providers", providers_list).unwrap();
 
-    Some(dict)
+    Ok(Some(dict))
 }
 
 #[pyfunction]
@@ -2154,7 +2207,7 @@ fn backend_name() -> &'static str {
 }
 
 #[pyfunction]
-fn sparkline_coordinates(points: Vec<(f64, f64)>, width: i64, height: i64) -> Vec<(f64, f64)> {
+fn sparkline_coordinates(points: Vec<(f64, f64)>, width: f64, height: f64) -> Vec<(f64, f64)> {
     charts::sparkline_coordinates(&points, width, height)
 }
 
@@ -2209,7 +2262,7 @@ fn format_credits(value: Option<f64>) -> String {
 }
 
 #[pyfunction]
-fn format_tokens(value: Option<u64>) -> String {
+fn format_tokens(value: Option<i128>) -> String {
     formatting::format_tokens(value)
 }
 
@@ -2384,12 +2437,16 @@ fn weekly_totals(start: &str, values: Vec<(String, i64)>, today: &str) -> PyResu
     for (date, value) in values {
         by_date.insert(parse_date(&date)?, value);
     }
-    Ok(activity::weekly_totals(start, &by_date, today))
+    activity::weekly_totals(start, &by_date, today).map_err(|activity::ActivityError::Overflow| {
+        PyOverflowError::new_err("Rust activity weekly total exceeds signed 64-bit range")
+    })
 }
 
 #[pyfunction]
-fn cumulative_totals(values: Vec<i64>) -> Vec<i64> {
-    activity::cumulative_totals(&values)
+fn cumulative_totals(values: Vec<i64>) -> PyResult<Vec<i64>> {
+    activity::cumulative_totals(&values).map_err(|activity::ActivityError::Overflow| {
+        PyOverflowError::new_err("Rust activity cumulative total exceeds signed 64-bit range")
+    })
 }
 
 #[pyfunction]
@@ -2428,11 +2485,8 @@ fn align_start(today: &str) -> PyResult<String> {
 fn parse_datetime(value: Option<&str>) -> PyResult<Option<DateTime<Utc>>> {
     value
         .map(|value| {
-            DateTime::parse_from_rfc3339(value)
-                .map(|datetime| datetime.with_timezone(&Utc))
-                .map_err(|error| {
-                    PyValueError::new_err(format!("invalid datetime {value:?}: {error}"))
-                })
+            domain::parse_timestamp(Some(value))
+                .ok_or_else(|| PyValueError::new_err("invalid Rust datetime input"))
         })
         .transpose()
 }

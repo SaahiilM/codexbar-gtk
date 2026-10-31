@@ -12,7 +12,7 @@ RESET_STYLES = ("countdown", "absolute", "both")
 
 
 def _rust_datetime(value: datetime | None) -> str | None:
-    """Serialize UTC datetimes for Rust; leave naive/local values to Python."""
+    """Serialize UTC datetimes accepted by the current Rust formatting API."""
     if value is None or not isinstance(value, datetime):
         return None
     try:
@@ -30,11 +30,13 @@ def _rust_datetime_compatible(value: datetime | None) -> bool:
 def _rust_number_compatible(value: float | None) -> bool:
     if value is None:
         return True
-    if not isinstance(value, (int, float)):
+    if type(value) not in (int, float):
         return False
-    if isinstance(value, int) and abs(value) > 2**53:
+    try:
+        number = float(value)
+    except OverflowError:
         return False
-    return math.isfinite(value)
+    return math.isfinite(number)
 
 
 def compact_window_label(title: str | None, window_minutes: int | None) -> str | None:
@@ -45,14 +47,17 @@ def compact_window_label(title: str | None, window_minutes: int | None) -> str |
     menu-bar tokens use (#4743).
     """
     core = rust_bridge.extension()
-    if core is not None and (
+    compatible = (
         (
             window_minutes is None
             or isinstance(window_minutes, int)
+            and not isinstance(window_minutes, bool)
             and -(2**63) <= window_minutes < 2**63
         )
         and (title is None or isinstance(title, str))
-    ):
+    )
+    if core is not None:
+        rust_bridge.reject_unsupported(core if not compatible else None, "compact window label")
         return core.compact_window_label(title, window_minutes)
     text = (title or "").strip()
     if not text:
@@ -70,12 +75,9 @@ def compact_window_label(title: str | None, window_minutes: int | None) -> str |
 
 def format_percent(value: float | None, decimals: int = 0) -> str:
     core = rust_bridge.extension()
-    if (
-        core is not None
-        and _rust_number_compatible(value)
-        and isinstance(decimals, int)
-        and decimals >= 0
-    ):
+    compatible = _rust_number_compatible(value) and type(decimals) is int and decimals >= 0
+    if core is not None:
+        rust_bridge.reject_unsupported(core if not compatible else None, "percent formatting")
         return core.format_percent(value, decimals)
     if value is None:
         return "—"
@@ -84,12 +86,9 @@ def format_percent(value: float | None, decimals: int = 0) -> str:
 
 def format_remaining(used_percent: float | None, decimals: int = 0) -> str:
     core = rust_bridge.extension()
-    if (
-        core is not None
-        and _rust_number_compatible(used_percent)
-        and isinstance(decimals, int)
-        and decimals >= 0
-    ):
+    compatible = _rust_number_compatible(used_percent) and type(decimals) is int and decimals >= 0
+    if core is not None:
+        rust_bridge.reject_unsupported(core if not compatible else None, "remaining-percent formatting")
         return core.format_remaining(used_percent, decimals)
     if used_percent is None:
         return "—"
@@ -102,11 +101,16 @@ def format_countdown(
 ) -> str | None:
     """Human readable ``4h 12m`` style countdown to ``target``."""
     core = rust_bridge.extension()
-    if core is not None and _rust_datetime_compatible(target):
+    if core is not None:
         now = now or datetime.now(timezone.utc)
         rust_now = _rust_datetime(now)
-        if rust_now is not None:
-            return core.format_countdown(_rust_datetime(target), rust_now)
+        compatible = _rust_datetime_compatible(target) and rust_now is not None
+        rust_bridge.reject_unsupported(
+            core if not compatible else None,
+            "countdown formatting",
+            "datetime values must be UTC-aware",
+        )
+        return core.format_countdown(_rust_datetime(target), rust_now)
     if target is None:
         return None
     now = now or datetime.now(timezone.utc)
@@ -128,11 +132,16 @@ def format_countdown(
 
 def format_absolute(target: datetime | None, now: datetime | None = None) -> str | None:
     core = rust_bridge.extension()
-    if core is not None and _rust_datetime_compatible(target):
+    if core is not None:
         now = now or datetime.now(timezone.utc)
         rust_now = _rust_datetime(now)
-        if rust_now is not None:
-            return core.format_absolute(_rust_datetime(target), rust_now)
+        compatible = _rust_datetime_compatible(target) and rust_now is not None
+        rust_bridge.reject_unsupported(
+            core if not compatible else None,
+            "absolute-time formatting",
+            "datetime values must be UTC-aware",
+        )
+        return core.format_absolute(_rust_datetime(target), rust_now)
     if target is None:
         return None
     now = now or datetime.now(timezone.utc)
@@ -149,12 +158,18 @@ def format_reset(
     now: datetime | None = None,
 ) -> str | None:
     core = rust_bridge.extension()
-    if (
-        core is not None
-        and now is not None
-        and _rust_datetime_compatible(target)
-        and _rust_datetime_compatible(now)
-    ):
+    if core is not None:
+        now = now or datetime.now(timezone.utc)
+        compatible = (
+            isinstance(style, str)
+            and _rust_datetime_compatible(target)
+            and _rust_datetime_compatible(now)
+        )
+        rust_bridge.reject_unsupported(
+            core if not compatible else None,
+            "reset formatting",
+            "style must be text and datetime values must be UTC-aware",
+        )
         return core.format_reset(_rust_datetime(target), style, _rust_datetime(now))
     countdown = format_countdown(target, now)
     absolute = format_absolute(target, now)
@@ -175,11 +190,13 @@ def format_currency(
     value: float | None, currency: str = "USD", compact: bool = False
 ) -> str:
     core = rust_bridge.extension()
-    if (
-        core is not None
-        and _rust_number_compatible(value)
+    compatible = (
+        _rust_number_compatible(value)
         and isinstance(currency, str)
-    ):
+        and type(compact) is bool
+    )
+    if core is not None:
+        rust_bridge.reject_unsupported(core if not compatible else None, "currency formatting")
         return core.format_currency(value, currency, compact)
     if value is None:
         return "—"
@@ -197,7 +214,9 @@ def format_currency(
 
 def format_credits(value: float | None) -> str:
     core = rust_bridge.extension()
-    if core is not None and _rust_number_compatible(value):
+    compatible = _rust_number_compatible(value)
+    if core is not None:
+        rust_bridge.reject_unsupported(core if not compatible else None, "credit formatting")
         return core.format_credits(value)
     if value is None:
         return "—"
@@ -210,12 +229,16 @@ def format_credits(value: float | None) -> str:
 
 def format_tokens(value: int | None) -> str:
     core = rust_bridge.extension()
-    if core is not None and (
+    compatible = (
         value is None
-        or isinstance(value, int)
-        and not isinstance(value, bool)
-        and 0 <= value <= 18_446_744_073_709_551_615
-    ):
+        or type(value) is int and -(2**127) <= value < 2**127
+    )
+    if core is not None:
+        if type(value) is int and not compatible:
+            raise OverflowError(
+                "Rust token formatting supports signed 128-bit integer values"
+            )
+        rust_bridge.reject_unsupported(core if not compatible else None, "token formatting")
         return core.format_tokens(value)
     if not value:
         return "0"
@@ -230,11 +253,16 @@ def format_tokens(value: int | None) -> str:
 
 def format_updated(target: datetime | None, now: datetime | None = None) -> str | None:
     core = rust_bridge.extension()
-    if core is not None and _rust_datetime_compatible(target):
+    if core is not None:
         now = now or datetime.now(timezone.utc)
         rust_now = _rust_datetime(now)
-        if rust_now is not None:
-            return core.format_updated(_rust_datetime(target), rust_now)
+        compatible = _rust_datetime_compatible(target) and rust_now is not None
+        rust_bridge.reject_unsupported(
+            core if not compatible else None,
+            "updated-time formatting",
+            "datetime values must be UTC-aware",
+        )
+        return core.format_updated(_rust_datetime(target), rust_now)
     if target is None:
         return None
     now = now or datetime.now(timezone.utc)
@@ -264,15 +292,22 @@ def format_reset_credits(
     there is nothing to show.
     """
     core = rust_bridge.extension()
-    if core is not None and all(
-        _rust_datetime_compatible(item) for item in expirations
-    ):
+    if core is not None:
         now = now or datetime.now(timezone.utc)
         rust_now = _rust_datetime(now)
-        if rust_now is not None:
-            return core.format_reset_credits(
-                [_rust_datetime(item) for item in expirations], style, rust_now
-            )
+        compatible = (
+            isinstance(style, str)
+            and all(_rust_datetime_compatible(item) for item in expirations)
+            and rust_now is not None
+        )
+        rust_bridge.reject_unsupported(
+            core if not compatible else None,
+            "credit-expiry formatting",
+            "style must be text and datetime values must be UTC-aware",
+        )
+        return core.format_reset_credits(
+            [_rust_datetime(item) for item in expirations], style, rust_now
+        )
     if not expirations:
         return None
     now = now or datetime.now(timezone.utc)
@@ -302,7 +337,15 @@ def format_pace(pace) -> str:
     """Compact pace text, matching the macOS app's wording."""
     core = rust_bridge.extension()
     delta = pace.delta_percent
-    if core is not None and (_rust_number_compatible(delta)):
+    if core is not None:
+        compatible = (
+            _rust_number_compatible(delta)
+            and isinstance(pace.stage, str)
+            and isinstance(pace.in_deficit, bool)
+            and isinstance(pace.in_reserve, bool)
+            and isinstance(pace.stage_label, str)
+        )
+        rust_bridge.reject_unsupported(core if not compatible else None, "pace formatting")
         return core.format_pace(
             pace.stage,
             delta,
@@ -322,9 +365,9 @@ def format_pace(pace) -> str:
 
 def format_window_span(minutes: int | None) -> str | None:
     core = rust_bridge.extension()
-    if core is not None and (
-        minutes is None or isinstance(minutes, int) and -(2**63) <= minutes < 2**63
-    ):
+    compatible = minutes is None or type(minutes) is int and -(2**63) <= minutes < 2**63
+    if core is not None:
+        rust_bridge.reject_unsupported(core if not compatible else None, "window-span formatting")
         return core.format_window_span(minutes)
     if not minutes:
         return None
@@ -338,11 +381,9 @@ def format_window_span(minutes: int | None) -> str | None:
 
 def next_refresh_delta(interval_seconds: int) -> timedelta:
     core = rust_bridge.extension()
-    if (
-        core is not None
-        and isinstance(interval_seconds, int)
-        and -(2**63) <= interval_seconds < 2**63
-    ):
+    compatible = type(interval_seconds) is int and -(2**63) <= interval_seconds < 2**63
+    if core is not None:
+        rust_bridge.reject_unsupported(core if not compatible else None, "refresh-interval formatting")
         return timedelta(seconds=core.next_refresh_seconds(interval_seconds))
     return timedelta(seconds=max(5, interval_seconds))
 
@@ -356,18 +397,19 @@ def workday_progress_percent(
     Monday to Friday stretch counts towards the expected burn.
     """
     core = rust_bridge.extension()
-    if (
-        core is not None
-        and _rust_datetime_compatible(resets_at)
-        and isinstance(work_days, int)
-        and 0 <= work_days <= 4_294_967_295
-    ):
+    if core is not None:
+        if type(work_days) is int and work_days <= 0:
+            return None
         now = now or datetime.now(timezone.utc)
         rust_now = _rust_datetime(now)
-        if rust_now is not None:
-            return core.workday_progress_percent(
-                _rust_datetime(resets_at), rust_now, work_days
-            )
+        compatible = (
+            _rust_datetime_compatible(resets_at)
+            and rust_now is not None
+            and type(work_days) is int
+            and 0 <= work_days <= 4_294_967_295
+        )
+        rust_bridge.reject_unsupported(core if not compatible else None, "workday-progress calculation")
+        return core.workday_progress_percent(_rust_datetime(resets_at), rust_now, work_days)
     if resets_at is None or work_days <= 0:
         return None
     now = now or datetime.now(timezone.utc)
@@ -399,9 +441,8 @@ def project_usage_at_reset(
 ) -> float | None:
     """Project the quota usage when the window resets, from recorded samples."""
     core = rust_bridge.extension()
-    if (
-        core is not None
-        and _rust_datetime_compatible(resets_at)
+    compatible = (
+        _rust_datetime_compatible(resets_at)
         and _rust_number_compatible(used_percent)
         and all(
             isinstance(t, (int, float))
@@ -409,16 +450,18 @@ def project_usage_at_reset(
             and _rust_number_compatible(value)
             for t, value in samples
         )
-    ):
+    )
+    if core is not None:
         now = now or datetime.now(timezone.utc)
         rust_now = _rust_datetime(now)
-        if rust_now is not None:
-            return core.project_usage_at_reset(
-                used_percent,
-                [(t, value) for t, value in samples],
-                _rust_datetime(resets_at),
-                rust_now,
-            )
+        compatible = compatible and rust_now is not None
+        rust_bridge.reject_unsupported(core if not compatible else None, "reset-projection calculation")
+        return core.project_usage_at_reset(
+            used_percent,
+            [(t, value) for t, value in samples],
+            _rust_datetime(resets_at),
+            rust_now,
+        )
     if resets_at is None or len(samples) < 2:
         return None
     now = now or datetime.now(timezone.utc)

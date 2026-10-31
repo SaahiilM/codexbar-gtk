@@ -4,6 +4,26 @@ Client-side changelog for the CodexBar GTK front-end. Each entry keys a build
 number (`CURRENT_PROJECT_VERSION`) to the upstream macOS CodexBar release its
 short version tracks, so "which version has what" maps cleanly onto both trees.
 
+## 0.82.0 (51) — 2026-10-30
+
+Tracks upstream CodexBar 0.82.0.
+
+### Changed
+
+- Characterize F01–F06 numeric, date/time, DST, chart and persisted-history
+  behavior against the unchanged Python reference; add explicit Rust range
+  errors and checked aggregation.
+- Match Python 3.12 Unicode 15 fallback casing exhaustively and keep provider
+  and currency catalogs on their Rust source in opt-in mode.
+- Record the production/helper reachability boundary and remaining explicit
+  Rust opt-in compatibility limits. BG remains open.
+
+### Validation
+
+- Local Rust/Python parity, strict checks, GTK fixture smoke and screenshots
+  are recorded in AUDIT E081; remote PR checks are recorded only after they
+  are observed.
+
 ## 0.82.0 (50) — 2026-10-31
 
 Tracks upstream CodexBar 0.82.0.

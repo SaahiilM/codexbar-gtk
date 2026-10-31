@@ -19,7 +19,10 @@ The application still starts with `python3 -m codexbar_gtk`. Python is the defau
 backend. `CODEXBAR_RUST_CORE=1` enables six module integrations through
 `rust-python/`; it does **not** select a complete Rust backend. The six existing
 ports are provider metadata, activity, formatting, monthly pace, history, and
-sparkline geometry. Some Python edge-input/timezone fallbacks remain.
+sparkline geometry. B15 is characterizing and closing their original-port gaps
+on `orchestrated/luna-b15`; the changes are local and pending review. Some
+Python edge-input/timezone behavior remains available only through the default
+Python path as described below.
 
 The file inventory and named functions below were inspected, not just inferred
 from filenames. Test results and limitations are recorded separately in AUDIT.
@@ -116,6 +119,68 @@ B13 explicitly searches `ui/` for leftover backend decisions and workers.
 - UI phase must retain the Settings-to-dashboard action, tray signal signatures
   and live updates (PR #15), host re-registration, settings actions and all
   existing pages. A backend task must not redesign the screens.
+
+### B15 edge-input characterization
+
+The Python implementations remain the default and unchanged parity references.
+In Rust opt-in mode, provider metadata and currency conversions read the Rust
+catalogs; the Python copies are used only by default mode and catalog parity
+tests. The known provider IDs are ASCII, and catalog parity tests cover all 110
+providers, aliases and supported currencies.
+
+- **Large numbers:** Python's `_optional_int` rejects booleans and non-numeric
+  values, converts numeric values through `float`, then returns an integer.
+  Thus `2**53 + 1` rounds to `2**53`, `2**70` remains representable,
+  `2**63 - 1` rounds up to `2**63`, and `10**1000` converts to `None`. Rust
+  domain counters and window lengths use
+  signed 64-bit values. A value that does not fit, or an aggregate that exceeds
+  that range, raises an explicit overflow error; the refresh controller reports
+  stable `cli_usage_window_overflow` or `cli_cost_counter_overflow` operations
+  and retains its last good snapshot. Activity cumulative and weekly totals are
+  checked `i64` sums. Token display accepts signed 128-bit inputs; larger
+  Python integers remain formatable in Python but raise an explicit overflow in
+  Rust opt-in. Numeric formatting uses finite `f64` semantics, matching the
+  Python formatting helpers for large finite integers; inputs outside the
+  finite float range fail clearly.
+- **Timestamps and local time:** Python 3.12 `datetime.fromisoformat` accepts
+  extended/basic calendar and week dates, hour/minute/second times, a single
+  character date/time separator, fractional seconds, and offsets with seconds
+  or fractional seconds. Rust tests those forms and normalizes parsed values to
+  UTC; naive provider strings also mean UTC in `parse_timestamp`. Current CLI
+  payloads use ordinary RFC3339 extended timestamps. Monthly pace divides by
+  local calendar days, not 24-hour periods; fixture cases cover New York's
+  spring-forward, fall-back and repeated 01:30 hour. Rust formats direct
+  datetime helper inputs only when they are UTC-aware. Production timestamps
+  reach those callers through `parse_timestamp`, so they are already UTC.
+- **Charts:** the Python geometry helper accepts finite `Fraction` values and
+  integers wider than `f64`'s exact-integer range. Rust opt-in filters the same
+  invalid points, subtracts the first timestamp before conversion, and then
+  uses finite `f64` coordinates. Fractions and wide epochs are covered by
+  parity tests. The production chart reads floating-point timestamp/percentage
+  samples from history and integer GTK dimensions; it cannot receive a
+  `Fraction` from JSONL. Values that cannot convert to finite Python floats
+  overflow in both paths.
+- **Persisted history:** production appends Unix-second floats and percentage
+  floats rounded to two decimals as JSONL. The persisted compatibility fixture
+  also covers blank/corrupt rows, defaulted fields, numeric strings, booleans,
+  non-finite values and a large integer JSON token; Rust and Python read the
+  same retained samples. A direct Python append can write `10**1000` as JSON
+  integer text but then reads no finite sample; Rust rejects that write up
+  front because the value cannot be represented as `f64`. Rust's direct store
+  API takes text paths and signed 64-bit retention days. Bytes paths and
+  retention values outside `i64` are rejected with clear errors; normal app
+  configuration uses text paths and the default 30-day period.
+- **Unknown provider labels:** Rust fallback casing uses checked-in Unicode
+  15.0 properties and full mappings, exhaustively compared with Python 3.12 for
+  every cased codepoint. The Python 3.10/3.11 runtimes supported by the app use
+  older Unicode databases, so an unknown, non-ASCII provider ID can get a
+  different fallback label there. The known provider catalog is ASCII and is
+  unaffected. The Unicode tables record their UCD source and license.
+
+These Rust opt-in limits are explicit and covered by boundary tests; they do
+not narrow the default Python path. The normal app data paths are characterized
+separately from direct helper calls so the next migration gate can review any
+remaining compatibility differences deliberately.
 
 ## Definition of done for an implementation slice
 

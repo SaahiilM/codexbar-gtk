@@ -1,8 +1,8 @@
 //! Pure sparkline geometry, ported from `codexbar_gtk/charts.py`.
 
 /// Keep a fixed 0–100% axis and space samples by elapsed time.
-pub fn sparkline_coordinates(points: &[(f64, f64)], width: i64, height: i64) -> Vec<(f64, f64)> {
-    if width <= 1 || height <= 4 {
+pub fn sparkline_coordinates(points: &[(f64, f64)], width: f64, height: f64) -> Vec<(f64, f64)> {
+    if width <= 1.0 || height <= 4.0 {
         return Vec::new();
     }
     let valid: Vec<_> = points
@@ -31,8 +31,8 @@ pub fn sparkline_coordinates(points: &[(f64, f64)], width: i64, height: i64) -> 
                 timestamp - first
             };
             (
-                (elapsed / duration) * (width - 1) as f64,
-                (height - 2) as f64 - (value / 100.0) * (height - 4) as f64,
+                (elapsed / duration) * (width - 1.0),
+                (height - 2.0) - (value / 100.0) * (height - 4.0),
             )
         })
         .collect()
@@ -45,7 +45,7 @@ mod tests {
     #[test]
     fn uses_elapsed_time_and_a_fixed_quota_axis() {
         assert_eq!(
-            sparkline_coordinates(&[(0.0, 0.0), (1.0, 10.0), (10.0, 100.0)], 101, 24),
+            sparkline_coordinates(&[(0.0, 0.0), (1.0, 10.0), (10.0, 100.0)], 101.0, 24.0),
             [(0.0, 22.0), (10.0, 20.0), (100.0, 2.0)]
         );
     }
@@ -53,12 +53,12 @@ mod tests {
     #[test]
     fn filters_invalid_samples_and_clamps_usage() {
         assert_eq!(
-            sparkline_coordinates(&[(0.0, -10.0), (1.0, f64::NAN), (2.0, 120.0)], 101, 24),
+            sparkline_coordinates(&[(0.0, -10.0), (1.0, f64::NAN), (2.0, 120.0)], 101.0, 24.0,),
             [(0.0, 22.0), (100.0, 2.0)]
         );
-        assert!(sparkline_coordinates(&[(0.0, 10.0)], 101, 24).is_empty());
-        assert!(sparkline_coordinates(&[(0.0, 0.0), (1.0, 10.0)], 1, 24).is_empty());
-        assert!(sparkline_coordinates(&[(0.0, 0.0), (1.0, 10.0)], 101, 4).is_empty());
+        assert!(sparkline_coordinates(&[(0.0, 10.0)], 101.0, 24.0).is_empty());
+        assert!(sparkline_coordinates(&[(0.0, 0.0), (1.0, 10.0)], 1.0, 24.0).is_empty());
+        assert!(sparkline_coordinates(&[(0.0, 0.0), (1.0, 10.0)], 101.0, 4.0).is_empty());
     }
 
     #[test]
@@ -66,7 +66,7 @@ mod tests {
         for times in [[3.0, 3.0, 3.0], [3.0, 2.0, 1.0]] {
             let samples: Vec<_> = times.into_iter().map(|time| (time, 50.0)).collect();
             assert_eq!(
-                sparkline_coordinates(&samples, 101, 24),
+                sparkline_coordinates(&samples, 101.0, 24.0),
                 [(0.0, 12.0), (50.0, 12.0), (100.0, 12.0)]
             );
         }

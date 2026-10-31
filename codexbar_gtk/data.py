@@ -27,11 +27,11 @@ def parse_timestamp(value: Any) -> datetime | None:
     rust = extension()
     if rust is not None:
         parsed = rust.parse_timestamp(text)
-        if parsed is not None:
-            try:
-                return datetime.fromisoformat(parsed).astimezone(timezone.utc)
-            except ValueError:
-                pass
+        return (
+            datetime.fromisoformat(parsed).astimezone(timezone.utc)
+            if parsed is not None
+            else None
+        )
     # Keep Python's wider fromisoformat grammar as a compatibility fallback.
     if text.endswith("Z"):
         text = text[:-1] + "+00:00"
@@ -48,9 +48,7 @@ def _optional_float(value: Any) -> float | None:
     """A finite JSON number, ignoring booleans and non-numeric strings."""
     rust = extension()
     if rust is not None:
-        result = rust.optional_float(value)
-        if result is not None:
-            return result
+        return rust.optional_float(value)
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
     try:
@@ -64,9 +62,7 @@ def _optional_int(value: Any) -> int | None:
     """An integral JSON number, rejecting booleans and malformed durations."""
     rust = extension()
     if rust is not None:
-        result = rust.optional_int(value)
-        if result is not None:
-            return result
+        return rust.optional_int(value)
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
     try:
@@ -104,11 +100,7 @@ class RateWindow:
         minutes = self.window_minutes
         rust = extension()
         if rust is not None:
-            try:
-                return rust.rate_window_duration_label(minutes)
-            except (OverflowError, TypeError, ValueError):
-                # Preserve Python support for values outside Rust's i64 contract.
-                pass
+            return rust.rate_window_duration_label(minutes)
         if not minutes:
             return None
         if minutes % 1440 == 0:

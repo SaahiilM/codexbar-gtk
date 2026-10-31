@@ -1,7 +1,9 @@
 //! Provider labels and accent colors ported from `codexbar_gtk/providers.py`.
 //!
-//! Keep this catalog synchronized with the provider catalog tracked by the
-//! Python client. The Rust copy is not used by production services yet.
+//! This catalog is authoritative in Rust opt-in mode; the Python copy remains
+//! the default-mode reference until the native application cutover.
+
+use crate::unicode_case;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ProviderMetadata {
@@ -726,22 +728,43 @@ pub fn all_provider_ids() -> Vec<&'static str> {
 
 fn title_fallback(provider_id: &str) -> String {
     let normalized = provider_id.replace(['-', '_'], " ");
+    let characters: Vec<char> = normalized.chars().collect();
     let mut capitalize = true;
+    let mut previous_cased = false;
     let mut title = String::with_capacity(normalized.len());
-    for character in normalized.chars() {
-        if character.is_alphabetic() {
+    for (index, character) in characters.iter().copied().enumerate() {
+        if unicode_case::is_cased(character) {
             if capitalize {
-                title.extend(character.to_uppercase());
+                title.push_str(&python_titlecase(character));
+            } else if character == 'Σ'
+                && previous_cased
+                && !characters[index + 1..]
+                    .iter()
+                    .copied()
+                    .find(|next| !unicode_case::is_case_ignorable(*next))
+                    .is_some_and(unicode_case::is_cased)
+            {
+                // Python applies Unicode's context-sensitive final-sigma
+                // mapping while lowercasing the rest of a title-cased word.
+                title.push('ς');
             } else {
-                title.extend(character.to_lowercase());
+                title.push_str(&unicode_case::lowercase(character));
             }
             capitalize = false;
+            previous_cased = true;
         } else {
             title.push(character);
             capitalize = true;
+            if !unicode_case::is_case_ignorable(character) {
+                previous_cased = false;
+            }
         }
     }
     title
+}
+
+fn python_titlecase(character: char) -> String {
+    unicode_case::titlecase(character)
 }
 
 #[cfg(test)]
@@ -785,5 +808,19 @@ mod tests {
         assert_eq!(short_name("unknown-provider_id"), "Unknown Provider Id");
         assert_eq!(accent_color("unknown-provider_id"), FALLBACK_ACCENT_COLOR);
         assert_eq!(canonical_id("not-known"), "not-known");
+    }
+
+    #[test]
+    fn unicode_unknown_provider_titles_use_titlecase_expansions() {
+        assert_eq!(display_name("ß-provider"), "Ss Provider");
+        assert_eq!(display_name("ǆ-provider"), "ǅ Provider");
+        assert_eq!(display_name("λ-provider"), "Λ Provider");
+        assert_eq!(display_name("provider-猫"), "Provider 猫");
+        assert_eq!(display_name("ΟΣ-provider"), "Ος Provider");
+        assert_eq!(display_name("ΟΣΑ-provider"), "Οσα Provider");
+        assert_eq!(display_name("aΣ\u{0301}a"), "Aσ\u{0301}A");
+        assert_eq!(display_name("ΟΣ\u{0301}Α"), "Οσ\u{0301}Α");
+        assert_eq!(display_name("AΣ.B"), "Aσ.B");
+        assert_eq!(display_name("fooʼbar"), "FooʼBar");
     }
 }

@@ -11,7 +11,6 @@ import math
 from datetime import datetime, timezone
 
 from . import currency, rust_bridge
-from .currency import CURRENCIES
 from .format import format_currency
 
 MONTHLY_DAYS = range(28, 32)
@@ -30,29 +29,29 @@ def _rust_integer_compatible(value: int | None) -> bool:
 def _rust_number_compatible(value: float | None) -> bool:
     if value is None:
         return True
-    return (
-        isinstance(value, (int, float))
-        and not isinstance(value, bool)
-        and not (isinstance(value, int) and abs(value) > 2**53)
-    )
+    return isinstance(value, (int, float))
 
 
 def _rust_datetime(value: datetime | None) -> str | None:
     if value is None or not isinstance(value, datetime):
         return None
     try:
-        offset = value.utcoffset()
-        if offset is None or offset.total_seconds() % 60:
-            return None
+        # Naive datetimes follow datetime.timestamp()/astimezone() semantics:
+        # they are interpreted in the machine's local timezone. Normalize
+        # every input to UTC before crossing the fixed-offset Rust boundary.
+        if value.utcoffset() is None:
+            value = value.astimezone()
+        return value.astimezone(timezone.utc).isoformat()
     except (OverflowError, ValueError):
         return None
-    return value.isoformat()
 
 
 def is_monthly_window(window_minutes: int | None) -> bool:
     """Whether a window is a monthly allowance (28-31 days)."""
     core = rust_bridge.extension()
-    if core is not None and _rust_integer_compatible(window_minutes):
+    compatible = _rust_integer_compatible(window_minutes)
+    if core is not None:
+        rust_bridge.reject_unsupported(core if not compatible else None, "monthly-window classification")
         return core.pace_is_monthly_window(window_minutes)
     if window_minutes is None or window_minutes <= 0:
         return False
@@ -75,13 +74,18 @@ def daily_target(
     rust_now = now or datetime.now(timezone.utc)
     serialized_now = _rust_datetime(rust_now)
     serialized_reset = _rust_datetime(resets_at)
-    if (
-        core is not None
-        and _rust_number_compatible(remaining)
+    compatible = (
+        _rust_number_compatible(remaining)
         and (resets_at is None or serialized_reset is not None)
         and serialized_now is not None
-    ):
-        return core.pace_daily_target(remaining, serialized_reset, serialized_now)
+    )
+    if core is not None:
+        rust_bridge.reject_unsupported(core if not compatible else None, "daily-target calculation")
+        return core.pace_daily_target(
+            None if remaining is None else float(remaining),
+            serialized_reset,
+            serialized_now,
+        )
     if remaining is None or not math.isfinite(remaining) or remaining < 0:
         return None
     if resets_at is None:
@@ -111,9 +115,8 @@ def window_daily_target(window, now: datetime | None = None) -> float | None:
     rust_now = now or datetime.now(timezone.utc)
     serialized_now = _rust_datetime(rust_now)
     serialized_reset = _rust_datetime(window.resets_at)
-    if (
-        core is not None
-        and isinstance(window.is_placeholder, bool)
+    compatible = (
+        isinstance(window.is_placeholder, bool)
         and isinstance(window.usage_known, bool)
         and _rust_integer_compatible(window.window_minutes)
         and _rust_number_compatible(window.used_percent)
@@ -121,7 +124,9 @@ def window_daily_target(window, now: datetime | None = None) -> float | None:
         and (window.quota_unit is None or isinstance(window.quota_unit, str))
         and (window.resets_at is None or serialized_reset is not None)
         and serialized_now is not None
-    ):
+    )
+    if core is not None:
+        rust_bridge.reject_unsupported(core if not compatible else None, "monthly-window target calculation")
         return core.pace_window_daily_target(
             {
                 "is_placeholder": window.is_placeholder,
@@ -173,15 +178,16 @@ def format_monthly_cost_target(
     rust_now = now or datetime.now(timezone.utc)
     serialized_now = _rust_datetime(rust_now)
     serialized_reset = _rust_datetime(cost.resets_at)
-    if (
-        core is not None
-        and _rust_number_compatible(cost.used)
+    compatible = (
+        _rust_number_compatible(cost.used)
         and _rust_number_compatible(cost.limit)
         and isinstance(cost.currency, str)
         and (cost.period is None or isinstance(cost.period, str))
         and (cost.resets_at is None or serialized_reset is not None)
         and serialized_now is not None
-    ):
+    )
+    if core is not None:
+        rust_bridge.reject_unsupported(core if not compatible else None, "monthly-cost target calculation")
         target = core.pace_monthly_cost_daily_target(
             cost.used,
             cost.limit,
@@ -215,7 +221,8 @@ def _number(value: float) -> str:
     return text
 
 
-_ISO_CURRENCIES = {code for code, _glyph, _rate in CURRENCIES}
+def _iso_currencies() -> set[str]:
+    return set(currency.supported_codes())
 
 
 def format_daily_target(
@@ -225,19 +232,20 @@ def format_daily_target(
 ) -> str | None:
     """Format a daily target the way the macOS menu card does."""
     core = rust_bridge.extension()
-    if (
-        core is not None
-        and _rust_number_compatible(target)
+    compatible = (
+        _rust_number_compatible(target)
         and (unit is None or isinstance(unit, str))
         and (preferred_currency is None or isinstance(preferred_currency, str))
-    ):
+    )
+    if core is not None:
+        rust_bridge.reject_unsupported(core if not compatible else None, "daily-target formatting")
         normalized = (unit or "%").strip()
         preferred = (preferred_currency or "auto").upper()
         converted = None
         if target is not None and math.isfinite(target):
             code = normalized.upper()
             if (
-                code in _ISO_CURRENCIES
+                code in _iso_currencies()
                 and preferred not in ("", "AUTO")
                 and preferred != code
             ):
@@ -256,7 +264,7 @@ def format_daily_target(
         amount = f"{_number(target)} requests"
     else:
         code = normalized.upper()
-        if code not in _ISO_CURRENCIES:
+        if code not in _iso_currencies():
             return None
         preferred = (preferred_currency or "auto").upper()
         value = target

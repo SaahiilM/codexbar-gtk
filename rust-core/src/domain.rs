@@ -1,15 +1,20 @@
 //! Shared domain primitives and strict payload-number helpers.
 //!
-//! The Python reference currently accepts `datetime.fromisoformat` inputs and
-//! normalizes naive timestamps as UTC. Rust's accepted timestamp grammar is
-//! intentionally explicit here; transitional callers retain a Python fallback
-//! for valid ISO forms not accepted by this parser.
+//! The Python reference accepts `datetime.fromisoformat` inputs and normalizes
+//! naive timestamps as UTC. This parser covers its calendar/week-date, basic
+//! and extended date/time, separator, fractional-second and UTC-offset forms.
 
 use std::collections::HashMap;
 
-use chrono::{DateTime, NaiveDate, NaiveDateTime, TimeZone, Utc};
+use chrono::{DateTime, Duration, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc, Weekday};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NumericError {
+    Overflow,
+    Invalid,
+}
 
 fn python_max(values: impl IntoIterator<Item = f64>, default: f64) -> f64 {
     let mut values = values.into_iter();
@@ -24,33 +29,199 @@ fn python_max(values: impl IntoIterator<Item = f64>, default: f64) -> f64 {
 
 /// Parse an ISO timestamp into UTC.
 ///
-/// Supports RFC 3339 offsets, `Z`, naive date/time forms (interpreted as UTC),
-/// fractional seconds, and date-only values. Whitespace surrounding the value
-/// is ignored. Invalid input returns `None` rather than a fabricated epoch.
+/// Supports the ISO forms accepted by Python's `datetime.fromisoformat`,
+/// including basic and week dates, arbitrary date/time separators, fractional
+/// seconds and offsets with second precision. Naive values are interpreted as
+/// UTC, matching the payload adapter. Invalid input returns `None`.
 pub fn parse_timestamp(value: Option<&str>) -> Option<DateTime<Utc>> {
     let text = value?.trim();
     if text.is_empty() {
         return None;
     }
+    let (local, offset_micros) = parse_iso_datetime(text)?;
+    local
+        .and_utc()
+        .checked_sub_signed(Duration::microseconds(offset_micros))
+}
 
-    let normalized = text.strip_suffix('Z').map(|s| format!("{s}+00:00"));
-    let input = normalized.as_deref().unwrap_or(text);
-
-    if let Ok(timestamp) = DateTime::parse_from_rfc3339(input) {
-        return Some(timestamp.with_timezone(&Utc));
+fn parse_iso_date(value: &str) -> Option<NaiveDate> {
+    let year = value.get(..4)?.parse::<i32>().ok()?;
+    if !(1..=9999).contains(&year) {
+        return None;
     }
+    let bytes = value.as_bytes();
+    if bytes.len() == 10
+        && bytes[4] == b'-'
+        && bytes[7] == b'-'
+        && bytes
+            .iter()
+            .enumerate()
+            .all(|(index, byte)| matches!(index, 4 | 7) || byte.is_ascii_digit())
+    {
+        return NaiveDate::parse_from_str(value, "%Y-%m-%d").ok();
+    }
+    if bytes.len() == 8 && bytes.iter().all(u8::is_ascii_digit) {
+        return NaiveDate::parse_from_str(value, "%Y%m%d").ok();
+    }
+    parse_iso_week_date(value)
+}
 
-    // Python datetime.fromisoformat accepts both T and a space as separators.
-    for pattern in ["%Y-%m-%dT%H:%M:%S%.f", "%Y-%m-%d %H:%M:%S%.f"] {
-        if let Ok(datetime) = NaiveDateTime::parse_from_str(input, pattern) {
-            return Some(datetime.and_utc());
+fn parse_iso_week_date(value: &str) -> Option<NaiveDate> {
+    let bytes = value.as_bytes();
+    if bytes.len() < 7 || !bytes[..4].iter().all(u8::is_ascii_digit) {
+        return None;
+    }
+    let year = value.get(..4)?.parse::<i32>().ok()?;
+    if !(1..=9999).contains(&year) {
+        return None;
+    }
+    let (week_start, weekday) = if bytes.get(4) == Some(&b'-') {
+        if bytes.get(5) != Some(&b'W') {
+            return None;
         }
+        match bytes.len() {
+            8 => (6, None),
+            10 if bytes.get(8) == Some(&b'-') => {
+                let day = value.get(9..10)?.parse::<u32>().ok()?;
+                (6, Some(day))
+            }
+            _ => return None,
+        }
+    } else {
+        if bytes.get(4) != Some(&b'W') {
+            return None;
+        }
+        match bytes.len() {
+            7 => (5, None),
+            8 => {
+                let day = value.get(7..8)?.parse::<u32>().ok()?;
+                (5, Some(day))
+            }
+            _ => return None,
+        }
+    };
+    let week = value.get(week_start..week_start + 2)?.parse::<u32>().ok()?;
+    let weekday = match weekday.unwrap_or(1) {
+        1 => Weekday::Mon,
+        2 => Weekday::Tue,
+        3 => Weekday::Wed,
+        4 => Weekday::Thu,
+        5 => Weekday::Fri,
+        6 => Weekday::Sat,
+        7 => Weekday::Sun,
+        _ => return None,
+    };
+    NaiveDate::from_isoywd_opt(year, week, weekday)
+}
+
+fn parse_iso_datetime(value: &str) -> Option<(NaiveDateTime, i64)> {
+    if let Some(date) = parse_iso_date(value) {
+        return Some((date.and_hms_opt(0, 0, 0)?, 0));
     }
 
-    NaiveDate::parse_from_str(input, "%Y-%m-%d")
-        .ok()
-        .and_then(|date| date.and_hms_opt(0, 0, 0))
-        .map(|datetime| datetime.and_utc())
+    for date_len in [10, 8] {
+        let Some(date_text) = value.get(..date_len) else {
+            continue;
+        };
+        let Some(date) = parse_iso_date(date_text) else {
+            continue;
+        };
+        let Some(rest) = value.get(date_len..) else {
+            continue;
+        };
+        let separator_len = rest.chars().next()?.len_utf8();
+        let time_text = rest.get(separator_len..)?;
+        if time_text.is_empty() {
+            continue;
+        }
+        let (time_text, offset_micros) = split_iso_offset(time_text)?;
+        let time = parse_iso_time(time_text)?;
+        return Some((date.and_time(time), offset_micros));
+    }
+    None
+}
+
+fn split_iso_offset(time: &str) -> Option<(&str, i64)> {
+    if let Some(local) = time.strip_suffix('Z') {
+        return Some((local, 0));
+    }
+    let Some((index, sign)) = time
+        .char_indices()
+        .find(|(_, character)| matches!(character, '+' | '-'))
+    else {
+        return Some((time, 0));
+    };
+    let offset = parse_iso_offset(time.get(index + 1..)?)?;
+    let signed = if sign == '-' { -offset } else { offset };
+    Some((time.get(..index)?, signed))
+}
+
+fn parse_iso_offset(value: &str) -> Option<i64> {
+    let (hours, minutes, seconds, micros) = parse_iso_components(value)?;
+    // CPython's fromisoformat fast-path maps a fractional zero offset to UTC.
+    let micros = if hours == 0 && minutes == 0 && seconds == 0 {
+        0
+    } else {
+        micros
+    };
+    Some(((hours * 60 + minutes) * 60 + seconds) * 1_000_000 + micros)
+}
+
+fn parse_iso_time(value: &str) -> Option<NaiveTime> {
+    let (hours, minutes, seconds, micros) = parse_iso_components(value)?;
+    NaiveTime::from_hms_micro_opt(
+        u32::try_from(hours).ok()?,
+        u32::try_from(minutes).ok()?,
+        u32::try_from(seconds).ok()?,
+        u32::try_from(micros).ok()?,
+    )
+}
+
+/// Parse an ISO time or offset component. Fractions are fractional seconds,
+/// even when the minute/second fields are omitted, and Python truncates after
+/// microsecond precision.
+fn parse_iso_components(value: &str) -> Option<(i64, i64, i64, i64)> {
+    let (whole, fraction) = value
+        .find(['.', ','])
+        .map(|index| (&value[..index], Some(&value[index + 1..])))
+        .unwrap_or((value, None));
+    let micros = if let Some(fraction) = fraction {
+        if fraction.is_empty() || !fraction.bytes().all(|byte| byte.is_ascii_digit()) {
+            return None;
+        }
+        let digits = fraction.get(..fraction.len().min(6))?.parse::<i64>().ok()?;
+        digits * 10_i64.pow((6 - fraction.len().min(6)) as u32)
+    } else {
+        0
+    };
+    let parts: Vec<&str> = if whole.contains(':') {
+        whole.split(':').collect()
+    } else {
+        match whole.len() {
+            2 => vec![whole],
+            4 => vec![&whole[..2], &whole[2..]],
+            6 => vec![&whole[..2], &whole[2..4], &whole[4..]],
+            _ => return None,
+        }
+    };
+    if parts.is_empty()
+        || parts.len() > 3
+        || parts
+            .iter()
+            .any(|part| part.len() != 2 || !part.bytes().all(|byte| byte.is_ascii_digit()))
+    {
+        return None;
+    }
+    let parse_part = |index: usize| -> Option<i64> {
+        parts.get(index).map_or(Some(0), |part| part.parse().ok())
+    };
+    let hours = parse_part(0)?;
+    let minutes = parse_part(1)?;
+    let seconds = parse_part(2)?;
+    if hours >= 24 || minutes >= 60 || seconds >= 60 {
+        return None;
+    }
+    Some((hours, minutes, seconds, micros))
 }
 
 /// Return a finite JSON number, rejecting booleans and strings.
@@ -64,12 +235,20 @@ pub fn optional_float(value: Option<&Value>) -> Option<f64> {
 ///
 /// Python's integer type is unbounded; Rust domain durations use `i64`. Values
 /// outside that range remain available to the Python compatibility fallback.
-pub fn optional_i64(value: Option<&Value>) -> Option<i64> {
-    let number = optional_float(value)?;
-    if !number.fract().eq(&0.0) || number < i64::MIN as f64 || number >= -(i64::MIN as f64) {
-        return None;
+pub fn optional_i64(value: Option<&Value>) -> Result<Option<i64>, NumericError> {
+    let Some(number) = value.and_then(Value::as_number) else {
+        return Ok(None);
+    };
+    let Some(number) = number.as_f64() else {
+        return Ok(None);
+    };
+    if !number.is_finite() || number.fract() != 0.0 {
+        return Ok(None);
     }
-    Some(number as i64)
+    if number < i64::MIN as f64 || number >= -(i64::MIN as f64) {
+        return Err(NumericError::Overflow);
+    }
+    Ok(Some(number as i64))
 }
 
 /// Pace forecast for a quota window.
@@ -719,29 +898,43 @@ fn spend_json_truthy(value: &Value) -> bool {
 
 /// Match the Python spend parser's `int(value or 0)` fields within the Rust
 /// summary's i64 range. CLI counters are normally integer JSON values.
-fn spend_int_or_zero(value: Option<&Value>) -> i64 {
+fn spend_int_or_zero(value: Option<&Value>) -> Result<i64, NumericError> {
     match value {
-        None | Some(Value::Null) => 0,
-        Some(Value::Bool(value)) => i64::from(*value),
+        None | Some(Value::Null) => Ok(0),
+        Some(Value::Bool(value)) => Ok(i64::from(*value)),
         Some(Value::Number(value)) => {
             if let Some(integer) = value.as_i64() {
-                integer
+                Ok(integer)
             } else if let Some(unsigned) = value.as_u64().filter(|n| *n <= i64::MAX as u64) {
-                unsigned as i64
+                Ok(unsigned as i64)
+            } else if value.as_u64().is_some() {
+                Err(NumericError::Overflow)
             } else {
-                value
-                    .as_f64()
-                    .filter(|number| {
-                        number.is_finite()
-                            && *number >= i64::MIN as f64
-                            && *number < -(i64::MIN as f64)
-                    })
-                    .map(|number| number.trunc() as i64)
-                    .unwrap_or(0)
+                let Some(number) = value.as_f64() else {
+                    return Ok(0);
+                };
+                if !number.is_finite() {
+                    return Ok(0);
+                }
+                if number < i64::MIN as f64 || number >= -(i64::MIN as f64) {
+                    return Err(NumericError::Overflow);
+                }
+                Ok(number.trunc() as i64)
             }
         }
-        Some(Value::String(value)) => value.parse().unwrap_or(0),
-        Some(_) => 0,
+        Some(Value::String(value)) if value.is_empty() => Ok(0),
+        Some(Value::String(value)) => value.trim().parse::<i64>().map_err(|error| {
+            let overflow = matches!(
+                error.kind(),
+                std::num::IntErrorKind::PosOverflow | std::num::IntErrorKind::NegOverflow
+            );
+            if overflow {
+                NumericError::Overflow
+            } else {
+                NumericError::Invalid
+            }
+        }),
+        Some(_) => Err(NumericError::Invalid),
     }
 }
 
@@ -760,7 +953,7 @@ fn spend_sort_float(value: Option<&Value>) -> f64 {
 /// over nested ``totals`` (never double-counted), unknown costs stay
 /// distinguishable from known zero, and providers without tokens or known
 /// cost are dropped after aggregation.
-pub fn spend_from_payloads(payloads: &Value) -> SpendSummary {
+pub fn spend_from_payloads(payloads: &Value) -> Result<SpendSummary, NumericError> {
     let mut summary = SpendSummary {
         total_cost: 0.0,
         cost_known: false,
@@ -796,7 +989,7 @@ pub fn spend_from_payloads(payloads: &Value) -> SpendSummary {
 
     let array = match payloads.as_array() {
         Some(array) => array,
-        None => return summary,
+        None => return Ok(summary),
     };
 
     for payload in array {
@@ -885,8 +1078,9 @@ pub fn spend_from_payloads(payloads: &Value) -> SpendSummary {
             });
         if let Some(coverage) = coverage_obj {
             for (key, value) in coverage {
-                let count = spend_int_or_zero(Some(value));
-                *summary.coverage.entry(key.clone()).or_insert(0) += count;
+                let count = spend_int_or_zero(Some(value))?;
+                let total = summary.coverage.entry(key.clone()).or_insert(0);
+                *total = total.checked_add(count).ok_or(NumericError::Overflow)?;
             }
         }
 
@@ -930,8 +1124,11 @@ pub fn spend_from_payloads(payloads: &Value) -> SpendSummary {
         let raw_tokens = object
             .get("totalTokens")
             .or_else(|| totals_obj.as_ref().and_then(|m| m.get("totalTokens")));
-        if let Some(tokens) = optional_i64(raw_tokens) {
-            summary.total_tokens += tokens;
+        if let Some(tokens) = optional_i64(raw_tokens)? {
+            summary.total_tokens = summary
+                .total_tokens
+                .checked_add(tokens)
+                .ok_or(NumericError::Overflow)?;
             summary.total_tokens_known = true;
             entry.tokens = tokens;
             entry.tokens_known = true;
@@ -946,12 +1143,18 @@ pub fn spend_from_payloads(payloads: &Value) -> SpendSummary {
         } else {
             summary.session_cost_partial = true;
         }
-        let session_tokens = optional_i64(object.get("sessionTokens"));
+        let session_tokens = optional_i64(object.get("sessionTokens"))?;
         if let Some(session_tokens) = session_tokens {
             summary.session_tokens_known = true;
             entry.session_tokens_known = true;
-            summary.session_tokens += session_tokens;
-            entry.session_tokens += session_tokens;
+            summary.session_tokens = summary
+                .session_tokens
+                .checked_add(session_tokens)
+                .ok_or(NumericError::Overflow)?;
+            entry.session_tokens = entry
+                .session_tokens
+                .checked_add(session_tokens)
+                .ok_or(NumericError::Overflow)?;
         } else {
             summary.session_tokens_partial = true;
             entry.session_tokens_partial = true;
@@ -963,16 +1166,22 @@ pub fn spend_from_payloads(payloads: &Value) -> SpendSummary {
         } else {
             summary.last30_cost_partial = true;
         }
-        if let Some(last30_tokens) = optional_i64(object.get("last30DaysTokens")) {
+        if let Some(last30_tokens) = optional_i64(object.get("last30DaysTokens"))? {
             summary.last30_tokens_known = true;
-            summary.last30_tokens += last30_tokens;
+            summary.last30_tokens = summary
+                .last30_tokens
+                .checked_add(last30_tokens)
+                .ok_or(NumericError::Overflow)?;
         } else {
             summary.last30_tokens_partial = true;
         }
 
         let payload_incomplete = object.get("incompleteRequestCount");
-        let payload_incomplete_count = spend_int_or_zero(payload_incomplete);
-        summary.incomplete_requests += payload_incomplete_count;
+        let payload_incomplete_count = spend_int_or_zero(payload_incomplete)?;
+        summary.incomplete_requests = summary
+            .incomplete_requests
+            .checked_add(payload_incomplete_count)
+            .ok_or(NumericError::Overflow)?;
 
         if let Some(prov) = totals_obj
             .as_ref()
@@ -1005,8 +1214,11 @@ pub fn spend_from_payloads(payloads: &Value) -> SpendSummary {
                 totals_obj
                     .as_ref()
                     .and_then(|m| m.get("incompleteRequestCount")),
-            );
-            summary.incomplete_requests += totals_incomplete;
+            )?;
+            summary.incomplete_requests = summary
+                .incomplete_requests
+                .checked_add(totals_incomplete)
+                .ok_or(NumericError::Overflow)?;
         }
 
         if let Some(days) = object.get("daily").and_then(Value::as_array) {
@@ -1079,7 +1291,7 @@ pub fn spend_from_payloads(payloads: &Value) -> SpendSummary {
             .unwrap_or(std::cmp::Ordering::Equal)
     });
 
-    summary
+    Ok(summary)
 }
 
 /// Aggregate provider data consumed by dashboard and tray presentation.
@@ -1158,8 +1370,10 @@ impl ProviderUsage {
 /// Normalize one complete CLI provider envelope into the owned domain DTO
 /// consumed by the refresh controller. This composes the B02 field parsers so
 /// the backend does not need Python to assemble provider state.
-pub fn provider_usage_from_value(payload: &Value) -> Option<ProviderUsage> {
-    let object = payload.as_object()?;
+pub fn provider_usage_from_value(payload: &Value) -> Result<Option<ProviderUsage>, NumericError> {
+    let Some(object) = payload.as_object() else {
+        return Ok(None);
+    };
     let provider_id = object
         .get("provider")
         .and_then(Value::as_str)
@@ -1177,7 +1391,7 @@ pub fn provider_usage_from_value(payload: &Value) -> Option<ProviderUsage> {
         let title = labels
             .and_then(|labels| labels.get(key))
             .and_then(Value::as_str);
-        if let Some(window) = rate_window_from_value(raw_window, key, title) {
+        if let Some(window) = rate_window_from_value(raw_window, key, title)? {
             windows.push(window);
         }
     }
@@ -1185,12 +1399,11 @@ pub fn provider_usage_from_value(payload: &Value) -> Option<ProviderUsage> {
         .and_then(|usage| usage.get("extraRateWindows"))
         .and_then(Value::as_array)
     {
-        windows.extend(
-            extra
-                .iter()
-                .take(6)
-                .filter_map(extra_rate_window_from_value),
-        );
+        for item in extra.iter().take(6) {
+            if let Some(window) = extra_rate_window_from_value(item)? {
+                windows.push(window);
+            }
+        }
     }
 
     let mut pace = HashMap::new();
@@ -1272,7 +1485,7 @@ pub fn provider_usage_from_value(payload: &Value) -> Option<ProviderUsage> {
         error: None,
         plan: None,
     });
-    Some(ProviderUsage {
+    Ok(Some(ProviderUsage {
         provider_id: provider_id.clone(),
         display_name: crate::providers::display_name(&provider_id),
         source: object
@@ -1313,7 +1526,7 @@ pub fn provider_usage_from_value(payload: &Value) -> Option<ProviderUsage> {
         selected_account: None,
         accent_color: crate::providers::accent_color(&provider_id).to_owned(),
         raw: payload.clone(),
-    })
+    }))
 }
 
 /// Normalize one standard CLI window envelope into a typed quota window.
@@ -1322,8 +1535,10 @@ pub fn rate_window_from_value(
     payload: &Value,
     key: &str,
     title: Option<&str>,
-) -> Option<RateWindow> {
-    let object = payload.as_object()?;
+) -> Result<Option<RateWindow>, NumericError> {
+    let Some(object) = payload.as_object() else {
+        return Ok(None);
+    };
     let used_percent = optional_float(object.get("usedPercent"));
     let raw_title = title.filter(|value| !value.is_empty());
     let normalized_title = raw_title.map(str::to_owned).unwrap_or_else(|| {
@@ -1334,7 +1549,7 @@ pub fn rate_window_from_value(
             .map(|first| first.to_uppercase().chain(chars).collect())
             .unwrap_or_default()
     });
-    Some(RateWindow {
+    Ok(Some(RateWindow {
         key: key.to_owned(),
         title: normalized_title,
         used_percent: used_percent.unwrap_or(0.0),
@@ -1346,7 +1561,7 @@ pub fn rate_window_from_value(
             .get("resetDescription")
             .and_then(Value::as_str)
             .map(str::to_owned),
-        window_minutes: optional_i64(object.get("windowMinutes")),
+        window_minutes: optional_i64(object.get("windowMinutes"))?,
         next_regen_percent: optional_float(object.get("nextRegenPercent")),
         is_placeholder: object
             .get("isSyntheticPlaceholder")
@@ -1357,16 +1572,20 @@ pub fn rate_window_from_value(
             .and_then(Value::as_str)
             .map(str::to_owned),
         usage_known: used_percent.is_some(),
-    })
+    }))
 }
 
 /// Normalize one entry from the CLI's ``extraRateWindows`` array.
 ///
 /// The outer object carries ``id``/``title``/``usageKnown``/``isSyntheticPlaceholder``
 /// while the nested ``window`` object carries the rate-window fields.
-pub fn extra_rate_window_from_value(item: &Value) -> Option<RateWindow> {
-    let object = item.as_object()?;
-    let inner = object.get("window")?.as_object()?;
+pub fn extra_rate_window_from_value(item: &Value) -> Result<Option<RateWindow>, NumericError> {
+    let Some(object) = item.as_object() else {
+        return Ok(None);
+    };
+    let Some(inner) = object.get("window").and_then(Value::as_object) else {
+        return Ok(None);
+    };
     let key = object
         .get("id")
         .and_then(Value::as_str)
@@ -1378,14 +1597,17 @@ pub fn extra_rate_window_from_value(item: &Value) -> Option<RateWindow> {
         .or_else(|| object.get("id").and_then(Value::as_str))
         .unwrap_or("Extra")
         .to_owned();
-    let mut rate_window =
-        rate_window_from_value(&Value::Object(inner.clone()), &key, Some(&title))?;
+    let Some(mut rate_window) =
+        rate_window_from_value(&Value::Object(inner.clone()), &key, Some(&title))?
+    else {
+        return Ok(None);
+    };
     let usage_known_inner = rate_window.usage_known;
     rate_window.usage_known = match object.get("usageKnown") {
         Some(Value::Bool(false)) => false,
         _ => usage_known_inner,
     };
-    Some(rate_window)
+    Ok(Some(rate_window))
 }
 
 fn json_truthy(value: &Value) -> bool {
@@ -1464,9 +1686,75 @@ mod tests {
                 .map(|time| time + chrono::Duration::milliseconds(125))
         );
         assert_eq!(
+            parse_timestamp(Some("20261021T145653")),
+            Utc.with_ymd_and_hms(2026, 10, 21, 14, 56, 53).single()
+        );
+        assert_eq!(
+            parse_timestamp(Some("2026-10-21T16:56:53+0200")),
+            Utc.with_ymd_and_hms(2026, 10, 21, 14, 56, 53).single()
+        );
+        assert_eq!(
+            parse_timestamp(Some("2026-10-21T16:56:53+02")),
+            Utc.with_ymd_and_hms(2026, 10, 21, 14, 56, 53).single()
+        );
+        assert_eq!(
+            parse_timestamp(Some("2026-10-21T16:56:53+02:00:30")),
+            Utc.with_ymd_and_hms(2026, 10, 21, 14, 56, 23).single()
+        );
+        assert_eq!(
+            parse_timestamp(Some("2026-10-21T16:56:53,125+02:00:30.5")),
+            Utc.with_ymd_and_hms(2026, 10, 21, 14, 56, 22)
+                .single()
+                .map(|time| time + chrono::Duration::milliseconds(625))
+        );
+        assert_eq!(
+            parse_timestamp(Some("2026-10-21x14:56")),
+            Utc.with_ymd_and_hms(2026, 10, 21, 14, 56, 0).single()
+        );
+        assert_eq!(
+            parse_timestamp(Some("2026-W43-3")),
+            Utc.with_ymd_and_hms(2026, 10, 21, 0, 0, 0).single()
+        );
+        assert_eq!(
+            parse_timestamp(Some("2026W433")),
+            Utc.with_ymd_and_hms(2026, 10, 21, 0, 0, 0).single()
+        );
+        assert_eq!(
+            parse_timestamp(Some("2026-W43")),
+            Utc.with_ymd_and_hms(2026, 10, 19, 0, 0, 0).single()
+        );
+        assert_eq!(
+            parse_timestamp(Some("2026W43")),
+            Utc.with_ymd_and_hms(2026, 10, 19, 0, 0, 0).single()
+        );
+        assert_eq!(
+            parse_timestamp(Some("2026-W43T12")),
+            Utc.with_ymd_and_hms(2026, 10, 19, 12, 0, 0).single()
+        );
+        assert_eq!(
+            parse_timestamp(Some("2026-10-21T12:30.123456789")),
+            Utc.with_ymd_and_hms(2026, 10, 21, 12, 30, 0)
+                .single()
+                .map(|time| time + chrono::Duration::microseconds(123_456))
+        );
+        assert_eq!(
+            parse_timestamp(Some("2026-10-21T12:30:45+01:30.5")),
+            Utc.with_ymd_and_hms(2026, 10, 21, 11, 0, 44)
+                .single()
+                .map(|time| time + chrono::Duration::milliseconds(500))
+        );
+        assert_eq!(
+            parse_timestamp(Some("2026-10-21T12:30:45+00:00:00.5")),
+            Utc.with_ymd_and_hms(2026, 10, 21, 12, 30, 45).single()
+        );
+        assert_eq!(
             parse_timestamp(Some("2026-10-21")),
             Utc.with_ymd_and_hms(2026, 10, 21, 0, 0, 0).single()
         );
+        assert_eq!(parse_timestamp(Some("0000-10-21")), None);
+        assert_eq!(parse_timestamp(Some("2026-1-21")), None);
+        assert_eq!(parse_timestamp(Some("2026-10-21T16:56:53+24:00")), None);
+        assert_eq!(parse_timestamp(Some("2026-10-21t16:56:53z")), None);
         assert_eq!(parse_timestamp(None), None);
         assert_eq!(parse_timestamp(Some("  ")), None);
         assert_eq!(parse_timestamp(Some("yesterday")), None);
@@ -1478,10 +1766,17 @@ mod tests {
         assert_eq!(optional_float(Some(&json!(12.5))), Some(12.5));
         assert_eq!(optional_float(Some(&json!(true))), None);
         assert_eq!(optional_float(Some(&json!("12.5"))), None);
-        assert_eq!(optional_i64(Some(&json!(12.0))), Some(12));
-        assert_eq!(optional_i64(Some(&json!(12.5))), None);
-        assert_eq!(optional_i64(Some(&json!(true))), None);
-        assert_eq!(optional_i64(Some(&json!(u64::MAX))), None);
+        assert_eq!(optional_i64(Some(&json!(12.0))), Ok(Some(12)));
+        assert_eq!(optional_i64(Some(&json!(12.5))), Ok(None));
+        assert_eq!(optional_i64(Some(&json!(true))), Ok(None));
+        assert_eq!(
+            optional_i64(Some(&json!(i64::MAX))),
+            Err(NumericError::Overflow)
+        );
+        assert_eq!(
+            optional_i64(Some(&json!(u64::MAX))),
+            Err(NumericError::Overflow)
+        );
     }
 
     fn window(minutes: Option<i64>, used: f64) -> RateWindow {
@@ -1834,6 +2129,7 @@ mod tests {
             "primary",
             Some("Session"),
         )
+        .unwrap()
         .unwrap();
         assert_eq!(known_zero.title, "Session");
         assert_eq!(known_zero.used_percent, 0.0);
@@ -1843,7 +2139,9 @@ mod tests {
         assert_eq!(known_zero.quota_unit.as_deref(), Some("requests"));
         assert!(!known_zero.is_placeholder);
 
-        let unknown = rate_window_from_value(&json!({}), "secondary", None).unwrap();
+        let unknown = rate_window_from_value(&json!({}), "secondary", None)
+            .unwrap()
+            .unwrap();
         assert_eq!(unknown.title, "Secondary");
         assert_eq!(unknown.used_percent, 0.0);
         assert!(!unknown.usage_known);
@@ -1862,8 +2160,15 @@ mod tests {
                 None,
             )
             .unwrap()
+            .unwrap()
             .is_placeholder);
         }
+        assert!(rate_window_from_value(
+            &json!({"windowMinutes": 18446744073709551615_u64}),
+            "primary",
+            None,
+        )
+        .is_err());
     }
 
     #[test]
@@ -1922,7 +2227,8 @@ mod tests {
                 "coverage": {"unpriced": 1},
                 "provenance": "scan",
             },
-        ]));
+        ]))
+        .unwrap();
 
         assert_eq!(summary.total_cost, 19.75);
         assert!(summary.cost_known);
@@ -1965,7 +2271,8 @@ mod tests {
                 "totalCost": 5.0,
                 "totalTokens": 100,
             },
-        ]));
+        ]))
+        .unwrap();
 
         assert_eq!(summary.error.as_deref(), Some("rate limited"));
         assert!(summary.cost_partial); // error sets cost_partial
@@ -1989,7 +2296,8 @@ mod tests {
             {
                 "provider": "empty-provider",
             },
-        ]));
+        ]))
+        .unwrap();
 
         // known-zero: cost_known=true -> kept despite zero tokens
         // unknown-cost: cost_known=false but tokens=42 -> kept
@@ -2020,7 +2328,8 @@ mod tests {
                     "totalTokens": 999,
                 },
             },
-        ]));
+        ]))
+        .unwrap();
 
         assert_eq!(summary.total_cost, 10.0);
         assert_eq!(summary.total_tokens, 100);
@@ -2029,13 +2338,13 @@ mod tests {
 
     #[test]
     fn spend_aggregation_empty_and_non_dict_payloads() {
-        let summary = spend_from_payloads(&json!([]));
+        let summary = spend_from_payloads(&json!([])).unwrap();
         assert_eq!(summary.total_cost, 0.0);
         assert!(!summary.cost_known);
         assert!(summary.providers.is_empty());
         assert!(summary.error.is_none());
 
-        let summary = spend_from_payloads(&json!(["not a dict", 42, null]));
+        let summary = spend_from_payloads(&json!(["not a dict", 42, null])).unwrap();
         assert_eq!(summary.providers.len(), 0);
         assert!(summary.error.is_none());
     }
@@ -2060,7 +2369,8 @@ mod tests {
                     {"cost": 0.0, "totalCost": "8.0"},
                 ],
             },
-        ]));
+        ]))
+        .unwrap();
 
         assert_eq!(summary.daily.len(), 3);
         assert_eq!(
@@ -2106,11 +2416,30 @@ mod tests {
                 "provenance": "",
                 "totals": {"provenance": "from-totals"},
             },
-        ]));
+        ]))
+        .unwrap();
 
         assert!(!summary.history_coverage_established);
         assert_eq!(summary.provenance, "from-totals");
         assert!(summary.cost_partial); // history coverage not established
+    }
+
+    #[test]
+    fn spend_aggregation_rejects_unrepresentable_counts_and_overflow() {
+        assert!(spend_from_payloads(&json!([
+            {"provider": "first", "totalTokens": 4_611_686_018_427_387_904_i64},
+            {"provider": "second", "totalTokens": 4_611_686_018_427_387_904_i64},
+        ]))
+        .is_err());
+        assert!(spend_from_payloads(&json!([
+            {"provider": "wide", "totalTokens": u64::MAX},
+        ]))
+        .is_err());
+        assert!(spend_from_payloads(&json!([
+            {"provider": "first", "coverage": {"priced": i64::MAX}},
+            {"provider": "second", "coverage": {"priced": 1}},
+        ]))
+        .is_err());
     }
 
     #[test]
@@ -2131,7 +2460,7 @@ mod tests {
             "pace": {"primary": {"stage": "onTrack", "willLastToReset": true}},
             "status": {"indicator": "ok", "description": "fixture status"}
         });
-        let provider = provider_usage_from_value(&payload).unwrap();
+        let provider = provider_usage_from_value(&payload).unwrap().unwrap();
 
         assert_eq!(provider.provider_id, "codex");
         assert_eq!(provider.display_name, "Codex");
@@ -2156,7 +2485,7 @@ mod tests {
         let payload: Value =
             serde_json::from_str(include_str!("../../tests/fixtures/b10/provider_usage.json"))
                 .unwrap();
-        let provider = provider_usage_from_value(&payload).unwrap();
+        let provider = provider_usage_from_value(&payload).unwrap().unwrap();
 
         assert_eq!(provider.provider_id, "codex");
         assert_eq!(

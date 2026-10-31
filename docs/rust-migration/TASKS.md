@@ -9,16 +9,16 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Field | Current checkpoint |
 | --- | --- |
 | Goal | Fully native Rust GTK4/libadwaita app; backend first, UI second |
-| Current phase | B14 transitional backend integration; native UI implementation must wait for BG |
-| Last merged implementation | B13 handoff PR #49 merged at `a42a2997`, build `0.82.0 (48)` |
+| Current phase | B14 is complete in PR #50; build-50 closeout publishes the merge evidence, with B15 next. Native UI implementation must wait for BG. |
+| Last merged implementation | B14 PR #50 merged at `0252420f`, build `0.82.0 (49)` |
 | Planning change | [PR #18](https://github.com/SaahiilM/codexbar-gtk/pull/18), merged at `69c5496`, build `0.81.0 (17)` |
-| Backend tasks completed after that baseline | B00–B13 implementation scope is complete; exact B13 merge and acceptance evidence is in E076 |
-| Active implementation task / owner | B14 currency facade integration, current coding-agent session |
-| Active task | **B14a CurrencyService facade and UI routing** — branch `orchestrated/luna-b14`, based on verified PR #49 merge `a42a29972e2894ef82fdbdc1430aeb4608d24c0f`; build `0.82.0 (49)`. Expose the shared currency catalog/rate/conversion/status/refresh methods on RefreshController and route Rust-opt-in UI adapters through it. Implementation and local verification are complete; the focused PR and merge remain pending. |
-| Next domain slice | After B14a merges, finish the B14 single-facade/production Python-residual audit on latest `main`, record any concrete gaps as a scoped B14 follow-up, then reassess the BG gate. |
-| Open external blockers | No dependency or API blockers remain. PR #50 is open in build 49 and waits for exact-head checks; merge requires final checks/review/mergeability verification and orchestration serialization. The B14 parent remains partial until the PR merges. |
-| Latest checks | B13 handoff PR #49 merged at `a42a29972e2894ef82fdbdc1430aeb4608d24c0f`; exact head `df97e8f8cfc46d7f47e870a93f28af59e8d36f98` passed `test` and `tray-dbus` (E077). B14 PR #50 opened MERGEABLE at initial head `a27a7f7c5a799e85f8d220bfb898a26f2f3077a4`, based on that live main; its initial `test` and `tray-dbus` checks were IN_PROGRESS, with no reviews/comments (E079). Recheck the current exact head after any push before merge. |
-| UI validation | B14 currency settings smoke with synthetic fixtures and active Wayland: [Python mode](screenshots/b14-currency-python-wayland.png) and [Rust opt-in](screenshots/b14-currency-rust-wayland.png), visually inspected. B13a/B13b1/B13b2 screenshots remain recorded in E069/E071/E074. |
+| Backend tasks completed after that baseline | B00–B14 implementation scope is complete; B14 acceptance and exact PR #50 merge evidence are in E080 |
+| Active implementation task / owner | B15 is next after this build-50 handoff; no B15 implementation slice is claimed here |
+| Active task | **B14 complete** — implementation and caller audit merged in PR #50 at `0252420f048f3c2859fa19aa35a1632941e24956`; this build-50 documentation closeout publishes its observed checks and releases B15 after normal merge. |
+| Next domain slice | B15 closes original-port edge/timezone/Unicode/numeric fallbacks after this handoff is live. BG remains open until B00–B15 headless and transitional runtime gates are verified. |
+| Open external blockers | B14 has no dependency/API blocker. This build-50 handoff needs its standard checks and normal merge before B15 begins; BG remains open for B15 and final gate verification. |
+| Latest checks | PR #50 merged normally at `0252420f048f3c2859fa19aa35a1632941e24956`, live `origin/main`; exact head `576d81f03f9d30d3b4e064ee33586c6819b04f00` passed `test` and `tray-dbus`, with no reviews/comments. See E080. |
+| UI validation | B14 currency settings smoke with synthetic fixtures and active Wayland: [Python mode](screenshots/b14-currency-python-wayland.png) and [Rust opt-in](screenshots/b14-currency-rust-wayland.png), visually inspected (E078; included in PR #50). B13 screenshots remain recorded in E069/E071/E074. This build-50 documentation closeout reuses the merged B14 screenshot evidence and makes no new UI runtime claim. |
 
 **First commands for a new model/session:**
 
@@ -64,7 +64,7 @@ changed files, checks performed/skipped, blockers and the next exact action.
 These checked tasks must be revisited under B15 for the final Rust-only
 contract. Do not remove fallbacks simply because F01–F06 are checked.
 
-## Phase B — backend (all pending)
+## Phase B — backend (B15 remains; BG is open)
 
 Each B item requires native tests, transitional caller integration, application
 smoke evidence where applicable, CI and a focused merged PR. Each can be split
@@ -86,7 +86,7 @@ into smaller PRs without declaring the parent complete early.
 | [x] **B11** Login/auth process service | B00, B07 | PR #43 merged at `a33f0977`. Exact-head local workflow and GTK fixture smoke passed; GitHub run #41110771700 ended `startup_failure` with zero jobs, so no CI pass is claimed (E064). |
 | [x] **B12** Read-only update service | B00 | Port public VERSION parsing/comparison and bounded HTTP fetch; test invalid/oversized/network-failure responses. PR #41 merged at `bd58f46`; both checks passed on head `21537ba` (AUDIT E053). No code download/install behavior. |
 | [x] **B13** Extract backend work embedded in UI | B04–B12 | Accepted B13a/B13b1/B13b2 slices are all verified and merged (#46/#47/#48); final caller inventory and exact merge evidence are recorded in E076. Remaining same-service currency adapter calls are explicitly assigned to B14, not described as Python HTTP. |
-| [ ] **B14** Full transitional backend integration | B06, B10–B13 | Expose shared CurrencyService operations/status on RefreshController, route currency adapters through that same service, and finish the single-facade/production Python-residual audit. Keep Python GTK as thin conversion/marshalling and platform adapter; B14a is implemented and PR-pending, so the parent remains incomplete. |
+| [x] **B14** Full transitional backend integration | B06, B10–B13 | Expose shared CurrencyService operations/status on RefreshController, route currency adapters through that same service, and complete the single-facade/production Python-residual audit. B14a and B14b are verified in E078 and merged in PR #50 at `0252420f`; exact-head `test` and `tray-dbus` passed. B15 remains next; BG stays open. |
 | [ ] **B15** Close original-port gaps | B01–B06, B14 | Audit F01–F06 edge/timezone/Unicode/numeric fallbacks and duplicated catalogs. Define/test Rust-only behavior and resolve all production fallback dependencies. Keep Python parity references until cutover. |
 | [ ] **BG** Backend completion gate | B00–B15 | Rust-only headless end-to-end fake CLI/HTTP/PTY tests require neither Python nor GTK/PyO3; transitional GTK fixture smoke passes; review residual-Python inventory and record gate decision in AUDIT. |
 
@@ -140,21 +140,21 @@ and caller inventory reconciled with B14 in E076):
   `4d1aff43f18a8e1bdbc8166b38e03df54a79031a` passed both `test` and `tray-dbus`.
   The final B13 inventory is accepted by B14; handoff PR #49 merged at
   `a42a29972e2894ef82fdbdc1430aeb4608d24c0f` (E077). The follow-up currency
-  facade work is assigned to B14.
+  facade work was completed and merged as B14 PR #50 (E080).
 
-B14 sub-slices (the parent stays pending until shared-facade routing and the
-production caller audit are complete):
+B14 sub-slices (all implementation and audit scope is verified and merged in
+PR #50):
 
-- [ ] **B14a** Shared CurrencyService facade — expose catalog, rate, convert,
+- [x] **B14a** Shared CurrencyService facade — expose catalog, rate, convert,
   status and refresh operations from the CurrencyService already cloned into
   RefreshController; route the current currency UI adapters through the
-  controller. Build 49 is locally verified in [PR #50](https://github.com/SaahiilM/codexbar-gtk/pull/50); initial exact-head checks are pending (E079).
-- [ ] **B14b** Single-facade and residual caller audit — local source inventory
-  is recorded in E078; currency, settings, login, update, restart, icon-cache,
-  refresh and presentation calls enter the central facade in Rust opt-in.
-  Remaining Python branches are parity, conversion, GTK/GLib or platform
-  integration. The audit is locally complete and awaits this PR's merge before
-  the B14 parent can be marked complete and BG reassessed.
+  controller. PR #50 merged at `0252420f048f3c2859fa19aa35a1632941e24956`;
+  the exact head passed `test` and `tray-dbus` (E080).
+- [x] **B14b** Single-facade and residual caller audit — E078 found that
+  currency, settings, login, update, restart, icon-cache, refresh and
+  presentation calls enter the central facade in Rust opt-in. Remaining
+  Python branches are parity, conversion, GTK/GLib or platform integration.
+  The audit found no additional B14 gap and is accepted in E080.
 
 B05/B07/B12 can proceed after B00 independently of payload parsing. B11/B13 are
 not optional just because their Python files sit near presentation code. Do not

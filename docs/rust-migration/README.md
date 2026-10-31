@@ -16,12 +16,12 @@ Code baseline: `46f44d0` (PR #17), GTK build `0.81.0 (16)`. The initial planning
 PR increments the build to `0.81.0 (17)` without changing runtime behavior.
 
 The application still starts with `python3 -m codexbar_gtk`. Python is the default
-backend. `CODEXBAR_RUST_CORE=1` enables six module integrations through
-`rust-python/`; it does **not** select a complete Rust backend. The six existing
-ports are provider metadata, activity, formatting, monthly pace, history, and
-sparkline geometry. B15's original-port parity work is merged in PR #52 at
-`63eb17c8`; a focused B13 last-30 caption parity correction is active on build
-52. Backend completion and native UI work remain pending. Some Python
+backend. `CODEXBAR_RUST_CORE=1` enables Rust-backed services through
+`rust-python/`; it does **not** select a complete native Rust application. B15's
+original-port parity work is merged in PR #52 at `63eb17c8`, and B13c's focused
+last-30 caption parity fix is merged in PR #53 at `0fc5cbb`. B13 is accepted;
+BG's headless integration, transitional GTK smoke and residual-Python audit are
+under verification. Native UI work remains blocked by BG. Some Python
 edge-input behavior remains available only through the default Python path as
 described below.
 

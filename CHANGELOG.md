@@ -4,6 +4,22 @@ Client-side changelog for the CodexBar GTK front-end. Each entry keys a build
 number (`CURRENT_PROJECT_VERSION`) to the upstream macOS CodexBar release its
 short version tracks, so "which version has what" maps cleanly onto both trees.
 
+## 0.82.0 (53) — 2026-10-31
+
+Tracks upstream CodexBar 0.82.0.
+
+### Changed
+
+- Add a Rust-only BG end-to-end fixture covering CLI/controller state and
+  notifications, loopback currency/update HTTP, and fake PTY cancellation/join.
+- Record the verified B13c merge, current gate evidence, and remaining Python
+  UI/default-path boundaries.
+
+### Validation
+
+- Full backend and parity checks plus Python/Rust Wayland fixture screenshots
+  are recorded in AUDIT E085. BG remains open until the focused PR is merged.
+
 ## 0.82.0 (52) — 2026-10-31
 
 Tracks upstream CodexBar 0.82.0.

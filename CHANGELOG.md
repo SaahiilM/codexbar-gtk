@@ -15,8 +15,9 @@ Tracks upstream CodexBar 0.82.0.
 
 ### Validation
 
-- Local Rust/Python checks and synthetic native GTK smoke pass; exact-head CI,
-  review and merge are pending. See migration handoff and AUDIT E090.
+- Local Rust/Python checks and synthetic native GTK smoke pass; PR #58 is open
+  with exact-head CI, review and merge pending. See migration handoff and AUDIT
+  E090.
 
 ## 0.82.0 (56) — 2026-10-31
 

@@ -17,7 +17,7 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Latest gate result | **BG passed** — PR #54 merged and verified on live main. Headless Rust-only integration, Rust-opt-in GTK fixture smoke and residual-Python inventory are recorded in E085/E086. |
 | Next domain slice | Complete U02a dashboard/card presentation and verification; then U02b history plots/burndown, followed by U03. Keep Python as default until UG passes; do not start cutover work before UG. |
 | Open external blockers | No U02a implementation blocker. Local GTK runtime libraries are installed, but system GTK4/libadwaita development packages and pkg-config files are absent; build 57 uses the ignored worktree-local SDK extraction. CI installs `libgtk-4-dev` and `libadwaita-1-dev` explicitly. B11's zero-job Actions startup failures remain documented, not CI successes. |
-| Latest checks | U01 PR #56 exact head `3b99d3e759477557828960626276f2633df9ebcc` passed `test` and `tray-dbus` in run `41170186549`; the normal merge `3eea06f99760048b51407b446781981e5edb49db` is live main (E089). Build-56 closeout PR #57 merged at `043e273b83053f02ffcd96b203ac9af5fd87f791`; exact head `608de41` passed both required checks. U02a local checks pass; GitHub checks are pending. |
+| Latest checks | U01 PR #56 exact head `3b99d3e759477557828960626276f2633df9ebcc` passed `test` and `tray-dbus` in run `41170186549`; the normal merge `3eea06f99760048b51407b446781981e5edb49db` is live main (E089). Build-56 closeout PR #57 merged at `043e273b83053f02ffcd96b203ac9af5fd87f791`; exact head `608de41` passed both required checks. U02a PR #58 is open; GitHub checks are pending on its current revision. |
 | UI validation | U02a native dashboard [Wayland capture](screenshots/u02-dashboard-wayland.png); U01 synthetic native bootstrap [Wayland capture](screenshots/u01-native-bootstrap-wayland.png); B13c pair [Python](screenshots/b13-last30-python-wayland.png) / [Rust opt-in](screenshots/b13-last30-rust-wayland.png); BG pair [Python reference](screenshots/bg-python-reference-wayland.png) / [Rust opt-in](screenshots/bg-rust-opt-in-wayland.png). U02a/U01 used temporary HOME and synthetic CLI; no real account or credentials. |
 
 **First commands for a new model/session:**
@@ -218,7 +218,8 @@ the Resume here table. BG passed after PR #54; Phase U may now be coordinated.
   - [ ] **U02a** Native dashboard overview and provider cards/meters/chips,
     with loading, empty, error and refresh states. Build 57 on
     `frontend/u02a-dashboard-build57`; local full checks and synthetic GTK
-    smoke passed; Wayland screenshot is captured. Focused PR is pending.
+    smoke passed; Wayland screenshot is captured. PR #58 is open; exact-head
+    checks, review and merge are pending.
     Projection consumes B10 snapshot fields and preferences; GTK only renders.
   - [ ] **U02b** History sparklines/detail charts and history-derived burndown;
     next serialized slice after U02a merge. U02 remains partial until both are

@@ -2712,8 +2712,10 @@ future models must verify the linked PR's status rather than trusting a stale
   present. The host lacks system GTK4
   and libadwaita development packages; local compilation used the existing
   ignored worktree SDK extraction. CI installs both development packages.
-- **PR state:** local implementation and verification are ready for a focused
-  U02a PR against current `origin/main` `043e273b83053f02ffcd96b203ac9af5fd87f791`.
-  GitHub checks, review, and merge evidence are pending; U02a is not complete.
+- **PR state:** focused [PR #58](https://github.com/SaahiilM/codexbar-gtk/pull/58)
+  was opened against `main` from initial head `57f6ed3312cf1f959e0551d075e3155b1737ccf2`.
+  The initial `tray-dbus` check passed and `test` was in progress when observed;
+  exact-current-head checks, review, and merge evidence remain pending. U02a is
+  not complete.
   U02b charts/history/burndown remain unimplemented. No real account or
   credentials are in scope.

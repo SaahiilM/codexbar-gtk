@@ -7,8 +7,6 @@ import math
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 
-from . import rust_bridge
-
 VERSION_URL = "https://raw.githubusercontent.com/SaahiilM/codexbar-gtk/main/VERSION"
 PROJECT_URL = "https://github.com/SaahiilM/codexbar-gtk"
 MAX_BYTES = 4096
@@ -31,6 +29,8 @@ class UpdateCheckResult:
     relation: str
     latest_version: str
     latest_build: int
+    current_version: str | None = None
+    current_build: int | None = None
 
 
 class UpdateCheckError(Exception):
@@ -84,35 +84,13 @@ def check_latest_version(timeout: float = 5.0) -> tuple[str, int]:
 def check_for_update(request: UpdateCheckRequest) -> UpdateCheckResult:
     """Fetch and compare the public marker; callers only render this result.
 
-    ``url`` is injectable for loopback fixtures. The Rust opt-in path owns the
-    bounded HTTP request and comparison; Python remains the parity reference.
+    ``url`` is injectable for loopback fixtures. The Rust opt-in UI calls the
+    B12 service through the central controller facade; this function remains
+    the Python parity implementation and never dispatches to a module-level
+    Rust service.
     """
     if not math.isfinite(request.timeout) or request.timeout <= 0:
         raise UpdateCheckError("timeout")
-    core = rust_bridge.extension()
-    if core is not None:
-        try:
-            relation, latest_version, latest_build = core.check_latest_update(
-                request.url,
-                request.current_version,
-                str(request.current_build),
-                request.timeout,
-            )
-        except (OSError, ValueError) as error:
-            message = str(error)
-            if "exceeds 4096 bytes" in message:
-                kind = "oversized"
-            elif "invalid" in message:
-                kind = "invalid_marker"
-            elif "timed out" in message or "timeout" in message:
-                kind = "timeout"
-            elif isinstance(error, OSError):
-                kind = "network"
-            else:
-                kind = "invalid_marker"
-            raise UpdateCheckError(kind) from None
-        return UpdateCheckResult(relation, latest_version, int(latest_build))
-
     http_request = Request(
         request.url,
         headers={"User-Agent": "CodexBar-GTK-update-check", "Accept": "text/plain"},
@@ -134,7 +112,13 @@ def check_for_update(request: UpdateCheckRequest) -> UpdateCheckResult:
         )
     except (UnicodeDecodeError, ValueError):
         raise UpdateCheckError("invalid_marker") from None
-    return UpdateCheckResult(relation, latest_version, latest_build)
+    return UpdateCheckResult(
+        relation,
+        latest_version,
+        latest_build,
+        request.current_version,
+        request.current_build,
+    )
 
 
 def compare_versions(current: tuple[str, int], latest: tuple[str, int]) -> str:

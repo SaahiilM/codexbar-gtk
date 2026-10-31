@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+from collections.abc import Callable
 
 ICON_DIR = os.path.expanduser("~/.local/share/icons/hicolor/scalable/apps")
 ICON_PREFIX = "codexbar-gtk"
@@ -101,7 +102,11 @@ def _refresh_icon_cache() -> None:
         return
 
 
-def write_icons(accent: str = "#10A37F") -> dict[int, str]:
+def write_icons(
+    accent: str = "#10A37F",
+    *,
+    refresh_cache: Callable[[], None] | None = None,
+) -> dict[int, str]:
     """Write the per-level SVG icons and return ``{level: icon_name}``."""
     _ensure_theme_index()
     os.makedirs(ICON_DIR, exist_ok=True)
@@ -127,7 +132,10 @@ def write_icons(accent: str = "#10A37F") -> dict[int, str]:
             continue
         mapping[level] = name
     if changed:
-        _refresh_icon_cache()
+        if refresh_cache is None:
+            _refresh_icon_cache()
+        else:
+            refresh_cache()
     return mapping
 
 

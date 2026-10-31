@@ -1810,3 +1810,144 @@ future models must verify the linked PR's status rather than trusting a stale
   merge normally only after exact-head checks and fixture UI evidence pass.
   Record later check/merge evidence in a subsequent audit entry. B13 remains
   partial; B13b2 and the remaining caller inventory are outstanding.
+
+### E073 — 2026-10-31: B13b1 PR #47 merge observed; B13b2 claimed
+
+- **Observed PR merge:** PR #47 merged normally at
+  `490b4b641282fe87a632d31e83864c9067e3e10f`, now the fetched `origin/main`.
+  Its exact head was `327f593ef5701596c0cec51c6215776eab1f7ae4`; GitHub's
+  required `test` and `tray-dbus` checks both report SUCCESS on that head. The
+  PR was CLEAN/MERGEABLE with no reviews, review requests or comments. A GitHub
+  connector merge attempt returned 403; the repository owner completed the
+  normal `gh pr merge --merge` path, without bypassing branch protection.
+- **B13b2 claim/base/build:** active branch
+  `backend/b13b2-application-actions-rust`, based on the merge commit above;
+  provisional build is `0.82.0 (47)`. This focused slice covers B11 login
+  operations, B12 update checking, restart, and a remaining UI caller audit.
+  B13 remains partial, and B14 remains gated until all B13 slices are verified
+  and merged.
+- **Initial source inventory:** `codexbar_gtk/ui/app.py` invokes the Python
+  update worker and owns both the installed `systemctl --user restart` and
+  development `os.execv` paths; `codexbar_gtk/updates.py` retains Python HTTP,
+  parsing and comparison as the parity implementation; `codexbar_gtk/login.py`
+  uses the separate B11 Rust `LoginSession` in opt-in mode but still has its
+  Python PTY/subprocess parity path; `codexbar_gtk/ui/settings.py` launches
+  non-Claude terminal login via Python `subprocess.Popen`. The latter and any
+  other production UI subprocess/HTTP callers need an explicit B14-approved
+  disposition before B13 can be called complete. GTK dialog rendering, browser
+  opening, GLib marshalling and OS notification delivery remain UI/platform
+  responsibilities.
+- **B14 coordination:** a concrete proposal for facade login handle creation,
+  typed update results and restart result/non-systemd behavior was sent to B14;
+  final public method names and result semantics are pending its response before
+  API freeze. No code changes have yet been made for B13b2.
+- **Next exact step:** freeze the method/result contract with B14, then implement
+  B13b2 behind the shared Rust facade. Run the migration checks, fixture-only
+  Python and Rust-opt-in GTK smoke with private temp HOME/D-Bus and synthetic
+  CLI, capture and inspect both screenshots, and verify the final source caller
+  inventory. Open a focused PR only after local checks and UI evidence pass.
+
+### E074 — 2026-10-31: B13b2 application-action facade locally verified
+
+- **Scope/build:** B13b2 is implemented on
+  `backend/b13b2-application-actions-rust`, based on verified `origin/main`
+  `490b4b641282fe87a632d31e83864c9067e3e10f`; this merge-intended slice uses
+  build `0.82.0 (47)`. B13 remains partial; B14 remains gated until all B13
+  slices and the caller inventory are accepted and merged.
+- **Frozen B14 surface:** the central controller creates the separate B11
+  `RustLoginSession` for Claude login, retaining its watch and bounded event
+  receiver outside B10 snapshots/notifications. `check_update` calls B12's
+  bounded `updates::check` on the Rust controller runtime and returns current,
+  latest and relation; the PyO3 boundary exposes only the stable error kind and
+  static `update_check` operation. `launch_codex_login_terminal` performs Rust
+  CLI/terminal discovery and argv launch, returns `launched: false` if no
+  supported terminal exists, and keeps errors sanitized. `restart_application`
+  requests `systemctl --user restart codexbar-gtk` when `INVOCATION_ID` is set,
+  then falls back on spawn failure to detached `current_exe()` plus OS argv;
+  tests verify development and installed `python3 -m codexbar_gtk` wrappers,
+  systemd success/fallback and static errors. `refresh_icon_cache` returns
+  `refreshed`, `skipped_missing_directory`, `skipped_missing_tool`, or explicit
+  best-effort `failed`; it targets `~/.local/share/icons/hicolor`, prefers
+  `gtk4-update-icon-cache` then `gtk-update-icon-cache`, uses `-f -t` and a
+  20-second timeout, and surfaces no paths or tool output. Rust async/process
+  calls run on workers; GTK retains SVG writes/rendering, the native chooser,
+  browser interaction, GLib marshalling and OS notification delivery.
+- **Wayland rendering correction:** captured a real transitional issue where
+  `Adw.MessageDialog`'s already-presented progress buffer remained visible in
+  the compositor after its heading/body properties changed. The update result
+  now creates the completed dialog while the progress dialog still exists,
+  closes the progress dialog, then presents the completed one. This preserves
+  the result labels and gives Wayland a fresh surface; the compositor screenshot
+  now shows the completed synthetic `Update available: 0.82.0 (48)` result.
+- **Caller inventory:** Rust-opt-in UI call sites now route Claude login,
+  Codex terminal login, update checking, restart and icon-cache refresh through
+  the central facade. `ui/app.py`'s GLib 250ms timer only drains the B10 watch
+  and events; B11 login dialog polling only marshals its separate event stream;
+  `ensure_display` retries GTK display readiness. Python `cli.py` controller
+  commands, update HTTP/parser code in `updates.py`, login PTY/browser helpers,
+  `ui/app.py` restart fallback, `ui/settings.py` terminal fallback,
+  `ui/icons.py::_refresh_icon_cache`, and Python currency HTTP remain parity
+  paths and are not used for the migrated Rust-opt-in callers. The one-shot
+  `claude_auth_status()` helper has no production callers. GTK notification
+  delivery remains platform-side; policy/event selection is B10/B13a Rust.
+- **Tests/checks:** `cargo test --manifest-path rust-core/Cargo.toml --locked`
+  passed 75; the backend command passed 69. The first parallel Cargo run
+  exposed a cancellation fixture race: `Path::exists()` became true as the
+  shell opened/truncated `child.pid`, before its PID write completed. Both the
+  timeout and cancellation tests now wait until the file contents parse as a
+  PID before asserting process termination/cancelling. The exact workflow order
+  (core then backend) passed, followed by two more standard parallel backend
+  test runs (69 each); this verifies the test synchronization fix under normal
+  test parallelism.
+  Python parity discovery passed 202 tests with 20 expected Rust-opt-in skips;
+  `CODEXBAR_RUST_CORE=1 python3 -m unittest discover -s tests -q` passed all
+  202. The focused tray D-Bus suite passed 3. Format and strict all-target,
+  all-feature Clippy passed for core/backend/PyO3; the optional extension built
+  atomically; Python compileall and `git diff --check` passed. Restart wrapper
+  tests cover installed/development argv; Rust injected launch tests cover
+  systemd failure fallback/sanitization; icon-cache tests cover preference,
+  fallback, argv, timeout, missing directory/tool, nonzero/failure result and
+  quiet facade status. B12 loopback and B11 fake-login PyO3 tests pass. No real
+  auth/account data was used.
+- **Fixture-only GTK:** the new app smoke ran both backend modes on the active
+  Wayland display with temporary HOME/XDG trees, a synthetic CLI, a loopback
+  VERSION server, a fake icon-cache executable, and a private `dbus-run-session`.
+  The app's actual update worker/facade completed and the smoke asserted the
+  result dialog heading/body; the fake icon tool was also invoked after SVG
+  generation. Spectacle used the existing desktop bus only for KWin compositor
+  capture. Both active-window images were visually inspected:
+  [Python mode](screenshots/b13b2-actions-python-wayland.png) and
+  [Rust opt-in](screenshots/b13b2-actions-rust-wayland.png). They contain only
+  synthetic version metadata and no account, secret or auth output. This is a
+  focused update/cache smoke, not exhaustive login interaction or provider
+  validation.
+- **Status/handoff:** B13b2 is locally verified with screenshots and the final
+  caller inventory; PR is pending. B13b parent remains partial until the
+  screenshot-bearing PR and all extracted scopes are verified and merged. Next:
+  report exact readiness to B14/orchestration, open the focused PR against
+  current `main`, then verify its exact head, review state, mergeability and
+  required checks before normal merge.
+
+### E075 — 2026-10-31: B13b2 PR #48 opened; initial CI pending
+
+- **PR/base/head:** [PR #48](https://github.com/SaahiilM/codexbar-gtk/pull/48)
+  targets `main` at observed SHA
+  `490b4b641282fe87a632d31e83864c9067e3e10f`. Initial submitted head was
+  `4eae00c5cdb7210bdbfcb06fe39ec2475256b0c2`, build 47. The body embeds both
+  synthetic active-Wayland update-result screenshots. The PR is linked to the
+  B13 thread; the GitHub connector create endpoint returned 403, so the same
+  authorized normal PR creation was completed with `gh pr create`.
+- **Initial live review/check state:** PR OPEN and MERGEABLE, with
+  `mergeStateStatus=UNSTABLE` because `test` was IN_PROGRESS. `tray-dbus` was
+  SUCCESS on the exact submitted head. No reviews or comments were present.
+  The exact PR API base/head response matched the fetched `origin/main` and the
+  submitted commit. These initial statuses are historical; refresh them against
+  the live final head before any merge.
+- **Local cancellation-test race resolution:** E074 records the cause and
+  fix. The standard Rust workflow sequence passed, followed by two additional
+  parallel backend runs; every backend run reported 69 passed. The head
+  includes the parseable-PID fixture synchronization fix.
+- **Next exact step:** wait for the PR check/review event, then recheck current
+  `main`, final head, checks, reviews, screenshot body and mergeability. Merge
+  only through the normal GitHub path when final-head verification is clean;
+  B13 remains partial until B13b2 and the full caller inventory are accepted.

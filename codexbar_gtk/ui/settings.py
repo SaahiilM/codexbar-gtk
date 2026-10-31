@@ -691,6 +691,26 @@ class SettingsWindow(Adw.PreferencesWindow):
 
     def _open_terminal_login(self, provider_id: str) -> None:
         """Open a terminal with the provider's login command."""
+        if self.controller.uses_rust_controller and provider_id == "codex":
+            def launch() -> None:
+                try:
+                    outcome = self.controller.launch_codex_login_terminal()
+                    message = (
+                        "Started Codex login in a terminal"
+                        if outcome.get("launched")
+                        else "Run this in a terminal: codex login"
+                    )
+                except Exception:
+                    message = "Could not start Codex login"
+                GLib.idle_add(self._finish_codex_terminal_login, message)
+
+            threading.Thread(
+                target=launch,
+                name="codexbar-codex-terminal-login",
+                daemon=True,
+            ).start()
+            return
+
         command = (
             ["claude", "auth", "login", "--claudeai"]
             if provider_id == "claude"
@@ -716,6 +736,10 @@ class SettingsWindow(Adw.PreferencesWindow):
             self._notify(f"Started {' '.join(command)} in a terminal")
         except OSError as exc:
             self._notify(f"Could not open a terminal: {exc}")
+
+    def _finish_codex_terminal_login(self, message: str) -> bool:
+        self._notify(message)
+        return False
 
     def _toggle_hooks(self, value: bool) -> None:
         self._run_settings_action(

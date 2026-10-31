@@ -10,15 +10,15 @@ history. A checked box means **verified and merged**, not merely implemented.
 | --- | --- |
 | Goal | Fully native Rust GTK4/libadwaita app; backend first, UI second |
 | Current phase | B13 backend extraction; native UI implementation must wait for BG |
-| Last merged implementation | B09a PR #45 merged at `d1eff677`, build `0.82.0 (44)` |
+| Last merged implementation | B13a PR #46 merged at `1650646f`, build `0.82.0 (45)` |
 | Planning change | [PR #18](https://github.com/SaahiilM/codexbar-gtk/pull/18), merged at `69c5496`, build `0.81.0 (17)` |
-| Backend tasks completed after that baseline | B00–B12 merged; B09a merge evidence and exact checks are in E067 |
-| Active implementation task / owner | B13a spend/tray projections, current coding-agent session |
-| Active task | **B13a** — PR #46, branch `backend/b13a-spend-tray-projections`, based on `d1eff677`; build `0.82.0 (45)` |
-| Next domain slice | **B13b** — settings actions, login/update/restart and launch-at-login extraction after B13a review/merge |
-| Open external blockers | None. Dependencies B04–B12 are merged; B14 confirmed the typed DTO/service boundary and tray source-index contract (E067). |
-| Latest checks | B13a local Rust/Python/tray D-Bus, format/Clippy, extension build and installed Wayland fixture smoke pass (E069). PR #46 checks on the earlier head `d590c0d` passed; changes in this handoff require exact-head GitHub checks to be reobserved before merge. |
-| UI validation | B09a evidence is in E066. B13a default Python and Rust opt-in paths both passed live Wayland fixture smoke with a private installed Cairo bridge; [b13-spend-tray-synthetic.png](screenshots/b13-spend-tray-synthetic.png) is a corrected compositor capture with the heatmap, chart and missing/zero cost rows visible (E069). |
+| Backend tasks completed after that baseline | B00–B12 and B13a merged; exact B13a merge/check evidence is in E070 |
+| Active implementation task / owner | B13b1 settings operations, current coding-agent session |
+| Active task | **B13b1** — settings operations and preference file actions, verified/PR-pending on branch `backend/b13b-settings-actions-rust`, based on B13a merge `1650646f`; build `0.82.0 (46)`. B14 approved the typed facade and optional CLI patch contract. |
+| Next domain slice | **B13b2** — B11 login, B12 update check and restart operations after B13b1; B13 parent remains partial until B13b1, B13b2 and the remaining caller inventory are verified and merged. |
+| Open external blockers | None for B13b1. Coordinate PR opening/merge slot with orchestration; B14 remains gated on the full B13 parent. |
+| Latest checks | B13b1 local Rust tests/Clippy, Python discovery in both modes, tray D-Bus, extension build, Python compilation, and fixture Wayland smoke passed; exact details/screenshots are in E071. B13a PR #46 normal merge verified at `1650646ffee23015ec9f5f640a0470755d7f247c` (E070). |
+| UI validation | B13a screenshots are in E069. B13b1 fixture-only settings-window screenshots: [Python mode](screenshots/b13-settings-python-wayland.png) and [Rust opt-in](screenshots/b13-settings-rust-wayland.png); both were captured from the active Wayland window and visually inspected (E071). |
 
 **First commands for a new model/session:**
 
@@ -109,19 +109,27 @@ credits and error semantics are integrated):
 - [x] **B02b2b2a** Detail chart normalization — merged PR #32.
 - [x] **B02b2b2b** Credits/status/error/plan context normalization — merged PR #33.
 
-B13 sub-slices (the parent stays pending until both slices and all caller routes
-are verified and merged; coordinate Rust DTO/method names with B14):
+B13 sub-slices (the parent stays pending until all slices and caller routes are
+verified and merged; coordinate Rust DTO/method names with B14):
 
-- [ ] **B13a** Spend/tray projections — Rust DTOs for spend time-range filtering,
+- [x] **B13a** Spend/tray projections — Rust DTOs for spend time-range filtering,
   currency conversion, coverage/partial state, provider/model/project grouping,
   and tray summaries from B10's B09-ordered snapshot/selection. Missing row costs
   remain unavailable; explicit zero stays known, and `cost: 0` falls back to a
   nonzero `totalCost` for model rows. Keep GTK/Cairo drawing and list widgets in
   Python.
-- [ ] **B13b** Settings and application actions — route settings CLI actions,
-  login, update/restart and launch-at-login through B07/B11/B12 and the central
-  facade; keep dialogs/file chooser and GLib marshalling in Python, documenting
-  any platform-only launch adapter.
+- [ ] **B13b1** Settings operations — route provider configuration/actions,
+  hooks/plugins, PreferencesStore import/export/reset, and launch-at-login
+  query/set through the shared Rust facade. Rust owns file I/O, validation,
+  serialization, preference mutation and stable sanitized errors; GTK owns the
+  native file chooser and GLib marshalling. CLI path/timezone setters use
+  `settings_reconfigure_cli(Option<String>, Option<String>)`; the serialized
+  actor resolves omitted fields from PreferencesStore, rejects an empty patch,
+  and commits both fields transactionally before swapping the shared CLI slot
+  and queuing B10 refresh. B14 approved this contract; see E071.
+- [ ] **B13b2** Application actions — route login through the separate B11
+  handle, update checking through B12 Updates, and restart through a Rust facade
+  operation; GTK only marshals completed results and delivers OS notifications.
 
 B05/B07/B12 can proceed after B00 independently of payload parsing. B11/B13 are
 not optional just because their Python files sit near presentation code. Do not

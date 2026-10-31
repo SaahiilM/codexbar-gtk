@@ -1708,3 +1708,88 @@ future models must verify the linked PR's status rather than trusting a stale
   corrected runtime evidence to orchestration before merge and preserve the
   serialized build-45 slot. B13 remains partial until B13b is implemented and
   verified; no parent completion is claimed.
+
+### E070 — 2026-10-30: B13a PR #46 merged; B13b1 build-46 slot claimed
+
+- **Observed PR state:** PR #46 was rechecked at exact head
+  `0fe3349f4205602129218b4f6d09888f070da1df`, targeting `main`, based on
+  B09a's merge `d1eff67725cfbde82c49f0eb75861d4dbbd4d797`. It was OPEN,
+  MERGEABLE/CLEAN, with no reviews or comments. GitHub Actions run
+  `41121192187` reported both required checks, `test` and `tray-dbus`, SUCCESS.
+  The PR body included the corrected Rust and Python synthetic Wayland
+  screenshots. After those checks and UI evidence were verified, PR #46 was
+  merged normally (no bypass) at
+  `1650646ffee23015ec9f5f640a0470755d7f247c`; a fetch confirmed
+  `origin/main` exactly matches that commit.
+- **Correction to E069:** its final status paragraph was recorded before the
+  merge and said PR #46 remained open. The observed state above supersedes that
+  pre-merge handoff. E069's local check and fixture smoke details remain valid.
+- **Next task/scope:** B13b1 is claimed on branch
+  `backend/b13b-settings-actions-rust`, based on the B13a merge, provisional
+  build `0.82.0 (46)`. The focused slice routes settings provider actions,
+  hooks/plugins, preferences import/export/reset and launch-at-login query/set
+  through the shared Rust facade. Rust owns preference file I/O, parsing,
+  serialization, mutation and stable sanitized operation errors; GTK retains
+  the native file chooser and GLib marshalling. B14 is reviewing the proposed
+  public method names, DTOs and failure categories before API freeze.
+- **Remaining B13 scope:** B13b2 covers B11 login, B12 update checking and
+  restart operations. B13 parent stays partial until B13b1, B13b2 and every
+  remaining settings/application caller route have been verified and merged.
+  No B14 API incompatibility is known; the B13b1 contract review is pending.
+
+### E071 — 2026-10-30: B13b1 settings facade and shared CLI reconfiguration verified locally
+
+- **Owner/base/build:** current coding-agent session; branch
+  `backend/b13b-settings-actions-rust`, based on B13a merge
+  `1650646ffee23015ec9f5f640a0470755d7f247c`; build `0.82.0 (46)`.
+- **Scope:** B07 typed settings reads/actions, hooks/plugins, PreferencesStore
+  import/export/reset and launch-at-login query/set are exposed through the
+  shared Rust facade with owned DTOs and sanitized static operation errors.
+  Python keeps native file chooser, GLib marshalling and widget rendering. The
+  same `Arc<SharedCliService>` backs B10 and settings; each CLI call clones the
+  current immutable service under a short read lock and performs I/O after the
+  lock is released.
+- **Reconfiguration contract:** B14 approved
+  `settings_reconfigure_cli(cli_path: Option<String>, timezone: Option<String>)`
+  and `CliReconfigureResult { applied, refresh_queued }`. `None` resolves from
+  shared PreferencesStore inside the serialized actor; `Some("")` explicitly
+  persists blank and selects default executable/system timezone. Both `None`
+  is `invalid_input/settings_cli_reconfigure` with no preference/slot change or
+  refresh. Actor snapshots both current values once, overlays the patch, trims
+  the path, validates the effective executable, persists both keys via the
+  reconfiguration-only transactional store method, swaps the shared slot, then
+  queues B10 refresh. Validation/persistence failures occur before commit and
+  leave memory and slot unchanged. A closed refresh channel after commit is
+  `Ok { applied: true, refresh_queued: false }`; accepted/coalesced refresh is
+  true. In-flight operations retain their cloned old service; later calls and
+  the forced follow-up use the new service. The Python parity setter still
+  trims/applies/persists immediately without executable validation; Rust's
+  reject-invalid-before-commit behavior is the approved narrow correction.
+- **Tests:** Rust core 75 passed; backend 56 passed, including scoped
+  transactional persistence failure, invalid paths, omitted-field preservation,
+  explicit blanks, concurrent partial patches, empty-patch no-refresh, old
+  in-flight/new subsequent CLI behavior, closed refresh channel and a B10-level
+  blocked-pass test proving the coalesced follow-up uses the final executable
+  and timezone. Checked-read tests cover valid-looking output on nonzero exit,
+  timeout and independent successful sections. Python default discovery passed
+  192 tests with 12 expected opt-in skips; Rust-opt-in discovery passed all 192.
+  The focused tray D-Bus suite passed 3 tests. Strict all-target/all-feature
+  Clippy and format checks passed for core, backend and PyO3 bridge; the atomic
+  extension build and `py_compile` passed; `git diff --check` passed.
+- **Fixture-only GTK runtime:** default Python and Rust-opt-in modes each ran
+  against the active Wayland compositor with temporary HOME/XDG directories and
+  synthetic CLI scripts only. The smoke exercises provider configuration,
+  path-only then timezone-only reconfiguration, immediate refresh, and asserts
+  both settings controls reflect the accepted values. `Spectacle --activewindow`
+  captures are [Python](screenshots/b13-settings-python-wayland.png) and
+  [Rust](screenshots/b13-settings-rust-wayland.png); both show the CodexBar
+  settings window and were visually inspected. No real account or credential
+  data was used. Nonfatal EGL and AT-SPI warnings were emitted. A private
+  `dbus-run-session` capture could not reach the live compositor portal, so the
+  screenshot was captured from the existing session bus; ordinary tray tests
+  ran separately in their required D-Bus environment.
+- **Status/handoff:** B13b1 is locally verified and ready for its focused PR,
+  pending orchestration's serialized opening/merge slot and remote CI/review.
+  The B14 API contract is approved; the exact methods, patch semantics and
+  errors above are the frozen interface. B13b2 (B11 login, B12 update, restart)
+  and remaining caller audit still block B13 parent completion and B14.

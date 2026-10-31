@@ -52,6 +52,31 @@ impl PreferencesStore {
         self.save()
     }
 
+    /// Atomically persist a scoped configuration update before publishing it
+    /// to readers. This is intentionally separate from `update`, whose
+    /// historical mutate-then-save behavior remains unchanged.
+    pub fn update_transactional(&self, updates: Map<String, Value>) -> io::Result<()> {
+        loop {
+            let before = self.values();
+            let mut candidate = before.clone();
+            candidate.extend(updates.clone());
+            let staged = stage_atomic(&self.path, &candidate)?;
+
+            let mut current = self.lock_values();
+            if *current != before {
+                drop(current);
+                let _ = fs::remove_file(staged);
+                continue;
+            }
+            if let Err(error) = fs::rename(&staged, &self.path) {
+                let _ = fs::remove_file(staged);
+                return Err(error);
+            }
+            *current = candidate;
+            return Ok(());
+        }
+    }
+
     pub fn reset(&self) -> io::Result<()> {
         *self.lock_values() = default_values();
         self.save()
@@ -78,7 +103,7 @@ impl PreferencesStore {
 
     pub fn save(&self) -> io::Result<()> {
         let values = self.lock_values();
-        save_atomic(&self.path, &values)
+        save_atomic(&self.path, &*values)
     }
 
     pub fn refresh_seconds(&self) -> i64 {
@@ -125,6 +150,22 @@ impl PreferencesStore {
         self.update(updates)
     }
 
+    /// Write the portable preferences document to a user-selected path.
+    /// Serialization, atomic replacement, and private file permissions stay
+    /// in the store rather than in the UI adapter.
+    pub fn export_to_path(&self, path: impl AsRef<Path>) -> io::Result<()> {
+        save_atomic(path.as_ref(), &self.export_document())
+    }
+
+    /// Read and import a portable document from a user-selected path. Unknown
+    /// keys and legacy version values retain `import_document` compatibility.
+    pub fn import_from_path(&self, path: impl AsRef<Path>) -> io::Result<()> {
+        let contents = fs::read_to_string(path)?;
+        let document = serde_json::from_str::<Value>(&contents)
+            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+        self.import_document(&document)
+    }
+
     fn lock_values(&self) -> MutexGuard<'_, Map<String, Value>> {
         self.values
             .lock()
@@ -132,7 +173,16 @@ impl PreferencesStore {
     }
 }
 
-fn save_atomic(path: &Path, values: &Map<String, Value>) -> io::Result<()> {
+fn save_atomic(path: &Path, values: &impl serde::Serialize) -> io::Result<()> {
+    let temporary_path = stage_atomic(path, values)?;
+    if let Err(error) = fs::rename(&temporary_path, path) {
+        let _ = fs::remove_file(&temporary_path);
+        return Err(error);
+    }
+    Ok(())
+}
+
+fn stage_atomic(path: &Path, values: &impl serde::Serialize) -> io::Result<PathBuf> {
     if let Some(parent) = path
         .parent()
         .filter(|parent| !parent.as_os_str().is_empty())
@@ -140,8 +190,13 @@ fn save_atomic(path: &Path, values: &Map<String, Value>) -> io::Result<()> {
         fs::create_dir_all(parent)?;
     }
 
+    static NEXT_TEMP: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let mut temporary_name = OsString::from(path.as_os_str());
-    temporary_name.push(".tmp");
+    temporary_name.push(format!(
+        ".tmp.{}.{}",
+        std::process::id(),
+        NEXT_TEMP.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    ));
     let temporary_path = PathBuf::from(temporary_name);
     let result = (|| {
         let mut options = OpenOptions::new();
@@ -162,14 +217,7 @@ fn save_atomic(path: &Path, values: &Map<String, Value>) -> io::Result<()> {
         file.flush()?;
         file.sync_all()?;
         drop(file);
-        fs::rename(&temporary_path, path)?;
-
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            fs::set_permissions(path, fs::Permissions::from_mode(0o600))?;
-        }
-        Ok(())
+        Ok(temporary_path.clone())
     })();
 
     if result.is_err() {
@@ -305,6 +353,37 @@ mod tests {
     }
 
     #[test]
+    fn transactional_update_persists_before_publishing_and_leaves_memory_unchanged_on_failure() {
+        let temp = TempDir::new();
+        let path = temp.path().join("settings.json");
+        let store = PreferencesStore::new(&path);
+        store.set("cliPath", json!("old"), false).unwrap();
+        let mut updates = Map::new();
+        updates.insert("cliPath".into(), json!("new"));
+        updates.insert("costUsageBucketTimeZone".into(), json!("Pacific/Chatham"));
+        store.update_transactional(updates).unwrap();
+
+        let disk: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        assert_eq!(disk["cliPath"], json!("new"));
+        assert_eq!(disk["costUsageBucketTimeZone"], json!("Pacific/Chatham"));
+        assert_eq!(store.get("cliPath"), Some(json!("new")));
+        assert_eq!(
+            store.get("costUsageBucketTimeZone"),
+            Some(json!("Pacific/Chatham"))
+        );
+
+        let blocker = temp.path().join("blocker");
+        fs::write(&blocker, "not a directory").unwrap();
+        let failing = PreferencesStore::new(blocker.join("settings.json"));
+        failing.set("cliPath", json!("old"), false).unwrap();
+        let before = failing.values();
+        let mut updates = Map::new();
+        updates.insert("cliPath".into(), json!("new"));
+        assert!(failing.update_transactional(updates).is_err());
+        assert_eq!(failing.values(), before);
+    }
+
+    #[test]
     fn imports_known_portable_keys_and_ignores_unknown_keys() {
         let temp = TempDir::new();
         let store = PreferencesStore::new(temp.path().join("settings.json"));
@@ -319,6 +398,50 @@ mod tests {
             .unwrap();
         assert_eq!(store.get("refreshFrequency"), Some(json!("15m")));
         assert_eq!(store.get("futureOption"), None);
+    }
+
+    #[test]
+    fn selected_file_export_import_round_trips_portable_preferences_privately() {
+        let temp = TempDir::new();
+        let store = PreferencesStore::new(temp.path().join("settings.json"));
+        store.set("refreshFrequency", json!("2m"), false).unwrap();
+        store.set("showTray", json!(false), false).unwrap();
+        let export = temp.path().join("selected-export.json");
+
+        store.export_to_path(&export).unwrap();
+        let exported: Value = serde_json::from_slice(&fs::read(&export).unwrap()).unwrap();
+        assert_eq!(exported["version"], json!(1));
+        assert_eq!(exported["preferences"]["refreshFrequency"], json!("2m"));
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                fs::metadata(&export).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
+        }
+
+        let imported = PreferencesStore::new(temp.path().join("imported-settings.json"));
+        imported.import_from_path(&export).unwrap();
+        assert_eq!(imported.get("refreshFrequency"), Some(json!("2m")));
+        assert_eq!(imported.get("showTray"), Some(json!(false)));
+        assert_eq!(imported.get("launchAtLogin"), Some(json!(false)));
+    }
+
+    #[test]
+    fn selected_file_import_reports_io_and_invalid_json_without_mutating_store() {
+        let temp = TempDir::new();
+        let store = PreferencesStore::new(temp.path().join("settings.json"));
+        store.set("refreshFrequency", json!("5m"), false).unwrap();
+        assert!(store
+            .import_from_path(temp.path().join("missing.json"))
+            .is_err());
+
+        let invalid = temp.path().join("invalid.json");
+        fs::write(&invalid, "{").unwrap();
+        let error = store.import_from_path(&invalid).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+        assert_eq!(store.get("refreshFrequency"), Some(json!("5m")));
     }
 
     #[test]

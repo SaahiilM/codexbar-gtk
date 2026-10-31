@@ -9,6 +9,7 @@ use std::{
     ffi::OsString,
     path::{Path, PathBuf},
     process::Stdio,
+    sync::{Arc, RwLock},
     time::{Duration, Instant},
 };
 
@@ -25,6 +26,8 @@ pub enum CliErrorKind {
     Spawn,
     Io,
     InvalidJson,
+    /// A checked typed operation received a nonzero command exit status.
+    CommandRejected,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
@@ -46,6 +49,7 @@ impl CliError {
             CliErrorKind::Timeout => crate::BackendErrorKind::Timeout,
             CliErrorKind::Cancelled => crate::BackendErrorKind::Cancelled,
             CliErrorKind::InvalidJson => crate::BackendErrorKind::Protocol,
+            CliErrorKind::CommandRejected => crate::BackendErrorKind::Process,
         };
         crate::BackendError::new(kind, self.operation)
     }
@@ -147,6 +151,20 @@ fn is_executable_file(path: &Path) -> bool {
     {
         true
     }
+}
+
+/// Whether an explicit CLI setting resolves to an executable. A bare command
+/// name is accepted when it is present on PATH; the configured spelling is
+/// retained so subprocess argv behavior remains compatible with Python.
+pub fn executable_override_is_valid(value: &str) -> bool {
+    let path = Path::new(value);
+    if path.components().count() > 1 || path.is_absolute() {
+        return is_executable_file(path);
+    }
+    std::env::var_os("PATH")
+        .into_iter()
+        .flat_map(|paths| std::env::split_paths(&paths).collect::<Vec<_>>())
+        .any(|folder| is_executable_file(&folder.join(path)))
 }
 
 /// Configuration is immutable while a call is running. A caller constructs a
@@ -411,6 +429,22 @@ impl CliService {
         Ok(parse_config_providers(&result.stdout))
     }
 
+    /// Checked settings read that rejects nonzero command status before
+    /// interpreting stdout. The generic `run` and `run_json` methods retain
+    /// their historical return-code behavior for parity callers.
+    pub async fn config_providers_checked(
+        &self,
+        timeout: Duration,
+        cancellation: Option<Cancellation>,
+    ) -> Result<Vec<ProviderStatusEntry>, CliError> {
+        let args = ["config".into(), "providers".into()];
+        let result = self
+            .run_operation(&args, timeout, cancellation, "cli_config_providers")
+            .await?;
+        checked_result(result, "cli_config_providers")
+            .map(|result| parse_config_providers(&result.stdout))
+    }
+
     pub async fn set_api_key(
         &self,
         provider: &str,
@@ -474,6 +508,29 @@ impl CliService {
         }
     }
 
+    /// Checked settings read that rejects a nonzero exit even if stdout looks
+    /// like valid JSON. No process output is included in the error.
+    pub async fn hooks_checked(
+        &self,
+        timeout: Duration,
+        cancellation: Option<Cancellation>,
+    ) -> Result<Value, CliError> {
+        let args = [
+            "hooks".into(),
+            "list".into(),
+            "--format".into(),
+            "json".into(),
+        ];
+        let result = self
+            .run_operation(&args, timeout, cancellation, "cli_hooks")
+            .await?;
+        let result = checked_result(result, "cli_hooks")?;
+        parse_checked_json(&result.stdout, "cli_hooks").map(|value| match value {
+            Value::Object(object) => Value::Object(object),
+            _ => serde_json::json!({"enabled": false, "events": []}),
+        })
+    }
+
     pub async fn set_hooks_enabled(
         &self,
         enabled: bool,
@@ -498,6 +555,66 @@ impl CliService {
             .await
             .map(as_array_or_object)
     }
+
+    /// Checked plugin listing used by settings. A nonzero process exit is a
+    /// stable command-rejected error, even when stdout contains valid JSON.
+    pub async fn plugins_checked(
+        &self,
+        timeout: Duration,
+        cancellation: Option<Cancellation>,
+    ) -> Result<Vec<Value>, CliError> {
+        let args = ["plugins".into(), "list".into()];
+        let result = self
+            .run_operation(&args, timeout, cancellation, "cli_plugins")
+            .await?;
+        let result = checked_result(result, "cli_plugins")?;
+        parse_checked_json(&result.stdout, "cli_plugins").map(as_array_or_object)
+    }
+}
+
+/// Mutable configuration boundary around immutable CLI service instances.
+/// Refresh and settings share one slot; each operation takes a short snapshot
+/// and then performs all process I/O without holding the slot lock.
+pub struct SharedCliService {
+    current: RwLock<Arc<CliService>>,
+}
+
+impl SharedCliService {
+    pub fn new(initial: Arc<CliService>) -> Self {
+        Self {
+            current: RwLock::new(initial),
+        }
+    }
+
+    pub fn snapshot(&self) -> Arc<CliService> {
+        self.current
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+
+    pub fn replace(&self, replacement: Arc<CliService>) {
+        *self
+            .current
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = replacement;
+    }
+}
+
+fn checked_result(result: CliResult, operation: &'static str) -> Result<CliResult, CliError> {
+    if result.returncode == 0 {
+        Ok(result)
+    } else {
+        Err(CliError::new(CliErrorKind::CommandRejected, operation))
+    }
+}
+
+fn parse_checked_json(stdout: &str, operation: &'static str) -> Result<Value, CliError> {
+    if stdout.trim().is_empty() {
+        return Err(CliError::new(CliErrorKind::InvalidJson, operation));
+    }
+    serde_json::from_str(stdout.trim())
+        .map_err(|_| CliError::new(CliErrorKind::InvalidJson, operation))
 }
 
 fn kill_process_group(process_group_id: Option<u32>) {

@@ -15,12 +15,8 @@ from gi.repository import Adw, Gdk, Gio, GLib, Gtk
 
 from .. import currency, display_string
 from .. import providers as provider_meta
-from ..cli import default_cli_path
 from ..login import terminal_command_argv
 from . import icon_names
-
-AUTOSTART_DIR = os.path.expanduser("~/.config/autostart")
-AUTOSTART_FILE = os.path.join(AUTOSTART_DIR, "codexbar-gtk.desktop")
 
 REFRESH_LABELS = [
     ("Manual", "manual"),
@@ -53,6 +49,7 @@ def _combo_row(
     current: str,
     on_change,
     subtitle: str | None = None,
+    handler_sink: list[int] | None = None,
 ) -> Adw.ComboRow:
     row = Adw.ComboRow(title=title, subtitle=subtitle or "")
     model = Gtk.StringList()
@@ -63,7 +60,11 @@ def _combo_row(
         if value == current:
             row.set_selected(index)
             break
-    row.connect("notify::selected", lambda r, _p: on_change(options[r.get_selected()][1]))
+    handler = row.connect(
+        "notify::selected", lambda r, _p: on_change(options[r.get_selected()][1])
+    )
+    if handler_sink is not None:
+        handler_sink.append(handler)
     return row
 
 
@@ -108,20 +109,30 @@ class SettingsWindow(Adw.PreferencesWindow):
         self._on_open_dashboard = on_open_dashboard
         self._cli_load_generation = 0
         self._version_rows: list[Adw.ActionRow] = []
+        self._launch_at_login_switch: Gtk.Switch | None = None
+        self._launch_at_login_handler: int | None = None
+        self._cli_path_entry: Adw.EntryRow | None = None
+        self._timezone_row: Adw.ComboRow | None = None
+        self._timezone_handler: int | None = None
+        self._accepted_cli_path = ""
+        self._accepted_timezone = ""
         self.set_title("CodexBar Settings")
         self.set_default_size(1000, 720)
         self.set_modal(False)
         self.search_enabled = True
 
-        self.add(self._general_page())
-        self.add(self._providers_page())
+        self.general_page = self._general_page()
+        self.providers_page = self._providers_page()
+        self.advanced_page = self._advanced_page()
+        self.add(self.general_page)
+        self.add(self.providers_page)
         self.add(self._menu_bar_page())
         self.add(self._display_page())
         self.add(self._notifications_page())
         self.add(self._spend_page())
         self.add(self._hooks_page())
         self.add(self._plugins_page())
-        self.add(self._advanced_page())
+        self.add(self.advanced_page)
         self.acknowledgements_page = self._acknowledgements_page()
         self.add(self.acknowledgements_page)
         self.about_page = self._about_page()
@@ -167,14 +178,19 @@ class SettingsWindow(Adw.PreferencesWindow):
         page.add(refresh_group)
 
         startup = Adw.PreferencesGroup(title="Startup")
-        startup.add(
-            _switch_row(
-                "Start at login",
-                "Launch CodexBar when you sign in",
-                bool(self.prefs.get("launchAtLogin")),
-                self._set_launch_at_login,
-            )
+        launch_row = Adw.ActionRow(
+            title="Start at login",
+            subtitle="Launch CodexBar when you sign in",
         )
+        launch_switch = Gtk.Switch(valign=Gtk.Align.CENTER)
+        launch_switch.set_active(False)
+        self._launch_at_login_switch = launch_switch
+        self._launch_at_login_handler = launch_switch.connect(
+            "notify::active", lambda switch, _param: self._set_launch_at_login(switch.get_active())
+        )
+        launch_row.add_suffix(launch_switch)
+        launch_row.set_activatable_widget(launch_switch)
+        startup.add(launch_row)
         startup.add(
             _switch_row(
                 "Show the popover on start",
@@ -216,6 +232,9 @@ class SettingsWindow(Adw.PreferencesWindow):
         return page
 
     def _populate_providers(self, entries, error: str | None = None) -> None:
+        def field(entry, name, default=None):
+            return entry.get(name, default) if isinstance(entry, dict) else getattr(entry, name, default)
+
         rows: list[Gtk.Widget] = []
         if error:
             row = Adw.ActionRow(title="Could not load providers")
@@ -224,15 +243,16 @@ class SettingsWindow(Adw.PreferencesWindow):
         elif not entries:
             rows.append(Adw.ActionRow(title="No providers found"))
         for entry in ([] if error else entries):
-            name = entry.display_name or provider_meta.display_name(entry.provider_id)
+            provider_id = str(field(entry, "provider_id", ""))
+            name = field(entry, "display_name") or provider_meta.display_name(provider_id)
             # Adwaita rows interpret their title as markup.
             name = GLib.markup_escape_text(name)
-            row = Adw.ExpanderRow(title=name, subtitle=entry.provider_id)
+            row = Adw.ExpanderRow(title=name, subtitle=provider_id)
             switch = Gtk.Switch(valign=Gtk.Align.CENTER)
-            switch.set_active(entry.enabled)
+            switch.set_active(field(entry, "enabled", False))
             switch.connect(
                 "notify::active",
-                lambda s, _p, pid=entry.provider_id: self._toggle_provider(
+                lambda s, _p, pid=provider_id: self._toggle_provider(
                     pid, s.get_active()
                 ),
             )
@@ -242,24 +262,24 @@ class SettingsWindow(Adw.PreferencesWindow):
                 "Source",
                 SOURCE_LABELS,
                 "auto",
-                lambda value, pid=entry.provider_id: self._set_provider_source(
+                lambda value, pid=provider_id: self._set_provider_source(
                     pid, value
                 ),
             )
             row.add_row(source_row)
 
-            if entry.provider_id in ("claude", "codex"):
+            if provider_id in ("claude", "codex"):
                 sign_in_row = Adw.ActionRow(
                     title="Sign in with the provider CLI",
                     subtitle=(
                         "Run claude auth login --claudeai in a terminal"
-                        if entry.provider_id == "claude"
+                        if provider_id == "claude"
                         else "Run codex login in a terminal"
                     ),
                 )
                 sign_in_row.set_activatable(True)
                 sign_in_row.connect(
-                    "activated", lambda _r, pid=entry.provider_id: self._sign_in(pid)
+                    "activated", lambda _r, pid=provider_id: self._sign_in(pid)
                 )
                 row.add_row(sign_in_row)
 
@@ -267,7 +287,7 @@ class SettingsWindow(Adw.PreferencesWindow):
             api_row.set_show_apply_button(True)
             api_row.connect(
                 "apply",
-                lambda r, pid=entry.provider_id: self._set_api_key(pid, r.get_text()),
+                lambda r, pid=provider_id: self._set_api_key(pid, r.get_text()),
             )
             row.add_row(api_row)
 
@@ -483,14 +503,17 @@ class SettingsWindow(Adw.PreferencesWindow):
                 "to a different day."
             ),
         )
-        zone_group.add(
-            _combo_row(
-                "Statistics time zone",
-                self._time_zone_options(),
-                str(self.prefs.get("costUsageBucketTimeZone") or ""),
-                self._set_time_zone,
-            )
+        timezone_handlers: list[int] = []
+        self._accepted_timezone = str(self.prefs.get("costUsageBucketTimeZone") or "")
+        self._timezone_row = _combo_row(
+            "Statistics time zone",
+            self._time_zone_options(),
+            self._accepted_timezone,
+            self._set_time_zone,
+            handler_sink=timezone_handlers,
         )
+        self._timezone_handler = timezone_handlers[0]
+        zone_group.add(self._timezone_row)
         page.add(zone_group)
         return page
 
@@ -584,49 +607,67 @@ class SettingsWindow(Adw.PreferencesWindow):
         _replace_rows(self._plugins_group, self._plugin_rows, rows)
 
     def _reload_cli_settings(self) -> None:
-        """Load CLI-backed preferences data without blocking GTK construction."""
+        """Load Rust-owned settings DTOs away from the GTK thread."""
         self._cli_load_generation += 1
         generation = self._cli_load_generation
 
         def load() -> None:
-            providers = []
-            provider_error = None
             try:
-                providers = self.controller.cli.config_providers()
-            except Exception as exc:
-                provider_error = str(exc)
-            try:
-                hooks = self.controller.cli.hooks()
+                snapshot = self.controller.settings_snapshot()
             except Exception:
-                hooks = {}
+                snapshot = {"load_error": "settings_unavailable"}
             try:
-                plugins = self.controller.cli.plugins()
-            except Exception:
-                plugins = []
-            try:
-                version = self.controller.cli.version()
+                version = (
+                    self.controller.state.cli_version
+                    if self.controller.uses_rust_controller
+                    else self.controller.cli.version()
+                )
             except Exception:
                 version = "unknown"
-            GLib.idle_add(
-                self._apply_cli_settings,
-                generation,
-                providers,
-                provider_error,
-                hooks,
-                plugins,
-                version,
-            )
+            GLib.idle_add(self._apply_cli_settings, generation, snapshot, version)
 
         threading.Thread(target=load, name="codexbar-settings-load", daemon=True).start()
 
-    def _apply_cli_settings(
-        self, generation: int, providers, provider_error, hooks, plugins, version
-    ) -> bool:
+    @staticmethod
+    def _settings_error_text(error: dict | None) -> str | None:
+        if not isinstance(error, dict):
+            return None
+        category = error.get("category")
+        operation = error.get("operation")
+        if not isinstance(category, str) or not isinstance(operation, str):
+            return "settings_unavailable"
+        return f"{category} ({operation})"
+
+    def _apply_cli_settings(self, generation: int, snapshot: dict, version: str) -> bool:
         if generation != self._cli_load_generation:
             return False
-        self._populate_providers(providers, provider_error)
-        self._populate_hooks(hooks)
-        self._populate_plugins(plugins)
+        if "load_error" in snapshot:
+            self._populate_providers([], snapshot["load_error"])
+            self._populate_hooks({})
+            self._populate_plugins([])
+        else:
+            providers = snapshot.get("providers") or {}
+            hooks = snapshot.get("hooks") or {}
+            plugins = snapshot.get("plugins") or {}
+            launch = snapshot.get("launch_at_login") or {}
+            self._populate_providers(
+                providers.get("value") or [],
+                self._settings_error_text(providers.get("error")),
+            )
+            self._populate_hooks(hooks.get("value") or {})
+            self._populate_plugins(plugins.get("value") or [])
+            launch_value = launch.get("value")
+            if (
+                self._launch_at_login_switch is not None
+                and isinstance(launch_value, dict)
+                and isinstance(launch_value.get("enabled"), bool)
+            ):
+                handler = self._launch_at_login_handler
+                if handler is not None:
+                    self._launch_at_login_switch.handler_block(handler)
+                self._launch_at_login_switch.set_active(launch_value["enabled"])
+                if handler is not None:
+                    self._launch_at_login_switch.handler_unblock(handler)
         for row in self._version_rows:
             row.set_subtitle(version or "unknown")
         return False
@@ -677,8 +718,8 @@ class SettingsWindow(Adw.PreferencesWindow):
             self._notify(f"Could not open a terminal: {exc}")
 
     def _toggle_hooks(self, value: bool) -> None:
-        self._run_cli_action(
-            lambda: self.controller.cli.set_hooks_enabled(value),
+        self._run_settings_action(
+            lambda: self.controller.settings_set_hooks_enabled(value),
             f"Hooks {'enabled' if value else 'disabled'}",
             "Could not change hooks",
             on_success=self._reload_cli_settings,
@@ -692,7 +733,9 @@ class SettingsWindow(Adw.PreferencesWindow):
             description="The desktop app drives the codexbar command line tool.",
         )
         cli_row = Adw.EntryRow(title="CLI path")
-        cli_row.set_text(str(self.prefs.get("cliPath") or ""))
+        self._accepted_cli_path = str(self.prefs.get("cliPath") or "")
+        cli_row.set_text(self._accepted_cli_path)
+        self._cli_path_entry = cli_row
         cli_row.connect("apply", lambda row: self._set_cli_path(row.get_text().strip()))
         cli_group.add(cli_row)
 
@@ -828,16 +871,80 @@ class SettingsWindow(Adw.PreferencesWindow):
         return options
 
     def _set_time_zone(self, value: str) -> None:
-        self.prefs.set("costUsageBucketTimeZone", value)
-        self.controller.cli.timezone = value or None
-        self._request_refresh()
+        self._reconfigure_cli_settings(timezone=value)
 
     def _set_cli_path(self, value: str) -> None:
-        value = value.strip()
-        self.prefs.set("cliPath", value)
-        self.controller.cli.executable = value or default_cli_path()
-        self._reload_cli_settings()
-        self._request_refresh()
+        self._reconfigure_cli_settings(cli_path=value.strip(), reload_settings=True)
+
+    def _reconfigure_cli_settings(
+        self,
+        *,
+        cli_path: str | None = None,
+        timezone: str | None = None,
+        reload_settings: bool = False,
+    ) -> None:
+        """Apply CLI configuration through the facade away from GTK."""
+        def run() -> None:
+            try:
+                result = self.controller.settings_reconfigure_cli(
+                    cli_path, timezone
+                )
+                error = None
+            except Exception as exc:
+                result = None
+                error = str(exc)
+            GLib.idle_add(
+                self._finish_cli_reconfigure,
+                result,
+                error,
+                reload_settings,
+                cli_path,
+                timezone,
+            )
+
+        threading.Thread(target=run, name="codexbar-settings-reconfigure", daemon=True).start()
+
+    def _finish_cli_reconfigure(
+        self,
+        result: dict | None,
+        error: str | None,
+        reload_settings: bool,
+        cli_path: str | None,
+        timezone: str | None,
+    ) -> bool:
+        if error is not None or not isinstance(result, dict) or not result.get("applied"):
+            self._notify(f"Could not apply CLI settings: {error or 'settings_cli_reconfigure'}")
+            self._restore_cli_config_controls()
+            self._reload_cli_settings()
+            return False
+        if cli_path is not None:
+            self._accepted_cli_path = cli_path.strip()
+        if timezone is not None:
+            self._accepted_timezone = timezone
+        self._sync_cli_config_controls()
+        if result.get("refresh_queued"):
+            self._notify("CLI settings applied")
+        else:
+            self._notify("CLI settings applied; refresh unavailable")
+        if reload_settings:
+            self._reload_cli_settings()
+        return False
+
+    def _restore_cli_config_controls(self) -> None:
+        self._sync_cli_config_controls()
+
+    def _sync_cli_config_controls(self) -> None:
+        if self._cli_path_entry is not None:
+            self._cli_path_entry.set_text(self._accepted_cli_path)
+        if self._timezone_row is not None:
+            for index, (_label, value) in enumerate(self._time_zone_options()):
+                if value == self._accepted_timezone:
+                    if self._timezone_handler is not None:
+                        self._timezone_row.handler_block(self._timezone_handler)
+                    self._timezone_row.set_selected(index)
+                    if self._timezone_handler is not None:
+                        self._timezone_row.handler_unblock(self._timezone_handler)
+                    break
 
     def _set_show_tray(self, value: bool) -> None:
         self.prefs.set("showTray", value)
@@ -857,41 +964,28 @@ class SettingsWindow(Adw.PreferencesWindow):
         self.prefs.set(key, thresholds)
 
     def _set_launch_at_login(self, value: bool) -> None:
-        self.prefs.set("launchAtLogin", value)
-        try:
-            os.makedirs(AUTOSTART_DIR, exist_ok=True)
-            if value:
-                executable = os.path.abspath(sys.argv[0]) if sys.argv else "codexbar-gtk"
-                with open(AUTOSTART_FILE, "w", encoding="utf-8") as handle:
-                    handle.write(
-                        "[Desktop Entry]\n"
-                        "Type=Application\n"
-                        "Name=CodexBar\n"
-                        f"Exec={executable}\n"
-                        "X-GNOME-Autostart-enabled=true\n"
-                        "Terminal=false\n"
-                    )
-            elif os.path.exists(AUTOSTART_FILE):
-                os.remove(AUTOSTART_FILE)
-        except OSError:
-            pass
+        executable = os.path.abspath(sys.argv[0]) if sys.argv else "codexbar-gtk"
+        self._run_settings_action(
+            lambda: self.controller.set_launch_at_login(value, executable),
+            f"Launch at login {'enabled' if value else 'disabled'}",
+            "Could not change launch at login",
+        )
 
     def _toggle_provider(self, provider_id: str, enabled: bool) -> None:
-        action = (
-            self.controller.cli.enable_provider
-            if enabled
-            else self.controller.cli.disable_provider
-        )
-        self._run_cli_action(
-            lambda: action(provider_id),
+        self._run_settings_action(
+            lambda: self.controller.settings_provider_action(
+                "enable" if enabled else "disable", provider_id
+            ),
             f"{provider_id} {'enabled' if enabled else 'disabled'}",
             f"Could not update {provider_id}",
             on_success=self._request_refresh,
         )
 
     def _set_provider_source(self, provider_id: str, source: str) -> None:
-        self._run_cli_action(
-            lambda: self.controller.cli.set_source(provider_id, source),
+        self._run_settings_action(
+            lambda: self.controller.settings_provider_action(
+                "set-source", provider_id, source
+            ),
             f"{provider_id} source set to {source}",
             "Could not set source",
             on_success=self._request_refresh,
@@ -901,14 +995,14 @@ class SettingsWindow(Adw.PreferencesWindow):
         key = (key or "").strip()
         if not key:
             return
-        self._run_cli_action(
-            lambda: self.controller.cli.set_api_key(provider_id, key),
+        self._run_settings_action(
+            lambda: self.controller.settings_set_api_key(provider_id, key),
             f"API key saved for {provider_id}",
             "Could not save API key",
             on_success=self._request_refresh,
         )
 
-    def _run_cli_action(
+    def _run_settings_action(
         self,
         action: Callable[[], object],
         success_message: str,
@@ -930,7 +1024,7 @@ class SettingsWindow(Adw.PreferencesWindow):
                 on_success,
             )
 
-        threading.Thread(target=run, name="codexbar-settings-action", daemon=True).start()
+        threading.Thread(target=run, name="codexbar-settings-operation", daemon=True).start()
 
     def _finish_cli_action(
         self,
@@ -945,37 +1039,57 @@ class SettingsWindow(Adw.PreferencesWindow):
                 on_success()
         else:
             self._notify(f"{failure_message}: {error}")
+            self._reload_cli_settings()
         return False
 
-    def _export_preferences(self) -> None:
-        import json
+    def _choose_preferences_file(self, *, exporting: bool) -> None:
+        action = Gtk.FileChooserAction.SAVE if exporting else Gtk.FileChooserAction.OPEN
+        title = "Export preferences" if exporting else "Import preferences"
+        accept = "Save" if exporting else "Open"
+        chooser = Gtk.FileChooserNative.new(title, self, action, accept, "Cancel")
+        if exporting:
+            chooser.set_current_name("preferences-export.json")
+        file_filter = Gtk.FileFilter()
+        file_filter.set_name("JSON documents")
+        file_filter.add_pattern("*.json")
+        chooser.add_filter(file_filter)
 
-        path = os.path.join(
-            os.path.expanduser("~"), ".config", "codexbar-gtk", "preferences-export.json"
-        )
-        try:
-            with open(path, "w", encoding="utf-8") as handle:
-                json.dump(self.prefs.export_document(), handle, indent=2)
-            self._notify(f"Exported to {path}")
-        except OSError as exc:
-            self._notify(f"Export failed: {exc}")
+        def response(dialog, response_id) -> None:
+            if response_id == Gtk.ResponseType.ACCEPT:
+                selected = dialog.get_file()
+                path = selected.get_path() if selected is not None else None
+                if path:
+                    if exporting:
+                        self._run_settings_action(
+                            lambda: self.controller.preferences_export_to(path),
+                            f"Exported preferences to {os.path.basename(path)}",
+                            "Preferences export failed",
+                        )
+                    else:
+                        self._run_settings_action(
+                            lambda: self.controller.preferences_import_from(path),
+                            "Preferences imported",
+                            "Preferences import failed",
+                            on_success=self._request_refresh,
+                        )
+            dialog.destroy()
+
+        chooser.connect("response", response)
+        chooser.show()
+
+    def _export_preferences(self) -> None:
+        self._choose_preferences_file(exporting=True)
 
     def _import_preferences(self) -> None:
-        import json
-
-        path = os.path.join(
-            os.path.expanduser("~"), ".config", "codexbar-gtk", "preferences-export.json"
-        )
-        try:
-            with open(path, "r", encoding="utf-8") as handle:
-                self.prefs.import_document(json.load(handle))
-            self._notify("Preferences imported")
-        except (OSError, json.JSONDecodeError) as exc:
-            self._notify(f"Import failed: {exc}")
+        self._choose_preferences_file(exporting=False)
 
     def _reset_preferences(self) -> None:
-        self.prefs.reset()
-        self._notify("Preferences reset")
+        self._run_settings_action(
+            self.controller.preferences_reset,
+            "Preferences reset",
+            "Preferences reset failed",
+            on_success=self._request_refresh,
+        )
 
     def _notify(self, message: str) -> None:
         window = self.get_application().main_window

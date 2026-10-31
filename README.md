@@ -122,17 +122,17 @@ CodexBar 0.82.0 provider behavior; the provider catalog remains at 110 providers
 
 The approved destination is a **fully native Rust GTK4/libadwaita app**, with the
 backend migrated **before** the UI. The PyO3 bridge and Python shell are
-temporary. Backend gate BG passed in PR #54; native UI work has not started and
-Phase U may now begin.
+temporary. Backend gate BG passed in PR #54; Phase U is active with U01's
+native bootstrap implementation in progress.
 
 - [Architecture, source inventory and stage gates](docs/rust-migration/README.md)
 - [Task checklist and current model handoff](docs/rust-migration/TASKS.md)
 - [Decisions, verification evidence and audit trail](docs/rust-migration/AUDIT.md)
 
 Future coding agents should start with [`AGENTS.md`](AGENTS.md). B00–B15 and BG
-are accepted. Coordinate U01, the native application/bootstrap crate, as the
-first Phase U task. See E086 for the live merge, B11 CI limitation and B15
-compatibility bounds.
+are accepted. U01's native application/bootstrap is in progress on build 55;
+the Python launcher remains default until the UG cutover gate passes. See E086
+for the live merge, B11 CI limitation and B15 compatibility bounds.
 
 ### Existing opt-in module integrations
 
@@ -214,7 +214,7 @@ The GTK front-end uses the same version pair as the macOS bundle:
   this client is feature-compatible with (`0.82.0`).
 * `CURRENT_PROJECT_VERSION` is the build number of the Linux front-end.
 * `codexbar_gtk/version.py` turns the pair into the macOS-style
-  `"0.82.0 (54)"` string shown under Settings → About, in the tray menu and by
+  `"0.82.0 (55)"` string shown under Settings → About, in the tray menu and by
   `./run.sh --about`.
 
 Increment `CURRENT_PROJECT_VERSION` for each merged PR and keep it in sync with
@@ -264,6 +264,26 @@ and `tools/preview.py` add those paths automatically. Do not commit `.deps/`.
 The preview needs a working X11/Wayland display; use `xvfb-run -a` for a virtual
 X display if available. The `offscreen` GDK backend is not included in every GTK
 build. Use synthetic CLI data when capturing previews.
+
+### Native Rust GTK bootstrap
+
+The first native UI slice is a separate bootstrap binary. It talks directly to
+`rust-backend`, owns no Python bridge, and keeps screen implementations marked
+as placeholders until their U02–U08 slices land. The Python launcher remains
+the default until the UG cutover gate passes.
+
+Native builds need GTK development metadata and headers in addition to Python
+typelibs:
+
+```sh
+sudo apt install libgtk-4-dev libadwaita-1-dev
+cargo run --manifest-path rust-gtk/Cargo.toml --locked -- --page usage
+```
+
+The CI workflow installs these development packages and exercises initial and
+secondary-instance routing plus cancellation during an in-flight synthetic
+CLI request. A synthetic Wayland bootstrap capture is in
+[`docs/rust-migration/screenshots/u01-native-bootstrap-wayland.png`](docs/rust-migration/screenshots/u01-native-bootstrap-wayland.png).
 
 To exercise the Rust-backed paths, build the optional PyO3 extension and run
 the test suite with both implementations:

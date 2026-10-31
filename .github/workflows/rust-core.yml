@@ -8,6 +8,9 @@ on:
       - "rust-core/**"
       - "rust-python/**"
       - "rust-backend/**"
+      - "rust-gtk/**"
+      - "scripts/smoke-native-gtk.sh"
+      - "scripts/capture-native-gtk-wayland.sh"
       - "codexbar_gtk/providers.py"
       - "codexbar_gtk/activity.py"
       - "codexbar_gtk/format.py"
@@ -41,15 +44,22 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+      - name: Install native GTK build and smoke dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libgtk-4-dev libadwaita-1-dev xvfb xauth xdotool libglib2.0-bin dbus-daemon
       - name: Check Rust formatting
         run: |
           cargo fmt --manifest-path rust-core/Cargo.toml -- --check
           cargo fmt --manifest-path rust-python/Cargo.toml -- --check
           cargo fmt --manifest-path rust-backend/Cargo.toml -- --check
+          cargo fmt --manifest-path rust-gtk/Cargo.toml -- --check
       - name: Run Rust core tests
         run: cargo test --manifest-path rust-core/Cargo.toml --locked
       - name: Run headless backend contract tests
         run: cargo test --manifest-path rust-backend/Cargo.toml --locked
+      - name: Test native GTK bootstrap contracts
+        run: cargo test --manifest-path rust-gtk/Cargo.toml --locked
       - name: Build PyO3 extension
         run: ./scripts/build-rust-core.sh
       - name: Run Python tests with default backend
@@ -61,3 +71,8 @@ jobs:
           cargo clippy --manifest-path rust-core/Cargo.toml --all-targets --all-features -- -D warnings
           cargo clippy --manifest-path rust-python/Cargo.toml --all-targets --all-features -- -D warnings
           cargo clippy --manifest-path rust-backend/Cargo.toml --all-targets --all-features -- -D warnings
+          cargo clippy --manifest-path rust-gtk/Cargo.toml --all-targets -- -D warnings
+      - name: Build native GTK application
+        run: cargo build --manifest-path rust-gtk/Cargo.toml --locked --bin codexbar-gtk-native
+      - name: Exercise Gio routing and async in-flight shutdown
+        run: ./scripts/smoke-native-gtk.sh

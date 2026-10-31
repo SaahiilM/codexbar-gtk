@@ -2562,3 +2562,80 @@ future models must verify the linked PR's status rather than trusting a stale
   merge. This is a documentation/version closeout only; no runtime behavior or
   backend contract changed. No real account data, credentials or external HTTP
   service were used.
+
+### E087 — 2026-10-31: U01 native GTK bootstrap locally verified; PR pending
+
+- **Starting point and scope:** U01 is the active build-55 slice on
+  `frontend/u01-native-bootstrap-build55`, based on live `origin/main`
+  `23651ecf47b902c57a753a4e3fb0955184412a32` (BG closeout PR #55). The new
+  `rust-gtk/` binary uses GTK4/libadwaita directly and composes one
+  `RefreshControllerHandle` on a dedicated Tokio worker. The native app has a
+  single GApplication command-line/instance path, GTK rendering remains on the
+  GLib thread, and backend work/state/event delivery uses the worker, watch
+  receiver and bounded event channel. It has no Python, PyO3 or Python bridge;
+  the Rust B07 CLI service is the expected external subprocess integration.
+- **Compatibility and partial surfaces:** Gio routing preserves Python's
+  precedence (`--settings`, `--about`, `--panel`, `--page`, default), missing
+  and unknown `--page` values select Usage, and `--panel` waits for the first
+  Ready/Failed state. Primary and secondary processes share one controller.
+  Dashboard, panel, settings and page surfaces say they are placeholders and
+  name their future U slices; this does not claim screen parity. The existing
+  Python entrypoint and Rust opt-in arrangement are unchanged; no cutover is
+  performed before UG.
+- **Event and shutdown behavior:** GLib polling drains the backend event
+  channel and stores owned payloads in an `EventInbox` for the future U07
+  delivery adapter; the native bootstrap does not claim OS notification
+  delivery. A Rust test publishes 512 synthetic events through the backend's
+  bounded channel and verifies every payload reaches the inbox in order with
+  zero sequence gaps. The app smoke also holds an in-flight synthetic usage
+  command while a secondary settings launch succeeds, then requests quit from
+  a secondary process; cancellation and worker join complete within four
+  seconds. GTK does not wait synchronously for backend I/O or thread joins.
+- **Native development dependencies:** host runtime packages
+  `libgtk-4-1` 4.14.5+ds-0ubuntu0.10 and `libadwaita-1-0` 1.5.0-1ubuntu2 are
+  installed. Development packages `libgtk-4-dev` and `libadwaita-1-dev` are
+  absent; system `pkg-config --modversion gtk4 libadwaita-1` fails because the
+  `.pc` metadata is missing. Apt candidates are GTK 4.14.5+ds-0ubuntu0.10 and
+  libadwaita 1.5.0-1ubuntu2. The local build used an ignored worktree-local
+  extraction of the development packages, not Python typelibs. CI explicitly
+  installs both dev packages plus Xvfb, xauth, xdotool, `libglib2.0-bin` and
+  `dbus-daemon` before building and running the native smoke.
+- **Local verification:** all four Rust crates passed `cargo fmt -- --check`.
+  Locked tests passed: rust-core 78, rust-backend 71 unit plus 1 integration,
+  and rust-gtk 8. Strict Clippy passed for core, PyO3, backend and native GTK.
+  The PyO3 extension build passed; the default Python discovery passed 213
+  tests with 21 expected Rust-opt-in skips, and Rust-opt-in discovery passed
+  all 213. Native GTK built successfully against GTK 4.14.5/libadwaita 1.5.0.
+  The Xvfb/private-D-Bus smoke passed command-line routing, primary/secondary
+  precedence, invalid-page fallback, one controller, initial-refresh panel
+  gating, main-context responsiveness and in-flight shutdown cancellation.
+- **Synthetic UI evidence:**
+  [U01 Wayland capture](screenshots/u01-native-bootstrap-wayland.png) was
+  captured from the active KDE Wayland compositor using Spectacle with a
+  temporary HOME and synthetic CLI. It shows the explicit panel placeholder,
+  version `0.82.0 (55)` and `Backend ready · revision 2`; no real account,
+  credentials or authentication output were used. The capture helper checks
+  that no existing CodexBar GTK D-Bus owner or Spectacle session will be
+  disturbed. Xvfb smoke is the isolated private-D-Bus runtime test.
+- **CI and next step:** no U01 PR is open yet, so remote exact-head CI and review
+  are pending and must not be inferred from the local results. U01 remains
+  active, not merged/complete. Reconcile the docs/version evidence in the
+  focused PR, open it after the final local check, then verify exact-head GitHub
+  checks and screenshot before ordinary merge. Keep U02 next, Python default
+  unchanged and UG open. No real account, credential, external provider or
+  update endpoint was used.
+
+### E088 — 2026-10-31: U01 PR #56 opened; initial exact-head checks pending
+
+- **Observed PR:** [#56 Native Rust GTK bootstrap](https://github.com/SaahiilM/codexbar-gtk/pull/56)
+  is open against `main`. Initial head `aab25f7b2adfe01475b60b4c340ef499e44942e9`
+  is based on live `origin/main` `23651ecf47b902c57a753a4e3fb0955184412a32`.
+  GitHub reported `MERGEABLE`, with no reviews or comments.
+- **Initial remote checks:** `test` and `tray-dbus` started in Actions run
+  `41170145782`; both were `IN_PROGRESS` when inspected. This records only the
+  observed initial state; no CI success or merge is claimed. Exact-head local
+  evidence and the screenshot are recorded in E087 and linked in the PR body.
+- **Handoff:** U01 remains partial until exact-head checks, screenshot/UI
+  review and normal merge are verified. Python remains the default and UG stays
+  open. The next action is to verify the current PR head/checks after the
+  handoff update, then merge normally only when GitHub reports clean status.

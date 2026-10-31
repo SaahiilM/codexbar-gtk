@@ -4,5 +4,6 @@ __pycache__/
 /rust-core/target/
 /rust-python/target/
 /rust-backend/target/
+/rust-gtk/target/
 /codexbar_gtk/_rust_core.so
 *.png

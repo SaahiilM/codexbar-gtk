@@ -1793,3 +1793,20 @@ future models must verify the linked PR's status rather than trusting a stale
   The B14 API contract is approved; the exact methods, patch semantics and
   errors above are the frozen interface. B13b2 (B11 login, B12 update, restart)
   and remaining caller audit still block B13 parent completion and B14.
+
+### E072 — 2026-10-30: B13b1 PR #47 opened; initial required checks pending
+
+- **PR/base/head at creation:** [PR #47](https://github.com/SaahiilM/codexbar-gtk/pull/47)
+  was opened against `main`, whose observed SHA was
+  `1650646ffee23015ec9f5f640a0470755d7f247c`; submitted head was
+  `1283ed0bad825c09987fad4ea234962767e3ce39`. The branch included both
+  synthetic settings screenshots and E071's implementation audit.
+- **Observed initial review/check state:** PR state OPEN, `mergeable=true`,
+  `mergeStateStatus=UNSTABLE` while checks were pending; required `test` and
+  `tray-dbus` jobs were IN_PROGRESS. No reviews, review requests, or comments
+  were present. This is not a CI-success claim.
+- **Next exact step:** after the audit/handoff follow-up commit, fetch and
+  inspect the latest PR head/base, recheck reviews and both required jobs, and
+  merge normally only after exact-head checks and fixture UI evidence pass.
+  Record later check/merge evidence in a subsequent audit entry. B13 remains
+  partial; B13b2 and the remaining caller inventory are outstanding.

@@ -14,10 +14,10 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Planning change | [PR #18](https://github.com/SaahiilM/codexbar-gtk/pull/18), merged at `69c5496`, build `0.81.0 (17)` |
 | Backend tasks completed after that baseline | B00–B12 and B13a merged; exact B13a merge/check evidence is in E070 |
 | Active implementation task / owner | B13b1 settings operations, current coding-agent session |
-| Active task | **B13b1** — settings operations and preference file actions, verified/PR-pending on branch `backend/b13b-settings-actions-rust`, based on B13a merge `1650646f`; build `0.82.0 (46)`. B14 approved the typed facade and optional CLI patch contract. |
+| Active task | **B13b1** — settings operations and preference file actions, PR #47 open from branch `backend/b13b-settings-actions-rust`, based on B13a merge `1650646f`; build `0.82.0 (46)`. B14 approved the typed facade and optional CLI patch contract. Initial submitted head `1283ed0` is under CI; recheck the latest head before merge. |
 | Next domain slice | **B13b2** — B11 login, B12 update check and restart operations after B13b1; B13 parent remains partial until B13b1, B13b2 and the remaining caller inventory are verified and merged. |
-| Open external blockers | None for B13b1. Coordinate PR opening/merge slot with orchestration; B14 remains gated on the full B13 parent. |
-| Latest checks | B13b1 local Rust tests/Clippy, Python discovery in both modes, tray D-Bus, extension build, Python compilation, and fixture Wayland smoke passed; exact details/screenshots are in E071. B13a PR #46 normal merge verified at `1650646ffee23015ec9f5f640a0470755d7f247c` (E070). |
+| Open external blockers | No implementation blockers. PR #47 required checks were running on initial head `1283ed0` when last observed; B14 remains gated on the full B13 parent. |
+| Latest checks | B13b1 local Rust tests/Clippy, Python discovery in both modes, tray D-Bus, extension build, Python compilation, and fixture Wayland smoke passed; exact details/screenshots are in E071. PR #47 initial submission state is recorded in E072. B13a PR #46 normal merge verified at `1650646ffee23015ec9f5f640a0470755d7f247c` (E070). |
 | UI validation | B13a screenshots are in E069. B13b1 fixture-only settings-window screenshots: [Python mode](screenshots/b13-settings-python-wayland.png) and [Rust opt-in](screenshots/b13-settings-rust-wayland.png); both were captured from the active Wayland window and visually inspected (E071). |
 
 **First commands for a new model/session:**

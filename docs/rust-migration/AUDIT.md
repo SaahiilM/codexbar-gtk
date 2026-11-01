@@ -3095,3 +3095,118 @@ future models must verify the linked PR's status rather than trusting a stale
   resulting exact PR head and both required checks. Merge normally only after
   both pass; record the observed merge SHA/time and hand build 62 to U05 only
   after coordinator assignment.
+
+### E104 — 2026-11-01: U04 PR #62 verified merged; U05 build 62 released
+
+- **Observed merge and exact-head checks:** PR #62 merged normally into `main`
+  at `82b9f254e351ad983d3827d87c78c2de29ec92e9`; fetched live `origin/main`
+  matches that merge. Final PR head was
+  `ed69eabbb92bd74cccee90c0b61083fbf3f11760`. Actions run `41327529193` passed
+  both required checks, `test` and `tray-dbus`, at that exact head. No reviews
+  or comments were present, and the PR carried synthetic GTK screenshot
+  evidence on the same head. The initial PR state and checks remain in E103.
+- **Handoff:** U04 keeps central `app.settings`/`--settings` and the `app.page`
+  route stable; it does not write Preferences/autostart or mutate CLI
+  path/timezone. U05 was released as the next serialized implementation slot,
+  provisional build `0.82.0 (62)`, on
+  `orchestrated/luna-u05-settings`, based on the observed live merge. U06
+  follows U05 for StatusNotifierItem/dbusmenu. Python remains the default until
+  UG; no cutover is part of U05.
+
+### E105 — 2026-11-01: U05 Settings implementation and local verification
+
+- **Scope and status:** active U05 implementation on build `0.82.0 (62)`,
+  branch `orchestrated/luna-u05-settings`, based on U04 merge
+  `82b9f254e351ad983d3827d87c78c2de29ec92e9`. Local verification is complete;
+  no U05 PR or merge is claimed yet. Changed paths include
+  `rust-core/src/preferences.rs`, `rust-backend/src/settings.rs`,
+  `rust-backend/src/login.rs`, `rust-gtk/src/settings_window.rs`,
+  `rust-gtk/src/main.rs`, `scripts/smoke-native-settings.sh`, the existing
+  `scripts/smoke-native-gtk.sh`, `scripts/smoke-native-dashboard.sh`,
+  `scripts/smoke-native-usage-pages.sh`, `.github/workflows/rust-core.yml`,
+  `VERSION`, `codexbar_gtk/version.py`, `README.md`, `CHANGELOG.md`, and this
+  migration documentation. README, TASKS and CHANGELOG link to this entry.
+- **Backend transaction and actor contract:** `PreferencesStore` now supports
+  transactional replacement for reset and compare/retry updates for import and
+  CLI patches. Import overlays only known keys onto the latest map; it does not
+  discard unrelated concurrent preferences. Reset stages complete defaults,
+  persists before publishing, and leaves disk and memory unchanged on
+  persistence failure. Forced-interleaving fixtures prove import and CLI patch
+  retries preserve an unrelated concurrent `set`; actor tests cover serialized
+  CLI and preference operations, persistence errors, invalid imported paths,
+  and a closed refresh channel after commit. Runtime uses one `SettingsActor`
+  for all CLI-bearing preferences; `CliReconfigureActor` remains only in legacy
+  focused tests. Partial CLI updates use owned values and do not leak memory.
+- **Compatibility and partial-success decisions:** timezone inputs continue to
+  use the accepted existing validation/path. Empty `cliPath` follows startup's
+  default executable resolution; a nonempty imported path that does not resolve
+  to an executable is rejected before persistence or service swap. That
+  rejection is an intentional Rust safety difference from Python's permissive
+  import. Import and reset leave autostart untouched. A committed import/reset
+  with a closed refresh channel is surfaced as committed/applied with refresh
+  unavailable; export is explicitly no-refresh. API-key values are passed
+  through the CLI action and not retained by Settings; login UI events expose
+  only typed URL/prompt/completion state, not auth output or credentials.
+- **Native Settings and icon selection:** the PreferencesWindow implements
+  General, Providers, Menu Bar, Display, Notifications, Usage & Spend, Hooks,
+  Plugins, Advanced, Acknowledgements and About panes, and uses the shared
+  backend/settings actor. CLI path/timezone controls, provider enable/source,
+  ephemeral API-key entry, hooks/plugins, launch-at-login, login, import/export,
+  reset and central About actions are represented. Every page icon is selected
+  only when the active `Gtk.IconTheme::has_icon` returns true; otherwise the
+  page is built without an icon. The synthetic Xvfb runtime reported: General
+  `system-run-symbolic`; Providers `network-server-symbolic`; Menu Bar
+  `view-list-symbolic`; Display `user-desktop-symbolic`; Notifications and
+  About `dialog-information-symbolic`; Usage & Spend
+  `document-open-recent-symbolic`; Hooks `application-x-executable-symbolic`;
+  Plugins `view-grid-symbolic`; Advanced `system-run-symbolic`; and
+  Acknowledgements `text-x-generic-symbolic`. The unsupported Breeze-only
+  candidates reported in review were removed. Build 62 appears in the About
+  captures.
+- **Checks passed:** all four crate format checks; strict Clippy (`-D warnings`)
+  for core, Python bridge, backend and GTK; locked core tests (85), backend
+  tests (82 plus one integration test), and GTK tests (23); native GTK binary
+  build; `scripts/build-rust-core.sh`; default Python suite (214 tests, 21
+  expected Rust-opt-in skips); Rust-opt-in Python suite (214); tray D-Bus suite
+  (3); and `git diff --check`. The four native Xvfb/private-D-Bus runtime smokes
+  all passed: command-line/cancellation, dashboard fixture/navigation,
+  Usage & Spend/Sessions loading/error/navigation, and U05 Settings/provider
+  fixture/preferences persistence/About. `bash -n` passed on all four smoke
+  scripts. GTK build/runtime used the ignored local SDK and extracted smoke
+  tools. Desktop portal startup printed a document-FUSE mount warning in the
+  private session; no portal action was used. The fixtures are synthetic and
+  no real account, secret, API key or authentication event was captured.
+- **Stale targeted test sessions:** a process audit found two earlier backend
+  test filters still waiting after about 32 minutes. Their Cargo parents were
+  children of an earlier Codex app-server session; each Rust test process was
+  idle in `futex_do_wait`, with stdout/stderr connected to anonymous pipes held
+  by that expired session, so the original buffered output and exit codes were
+  not available. The stale children were interrupted. Re-running the exact
+  filters with a 45-second timeout captured fresh output and exit status:
+  `settings::tests` passed 16/16 in 0.18 seconds, and `settings_actor` passed
+  3/3 in under 0.01 seconds. The full backend run also passed 82 unit tests and
+  one integration test; no backend test process remains. The stale invocations
+  were not reproducible as a test hang.
+- **Screenshots:** the following 11 synthetic captures were inspected and
+  force-added despite `.gitignore:9:*.png`:
+  `docs/rust-migration/screenshots/u05-settings-general-native-xvfb.png`,
+  `docs/rust-migration/screenshots/u05-settings-providers-native-xvfb.png`,
+  `docs/rust-migration/screenshots/u05-settings-display-native-xvfb.png`,
+  `docs/rust-migration/screenshots/u05-settings-notifications-native-xvfb.png`,
+  `docs/rust-migration/screenshots/u05-settings-spend-native-xvfb.png`,
+  `docs/rust-migration/screenshots/u05-settings-hooks-native-xvfb.png`,
+  `docs/rust-migration/screenshots/u05-settings-plugins-native-xvfb.png`,
+  `docs/rust-migration/screenshots/u05-settings-advanced-native-xvfb.png`,
+  `docs/rust-migration/screenshots/u05-settings-acknowledgements-native-xvfb.png`,
+  `docs/rust-migration/screenshots/u05-settings-about-native-xvfb.png`, and
+  `docs/rust-migration/screenshots/u05-central-about-native-xvfb.png`. The
+  General, Providers, Display,
+  Notifications, Hooks, Plugins and central About captures were specifically
+  reviewed after the icon correction; no missing-icon placeholders or secrets
+  are visible. The remaining captures show synthetic settings panes only.
+- **CI and next handoff:** `.github/workflows/rust-core.yml` now includes the
+  Settings smoke in path filters and the test job, with `x11-apps` and `ffmpeg`
+  installed for XWD capture. Exact-head CI, review, normal merge and live-main
+  verification remain pending. Once U05 merges, update the U06 build/branch
+  assignment and retain the central `app.settings`, `app.about` and `app.page`
+  seams. Do not cut over from Python before UG.

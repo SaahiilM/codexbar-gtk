@@ -7,6 +7,7 @@ use crate::cli::{
     ProviderStatusEntry, SharedCliService,
 };
 use crate::controller::ControllerCommand;
+use crate::currency::CurrencyService;
 use codexbar_core::preferences::PreferencesStore;
 use serde::Serialize;
 use serde_json::{json, Map, Value};
@@ -96,6 +97,409 @@ struct CliReconfigureRequest {
 #[derive(Clone)]
 pub struct CliReconfigureActor {
     sender: mpsc::Sender<CliReconfigureRequest>,
+}
+
+#[derive(Clone)]
+pub struct SettingsActor {
+    sender: mpsc::Sender<SettingsRequest>,
+}
+
+pub struct SettingsResponseReceiver {
+    receiver: mpsc::UnboundedReceiver<SettingsResponse>,
+}
+
+impl SettingsResponseReceiver {
+    pub async fn recv(&mut self) -> Option<SettingsResponse> {
+        self.receiver.recv().await
+    }
+
+    pub fn try_recv(&mut self) -> Result<SettingsResponse, mpsc::error::TryRecvError> {
+        self.receiver.try_recv()
+    }
+}
+
+pub enum SettingsOperation {
+    Load {
+        timeout: Duration,
+    },
+    SetPreference {
+        key: String,
+        value: Value,
+    },
+    SetPreferenceArrayElement {
+        key: String,
+        index: usize,
+        value: Value,
+    },
+    ReconfigureCli {
+        cli_path: Option<String>,
+        timezone: Option<String>,
+    },
+    ProviderAction {
+        action: ProviderAction,
+        provider_id: String,
+    },
+    SetApiKey {
+        provider_id: String,
+        secret: String,
+    },
+    SetHooksEnabled {
+        enabled: bool,
+    },
+    SetLaunchAtLogin {
+        enabled: bool,
+        app_exec: String,
+    },
+    ExportPreferences {
+        path: PathBuf,
+    },
+    ImportPreferences {
+        path: PathBuf,
+    },
+    ResetPreferences,
+    CliVersion {
+        timeout: Duration,
+    },
+}
+
+pub struct SettingsRequest {
+    pub request_id: u64,
+    pub operation: SettingsOperation,
+}
+
+pub struct SettingsResponse {
+    pub request_id: u64,
+    pub result: Result<SettingsResult, SettingsError>,
+}
+
+#[derive(Debug)]
+pub enum SettingsResult {
+    Snapshot(SettingsSnapshot),
+    Applied { refresh: SettingsRefreshStatus },
+    LaunchAtLogin(LaunchAtLoginState),
+    CliVersion(String),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SettingsRefreshStatus {
+    NotRequested,
+    Queued,
+    Unavailable,
+}
+
+impl SettingsActor {
+    pub fn start(
+        runtime: &tokio::runtime::Handle,
+        cli: Arc<SharedCliService>,
+        preferences: Arc<PreferencesStore>,
+        home: PathBuf,
+        default_executable: PathBuf,
+        refresh: mpsc::Sender<ControllerCommand>,
+    ) -> (Self, SettingsResponseReceiver) {
+        Self::start_inner(
+            runtime,
+            cli,
+            preferences,
+            home,
+            default_executable,
+            refresh,
+            None,
+        )
+    }
+
+    pub fn start_with_currency_service(
+        runtime: &tokio::runtime::Handle,
+        cli: Arc<SharedCliService>,
+        preferences: Arc<PreferencesStore>,
+        home: PathBuf,
+        default_executable: PathBuf,
+        refresh: mpsc::Sender<ControllerCommand>,
+        currencies: Arc<CurrencyService>,
+    ) -> (Self, SettingsResponseReceiver) {
+        Self::start_inner(
+            runtime,
+            cli,
+            preferences,
+            home,
+            default_executable,
+            refresh,
+            Some(currencies),
+        )
+    }
+
+    fn start_inner(
+        runtime: &tokio::runtime::Handle,
+        cli: Arc<SharedCliService>,
+        preferences: Arc<PreferencesStore>,
+        home: PathBuf,
+        default_executable: PathBuf,
+        refresh: mpsc::Sender<ControllerCommand>,
+        currencies: Option<Arc<CurrencyService>>,
+    ) -> (Self, SettingsResponseReceiver) {
+        let (sender, mut receiver) = mpsc::channel::<SettingsRequest>(32);
+        let (response_sender, response_receiver) = mpsc::unbounded_channel();
+        runtime.spawn(async move {
+            while let Some(request) = receiver.recv().await {
+                let result = execute_settings_operation(
+                    &cli,
+                    &preferences,
+                    &home,
+                    &default_executable,
+                    &refresh,
+                    currencies.as_deref(),
+                    request.operation,
+                )
+                .await;
+                let _ = response_sender.send(SettingsResponse {
+                    request_id: request.request_id,
+                    result,
+                });
+            }
+        });
+        (
+            Self { sender },
+            SettingsResponseReceiver {
+                receiver: response_receiver,
+            },
+        )
+    }
+
+    pub fn try_send(
+        &self,
+        request: SettingsRequest,
+    ) -> Result<(), mpsc::error::TrySendError<SettingsRequest>> {
+        self.sender.try_send(request)
+    }
+}
+
+async fn execute_settings_operation(
+    cli: &SharedCliService,
+    preferences: &PreferencesStore,
+    home: &Path,
+    default_executable: &Path,
+    refresh: &mpsc::Sender<ControllerCommand>,
+    currencies: Option<&CurrencyService>,
+    operation: SettingsOperation,
+) -> Result<SettingsResult, SettingsError> {
+    match operation {
+        SettingsOperation::Load { timeout } => Ok(SettingsResult::Snapshot(
+            settings_snapshot(&cli.snapshot(), home, timeout).await,
+        )),
+        SettingsOperation::SetPreference { key, value } => {
+            if key == "cliPath"
+                || key == "costUsageBucketTimeZone"
+                || !codexbar_core::preferences::default_values().contains_key(&key)
+            {
+                return Err(SettingsError::invalid_input("settings_cli_reconfigure"));
+            }
+            let preferred_currency = if key == "preferredCurrencyCode" {
+                value.as_str().map(ToOwned::to_owned)
+            } else {
+                None
+            };
+            let mut updates = Map::new();
+            updates.insert(key, value);
+            preferences
+                .update_transactional(updates)
+                .map_err(|error| SettingsError::preferences(error, "settings_preference_update"))?;
+            if let (Some(currency), Some(code)) = (currencies.cloned(), preferred_currency) {
+                let refresh = refresh.clone();
+                tokio::spawn(async move {
+                    let _ = currency.ensure_rates(&code).await;
+                    let _ = refresh.send(ControllerCommand::ForceRefresh).await;
+                });
+            }
+            Ok(SettingsResult::Applied {
+                refresh: queue_refresh(refresh).await,
+            })
+        }
+        SettingsOperation::SetPreferenceArrayElement { key, index, value } => {
+            let defaults = codexbar_core::preferences::default_values();
+            let Some(default_array) = defaults.get(&key).and_then(Value::as_array) else {
+                return Err(SettingsError::invalid_input("settings_preference_update"));
+            };
+            if index >= default_array.len() {
+                return Err(SettingsError::invalid_input("settings_preference_update"));
+            }
+            preferences
+                .update_array_element_transactional(&key, index, value)
+                .map_err(|error| SettingsError::preferences(error, "settings_preference_update"))?;
+            Ok(SettingsResult::Applied {
+                refresh: queue_refresh(refresh).await,
+            })
+        }
+        SettingsOperation::ReconfigureCli { cli_path, timezone } => {
+            let (replacement, updates) = prepare_cli_reconfiguration(
+                preferences,
+                default_executable,
+                cli_path.as_deref(),
+                timezone.as_deref(),
+            )?;
+            preferences
+                .update_transactional(updates)
+                .map_err(|error| SettingsError::preferences(error, "settings_cli_reconfigure"))?;
+            cli.replace(replacement);
+            Ok(SettingsResult::Applied {
+                refresh: queue_refresh(refresh).await,
+            })
+        }
+        SettingsOperation::ProviderAction {
+            action,
+            provider_id,
+        } => {
+            provider_action(
+                &cli.snapshot(),
+                action,
+                &provider_id,
+                Duration::from_secs(30),
+            )
+            .await?;
+            Ok(SettingsResult::Applied {
+                refresh: queue_refresh(refresh).await,
+            })
+        }
+        SettingsOperation::SetApiKey {
+            provider_id,
+            secret,
+        } => {
+            set_api_key(
+                &cli.snapshot(),
+                &provider_id,
+                &secret,
+                Duration::from_secs(30),
+            )
+            .await?;
+            Ok(SettingsResult::Applied {
+                refresh: queue_refresh(refresh).await,
+            })
+        }
+        SettingsOperation::SetHooksEnabled { enabled } => {
+            set_hooks_enabled(&cli.snapshot(), enabled, Duration::from_secs(30)).await?;
+            Ok(SettingsResult::Applied {
+                refresh: queue_refresh(refresh).await,
+            })
+        }
+        SettingsOperation::SetLaunchAtLogin { enabled, app_exec } => {
+            let state = set_launch_at_login(preferences, home, enabled, &app_exec)?;
+            Ok(SettingsResult::LaunchAtLogin(state))
+        }
+        SettingsOperation::ExportPreferences { path } => {
+            preferences_export_to(preferences, &path)?;
+            Ok(SettingsResult::Applied {
+                refresh: SettingsRefreshStatus::NotRequested,
+            })
+        }
+        SettingsOperation::ImportPreferences { path } => {
+            let patch = PreferencesStore::read_import_patch(&path).map_err(|error| {
+                SettingsError::preferences(error, "settings_preferences_import")
+            })?;
+            if let Some(patch) = patch {
+                let current = preferences.values();
+                let mut candidate = current.clone();
+                candidate.extend(patch.clone());
+                let changes_cli =
+                    patch.contains_key("cliPath") || patch.contains_key("costUsageBucketTimeZone");
+                let replacement = if changes_cli {
+                    Some(prepare_candidate_cli(
+                        &candidate,
+                        default_executable,
+                        "settings_preferences_import",
+                    )?)
+                } else {
+                    None
+                };
+                preferences.update_transactional(patch).map_err(|error| {
+                    SettingsError::preferences(error, "settings_preferences_import")
+                })?;
+                if let Some(replacement) = replacement {
+                    cli.replace(replacement);
+                }
+            }
+            Ok(SettingsResult::Applied {
+                refresh: queue_refresh(refresh).await,
+            })
+        }
+        SettingsOperation::ResetPreferences => {
+            let defaults = codexbar_core::preferences::default_values();
+            let replacement =
+                prepare_candidate_cli(&defaults, default_executable, "settings_preferences_reset")?;
+            preferences
+                .replace_transactional(defaults)
+                .map_err(|error| SettingsError::preferences(error, "settings_preferences_reset"))?;
+            cli.replace(replacement);
+            Ok(SettingsResult::Applied {
+                refresh: queue_refresh(refresh).await,
+            })
+        }
+        SettingsOperation::CliVersion { timeout } => {
+            match cli.snapshot().version(timeout, None).await {
+                Ok(version) => Ok(SettingsResult::CliVersion(version)),
+                Err(error) => Err(SettingsError::cli(error, "settings_cli_version")),
+            }
+        }
+    }
+}
+
+async fn queue_refresh(refresh: &mpsc::Sender<ControllerCommand>) -> SettingsRefreshStatus {
+    if refresh.send(ControllerCommand::ForceRefresh).await.is_ok() {
+        SettingsRefreshStatus::Queued
+    } else {
+        SettingsRefreshStatus::Unavailable
+    }
+}
+
+fn prepare_cli_reconfiguration(
+    preferences: &PreferencesStore,
+    default_executable: &Path,
+    cli_path: Option<&str>,
+    timezone: Option<&str>,
+) -> Result<(Arc<CliService>, Map<String, Value>), SettingsError> {
+    if cli_path.is_none() && timezone.is_none() {
+        return Err(SettingsError::invalid_input("settings_cli_reconfigure"));
+    }
+    let mut candidate = preferences.values();
+    if let Some(path) = cli_path {
+        candidate.insert("cliPath".to_owned(), json!(path.trim()));
+    }
+    if let Some(timezone) = timezone {
+        candidate.insert("costUsageBucketTimeZone".to_owned(), json!(timezone));
+    }
+    let mut updates = Map::new();
+    if let Some(path) = cli_path {
+        updates.insert("cliPath".to_owned(), json!(path.trim()));
+    }
+    if let Some(timezone) = timezone {
+        updates.insert("costUsageBucketTimeZone".to_owned(), json!(timezone));
+    }
+    let replacement =
+        prepare_candidate_cli(&candidate, default_executable, "settings_cli_reconfigure")?;
+    Ok((replacement, updates))
+}
+
+fn prepare_candidate_cli(
+    values: &Map<String, Value>,
+    default_executable: &Path,
+    operation: &'static str,
+) -> Result<Arc<CliService>, SettingsError> {
+    let configured_path = values
+        .get("cliPath")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .trim();
+    let executable = if configured_path.is_empty() {
+        default_executable.to_path_buf()
+    } else {
+        if !executable_override_is_valid(configured_path) {
+            return Err(SettingsError::invalid_input(operation));
+        }
+        PathBuf::from(configured_path)
+    };
+    let timezone = values
+        .get("costUsageBucketTimeZone")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let timezone = (!timezone.is_empty()).then(|| std::ffi::OsString::from(timezone));
+    Ok(Arc::new(CliService::new(executable, timezone)))
 }
 
 impl CliReconfigureActor {
@@ -474,7 +878,10 @@ pub fn set_launch_at_login(
         )
     })?;
     preferences
-        .set("launchAtLogin", Value::Bool(enabled), true)
+        .update_transactional(Map::from_iter([(
+            "launchAtLogin".to_owned(),
+            Value::Bool(enabled),
+        )]))
         .map_err(|error| SettingsError::preferences(error, "settings_launch_at_login_set"))?;
     Ok(LaunchAtLoginState { enabled })
 }
@@ -607,6 +1014,7 @@ fn write_private_atomic(path: &Path, contents: &[u8]) -> io::Result<()> {
 mod tests {
     use super::*;
     use std::{
+        collections::HashMap,
         fs,
         os::unix::fs::PermissionsExt,
         sync::atomic::{AtomicU64, Ordering},
@@ -647,6 +1055,41 @@ mod tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.dir);
         }
+    }
+
+    fn start_test_settings_actor(
+        fixture: &Fixture,
+        cli: Arc<SharedCliService>,
+        preferences: Arc<PreferencesStore>,
+        refresh: mpsc::Sender<ControllerCommand>,
+        default_executable: PathBuf,
+    ) -> (SettingsActor, SettingsResponseReceiver) {
+        SettingsActor::start(
+            &tokio::runtime::Handle::current(),
+            cli,
+            preferences,
+            fixture.home(),
+            default_executable,
+            refresh,
+        )
+    }
+
+    async fn request_settings(
+        actor: &SettingsActor,
+        responses: &mut SettingsResponseReceiver,
+        request_id: u64,
+        operation: SettingsOperation,
+    ) -> SettingsResponse {
+        assert!(actor
+            .try_send(SettingsRequest {
+                request_id,
+                operation,
+            })
+            .is_ok());
+        tokio::time::timeout(Duration::from_secs(5), responses.recv())
+            .await
+            .expect("settings actor response timeout")
+            .expect("settings actor response stream closed")
     }
 
     #[tokio::test]
@@ -780,6 +1223,339 @@ exit 0"#,
         assert!(!error.to_string().contains("fixture-only"));
         let serialized = serde_json::to_string(&error).unwrap();
         assert!(!serialized.contains("fixture-only"));
+    }
+
+    #[tokio::test]
+    async fn settings_actor_rejects_invalid_imported_cli_path_without_commit_or_swap() {
+        let _guard = PROCESS_TEST_LOCK.lock().await;
+        let fixture =
+            Fixture::new("if [ \"$1\" = \"--version\" ]; then printf 'old-version\\n'; fi");
+        let preferences_path = fixture.home().join("settings.json");
+        let preferences = Arc::new(PreferencesStore::new(&preferences_path));
+        preferences
+            .set(
+                "cliPath",
+                json!(fixture.executable.to_string_lossy().as_ref()),
+                true,
+            )
+            .unwrap();
+        let original = Arc::new(CliService::new(&fixture.executable, None));
+        let shared = Arc::new(SharedCliService::new(original.clone()));
+        let import_path = fixture.dir.join("invalid-cli-import.json");
+        fs::write(
+            &import_path,
+            r#"{"version":1,"preferences":{"cliPath":"/no/such/synthetic-cli"}}"#,
+        )
+        .unwrap();
+        let before = preferences.values();
+        let before_file = fs::read(&preferences_path).unwrap();
+        let (refresh, mut refresh_rx) = mpsc::channel(4);
+        let (actor, mut responses) = start_test_settings_actor(
+            &fixture,
+            shared.clone(),
+            preferences.clone(),
+            refresh,
+            fixture.executable.clone(),
+        );
+
+        let response = request_settings(
+            &actor,
+            &mut responses,
+            1,
+            SettingsOperation::ImportPreferences { path: import_path },
+        )
+        .await;
+        let error = response.result.unwrap_err();
+        assert_eq!(error.category, SettingsErrorCategory::InvalidInput);
+        assert_eq!(error.operation, "settings_preferences_import");
+        assert_eq!(preferences.values(), before);
+        assert_eq!(fs::read(&preferences_path).unwrap(), before_file);
+        assert!(Arc::ptr_eq(&shared.snapshot(), &original));
+        assert!(matches!(
+            refresh_rx.try_recv(),
+            Err(mpsc::error::TryRecvError::Empty)
+        ));
+    }
+
+    #[tokio::test]
+    async fn settings_actor_import_and_reset_persistence_failures_leave_memory_and_cli_unchanged() {
+        let _guard = PROCESS_TEST_LOCK.lock().await;
+        let fixture = Fixture::new("printf 'fixture-version\\n'");
+        let blocker = fixture.dir.join("preferences-parent-file");
+        fs::write(&blocker, "not a directory").unwrap();
+        let preferences = Arc::new(PreferencesStore::new(blocker.join("settings.json")));
+        preferences.set("showTray", json!(false), false).unwrap();
+        let before = preferences.values();
+        let original = Arc::new(CliService::new(&fixture.executable, None));
+        let shared = Arc::new(SharedCliService::new(original.clone()));
+        let import_path = fixture.dir.join("valid-import.json");
+        fs::write(
+            &import_path,
+            r#"{"version":1,"preferences":{"showTray":true}}"#,
+        )
+        .unwrap();
+        let (refresh, mut refresh_rx) = mpsc::channel(4);
+        let (actor, mut responses) = start_test_settings_actor(
+            &fixture,
+            shared.clone(),
+            preferences.clone(),
+            refresh,
+            fixture.executable.clone(),
+        );
+
+        for (request_id, operation) in [
+            (
+                1,
+                SettingsOperation::ImportPreferences { path: import_path },
+            ),
+            (2, SettingsOperation::ResetPreferences),
+        ] {
+            let response = request_settings(&actor, &mut responses, request_id, operation).await;
+            let error = response.result.unwrap_err();
+            assert_eq!(error.category, SettingsErrorCategory::PreferencesIo);
+            assert_eq!(preferences.values(), before);
+            assert!(Arc::ptr_eq(&shared.snapshot(), &original));
+            assert!(matches!(
+                refresh_rx.try_recv(),
+                Err(mpsc::error::TryRecvError::Empty)
+            ));
+        }
+    }
+
+    #[tokio::test]
+    async fn closed_refresh_after_import_reports_committed_partial_success_and_export_is_distinct()
+    {
+        let _guard = PROCESS_TEST_LOCK.lock().await;
+        let fixture = Fixture::new("");
+        let preferences = Arc::new(PreferencesStore::new(fixture.home().join("settings.json")));
+        let original = Arc::new(CliService::new(&fixture.executable, None));
+        let shared = Arc::new(SharedCliService::new(original));
+        let import_path = fixture.dir.join("show-tray-import.json");
+        fs::write(
+            &import_path,
+            r#"{"version":1,"preferences":{"showTray":false}}"#,
+        )
+        .unwrap();
+        let (refresh, refresh_rx) = mpsc::channel(4);
+        drop(refresh_rx);
+        let (actor, mut responses) = start_test_settings_actor(
+            &fixture,
+            shared,
+            preferences.clone(),
+            refresh,
+            fixture.executable.clone(),
+        );
+
+        let imported = request_settings(
+            &actor,
+            &mut responses,
+            1,
+            SettingsOperation::ImportPreferences { path: import_path },
+        )
+        .await;
+        assert!(matches!(
+            imported.result,
+            Ok(SettingsResult::Applied {
+                refresh: SettingsRefreshStatus::Unavailable
+            })
+        ));
+        assert_eq!(preferences.get("showTray"), Some(json!(false)));
+        let export_path = fixture.dir.join("export.json");
+        let exported = request_settings(
+            &actor,
+            &mut responses,
+            2,
+            SettingsOperation::ExportPreferences {
+                path: export_path.clone(),
+            },
+        )
+        .await;
+        assert!(matches!(
+            exported.result,
+            Ok(SettingsResult::Applied {
+                refresh: SettingsRefreshStatus::NotRequested
+            })
+        ));
+        let document: Value = serde_json::from_slice(&fs::read(export_path).unwrap()).unwrap();
+        assert_eq!(document["preferences"]["showTray"], json!(false));
+    }
+
+    #[tokio::test]
+    async fn settings_actor_serializes_concurrent_cli_and_array_preference_patches() {
+        let _guard = PROCESS_TEST_LOCK.lock().await;
+        let fixture =
+            Fixture::new("if [ \"$1\" = \"--version\" ]; then printf 'fixture-version\\n'; fi");
+        let preferences = Arc::new(PreferencesStore::new(fixture.home().join("settings.json")));
+        let original = Arc::new(CliService::new(&fixture.executable, None));
+        let shared = Arc::new(SharedCliService::new(original));
+        let (refresh, _refresh_rx) = mpsc::channel(8);
+        let (actor, mut responses) = start_test_settings_actor(
+            &fixture,
+            shared,
+            preferences.clone(),
+            refresh,
+            fixture.executable.clone(),
+        );
+        let barrier = Arc::new(tokio::sync::Barrier::new(5));
+        let mut writers = Vec::new();
+        for (request_id, operation) in [
+            (
+                10,
+                SettingsOperation::ReconfigureCli {
+                    cli_path: Some(fixture.executable.to_string_lossy().into_owned()),
+                    timezone: Some("Pacific/Chatham".to_owned()),
+                },
+            ),
+            (
+                11,
+                SettingsOperation::SetPreferenceArrayElement {
+                    key: "quotaWarningThresholds".to_owned(),
+                    index: 0,
+                    value: json!(75),
+                },
+            ),
+            (
+                12,
+                SettingsOperation::SetPreferenceArrayElement {
+                    key: "quotaWarningThresholds".to_owned(),
+                    index: 1,
+                    value: json!(15),
+                },
+            ),
+            (
+                13,
+                SettingsOperation::SetPreference {
+                    key: "showTray".to_owned(),
+                    value: json!(false),
+                },
+            ),
+        ] {
+            let actor = actor.clone();
+            let barrier = barrier.clone();
+            writers.push(tokio::spawn(async move {
+                barrier.wait().await;
+                actor.try_send(SettingsRequest {
+                    request_id,
+                    operation,
+                })
+            }));
+        }
+        barrier.wait().await;
+        for writer in writers {
+            assert!(writer.await.unwrap().is_ok());
+        }
+        let mut completed = HashMap::new();
+        while completed.len() < 4 {
+            let response = tokio::time::timeout(Duration::from_secs(5), responses.recv())
+                .await
+                .expect("serialized actor responses")
+                .unwrap();
+            completed.insert(response.request_id, response.result);
+        }
+        assert!(completed.values().all(|result| result.is_ok()));
+        assert_eq!(
+            preferences.get("cliPath"),
+            Some(json!(fixture.executable.to_string_lossy().as_ref()))
+        );
+        assert_eq!(
+            preferences.get("costUsageBucketTimeZone"),
+            Some(json!("Pacific/Chatham"))
+        );
+        assert_eq!(preferences.get("showTray"), Some(json!(false)));
+        assert_eq!(
+            preferences.get("quotaWarningThresholds"),
+            Some(json!([75, 15]))
+        );
+    }
+
+    #[tokio::test]
+    async fn reset_rebuilds_the_startup_default_cli_and_keeps_autostart_file_untouched() {
+        let _guard = PROCESS_TEST_LOCK.lock().await;
+        let default_fixture =
+            Fixture::new("if [ \"$1\" = \"--version\" ]; then printf 'startup-default\\n'; fi");
+        let replacement_fixture =
+            Fixture::new("if [ \"$1\" = \"--version\" ]; then printf 'replacement-cli\\n'; fi");
+        let preferences = Arc::new(PreferencesStore::new(
+            default_fixture.home().join("settings.json"),
+        ));
+        let startup_cli = Arc::new(CliService::new(&default_fixture.executable, None));
+        let shared = Arc::new(SharedCliService::new(startup_cli));
+        let autostart = autostart_file(&default_fixture.home());
+        fs::create_dir_all(autostart.parent().unwrap()).unwrap();
+        fs::write(&autostart, "synthetic autostart marker").unwrap();
+        let (refresh, _refresh_rx) = mpsc::channel(8);
+        let (actor, mut responses) = start_test_settings_actor(
+            &default_fixture,
+            shared,
+            preferences.clone(),
+            refresh,
+            default_fixture.executable.clone(),
+        );
+
+        let initial = request_settings(
+            &actor,
+            &mut responses,
+            1,
+            SettingsOperation::CliVersion {
+                timeout: Duration::from_secs(2),
+            },
+        )
+        .await;
+        assert!(
+            matches!(initial.result, Ok(SettingsResult::CliVersion(version)) if version == "startup-default")
+        );
+        let reconfigured = request_settings(
+            &actor,
+            &mut responses,
+            2,
+            SettingsOperation::ReconfigureCli {
+                cli_path: Some(
+                    replacement_fixture
+                        .executable
+                        .to_string_lossy()
+                        .into_owned(),
+                ),
+                timezone: Some("Pacific/Chatham".to_owned()),
+            },
+        )
+        .await;
+        assert!(reconfigured.result.is_ok());
+        let live = request_settings(
+            &actor,
+            &mut responses,
+            3,
+            SettingsOperation::CliVersion {
+                timeout: Duration::from_secs(2),
+            },
+        )
+        .await;
+        assert!(
+            matches!(live.result, Ok(SettingsResult::CliVersion(version)) if version == "replacement-cli")
+        );
+
+        let reset = request_settings(
+            &actor,
+            &mut responses,
+            4,
+            SettingsOperation::ResetPreferences,
+        )
+        .await;
+        assert!(reset.result.is_ok());
+        assert_eq!(preferences.get("cliPath"), Some(json!("")));
+        assert_eq!(preferences.get("costUsageBucketTimeZone"), Some(json!("")));
+        let default_again = request_settings(
+            &actor,
+            &mut responses,
+            5,
+            SettingsOperation::CliVersion {
+                timeout: Duration::from_secs(2),
+            },
+        )
+        .await;
+        assert!(
+            matches!(default_again.result, Ok(SettingsResult::CliVersion(version)) if version == "startup-default")
+        );
+        assert!(autostart.exists());
     }
 
     #[tokio::test]

@@ -56,10 +56,30 @@ impl PreferencesStore {
     /// to readers. This is intentionally separate from `update`, whose
     /// historical mutate-then-save behavior remains unchanged.
     pub fn update_transactional(&self, updates: Map<String, Value>) -> io::Result<()> {
+        self.update_transactional_with(updates, || {})
+    }
+
+    /// Persist one member of a known array preference while reading the other
+    /// members from the latest map on every compare/retry.
+    pub fn update_array_element_transactional(
+        &self,
+        key: &str,
+        index: usize,
+        value: Value,
+    ) -> io::Result<()> {
         loop {
             let before = self.values();
             let mut candidate = before.clone();
-            candidate.extend(updates.clone());
+            let mut values = candidate
+                .get(key)
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default();
+            while values.len() <= index {
+                values.push(Value::Null);
+            }
+            values[index] = value.clone();
+            candidate.insert(key.to_owned(), Value::Array(values));
             let staged = stage_atomic(&self.path, &candidate)?;
 
             let mut current = self.lock_values();
@@ -77,9 +97,78 @@ impl PreferencesStore {
         }
     }
 
+    /// Atomically replace all preferences. This is the safe reset primitive:
+    /// readers keep seeing the old values until the complete defaults file is
+    /// on disk, and a failed write leaves memory unchanged.
+    pub fn replace_transactional(&self, replacement: Map<String, Value>) -> io::Result<()> {
+        self.transactional_commit(Some(replacement), Map::new(), || {})
+    }
+
+    fn update_transactional_with(
+        &self,
+        updates: Map<String, Value>,
+        before_commit: impl FnMut(),
+    ) -> io::Result<()> {
+        self.transactional_commit(None, updates, before_commit)
+    }
+
+    fn transactional_commit(
+        &self,
+        replacement: Option<Map<String, Value>>,
+        updates: Map<String, Value>,
+        mut before_commit: impl FnMut(),
+    ) -> io::Result<()> {
+        loop {
+            let before = self.values();
+            let candidate = if let Some(replacement) = &replacement {
+                replacement.clone()
+            } else {
+                let mut candidate = before.clone();
+                candidate.extend(updates.clone());
+                candidate
+            };
+            let staged = stage_atomic(&self.path, &candidate)?;
+            before_commit();
+
+            let mut current = self.lock_values();
+            if *current != before {
+                drop(current);
+                let _ = fs::remove_file(staged);
+                continue;
+            }
+            if let Err(error) = fs::rename(&staged, &self.path) {
+                let _ = fs::remove_file(staged);
+                return Err(error);
+            }
+            *current = candidate;
+            return Ok(());
+        }
+    }
+
     pub fn reset(&self) -> io::Result<()> {
-        *self.lock_values() = default_values();
-        self.save()
+        self.replace_transactional(default_values())
+    }
+
+    /// Read a portable preferences file without mutating this store. `None`
+    /// preserves the legacy no-op behavior for documents without an object-valued
+    /// `preferences` member; otherwise only known keys are returned.
+    pub fn read_import_patch(path: impl AsRef<Path>) -> io::Result<Option<Map<String, Value>>> {
+        let contents = fs::read_to_string(path)?;
+        let document = serde_json::from_str::<Value>(&contents)
+            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+        Ok(Self::import_patch(&document))
+    }
+
+    pub fn import_patch(document: &Value) -> Option<Map<String, Value>> {
+        let imported = document.as_object()?.get("preferences")?.as_object()?;
+        let defaults = default_values();
+        Some(
+            imported
+                .iter()
+                .filter(|(key, _)| defaults.contains_key(*key))
+                .map(|(key, value)| (key.clone(), value.clone()))
+                .collect(),
+        )
     }
 
     /// Load only known keys. Missing, malformed, unreadable, or non-object
@@ -134,20 +223,10 @@ impl PreferencesStore {
     }
 
     pub fn import_document(&self, document: &Value) -> io::Result<()> {
-        let Some(imported) = document
-            .as_object()
-            .and_then(|object| object.get("preferences"))
-            .and_then(Value::as_object)
-        else {
+        let Some(updates) = Self::import_patch(document) else {
             return Ok(());
         };
-        let defaults = default_values();
-        let updates = imported
-            .iter()
-            .filter(|(key, _)| defaults.contains_key(*key))
-            .map(|(key, value)| (key.clone(), value.clone()))
-            .collect();
-        self.update(updates)
+        self.update_transactional(updates)
     }
 
     /// Write the portable preferences document to a user-selected path.
@@ -380,6 +459,104 @@ mod tests {
         let mut updates = Map::new();
         updates.insert("cliPath".into(), json!("new"));
         assert!(failing.update_transactional(updates).is_err());
+        assert_eq!(failing.values(), before);
+    }
+
+    #[test]
+    fn transactional_import_retries_after_unrelated_preference_change() {
+        let temp = TempDir::new();
+        let path = temp.path().join("settings.json");
+        let store = PreferencesStore::new(&path);
+        store.set("showTray", json!(false), false).unwrap();
+        let mut updates = Map::new();
+        updates.insert("cliPath".into(), json!("fixture-cli"));
+        let first_attempt = std::sync::atomic::AtomicBool::new(true);
+        store
+            .update_transactional_with(updates, || {
+                if first_attempt.swap(false, Ordering::SeqCst) {
+                    store
+                        .set("preferredCurrencyCode", json!("EUR"), false)
+                        .unwrap();
+                }
+            })
+            .unwrap();
+
+        let current = store.values();
+        let disk: Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
+        assert_eq!(current.get("cliPath"), Some(&json!("fixture-cli")));
+        assert_eq!(current.get("showTray"), Some(&json!(false)));
+        assert_eq!(current.get("preferredCurrencyCode"), Some(&json!("EUR")));
+        assert_eq!(disk["cliPath"], json!("fixture-cli"));
+        assert_eq!(disk["showTray"], json!(false));
+        assert_eq!(disk["preferredCurrencyCode"], json!("EUR"));
+    }
+
+    #[test]
+    fn transactional_cli_patch_retries_after_unrelated_preference_change() {
+        let temp = TempDir::new();
+        let path = temp.path().join("settings.json");
+        let store = PreferencesStore::new(&path);
+        store.set("showTray", json!(false), false).unwrap();
+        let mut updates = Map::new();
+        updates.insert("cliPath".into(), json!("fixture-cli"));
+        let first_attempt = std::sync::atomic::AtomicBool::new(true);
+        store
+            .update_transactional_with(updates, || {
+                if first_attempt.swap(false, Ordering::SeqCst) {
+                    store
+                        .set("preferredCurrencyCode", json!("EUR"), false)
+                        .unwrap();
+                }
+            })
+            .unwrap();
+
+        let current = store.values();
+        let disk: Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
+        assert_eq!(current.get("cliPath"), Some(&json!("fixture-cli")));
+        assert_eq!(current.get("showTray"), Some(&json!(false)));
+        assert_eq!(current.get("preferredCurrencyCode"), Some(&json!("EUR")));
+        assert_eq!(disk["cliPath"], json!("fixture-cli"));
+        assert_eq!(disk["showTray"], json!(false));
+        assert_eq!(disk["preferredCurrencyCode"], json!("EUR"));
+    }
+
+    #[test]
+    fn transactional_array_element_update_preserves_sibling_and_unrelated_values() {
+        let temp = TempDir::new();
+        let path = temp.path().join("settings.json");
+        let store = PreferencesStore::new(&path);
+        store.set("showTray", json!(false), false).unwrap();
+        store
+            .update_array_element_transactional("quotaWarningThresholds", 0, json!(75))
+            .unwrap();
+        store
+            .update_array_element_transactional("quotaWarningThresholds", 1, json!(15))
+            .unwrap();
+        assert_eq!(store.get("quotaWarningThresholds"), Some(json!([75, 15])));
+        assert_eq!(store.get("showTray"), Some(json!(false)));
+    }
+
+    #[test]
+    fn transactional_replace_resets_exactly_and_keeps_memory_on_persistence_failure() {
+        let temp = TempDir::new();
+        let path = temp.path().join("settings.json");
+        let store = PreferencesStore::new(&path);
+        store.set("showTray", json!(false), true).unwrap();
+        store.set("obsoleteRuntimeKey", json!(true), false).unwrap();
+        store.replace_transactional(default_values()).unwrap();
+        assert_eq!(store.values(), default_values());
+        let disk: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        assert_eq!(disk["showTray"], json!(true));
+        assert!(disk.get("obsoleteRuntimeKey").is_none());
+
+        let blocker = temp.path().join("not-a-directory");
+        fs::write(&blocker, "fixture").unwrap();
+        let failing = PreferencesStore::new(blocker.join("settings.json"));
+        failing.set("showTray", json!(false), false).unwrap();
+        let before = failing.values();
+        assert!(failing.replace_transactional(default_values()).is_err());
+        assert_eq!(failing.values(), before);
+        assert!(failing.reset().is_err());
         assert_eq!(failing.values(), before);
     }
 

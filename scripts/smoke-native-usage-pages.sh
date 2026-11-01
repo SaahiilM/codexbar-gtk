@@ -218,7 +218,7 @@ capture_window "$spend_window" "${NATIVE_USAGE_EMPTY_SCREENSHOT:-}"
 
 # The stable Settings action and the central dashboard back route stay reachable.
 gapplication action com.steipete.CodexBarGTK settings
-assert_window 'CodexBar GTK.*Settings' "Settings"
+assert_window '^CodexBar Settings' "CodexBar Settings"
 gapplication action com.steipete.CodexBarGTK dashboard
 assert_window 'CodexBar GTK.*Dashboard' "Dashboard"
 gapplication action com.steipete.CodexBarGTK quit

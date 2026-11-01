@@ -124,18 +124,18 @@ assert_title_contains '^CodexBar GTK' "Usage"
 "$binary" --page sessions
 assert_title_contains '^CodexBar GTK' "Sessions"
 "$binary" --page spend --panel --about --settings
-assert_title_contains '^CodexBar GTK' "Settings"
+assert_title_contains '^CodexBar Settings' "CodexBar Settings"
 "$binary" --about
 assert_title_contains '^About CodexBar GTK' "About CodexBar GTK"
 "$binary" --panel
-# Settings remains visible as a separate main window; match the panel window
+# Settings remains visible as a separate preferences window; match the panel
 # itself instead of accepting whichever application window xdotool finds first.
 assert_title_contains 'CodexBar GTK.*Panel' "Panel"
 
 sleep 0.3
 version_calls=$(grep -c '^--version$' "$NATIVE_CLI_LOG" || true)
-[[ "$version_calls" == "1" ]] || {
-    echo "expected one backend controller across primary/secondary processes; saw $version_calls version calls" >&2
+[[ "$version_calls" == "2" ]] || {
+    echo "expected one controller and one Settings CLI-version query across primary/secondary processes; saw $version_calls version calls" >&2
     exit 1
 }
 gapplication action com.steipete.CodexBarGTK quit
@@ -166,7 +166,7 @@ if xdotool search --onlyvisible --name 'CodexBar GTK.*Panel' >/dev/null 2>&1; th
 fi
 gapplication action com.steipete.CodexBarGTK panel
 "$binary" --settings
-assert_title_contains '^CodexBar GTK' "Settings"
+assert_title_contains '^CodexBar Settings' "CodexBar Settings"
 : > "$NATIVE_USAGE_RELEASE"
 deadline=$((SECONDS + 12))
 while [[ ! -e "$NATIVE_USAGE_FINISHED" ]] && (( SECONDS < deadline )); do sleep 0.05; done
@@ -207,7 +207,7 @@ fi
 gapplication action com.steipete.CodexBarGTK panel
 assert_title_contains 'CodexBar GTK.*Panel' "Panel"
 gapplication action com.steipete.CodexBarGTK settings
-assert_title_contains '^CodexBar GTK' "Settings"
+assert_title_contains '^CodexBar Settings' "CodexBar Settings"
 if xdotool search --onlyvisible --name 'CodexBar GTK.*Panel' >/dev/null 2>&1; then
     echo "Settings navigation left the native panel visible" >&2
     exit 1

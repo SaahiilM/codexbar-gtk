@@ -4,9 +4,23 @@ Client-side changelog for the CodexBar GTK front-end. Each entry keys a build
 number (`CURRENT_PROJECT_VERSION`) to the upstream macOS CodexBar release its
 short version tracks, so "which version has what" maps cleanly onto both trees.
 
-## 0.82.0 (61) — 2026-11-01
+## 0.82.0 (62) — 2026-11-01
 
 Tracks upstream CodexBar 0.82.0.
+
+### Changed
+
+- Add the native libadwaita Settings panes and serialized Rust preferences,
+  provider actions, CLI reconfiguration, login, import/export and reset.
+- Persist preference updates transactionally and preserve concurrent unrelated
+  values during import and reset.
+
+### Validation
+
+- U05 native Settings runtime, Rust tests and migration checks are recorded in
+  migration audit E105.
+
+## 0.82.0 (61) — 2026-11-01
 
 ### Changed
 

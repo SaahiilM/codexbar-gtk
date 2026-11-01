@@ -16,7 +16,10 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::{cli::CliService, Cancellation};
+use crate::{
+    cli::{CliService, SharedCliService},
+    Cancellation,
+};
 use portable_pty::{native_pty_system, Child, ChildKiller, CommandBuilder, MasterPty, PtySize};
 use serde_json::{Map, Value};
 use tokio::sync::{mpsc, watch};
@@ -109,6 +112,42 @@ pub struct LoginSession {
     input: Arc<(Mutex<VecDeque<String>>, Condvar)>,
     cancelled: Arc<AtomicBool>,
     task: Option<tokio::task::JoinHandle<Result<LoginCompletion, LoginError>>>,
+}
+
+/// Narrow, cloneable control handle retained by the login actor while the
+/// PTY session itself is moved into its completion task.
+#[derive(Clone)]
+pub struct LoginControl {
+    input: Arc<(Mutex<VecDeque<String>>, Condvar)>,
+    cancelled: Arc<AtomicBool>,
+}
+
+impl LoginControl {
+    pub async fn submit(&self, code: String) -> Result<(), LoginError> {
+        if code.len() > MAX_AUTH_INPUT_BYTES {
+            return Err(LoginError {
+                kind: LoginErrorKind::Input,
+            });
+        }
+        let (queue, ready) = &*self.input;
+        let mut queue = queue.lock().map_err(|_| LoginError {
+            kind: LoginErrorKind::Child,
+        })?;
+        if !queue.is_empty() {
+            return Err(LoginError {
+                kind: LoginErrorKind::Input,
+            });
+        }
+        queue.push_back(code);
+        drop(queue);
+        ready.notify_one();
+        Ok(())
+    }
+
+    pub async fn cancel(&self) {
+        self.cancelled.store(true, Ordering::Release);
+        self.input.1.notify_all();
+    }
 }
 
 impl LoginSession {
@@ -207,31 +246,20 @@ impl LoginSession {
         self.events.take()
     }
 
+    pub fn control(&self) -> LoginControl {
+        LoginControl {
+            input: Arc::clone(&self.input),
+            cancelled: Arc::clone(&self.cancelled),
+        }
+    }
+
     /// Submit the provider's browser authorization code through the PTY.
     pub async fn submit(&self, code: String) -> Result<(), LoginError> {
-        if code.len() > MAX_AUTH_INPUT_BYTES {
-            return Err(LoginError {
-                kind: LoginErrorKind::Input,
-            });
-        }
-        let (queue, ready) = &*self.input;
-        let mut queue = queue.lock().map_err(|_| LoginError {
-            kind: LoginErrorKind::Child,
-        })?;
-        if !queue.is_empty() {
-            return Err(LoginError {
-                kind: LoginErrorKind::Input,
-            });
-        }
-        queue.push_back(code);
-        drop(queue);
-        ready.notify_one();
-        Ok(())
+        self.control().submit(code).await
     }
 
     pub async fn cancel(&self) {
-        self.cancelled.store(true, Ordering::Release);
-        self.input.1.notify_all();
+        self.control().cancel().await;
     }
 
     /// Wait for the child to be reaped and receive its explicit completion.
@@ -243,6 +271,171 @@ impl LoginSession {
             .map_err(|_| LoginError {
                 kind: LoginErrorKind::Child,
             })?
+    }
+}
+
+#[derive(Clone)]
+pub struct LoginActor {
+    sender: mpsc::Sender<LoginRequest>,
+}
+
+pub enum LoginRequest {
+    Start { provider_id: String },
+    SubmitCode { code: String },
+    Cancel,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum LoginUiEvent {
+    AuthorizationUrl(String),
+    Prompt(LoginPrompt),
+    Finished(LoginCompletionKind),
+    Failed(LoginErrorKind),
+}
+
+pub struct LoginUiReceiver {
+    receiver: mpsc::UnboundedReceiver<LoginUiEvent>,
+}
+
+impl LoginUiReceiver {
+    pub async fn recv(&mut self) -> Option<LoginUiEvent> {
+        self.receiver.recv().await
+    }
+
+    pub fn try_recv(&mut self) -> Result<LoginUiEvent, mpsc::error::TryRecvError> {
+        self.receiver.try_recv()
+    }
+}
+
+struct ActiveLogin {
+    control: LoginControl,
+    completion: tokio::task::JoinHandle<Result<LoginCompletion, LoginError>>,
+}
+
+impl LoginActor {
+    pub fn start(
+        runtime: &tokio::runtime::Handle,
+        cli: Arc<SharedCliService>,
+    ) -> (Self, LoginUiReceiver) {
+        let (sender, mut requests) = mpsc::channel::<LoginRequest>(8);
+        let (event_sender, event_receiver) = mpsc::unbounded_channel();
+        runtime.spawn(async move {
+            let mut active: Option<ActiveLogin> = None;
+            loop {
+                if let Some(session) = active.as_mut() {
+                    tokio::select! {
+                        request = requests.recv() => {
+                            let Some(request) = request else { break; };
+                            match request {
+                                LoginRequest::Start { provider_id } => {
+                                    session.control.cancel().await;
+                                    let _ = (&mut session.completion).await;
+                                    active = None;
+                                    start_login(&cli, provider_id, &event_sender, &mut active).await;
+                                }
+                                LoginRequest::SubmitCode { code } => {
+                                    if session.control.submit(code).await.is_err() {
+                                        let _ = event_sender.send(LoginUiEvent::Failed(LoginErrorKind::Input));
+                                    }
+                                }
+                                LoginRequest::Cancel => session.control.cancel().await,
+                            }
+                        }
+                        result = &mut session.completion => {
+                            active = None;
+                            let event = match result {
+                                Ok(Ok(completion)) => LoginUiEvent::Finished(completion.kind),
+                                Ok(Err(error)) => LoginUiEvent::Failed(error.kind),
+                                Err(_) => LoginUiEvent::Failed(LoginErrorKind::Child),
+                            };
+                            let _ = event_sender.send(event);
+                        }
+                    }
+                } else {
+                    let Some(request) = requests.recv().await else { break; };
+                    match request {
+                        LoginRequest::Start { provider_id } => {
+                            start_login(&cli, provider_id, &event_sender, &mut active).await;
+                        }
+                        LoginRequest::SubmitCode { .. } => {
+                            let _ = event_sender.send(LoginUiEvent::Failed(LoginErrorKind::Input));
+                        }
+                        LoginRequest::Cancel => {}
+                    }
+                }
+            }
+            if let Some(session) = active {
+                session.control.cancel().await;
+                let _ = session.completion.await;
+            }
+        });
+        (
+            Self { sender },
+            LoginUiReceiver {
+                receiver: event_receiver,
+            },
+        )
+    }
+
+    pub fn try_send(
+        &self,
+        request: LoginRequest,
+    ) -> Result<(), mpsc::error::TrySendError<LoginRequest>> {
+        self.sender.try_send(request)
+    }
+}
+
+async fn start_login(
+    cli: &SharedCliService,
+    provider_id: String,
+    events: &mpsc::UnboundedSender<LoginUiEvent>,
+    active: &mut Option<ActiveLogin>,
+) {
+    let args = match provider_id.as_str() {
+        "claude" => CLAUDE_LOGIN_ARGS.iter().map(OsString::from).collect(),
+        "codex" => vec![OsString::from("login")],
+        _ => {
+            let _ = events.send(LoginUiEvent::Failed(LoginErrorKind::Input));
+            return;
+        }
+    };
+    match LoginSession::start(
+        cli.snapshot().executable().to_path_buf(),
+        args,
+        Duration::from_secs(300),
+    )
+    .await
+    {
+        Ok(mut session) => {
+            let control = session.control();
+            if let Some(mut stream) = session.take_events() {
+                let event_sender = events.clone();
+                tokio::spawn(async move {
+                    while let Some(event) = stream.recv().await {
+                        let event = match event {
+                            LoginEvent::AuthorizationUrl(url) => {
+                                Some(LoginUiEvent::AuthorizationUrl(url))
+                            }
+                            LoginEvent::Prompt(prompt) => Some(LoginUiEvent::Prompt(prompt)),
+                            LoginEvent::Output(_) => None,
+                        };
+                        if let Some(event) = event {
+                            if event_sender.send(event).is_err() {
+                                break;
+                            }
+                        }
+                    }
+                });
+            }
+            let completion = tokio::spawn(session.wait());
+            *active = Some(ActiveLogin {
+                control,
+                completion,
+            });
+        }
+        Err(error) => {
+            let _ = events.send(LoginUiEvent::Failed(error.kind));
+        }
     }
 }
 
@@ -641,7 +834,39 @@ pub fn clean_authorization_url(url: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::os::unix::fs::PermissionsExt;
     use tokio::time::timeout as async_timeout;
+
+    static NEXT_LOGIN_FIXTURE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+    struct LoginFixture(PathBuf);
+
+    impl LoginFixture {
+        fn new(script: &str) -> Self {
+            let id = NEXT_LOGIN_FIXTURE.fetch_add(1, Ordering::Relaxed);
+            let dir = std::env::temp_dir().join(format!(
+                "codexbar-login-actor-test-{}-{id}",
+                std::process::id()
+            ));
+            std::fs::create_dir_all(&dir).unwrap();
+            let executable = dir.join("fake-codexbar");
+            std::fs::write(&executable, format!("#!/bin/sh\n{script}\n")).unwrap();
+            std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700)).unwrap();
+            Self(executable)
+        }
+
+        fn executable(&self) -> &PathBuf {
+            &self.0
+        }
+    }
+
+    impl Drop for LoginFixture {
+        fn drop(&mut self) {
+            if let Some(parent) = self.0.parent() {
+                let _ = std::fs::remove_dir_all(parent);
+            }
+        }
+    }
 
     #[test]
     fn ansi_and_markers_are_parsed_across_chunks() {
@@ -757,6 +982,52 @@ mod tests {
         assert!(saw_prompt);
         assert!(!format!("{:?}", *lifecycle.borrow()).contains("example.test"));
         assert_eq!(completion.kind, LoginCompletionKind::Succeeded);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn login_actor_keeps_auth_output_out_of_frontend_events() {
+        let fixture = LoginFixture::new(
+            "printf 'https://synthetic.invalid/authorize Paste code here\\n'; read code; printf 'fixture-code=%s\\n' \"$code\" >&2; printf 'Successfully logged in\\n'",
+        );
+        let cli = Arc::new(SharedCliService::new(Arc::new(CliService::new(
+            fixture.executable(),
+            None,
+        ))));
+        let (actor, mut events) = LoginActor::start(&tokio::runtime::Handle::current(), cli);
+        assert!(actor
+            .try_send(LoginRequest::Start {
+                provider_id: "codex".to_owned(),
+            })
+            .is_ok());
+
+        let mut saw_url = false;
+        let mut saw_code_prompt = false;
+        async_timeout(Duration::from_secs(3), async {
+            while let Some(event) = events.recv().await {
+                match event {
+                    LoginUiEvent::AuthorizationUrl(url) => {
+                        saw_url = url == "https://synthetic.invalid/authorize";
+                    }
+                    LoginUiEvent::Prompt(LoginPrompt::PasteCode) => {
+                        saw_code_prompt = true;
+                        assert!(actor
+                            .try_send(LoginRequest::SubmitCode {
+                                code: "fixture-code".to_owned(),
+                            })
+                            .is_ok());
+                    }
+                    LoginUiEvent::Prompt(LoginPrompt::OpenBrowser) => {}
+                    LoginUiEvent::Finished(LoginCompletionKind::Succeeded) => break,
+                    LoginUiEvent::Finished(kind) => panic!("unexpected login completion: {kind:?}"),
+                    LoginUiEvent::Failed(kind) => panic!("unexpected login error: {kind:?}"),
+                }
+            }
+        })
+        .await
+        .expect("login actor should finish the synthetic PTY flow");
+        assert!(saw_url);
+        assert!(saw_code_prompt);
     }
 
     #[cfg(unix)]

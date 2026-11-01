@@ -179,7 +179,7 @@ if xdotool search --onlyvisible --name 'CodexBar GTK.*Panel' >/dev/null 2>&1; th
     exit 1
 fi
 "$binary" --panel
-assert_title_contains '^CodexBar GTK' "Panel"
+assert_title_contains 'CodexBar GTK.*Panel' "Panel"
 
 # The compact panel is a separate window. Escape, toggle, central page and
 # Settings/About actions all close it without changing their application APIs.

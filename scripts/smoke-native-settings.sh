@@ -3,13 +3,15 @@ set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 binary=${1:-"$repo_root/rust-gtk/target/debug/codexbar-gtk-native"}
+
+for tool in xvfb-run dbus-run-session xdotool gapplication xwd ffmpeg python3 grep; do
+    command -v "$tool" >/dev/null || { echo "missing smoke dependency: $tool" >&2; exit 2; }
+done
+
 if [[ "${CODEXBAR_NATIVE_SETTINGS_INNER:-}" != "1" ]]; then
     exec xvfb-run -a dbus-run-session -- env CODEXBAR_NATIVE_SETTINGS_INNER=1 "$0" "$binary"
 fi
 
-for tool in xdotool gapplication timeout xwd ffmpeg; do
-    command -v "$tool" >/dev/null || { echo "missing smoke dependency: $tool" >&2; exit 2; }
-done
 [[ -x "$binary" ]] || { echo "native GTK binary not found: $binary" >&2; exit 2; }
 
 scratch=$(mktemp -d)
@@ -76,8 +78,8 @@ wait_for_window() {
 
 wait_for_calls() {
     local expected=$1 deadline=$((SECONDS + 15))
-    while ! rg -q -- "$expected" "$NATIVE_SETTINGS_CALLS" 2>/dev/null && (( SECONDS < deadline )); do sleep 0.05; done
-    rg -q -- "$expected" "$NATIVE_SETTINGS_CALLS" || { cat "$scratch/app.log" >&2; echo "synthetic CLI call did not arrive: $expected" >&2; exit 1; }
+    while ! grep -q -- "$expected" "$NATIVE_SETTINGS_CALLS" 2>/dev/null && (( SECONDS < deadline )); do sleep 0.05; done
+    grep -q -- "$expected" "$NATIVE_SETTINGS_CALLS" || { cat "$scratch/app.log" >&2; echo "synthetic CLI call did not arrive: $expected" >&2; exit 1; }
 }
 
 capture() {
@@ -99,6 +101,9 @@ wait_for_calls 'config providers'
 wait_for_calls 'hooks list --format json'
 wait_for_calls 'plugins list'
 sleep 0.4
+# Keep pointer-based checks independent of whether CI requested screenshots.
+xdotool windowsize "$settings_window" 1120 820
+sleep 0.3
 capture "$settings_window" "${NATIVE_SETTINGS_GENERAL_SCREENSHOT:-}"
 
 # Exercise one live preference mutation and verify the durable JSON value.
@@ -162,18 +167,18 @@ fi
 gapplication action com.steipete.CodexBarGTK quit
 wait "$app_pid"
 app_pid=
-if rg -q 'Adwaita-CRITICAL' "$scratch/app.log"; then
+if grep -q 'Adwaita-CRITICAL' "$scratch/app.log"; then
     cat "$scratch/app.log" >&2
     echo "libadwaita emitted a critical during Settings smoke" >&2
     exit 1
 fi
 if [[ "${CODEXBAR_NATIVE_SETTINGS_ICON_REPORT:-}" == "1" ]]; then
-    icon_report_count=$(rg -c '^native-settings-icon:' "$scratch/app.log" || true)
+    icon_report_count=$(grep -c '^native-settings-icon:' "$scratch/app.log" || true)
     [[ "$icon_report_count" == "11" ]] || {
         cat "$scratch/app.log" >&2
         echo "native settings did not report one runtime-resolved icon decision per page" >&2
         exit 1
     }
-    rg '^native-settings-icon:' "$scratch/app.log"
+    grep '^native-settings-icon:' "$scratch/app.log"
 fi
 printf 'native Settings synthetic CLI, preference persistence, settings panes, central About route, and GTK lifecycle smoke passed\n'

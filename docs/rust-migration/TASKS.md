@@ -280,9 +280,12 @@ the Resume here table. BG passed after PR #54; Phase U may now be coordinated.
   partial success. Reject nonempty invalid imported `cliPath` intentionally;
   empty/default path resolution follows startup. Import/reset do not change
   autostart. API keys and login events remain transient. Local tests, runtime
-  smoke and synthetic screenshots are recorded in E105; exact-head CI and
-  merge remain pending. After U05 merges, U06 owns SNI/dbusmenu integration and
-  retains the central `app.settings`, `app.about` and `app.page` routes.
+  smoke and synthetic screenshots are recorded in E105. The first exact-head
+  `test` check exposed a runner-only `rg` dependency; E107 records its removal,
+  a deterministic Settings window size for pointer checks, and a full smoke
+  pass with `rg` excluded from `PATH`. Replacement-head CI and merge remain
+  pending. After U05 merges, U06 owns SNI/dbusmenu integration and retains the
+  central `app.settings`, `app.about` and `app.page` routes.
 - [ ] **U06** StatusNotifierItem and dbusmenu, icon/pixmap export and all signal
   signatures; host re-registration, refresh/restart/settings/quit actions and
   updated tooltips. Port the private-bus regression coverage from PR #15.

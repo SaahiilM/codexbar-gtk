@@ -3224,3 +3224,35 @@ future models must verify the linked PR's status rather than trusting a stale
   head and both required checks, including the native Settings smoke. Merge
   normally only after checks pass and review/mergeability state is clear; then
   verify live `origin/main` and hand the next serialized slot to U06.
+
+### E107 — 2026-11-01: portable Settings smoke after first CI failure
+
+- **Observed failure:** PR #63 head `9c566778a8c37c45600adbd95e3cd26acb6f185a`
+  failed the `test` job in run `41332816502`, job `124926304646`. On the Ubuntu
+  runner, `scripts/smoke-native-settings.sh` invoked `rg`, which is not
+  installed. The later `synthetic CLI call did not arrive: config providers`
+  message came from the same unavailable `rg` checks in `wait_for_calls`; it
+  did not establish that the synthetic CLI action itself was missing.
+- **Fix:** use the base-image `grep` utility for call waits and log assertions,
+  and remove the unused `timeout` dependency. Check the script's actual external
+  tools up front (`xvfb-run`, `dbus-run-session`, `xdotool`, `gapplication`,
+  `xwd`, `ffmpeg`, `python3`, `grep`). Set the Settings window to 1120×820
+  before fixed-coordinate interaction regardless of whether screenshot output
+  was requested; otherwise CI's no-capture run leaves the pointer test at a
+  different window size. The first local no-capture run exposed that sizing
+  dependency and failed the preference assertion; this is also corrected.
+- **Local verification:** `bash -n scripts/smoke-native-settings.sh` and
+  `git diff --check` pass. The full Settings smoke passed with `PATH` limited
+  to the extracted GUI tools plus `/usr/bin:/bin`, excluding the Codex-bundled
+  `rg`, and with `LD_LIBRARY_PATH` for the extracted `xdotool` support library.
+  It recorded the expected synthetic provider/hooks/plugins CLI invocations,
+  persisted `refreshAllProvidersOnMenuOpen: false` through SettingsActor,
+  visited the Settings panes, opened the central About action, and exited
+  cleanly. No screenshot paths were set for this run, so it exercised the same
+  no-capture interaction path as CI. The synthetic scratch data was inspected;
+  it contains no real account or credentials.
+- **Status:** this is a follow-up correction on PR #63/build 62, not a new
+  release or cutover. The new exact-head Actions status is pending after push;
+  do not merge until the replacement `test` and `tray-dbus` checks pass and the
+  normal review/mergeability checks are clear. U06 should use the replacement
+  U05 head as its base once PR #63 merges.

@@ -3547,3 +3547,61 @@ future models must verify the linked PR's status rather than trusting a stale
   review, merge, Wayland 2× pass or full UG acceptance are claimed here; Python
   remains the default. Next: publish the focused PR, then verify its exact head
   and merge normally.
+
+### E117 — 2026-11-01: U08 PR #66 artwork-loader failure and repair
+
+- **Observed CI failure:** PR #66 head `68c1752b4ea116ce572cb367512b85ad7ddb9dc7`
+  ran as Actions run `41342989891`. `tray-dbus` passed; `test` failed in “Smoke
+  provider artwork decoding and accessibility roles on X11” at
+  `rust-gtk/tests/a11y_assets.rs:15`: DeepSeek's monochrome provider mark was a
+  `GtkLabel`, while the test expected `GtkImage`. The earlier Codex preferred
+  brand assertions at lines 9–11 had already passed. The GTK warning about not
+  acquiring the `org.a11y.Bus` address was separate from the failed assertion.
+- **Failure analysis:** `provider_mark` used `brand.map(load_texture).or_else(...)
+  .flatten()`. A present brand whose decode returned `None` became `Some(None)`;
+  `or_else` saw the outer `Some` and skipped the monochrome candidate. The
+  Codex preferred catalog file is actually the 104×104 PNG
+  `Brand-ProviderIcon-codex.png`; its fallback is the SVG
+  `ProviderIcon-codex.svg`. The original failure was not a preferred-image
+  decode failure: the CI log shows the Codex PNG rendered first, then DeepSeek's
+  monochrome SVG fell through to a label. The original workflow installed
+  `libgtk-4-dev` with `--no-install-recommends`; its APT log explicitly lists
+  `librsvg2-common` under “Recommended packages”, and that package was omitted.
+  That package supplies the GDK SVG image loader, so its absence explains the
+  observed DeepSeek failure and would also prevent bundled brand SVGs from
+  rendering. Separately, `brand.map(decode).or_else(...).flatten()` has a latent
+  fallback bug when a present preferred asset fails decoding: `Some(None)` stops
+  the `or_else` before the monochrome candidate is tried. The checked-in Codex
+  PNG is ordinary RGBA PNG data and passed in the original CI run. The repaired
+  smoke directly decodes that PNG and a real bundled brand SVG with explicit
+  diagnostics, asserts the PNG's 104px source width, and exercises all three
+  candidate-chain outcomes with fixtures.
+- **Repair and fixtures:** the candidate chain now uses `brand.and_then(decode)`
+  followed by `mono.and_then(decode)`. `provider_mark_from_assets` keeps the
+  same embedded asset-selection path while allowing fixture coverage. A
+  display-dependent fixture test covers: decodable preferred SVG wins over a
+  decodable monochrome SVG (distinct 2px/4px sources); undecodable preferred
+  bytes fall through to a valid monochrome source; and missing/undecodable
+  candidates return the initial `GtkLabel` fallback with Presentation role.
+  The real catalog smoke also exercises the Codex PNG, DeepSeek monochrome SVG
+  and Claude brand SVG. CI now explicitly installs `librsvg2-common`; native
+  binary assets remain embedded rather than resolved relative to the install
+  directory. Debian/Ubuntu package guidance records `librsvg2-common` as a
+  runtime dependency for packaged native installs (C01).
+- **Local repair checks:** formatter checks passed for all four Rust crates;
+  tests passed with 85 core, 85 backend unit + 1 backend integration, 37 GTK
+  tests under a private bus (one display fixture ignored in this headless run),
+  the ignored display fixture passed under Xvfb, and the actual-asset/accessibility
+  smoke passed under Xvfb. Clippy passed for all four crates with warnings
+  denied. The native binary rebuilt; the synthetic dashboard smoke passed at
+  1× and 2× Xvfb, and the active KDE Wayland fixture/capture passed at the
+  compositor's default scale. After the final repair-test change, the focused
+  fixture and expanded catalog/accessibility smoke passed again on XWayland
+  (`GDK_BACKEND=x11`, `DISPLAY=:0`); the catalog smoke switches to the system
+  temporary directory before asking the native renderer for assets, verifying
+  that lookup does not depend on the repository/install working directory. The
+  GTK suite passed 37 tests with the display fixture ignored in the ordinary
+  run, and GTK Clippy plus formatting passed. `xvfb-run` is unavailable in this
+  shell; the workflow runs both display-dependent tests under Xvfb. Fresh remote
+  exact-head CI is pending on the repair commit. PR #66 remains open and
+  unmerged; Python remains the default.

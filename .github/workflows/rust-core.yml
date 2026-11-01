@@ -52,7 +52,7 @@ jobs:
       - name: Install native GTK build and smoke dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libgtk-4-dev libadwaita-1-dev xvfb xauth xdotool x11-utils x11-apps ffmpeg libglib2.0-bin dbus-daemon python3-dbus python3-gi
+          sudo apt-get install -y --no-install-recommends libgtk-4-dev libadwaita-1-dev librsvg2-common xvfb xauth xdotool x11-utils x11-apps ffmpeg libglib2.0-bin dbus-daemon python3-dbus python3-gi
       - name: Check Rust formatting
         run: |
           cargo fmt --manifest-path rust-core/Cargo.toml -- --check
@@ -65,6 +65,8 @@ jobs:
         run: cargo test --manifest-path rust-backend/Cargo.toml --locked
       - name: Test native GTK bootstrap contracts
         run: dbus-run-session -- cargo test --manifest-path rust-gtk/Cargo.toml --locked
+      - name: Test provider artwork decode fallback on X11
+        run: xvfb-run -a dbus-run-session -- cargo test --manifest-path rust-gtk/Cargo.toml --locked --lib provider_artwork_prefers_decodable_brand_then_monochrome_then_label -- --ignored
       - name: Smoke provider artwork decoding and accessibility roles on X11
         run: xvfb-run -a dbus-run-session -- cargo test --manifest-path rust-gtk/Cargo.toml --locked --test a11y_assets -- --ignored
       - name: Build PyO3 extension

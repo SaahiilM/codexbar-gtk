@@ -53,6 +53,11 @@ artwork, tray raster generation, GTK theme/scaling and accessibility/keyboard
 parity. Its active implementation and fixture evidence are recorded in E115/E116.
 Python remains the default until UG passes. Some Python edge-input behavior
 remains available only through the default Python path as described below.
+The native binary embeds provider icon bytes, so install location does not affect
+asset lookup. GDK still needs its SVG image loader at runtime; Debian/Ubuntu
+packages must include `librsvg2-common` rather than relying on recommended
+packages, which may be omitted by `--no-install-recommends` (carry this into
+C01 packaging).
 
 The file inventory and named functions below were inspected, not just inferred
 from filenames. Test results and limitations are recorded separately in AUDIT.

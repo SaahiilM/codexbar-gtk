@@ -263,10 +263,19 @@ pub fn provider_mark(
         .into_iter()
         .find_map(|extension| asset(&format!("Brand-ProviderIcon-{id}.{extension}")));
     let mono = asset(&format!("ProviderIcon-{id}.svg"));
+    provider_mark_from_assets(display_name, accent, size, brand, mono)
+}
+
+fn provider_mark_from_assets(
+    display_name: &str,
+    accent: &str,
+    size: i32,
+    brand: Option<&'static [u8]>,
+    mono: Option<&'static [u8]>,
+) -> gtk::Widget {
     let loaded = brand
-        .map(|bytes| load_texture(bytes, None))
-        .or_else(|| mono.map(|bytes| load_texture(bytes, Some(accent))))
-        .flatten();
+        .and_then(|bytes| load_texture(bytes, None))
+        .or_else(|| mono.and_then(|bytes| load_texture(bytes, Some(accent))));
     if let Some(texture) = loaded {
         let image = gtk::Image::from_paintable(Some(&texture));
         image.set_pixel_size(size);
@@ -329,6 +338,53 @@ fn load_texture(bytes: &'static [u8], tint: Option<&str>) -> Option<gdk::Texture
 mod tests {
     use super::*;
     use codexbar_backend::presentation::TraySummary;
+
+    fn source_width(widget: gtk::Widget) -> i32 {
+        widget
+            .downcast::<gtk::Image>()
+            .expect("provider artwork image")
+            .paintable()
+            .expect("provider texture")
+            .downcast::<gdk::Texture>()
+            .expect("provider texture type")
+            .width()
+    }
+
+    #[test]
+    #[ignore = "requires an X11/Wayland display; run from the native UI smoke job"]
+    fn provider_artwork_prefers_decodable_brand_then_monochrome_then_label() {
+        gtk::init().expect("GTK display for provider asset fallback smoke");
+        const INVALID_ASSET: &[u8] = b"not a decodable image";
+        let brand = include_bytes!("../tests/fixtures/provider-brand.svg");
+        let mono = include_bytes!("../tests/fixtures/provider-monochrome.svg");
+
+        let preferred =
+            provider_mark_from_assets("Fixture", "#123456", 24, Some(brand), Some(mono));
+        assert_eq!(source_width(preferred), 2, "decodable brand must win");
+
+        let recovered =
+            provider_mark_from_assets("Fixture", "#123456", 24, Some(INVALID_ASSET), Some(mono));
+        assert_eq!(
+            source_width(recovered),
+            4,
+            "decode failure must try monochrome"
+        );
+
+        for (brand, mono) in [
+            (Some(INVALID_ASSET), None),
+            (Some(INVALID_ASSET), Some(INVALID_ASSET)),
+            (None, None),
+        ] {
+            let fallback = provider_mark_from_assets("Unknown", "#123456", 24, brand, mono)
+                .downcast::<gtk::Label>()
+                .expect("initial label fallback");
+            assert_eq!(fallback.text(), "U");
+            assert_eq!(
+                fallback.accessible_role(),
+                gtk::AccessibleRole::Presentation
+            );
+        }
+    }
 
     fn summary(style: &str) -> TraySummary {
         TraySummary {

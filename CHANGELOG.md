@@ -24,7 +24,8 @@ Tracks upstream CodexBar 0.82.0.
   `41174965540` and merged normally at `81b7b8f`. Build-59 acceptance evidence
   is in AUDIT E093/E094. A fresh Xvfb smoke could not run because `xvfb-run`
   and `xdotool` are absent; the synthetic native screenshots from merged U02
-  were inspected. Python remains default until UG passes.
+  were inspected. PR #60 is open; `tray-dbus` passed and `test` was in progress
+  on its initial exact head when observed. Python remains default until UG passes.
 
 ## 0.82.0 (57) — 2026-10-31
 

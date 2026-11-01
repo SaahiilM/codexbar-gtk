@@ -48,11 +48,14 @@ and the synthetic tray-routed dashboard screenshot are recorded in E110. PR #64
 merged normally at `678b6b9cf3e10e5b9cd926cb488b5ffbf62ce1da`; its exact head
 passed both required checks (E111). U07 build 64 merged normally in PR #65 at
 `e373e019f7701f5f3a5e204153b7163763abac90`; its exact head passed both required
-checks in run `41340840860` (E114). U08 owns build 65 for native provider
-artwork, tray raster generation, GTK theme/scaling and accessibility/keyboard
-parity. Its active implementation and fixture evidence are recorded in E115/E116.
-Python remains the default until UG passes. Some Python edge-input behavior
-remains available only through the default Python path as described below.
+checks in run `41340840860` (E114). U08 build 65 merged in PR #66 at
+`5de83def98ad5ebd09035ee9120698fbf710541c`; exact head
+`fb89f0b6c702dff92992916e14951b385f5189bf` passed `test` and `tray-dbus` in
+run `41345048163` (E119). All U01–U08 implementation PRs are merged. UG remains
+**NOT PASSED** while the interaction/capture matrix is incomplete; see
+[UG_GATE.md](UG_GATE.md) and E120. Python remains the default until UG passes.
+Some Python edge-input behavior remains available only through the default
+Python path as described below.
 The native binary embeds provider icon bytes, so install location does not affect
 asset lookup. GDK still needs its SVG image loader at runtime; Debian/Ubuntu
 packages must include `librsvg2-common` rather than relying on recommended
@@ -290,11 +293,11 @@ no workspace commands are assumed.
   fixture smoke evidence.
   No hidden Python policy/service work remains. See AUDIT E085/E086 for B11's
   Actions startup failure and the separately verified local evidence.
-- **UG — native UI complete:** all U tasks accepted against the same backend;
-  functional/visual parity and Wayland/X11/D-Bus behavior verified. Preserve the
-  old app until this gate is passed. BG, U01, U02, U03 and U04 have passed;
-  U05–U08 must also pass the full matrix before UG can pass and the Python app
-  can stop being the default.
+- **UG — native UI complete:** all U01–U08 implementation PRs have merged, but
+  the gate is **NOT PASSED** until full feature/action parity and the required
+  Wayland/X11/private-D-Bus evidence matrix are accepted. Current evidence and
+  uncovered actions are itemized in [UG_GATE.md](UG_GATE.md). Preserve the
+  Python app as the default until this gate passes.
 - **CG — cutover complete:** native release/install works without Python,
   PyGObject or `_rust_core.so`; preferences/history survive the switch; native
   CI and packaging are proven. Remove bridge, fallback implementations, Python

@@ -123,20 +123,26 @@ CodexBar 0.82.0 provider behavior; the provider catalog remains at 110 providers
 The approved destination is a **fully native Rust GTK4/libadwaita app**, with the
 backend migrated **before** the UI. The PyO3 bridge and Python shell are
 temporary. Backend gate BG passed in PR #54. U01's native bootstrap merged in
-PR #56; the remaining Phase U screens are still pending.
+PR #56, and all U01–U08 implementation PRs are now merged. UG acceptance is
+still open; see the explicit [gate ledger](docs/rust-migration/UG_GATE.md).
 
 - [Architecture, source inventory and stage gates](docs/rust-migration/README.md)
 - [Task checklist and current model handoff](docs/rust-migration/TASKS.md)
 - [Decisions, verification evidence and audit trail](docs/rust-migration/AUDIT.md)
 
 Future coding agents should start with [`AGENTS.md`](AGENTS.md). B00–B15 and BG
-are accepted. U01–U07 are merged through U07 PR #65 at
-`e373e019f7701f5f3a5e204153b7163763abac90`; its exact-head checks passed in run
-`41340840860` (E114). U08 owns provider artwork, tray raster rendering,
-theme/scaling and accessibility/keyboard parity on build 65. Its local X11/Xvfb
-and actual KDE Wayland screenshots are recorded in E115/E116. The Python
-launcher remains default until the UG cutover gate passes. See E086 for the BG merge,
-B11 CI limitation and B15 compatibility bounds.
+are accepted. U01–U08 implementation PRs are merged. U08 PR #66 merged at
+`5de83def98ad5ebd09035ee9120698fbf710541c`; exact head
+`fb89f0b6c702dff92992916e14951b385f5189bf` passed `test` and `tray-dbus` in
+run `41345048163` (E119). UG is **NOT PASSED**: provider/source/API-key,
+import/export/reset and update-check GTK actions still need fixture evidence.
+The global Hooks switch passed Xvfb interaction and synthetic persistence, but
+its Wayland action remains open. Plugins is a read-only fixture list; its
+empty/loading/error states remain untested, with no mutation action required.
+The Wayland interaction matrix is incomplete. See the [UG evidence
+ledger](docs/rust-migration/UG_GATE.md) and E120. The Python launcher remains
+the default until the gate passes. See E086 for the BG merge, B11 CI limitation
+and B15 compatibility bounds.
 
 ### Existing opt-in module integrations
 
@@ -218,7 +224,7 @@ The GTK front-end uses the same version pair as the macOS bundle:
   this client is feature-compatible with (`0.82.0`).
 * `CURRENT_PROJECT_VERSION` is the build number of the Linux front-end.
 * `codexbar_gtk/version.py` turns the pair into the macOS-style
-  `"0.82.0 (65)"` string shown under Settings → About, in the tray menu and by
+  `"0.82.0 (66)"` string shown under Settings → About, in the tray menu and by
   `./run.sh --about`.
 
 Increment `CURRENT_PROJECT_VERSION` for each merged PR and keep it in sync with
@@ -272,9 +278,9 @@ build. Use synthetic CLI data when capturing previews.
 ### Native Rust GTK bootstrap
 
 U01 adds a separate native bootstrap binary. It talks directly to
-`rust-backend`, owns no Python bridge, and keeps screen implementations marked
-as placeholders until their U02–U08 slices land. The Python launcher remains
-the default until the UG cutover gate passes.
+`rust-backend` and owns no Python bridge. U02–U08 screens have landed, but the
+full interaction gate remains open. The Python launcher remains the default
+until UG passes.
 
 Native builds need GTK development metadata and headers in addition to Python
 typelibs:

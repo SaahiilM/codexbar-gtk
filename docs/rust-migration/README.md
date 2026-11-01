@@ -35,11 +35,13 @@ smokes passed (AUDIT E101). U04 Usage & Spend/Sessions PR #62 merged normally
 at `82b9f254e351ad983d3827d87c78c2de29ec92e9`; its final head passed both
 required checks in run `41327529193` (AUDIT E104). U05 owns provisional build
 62 on `orchestrated/luna-u05-settings`; its Settings panes and serialized
-preferences bridge are implemented and locally verified (AUDIT E105). PR #63's
-first head `0b7b3df23c979d122561fc858971510f926ceb71` passed `tray-dbus` while
-`test` is running in Actions run `41332745531` (AUDIT E106). The handoff-doc
-update requires a fresh exact-head check. U06 follows U05. Python remains the
-default until UG passes.
+preferences bridge are implemented and locally verified (AUDIT E105). PR #63
+head `9c566778a8c37c45600adbd95e3cd26acb6f185a` passed `tray-dbus` but failed
+the Settings smoke in `test` because CI lacked `rg` and the no-capture smoke did
+not size the window before its fixed-coordinate click (AUDIT E106–E107). Both
+issues are corrected and the no-capture smoke passes locally, including with
+`rg` absent from `PATH`; replacement-head CI is pending. U06 follows U05.
+Python remains the default until UG passes.
 Some Python edge-input behavior remains available only through the default
 Python path as described below.
 

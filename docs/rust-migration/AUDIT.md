@@ -3242,15 +3242,15 @@ future models must verify the linked PR's status rather than trusting a stale
   different window size. The first local no-capture run exposed that sizing
   dependency and failed the preference assertion; this is also corrected.
 - **Local verification:** `bash -n scripts/smoke-native-settings.sh` and
-  `git diff --check` pass. The full Settings smoke passed with `PATH` limited
-  to the extracted GUI tools plus `/usr/bin:/bin`, excluding the Codex-bundled
-  `rg`, and with `LD_LIBRARY_PATH` for the extracted `xdotool` support library.
-  It recorded the expected synthetic provider/hooks/plugins CLI invocations,
-  persisted `refreshAllProvidersOnMenuOpen: false` through SettingsActor,
-  visited the Settings panes, opened the central About action, and exited
-  cleanly. No screenshot paths were set for this run, so it exercised the same
-  no-capture interaction path as CI. The synthetic scratch data was inspected;
-  it contains no real account or credentials.
+  `git diff --check` pass. The full no-capture Settings smoke passed three
+  consecutive times after the window-size fix. It also passed with an isolated
+  `PATH` that omitted `rg`, using the extracted GUI tools and the extracted
+  `xdotool` support library. Each run recorded the expected synthetic
+  provider/hooks/plugins CLI calls, persisted
+  `refreshAllProvidersOnMenuOpen: false` through SettingsActor, visited the
+  Settings panes, opened central About, and exited cleanly. No screenshot
+  paths were set, so the no-capture pointer path used by CI was exercised. The
+  synthetic scratch data contains no real account or credentials.
 - **Status:** this is a follow-up correction on PR #63/build 62, not a new
   release or cutover. The new exact-head Actions status is pending after push;
   do not merge until the replacement `test` and `tray-dbus` checks pass and the

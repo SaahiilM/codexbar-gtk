@@ -18,7 +18,9 @@ Tracks upstream CodexBar 0.82.0.
 ### Validation
 
 - U05 native Settings runtime, Rust tests and migration checks are recorded in
-  migration audit E105.
+  migration audit E105. The runner portability and no-capture interaction fix
+  is recorded with its local reruns in E107; replacement-head Actions checks
+  remain pending.
 
 ## 0.82.0 (61) — 2026-11-01
 

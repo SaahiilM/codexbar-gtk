@@ -14,10 +14,10 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Planning change | [PR #18](https://github.com/SaahiilM/codexbar-gtk/pull/18), merged at `69c5496`, build `0.81.0 (17)` |
 | Backend tasks completed after that baseline | B00–B15 and BG are accepted and merged. B11's Actions startup failures remain documented as failures; see E086. |
 | Active implementation task / owner | UG coverage/evidence on `orchestrated/luna-ug`, build `0.82.0 (66)`, based on live main `5de83def98ad5ebd09035ee9120698fbf710541c`. U08 is merged; no dependent UI contract changes are requested. Keep Python as the default until UG is fully passed. |
-| Latest gate result | **BG passed** (E085/E086). **UG NOT PASSED**: all U01–U08 implementation PRs have merged; provider/source/API-key, import/export/reset, update-check and remaining Settings action evidence is incomplete. The global Hooks switch passed Xvfb interaction/persistence; its Wayland action is open. Plugins is a read-only fixture list with empty/loading/error states untested, not a mutation action. Wayland interactive actions and the full session smoke matrix remain incomplete. See [UG_GATE.md](UG_GATE.md) and E120. |
-| Next domain slice | Continue the explicit matrix and add safe GTK action fixtures for each uncovered Settings path. Obtain valid Wayland functional evidence if the session supports controlled input; otherwise record the limitation without inferring pass. Preserve the current Python launcher. C01 remains blocked until UG passes. |
+| Latest gate result | **BG passed** (E085/E086). **UG NOT PASSED**: all U01–U08 implementation PRs have merged; provider/source/API-key, import/export/reset, update-check and remaining Settings action evidence is incomplete. The global Hooks switch passed Xvfb interaction/persistence; its Wayland action is open. Plugins is a read-only fixture list with empty/loading/error states untested, not a mutation action. Wayland interactive actions and the full session smoke matrix remain incomplete. See [UG_GATE.md](UG_GATE.md), E120 and E121. |
+| Next domain slice | Push the launch-at-login smoke synchronization in PR #67 and verify fresh exact-head CI/reviews/UI before normal merge. Then continue the explicit interaction matrix, obtain Wayland functional evidence where possible, and record unsupported inputs without inferring parity. Preserve the Python launcher. C01 remains blocked until UG passes. |
 | Open external blockers | No dependency merge blocker remains. On this host, the Wayland compositor rejects `wtype` virtual-keyboard input and forced `GDK_SCALE=2` produces a black capture; local Xvfb panel focus/SNI checks have also timed out despite one independent local pass and passing exact-head CI. These are evidence gaps, not accepted UG results (E120). B11 zero-job Actions startup failures remain documented as failures; see E086. |
-| Latest checks | U08 PR #66 exact head `fb89f0b6c702dff92992916e14951b385f5189bf` passed `test` and `tray-dbus` in run `41345048163` and merged normally at `5de83def98ad5ebd09035ee9120698fbf710541c` (E119). Build-66 `cargo build`, GTK unit tests, expanded Settings Xvfb/private-D-Bus smoke including Hooks toggle persistence, Usage & Spend/Sessions Xvfb smoke, shell syntax and screenshot inspections are in E120. |
+| Latest checks | U08 PR #66 exact head `fb89f0b6c702dff92992916e14951b385f5189bf` passed `test` and `tray-dbus` in run `41345048163` and merged normally at `5de83def98ad5ebd09035ee9120698fbf710541c` (E119). PR #67 head `209e54e0160a4dde85d60c51cd581d0c05a7555a` failed only the native Settings launch-at-login removal assertion in run `41357117572`. The changelog-only head `b0fec48440478a7aa9e9243739c8fe3be3731e5a` later passed both jobs in run `41357527678`, before the harness synchronization. The full local Settings smoke now passes with persisted-state waits and the removal assertion (E121); the pushed test correction needs its own exact-head checks. |
 | UI validation | Prior U02–U08 captures remain in E090–E116. Build-66 Xvfb Settings pages/actions, all four Spend ranges and three heatmap modes, plus valid Wayland Sessions/Spend states are in `screenshots/ug-build66/` and catalogued in [UG_GATE.md](UG_GATE.md). No black or stale Wayland frames are included. |
 
 **First commands for a new model/session:**
@@ -387,6 +387,13 @@ virtual-keyboard protocol, so Wayland pointer/keyboard action coverage remains
 open. Local Xvfb panel SNI/focus timeouts remain recorded alongside one
 independent local pass and exact-head #66 CI success; they are not treated as a
 repeatable pass. See E119/E120 and `UG_GATE.md`.
+
+PR #67's first exact-head CI run `41357117572` failed only the native Settings
+launch-at-login removal assertion on head `209e54e0160a4dde85d60c51cd581d0c05a7555a`.
+The complete local Settings rerun passes with explicit `launchAtLogin=true`
+and `false` synchronization plus the desktop-entry-removal assertion; the
+failure and fresh-CI handoff are recorded in E121. Do not merge until the
+corrected live PR head's required checks and review pass.
 
 Remaining acceptance work: fixture GTK actions for provider enable/source/API
 key/login, import/export/reset, update-check, and the remaining General/Display

@@ -3746,3 +3746,49 @@ future models must verify the linked PR's status rather than trusting a stale
   Python/PyGObject/PyO3, C03 Python removal after equivalent native coverage,
   and CG final audit remain blocked by UG. Include `librsvg2-common` in C01
   packaging verification.
+
+### E121 — 2026-11-01: PR #67 launch-at-login smoke failure and synchronization
+
+- **Exact-head failure:** Actions run
+  [41357117572](https://github.com/SaahiilM/codexbar-gtk/actions/runs/41357117572)
+  ran on PR #67 head `209e54e0160a4dde85d60c51cd581d0c05a7555a`. The `test` job
+  failed only at **Exercise native Settings with synthetic preferences and
+  providers**, with the exact assertion `native launch-at-login switch did not
+  remove its desktop entry`. Its earlier steps and the separate `tray-dbus` job
+  passed. The failure log contained the normal Settings icon report and no GTK
+  crash or Settings operation error before the assertion.
+- **Investigation:** native `SettingsWindow::handle_response` applies the
+  `LaunchAtLogin` actor result to the visible switch and status after the
+  operation completes. The former smoke waited only for the desktop file to
+  appear, then clicked off immediately; file creation can precede the GTK
+  response. The CI assertion alone does not establish a product defect or prove
+  that the harness was the only cause.
+- **Harness correction:** after clicking on, the smoke now waits until the
+  temporary settings JSON reports `launchAtLogin=true` before validating the
+  expected desktop `Exec` entry. Before clicking off it has therefore observed
+  the persisted enabled state and the helper's response-settle interval. After
+  the off click it waits for `launchAtLogin=false` and still requires the
+  desktop file to disappear. A missing disabled-state write or a remaining
+  desktop entry still fails the smoke; no product-code behavior was bypassed.
+- **Complete local rerun:** `scripts/smoke-native-settings.sh` passed end to end
+  under Xvfb and a private D-Bus session with the corrected synchronization.
+  In the isolated home, the final preference was `launchAtLogin=false` and
+  `.config/autostart/codexbar-gtk.desktop` was absent. The run also passed its
+  other Settings actions, synthetic notification delivery and app/notification
+  bus-name teardown. Preserved local fixture files are outside git at
+  `/tmp/tmp.ehVXD2SUc8`; the final state file reports false and the desktop
+  entry is absent.
+- **Live PR reconciliation:** the first observation of the failure found the
+  local changelog fix ahead of the remote ref; a later live check confirmed
+  both PR #67 and `origin/orchestrated/luna-ug` at
+  `b0fec48440478a7aa9e9243739c8fe3be3731e5a`. Run `41357527678` was still
+  executing its `test` job at that observation, then completed successfully in
+  both required jobs for that exact head. That changelog-only head predates the
+  harness correction, so this passing run does not verify the corrected script.
+  This audit/smoke update must be pushed and receive a fresh exact-head CI
+  result; do not use either earlier run as verification for the corrected
+  script.
+- **Gate state and next step:** UG remains **NOT PASSED** and Python remains the
+  default. Push the corrected smoke and this handoff, verify CI/reviews/UI on
+  the resulting exact PR head, and merge only after required checks succeed and
+  orchestration confirms the serialized merge slot.

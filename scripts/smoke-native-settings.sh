@@ -242,6 +242,7 @@ wait_for_preference refreshAllProvidersOnMenuOpen False
 # entry is created atomically, then removed again through SettingsActor.
 autostart_file="$HOME/.config/autostart/codexbar-gtk.desktop"
 xdotool mousemove --window "$settings_window" 810 432 click 1
+wait_for_preference launchAtLogin True
 autostart_deadline=$((SECONDS + 8))
 while [[ ! -s "$autostart_file" ]] && (( SECONDS < autostart_deadline )); do sleep 0.05; done
 expected_executable=$(readlink -f "$binary")
@@ -250,7 +251,11 @@ expected_executable=$(readlink -f "$binary")
     echo "native launch-at-login switch did not write the expected executable entry" >&2
     exit 1
 }
+# Do not send the off click until SettingsActor has persisted the enabled state
+# and its response-settle interval has elapsed. Then require both the disabled
+# preference and removal of the desktop entry; either failure remains visible.
 xdotool mousemove --window "$settings_window" 810 432 click 1
+wait_for_preference launchAtLogin False
 autostart_deadline=$((SECONDS + 8))
 while [[ -e "$autostart_file" ]] && (( SECONDS < autostart_deadline )); do sleep 0.05; done
 [[ ! -e "$autostart_file" ]] || {
@@ -444,4 +449,4 @@ if [[ "${CODEXBAR_NATIVE_SETTINGS_ICON_REPORT:-}" == "1" ]]; then
     }
     grep '^native-settings-icon:' "$scratch/app.log"
 fi
-printf 'native Settings synthetic CLI, Hooks enable/disable persistence, Menu Bar/currency/display/notification/time-zone controls, private notification action, preference persistence, all settings panes, central About route, and GTK lifecycle smoke passed\n'
+printf 'native Settings synthetic CLI, Hooks enable/disable and launch-at-login persistence, Menu Bar/currency/display/notification/time-zone controls, private notification action, preference persistence, all settings panes, central About route, and GTK lifecycle smoke passed\n'

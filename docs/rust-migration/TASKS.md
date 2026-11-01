@@ -13,11 +13,11 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Last merged implementation | U02c Python history writer parity and final acceptance PR #60 merged normally at `317078aa46bfaf31a7bb1464bd52100950b8a549`, build `0.82.0 (59)`. U02 is accepted; older JSONL rows retain irrecoverable knownness ambiguity. |
 | Planning change | [PR #18](https://github.com/SaahiilM/codexbar-gtk/pull/18), merged at `69c5496`, build `0.81.0 (17)` |
 | Backend tasks completed after that baseline | B00–B15 and BG are accepted and merged. B11's Actions startup failures remain documented as failures; see E086. |
-| Active implementation task / owner | U03 compact native panel, dismissal, anchoring, Wayland/X11 placement and dashboard/settings/about routing, branch `orchestrated/luna-u03-panel`, build `0.82.0 (60)`, based on live `origin/main` `317078aa46bfaf31a7bb1464bd52100950b8a549`. Implementation and local verification are complete; focused PR, exact-head CI and merge are pending. See E098. |
+| Active implementation task / owner | U03 compact native panel, dismissal, anchoring, Wayland/X11 placement and dashboard/settings/about routing, branch `orchestrated/luna-u03-panel`, build `0.82.0 (60)`, based on live `origin/main` `317078aa46bfaf31a7bb1464bd52100950b8a549`. PR #61's first exact-head test check failed because a generic title matcher selected the still-visible Settings window; the smoke now targets Panel specifically. Exact-head rerun and merge are pending (E098–E099). |
 | Latest gate result | **BG passed** — PR #54 merged and verified on live main. Headless Rust-only integration, Rust-opt-in GTK fixture smoke and residual-Python inventory are recorded in E085/E086. |
-| Next domain slice | Open the focused U03 PR, verify exact-head checks including its Xvfb/xdotool smoke, and merge normally only when all required checks pass. Then continue to U04 Usage & Spend/Sessions and U05 Settings/About as separate slices after the serialized build handoff. Keep Python as default until UG passes; do not start cutover work before UG. |
+| Next domain slice | Verify PR #61's exact-head checks, including its Xvfb/xdotool smoke, and merge normally only when all required checks pass. Then continue to U04 Usage & Spend/Sessions and U05 Settings/About as separate slices after the serialized build handoff. Keep Python as default until UG passes; do not start cutover work before UG. |
 | Open external blockers | No external blocker at claim. U02's legacy JSONL rows cannot identify whether some stored zeros came from unknown usage; new Python/Rust writes preserve knownness. GTK development metadata may require the ignored local SDK extraction; CI installs GTK4/libadwaita development packages. B11's zero-job Actions startup failures remain documented, not CI successes. |
-| Latest checks | U02a PR #58 exact head `c2a3078d7ec304ef94323749d68d21d59d9cc21b` passed `test` and `tray-dbus` in run `41172651348` (E091). U02b PR #59 exact head `89ae294b6e1238ae404cb7b685388c69b2f32fe2` passed both in run `41174965540` and merged at `81b7b8f` (E093). U02c PR #60 exact head `b2fc92c0ee81a2d8b65cc36b3870065600c5f2d0` passed `test` and `tray-dbus` in run `41314701763`, then merged normally at `317078aa46bfaf31a7bb1464bd52100950b8a549`, now live `origin/main` (E097). |
+| Latest checks | U02a PR #58 exact head `c2a3078d7ec304ef94323749d68d21d59d9cc21b` passed `test` and `tray-dbus` in run `41172651348` (E091). U02b PR #59 exact head `89ae294b6e1238ae404cb7b685388c69b2f32fe2` passed both in run `41174965540` and merged at `81b7b8f` (E093). U02c PR #60 exact head `b2fc92c0ee81a2d8b65cc36b3870065600c5f2d0` passed `test` and `tray-dbus` in run `41314701763`, then merged normally at `317078aa46bfaf31a7bb1464bd52100950b8a549`, now live `origin/main` (E097). U03 PR #61 head `19304c8ee36735dea904aa9dffc8a3112ba8f35b` had a `test` failure in the Gio smoke assertion during run `41322829201`; see E099. The panel matcher correction is pending exact-head rerun. |
 | UI validation | U02's inspected synthetic Wayland capture [`u02-dashboard-wayland.png`](screenshots/u02-dashboard-wayland.png) and Xvfb capture [`u02-history-native-xvfb.png`](screenshots/u02-history-native-xvfb.png) remain current. U03's six-provider Wayland capture [`u03-panel-wayland.png`](screenshots/u03-panel-wayland.png) was visually inspected; a live X11 fixture confirmed selected work-area placement and central actions. Xwayland blocked a valid local X11 screenshot; local Xvfb/xdotool smoke is also unavailable. CI must run and pass it. Evidence and limits are in E098. |
 
 **First commands for a new model/session:**
@@ -244,9 +244,12 @@ the Resume here table. BG passed after PR #54; Phase U may now be coordinated.
 - [ ] **U03** Compact panel, dismissal, anchoring and Wayland/X11 placement
   (`popup.py`, `x11_position.py`); preserve dashboard/settings navigation.
   Active build 60 on `orchestrated/luna-u03-panel`, based on live main at
-  `317078aa`. Implementation is locally verified; focused PR and exact-head
-  checks are pending (E098). Use a separate `PanelView` over shared
-  `DashboardModel`, refresh it on backend sequence changes, hide it before
+  `317078aa`. Implementation is locally verified. PR #61's first exact-head
+  test run failed because a generic visible-window title matcher selected the
+  still-open Settings window after opening Panel; the matcher now selects the
+  Panel title. Exact-head rerun and merge are pending (E098–E099). Use a
+  separate `PanelView` over shared `DashboardModel`, refresh it on backend
+  sequence changes, hide it before
   Dashboard/Settings/About actions, and support Escape/close/toggle dismissal
   without assuming focus-loss. Wayland uses compositor placement;
   `PanelAnchor` remains optional until U06 SNI. X11 uses the actual GDK/X11

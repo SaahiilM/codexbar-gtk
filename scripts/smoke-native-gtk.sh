@@ -128,7 +128,9 @@ assert_title_contains '^CodexBar GTK' "Settings"
 "$binary" --about
 assert_title_contains '^About CodexBar GTK' "About CodexBar GTK"
 "$binary" --panel
-assert_title_contains '^CodexBar GTK' "Panel"
+# Settings remains visible as a separate main window; match the panel window
+# itself instead of accepting whichever application window xdotool finds first.
+assert_title_contains 'CodexBar GTK.*Panel' "Panel"
 
 sleep 0.3
 version_calls=$(grep -c '^--version$' "$NATIVE_CLI_LOG" || true)

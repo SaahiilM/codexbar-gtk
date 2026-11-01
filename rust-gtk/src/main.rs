@@ -13,7 +13,9 @@ use codexbar_backend::{
         ControllerCommand, ControllerSnapshot, RefreshControllerConfig, RefreshControllerHandle,
     },
     currency::CurrencyService,
+    login::{LoginActor, LoginUiEvent},
     presentation::{sessions_view_model, spend_view_model, SpendViewRequest},
+    settings::{SettingsActor, SettingsResponse},
     BackendEvent, BackendState, BackendStatus,
 };
 use codexbar_core::{
@@ -30,12 +32,18 @@ use tokio::sync::{mpsc as tokio_mpsc, oneshot, watch};
 
 use codexbar_gtk_native::{BuildMetadata, EventInbox, LaunchRoute, Page, APPLICATION_ID};
 
+mod settings_window;
+
 const APP_NAME: &str = "CodexBar GTK";
 
 struct BackendBridge {
     state: watch::Receiver<BackendState<ControllerSnapshot>>,
     events: tokio_mpsc::Receiver<BackendEvent>,
     refresh: tokio_mpsc::Sender<ControllerCommand>,
+    settings: SettingsActor,
+    settings_responses: codexbar_backend::settings::SettingsResponseReceiver,
+    login: LoginActor,
+    login_events: codexbar_backend::login::LoginUiReceiver,
     preferences: std::sync::Arc<PreferencesStore>,
     currencies: std::sync::Arc<CurrencyService>,
 }
@@ -78,21 +86,42 @@ impl BackendWorker {
                         tokio::spawn(async move {
                             let _ = currency_refresh.ensure_rates(&preferred).await;
                         });
-                        let cli = service_from_preferences(&preferences);
+                        let default_executable = default_cli_executable();
+                        let cli = service_from_preferences(&preferences, &default_executable);
                         let shared_cli = std::sync::Arc::new(SharedCliService::new(cli));
                         let mut controller = RefreshControllerHandle::start(
                             RefreshControllerConfig::with_shared_cli(
-                                shared_cli,
+                                shared_cli.clone(),
                                 preferences.clone(),
                                 history,
                             ),
                         );
+                        let refresh = controller.force_refresh_sender();
+                        let home = std::env::var_os("HOME")
+                            .map(PathBuf::from)
+                            .unwrap_or_else(|| PathBuf::from("."));
+                        let (settings, settings_responses) =
+                            SettingsActor::start_with_currency_service(
+                                &tokio::runtime::Handle::current(),
+                                shared_cli.clone(),
+                                preferences.clone(),
+                                home,
+                                default_executable,
+                                refresh.clone(),
+                                currencies.clone(),
+                            );
+                        let (login, login_events) =
+                            LoginActor::start(&tokio::runtime::Handle::current(), shared_cli);
                         let bridge = BackendBridge {
                             state: controller.state(),
                             events: controller
                                 .take_notification_receiver()
                                 .expect("controller owns one notification stream"),
-                            refresh: controller.force_refresh_sender(),
+                            refresh,
+                            settings,
+                            settings_responses,
+                            login,
+                            login_events,
                             preferences,
                             currencies,
                         };
@@ -140,21 +169,26 @@ impl BackendWorker {
     }
 }
 
-fn service_from_preferences(preferences: &PreferencesStore) -> std::sync::Arc<CliService> {
+fn default_cli_executable() -> PathBuf {
+    let package_dir = std::env::current_exe()
+        .ok()
+        .and_then(|path| path.parent().map(PathBuf::from))
+        .unwrap_or_else(|| PathBuf::from("."));
+    discover_executable("codexbar", Some("CODEXBAR_CLI"), &package_dir)
+        .unwrap_or_else(|_| PathBuf::from("codexbar"))
+}
+
+fn service_from_preferences(
+    preferences: &PreferencesStore,
+    default_executable: &std::path::Path,
+) -> std::sync::Arc<CliService> {
     let configured_path = preferences
         .get("cliPath")
         .and_then(|value| value.as_str().map(ToOwned::to_owned))
         .filter(|path| !path.trim().is_empty());
     let executable = configured_path
         .map(PathBuf::from)
-        .or_else(|| {
-            let package_dir = std::env::current_exe()
-                .ok()
-                .and_then(|path| path.parent().map(PathBuf::from))
-                .unwrap_or_else(|| PathBuf::from("."));
-            discover_executable("codexbar", Some("CODEXBAR_CLI"), &package_dir).ok()
-        })
-        .unwrap_or_else(|| PathBuf::from("codexbar"));
+        .unwrap_or_else(|| default_executable.to_path_buf());
     let timezone = preferences
         .get("costUsageBucketTimeZone")
         .and_then(|value| value.as_str().map(ToOwned::to_owned))
@@ -179,6 +213,7 @@ struct NativeApp {
     spend_sequence: Option<u64>,
     spend_rendered_at: Option<Instant>,
     spend_range: String,
+    settings_window: Option<Rc<settings_window::SettingsWindow>>,
     panel_window: Option<gtk::ApplicationWindow>,
     panel: Option<PanelView>,
     panel_sequence: Option<u64>,
@@ -212,6 +247,7 @@ impl NativeApp {
             spend_sequence: None,
             spend_rendered_at: None,
             spend_range: "30 days".to_owned(),
+            settings_window: None,
             panel_window: None,
             panel: None,
             panel_sequence: None,
@@ -247,6 +283,11 @@ impl NativeApp {
         if self.shutting_down {
             return;
         }
+        if route != LaunchRoute::Settings {
+            if let Some(settings) = self.settings_window.as_ref() {
+                settings.hide();
+            }
+        }
         if route != LaunchRoute::Panel {
             self.hide_panel();
         }
@@ -267,6 +308,10 @@ impl NativeApp {
     }
 
     fn show_route(&mut self, route: LaunchRoute) {
+        if route == LaunchRoute::Settings {
+            self.show_settings();
+            return;
+        }
         if matches!(route, LaunchRoute::Default | LaunchRoute::Page(Page::Usage)) {
             self.show_dashboard(route);
             return;
@@ -286,12 +331,7 @@ impl NativeApp {
         let window = self.ensure_main_window();
         let (title, body, width, height) = match route {
             LaunchRoute::Panel => unreachable!("panel route has a separate native window"),
-            LaunchRoute::Settings => (
-                format!("{APP_NAME} — Settings — Native UI bootstrap"),
-                "Settings controls are placeholders. The native settings panes are scheduled for U05.",
-                620,
-                420,
-            ),
+            LaunchRoute::Settings => unreachable!("Settings uses the native PreferencesWindow"),
             LaunchRoute::Page(page) => (
                 format!("{APP_NAME} — {} — Native UI bootstrap", page.label()),
                 page_description(page),
@@ -654,7 +694,8 @@ impl NativeApp {
             .application_name(APP_NAME)
             .version(self.metadata.display())
             .developer_name("CodexBar GTK contributors")
-            .comments("Native UI migration bootstrap. Screens are implemented in later U tasks.")
+            .comments("Native GTK4/libadwaita desktop app for CodexBar provider usage.")
+            .website("https://github.com/SaahiilM/codexbar-gtk")
             .build();
         about.set_title(Some("About CodexBar GTK"));
         if let Some(window) = &self.window {
@@ -689,8 +730,16 @@ impl NativeApp {
         }
 
         let mut latest_state = None;
+        let mut settings_responses = Vec::<SettingsResponse>::new();
+        let mut login_events = Vec::<LoginUiEvent>::new();
         if let Some(bridge) = &mut self.bridge {
             latest_state = Some(bridge.state.borrow_and_update().clone());
+            while let Ok(response) = bridge.settings_responses.try_recv() {
+                settings_responses.push(response);
+            }
+            while let Ok(event) = bridge.login_events.try_recv() {
+                login_events.push(event);
+            }
             loop {
                 match bridge.events.try_recv() {
                     Ok(event) => {
@@ -699,6 +748,17 @@ impl NativeApp {
                     Err(tokio_mpsc::error::TryRecvError::Empty) => break,
                     Err(tokio_mpsc::error::TryRecvError::Disconnected) => break,
                 }
+            }
+        }
+        if self.route == LaunchRoute::Settings && self.settings_window.is_none() {
+            self.show_settings();
+        }
+        if let Some(settings) = self.settings_window.as_ref() {
+            for response in settings_responses {
+                settings.handle_response(response);
+            }
+            for event in login_events {
+                settings.handle_login_event(event);
             }
         }
         if let Some(state) = latest_state {
@@ -822,6 +882,30 @@ impl NativeApp {
 
     fn request_settings(&mut self) {
         self.dispatch_route(LaunchRoute::Settings);
+    }
+
+    fn show_settings(&mut self) {
+        let Some(bridge) = self.bridge.as_ref() else {
+            return;
+        };
+        if let Some(window) = self.settings_window.as_ref() {
+            window.present();
+            return;
+        }
+        let settings_actor = bridge.settings.clone();
+        let login_actor = bridge.login.clone();
+        let preferences = bridge.preferences.clone();
+        let currencies = bridge.currencies.catalog();
+        let window = settings_window::SettingsWindow::new(
+            &self.application,
+            settings_actor,
+            login_actor,
+            preferences,
+            self.metadata.display(),
+            &currencies,
+        );
+        window.present();
+        self.settings_window = Some(window);
     }
 
     fn request_dashboard(&mut self) {

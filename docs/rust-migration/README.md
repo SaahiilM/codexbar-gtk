@@ -31,11 +31,17 @@ Rust history writers now both skip unknown/placeholder/non-finite samples while
 retaining known zero. Pre-existing JSONL rows do not contain knownness and
 remain ambiguous. U03's compact native panel and central routing merged in PR
 #61 at `51480af` on build 60; exact-head CI and native GTK routing/dashboard
-smokes passed (AUDIT E101). U04 Usage & Spend/Sessions owns provisional build
-61 on the next serialized slot; its native pages and typed scan/heatmap
-contracts are implemented and locally verified. U04 PR #62 is open; its first
-exact-head run passed `tray-dbus` while `test` was still running (E102–E103).
-U05 follows U04. Python remains the default until UG passes.
+smokes passed (AUDIT E101). U04 Usage & Spend/Sessions PR #62 merged normally
+at `82b9f254e351ad983d3827d87c78c2de29ec92e9`; its final head passed both
+required checks in run `41327529193` (AUDIT E104). U05 owns provisional build
+62 on `orchestrated/luna-u05-settings`; its Settings panes and serialized
+preferences bridge are implemented and locally verified (AUDIT E105). PR #63
+head `9c566778a8c37c45600adbd95e3cd26acb6f185a` passed `tray-dbus` but failed
+the Settings smoke in `test` because CI lacked `rg` and the no-capture smoke did
+not size the window before its fixed-coordinate click (AUDIT E106–E107). Both
+issues are corrected and the no-capture smoke passes locally, including with
+`rg` absent from `PATH`; replacement-head CI is pending. U06 follows U05.
+Python remains the default until UG passes.
 Some Python edge-input behavior remains available only through the default
 Python path as described below.
 
@@ -271,9 +277,9 @@ no workspace commands are assumed.
   Actions startup failure and the separately verified local evidence.
 - **UG — native UI complete:** all U tasks accepted against the same backend;
   functional/visual parity and Wayland/X11/D-Bus behavior verified. Preserve the
-  old app until this gate is passed. BG, U01, U02 and U03 have passed; U04 is
-  active and U05–U08 remain, so UG is not yet passed and the Python app remains the
-  default.
+  old app until this gate is passed. BG, U01, U02, U03 and U04 have passed; U05
+  is active and U06–U08 remain, so UG is not yet passed and the Python app
+  remains the default.
 - **CG — cutover complete:** native release/install works without Python,
   PyGObject or `_rust_core.so`; preferences/history survive the switch; native
   CI and packaging are proven. Remove bridge, fallback implementations, Python

@@ -107,11 +107,20 @@ gapplication action com.steipete.CodexBarGTK refresh
 sleep 0.25
 gapplication action com.steipete.CodexBarGTK settings
 deadline=$((SECONDS + 5))
-while [[ "$(xdotool getwindowname "$window" 2>/dev/null || true)" != *Settings* ]] && (( SECONDS < deadline )); do sleep 0.05; done
-window_title=$(xdotool getwindowname "$window" 2>/dev/null || true)
-[[ "$window_title" == *Settings* ]] || {
+settings_window=""
+while [[ -z "$settings_window" ]] && (( SECONDS < deadline )); do
+    settings_window=$(xdotool search --onlyvisible --name '^CodexBar Settings' 2>/dev/null | head -n 1 || true)
+    [[ -n "$settings_window" ]] || sleep 0.05
+done
+settings_title=$(xdotool getwindowname "$settings_window" 2>/dev/null || true)
+[[ "$settings_title" == *"CodexBar Settings"* ]] || {
     cat "$scratch/app.log" >&2
-    echo "dashboard Settings action did not open the settings placeholder" >&2
+    echo "dashboard Settings action did not open the native PreferencesWindow" >&2
+    exit 1
+}
+window_title=$(xdotool getwindowname "$window" 2>/dev/null || true)
+[[ "$window_title" == *Dashboard* ]] || {
+    echo "opening native Settings unexpectedly replaced the dashboard window" >&2
     exit 1
 }
 gapplication action com.steipete.CodexBarGTK quit

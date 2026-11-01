@@ -9,16 +9,16 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Field | Current checkpoint |
 | --- | --- |
 | Goal | Fully native Rust GTK4/libadwaita app; backend first, UI second |
-| Current phase | BG passed in PR #54 at `e1abf7b3e1db0e7f23e3be063a3ef067d85be1a1`; U01 PR #56 merged at `3eea06f99760048b51407b446781981e5edb49db`; build-56 closeout PR #57 merged at `043e273b83053f02ffcd96b203ac9af5fd87f791`; U02a PR #58 merged at `549908e42195ce04479424c5fd22ca5ea52d8109`; U02b PR #59 merged at `81b7b8f5bb3bc816efd34324466c1a257a582778`; U02 acceptance PR #60 merged at `317078aa46bfaf31a7bb1464bd52100950b8a549`; U03 PR #61 merged at `51480af4650c7f71068e8ceecdeb8fc2efa16d30`. Phase U is active. |
-| Last merged implementation | U03 native compact panel, dismissal/placement and central routing PR #61 merged normally at `51480af4650c7f71068e8ceecdeb8fc2efa16d30`, build `0.82.0 (60)`. U03 is accepted; U04 is the released next serialized slot at provisional build 61. |
+| Current phase | BG passed in PR #54 at `e1abf7b3e1db0e7f23e3be063a3ef067d85be1a1`; U01 PR #56 merged at `3eea06f99760048b51407b446781981e5edb49db`; build-56 closeout PR #57 merged at `043e273b83053f02ffcd96b203ac9af5fd87f791`; U02a PR #58 merged at `549908e42195ce04479424c5fd22ca5ea52d8109`; U02b PR #59 merged at `81b7b8f5bb3bc816efd34324466c1a257a582778`; U02 acceptance PR #60 merged at `317078aa46bfaf31a7bb1464bd52100950b8a549`; U03 PR #61 merged at `51480af4650c7f71068e8ceecdeb8fc2efa16d30`; U04 PR #62 merged at `82b9f254e351ad983d3827d87c78c2de29ec92e9`. Phase U is active. |
+| Last merged implementation | U04 native Usage & Spend/Sessions PR #62 merged normally at `82b9f254e351ad983d3827d87c78c2de29ec92e9`, build `0.82.0 (61)`. U05 is the released next serialized slot at provisional build 62. |
 | Planning change | [PR #18](https://github.com/SaahiilM/codexbar-gtk/pull/18), merged at `69c5496`, build `0.81.0 (17)` |
 | Backend tasks completed after that baseline | B00–B15 and BG are accepted and merged. B11's Actions startup failures remain documented as failures; see E086. |
-| Active implementation task / owner | U04 Usage & Spend/Sessions, PR #62, branch `orchestrated/luna-u04-spend-sessions`, build `0.82.0 (61)`, based on verified live `origin/main` `51480af4650c7f71068e8ceecdeb8fc2efa16d30`. Initial head `6b2171f0b5ab3285a0ec8bfa7ac7e82ee78f8743` has `tray-dbus` passed and `test` in progress (E103). Preserve central `app.page`, `app.settings` and `--settings`; U05 owns Settings rendering, the settings bridge, CLI path/timezone preferences, import/reset and serialized preference writes. |
+| Active implementation task / owner | U05 native Settings panes and bridge, branch `orchestrated/luna-u05-settings`, build `0.82.0 (62)`, based on live `origin/main` U04 merge `82b9f254e351ad983d3827d87c78c2de29ec92e9`. U04 PR #62 final head `ed69eabbb92bd74cccee90c0b61083fbf3f11760` passed both required checks in run `41327529193` and merged normally; see E104. Preserve central `app.settings`/`--settings`, `app.about`/`--about`, and `app.page`. U05 owns settings rendering/bridge, CLI path/timezone, provider/source/API-key actions, hooks/plugins, login, import/export/reset and the serialized preferences actor. |
 | Latest gate result | **BG passed** — PR #54 merged and verified on live main. Headless Rust-only integration, Rust-opt-in GTK fixture smoke and residual-Python inventory are recorded in E085/E086. |
-| Next domain slice | Verify U04 PR #62's final exact-head `test` and `tray-dbus`, then merge normally when both pass and record the live merge. U05 follows U04 after coordinator handoff. Keep Python as default until UG passes; do not start cutover work before UG. |
+| Next domain slice | Complete U05 build 62 on this isolated branch, verify the final exact head and required checks, then merge normally. U06 follows U05 for StatusNotifierItem/dbusmenu and must retain the central settings/about/page actions and shared backend lifecycle. Keep Python as default until UG passes; do not start cutover work before UG. |
 | Open external blockers | No external blocker at claim. U02's legacy JSONL rows cannot identify whether some stored zeros came from unknown usage; new Python/Rust writes preserve knownness. GTK development metadata may require the ignored local SDK extraction; CI installs GTK4/libadwaita development packages. B11's zero-job Actions startup failures remain documented, not CI successes. |
-| Latest checks | U03 PR #61 exact head `781aacc6a9ca3cd2f97afa2cc2c48660ed7ee148` passed `test` and `tray-dbus` in Actions run `41324106655`; `test` passed format, core/backend/GTK contracts, PyO3, default and Rust-backed Python, Clippy, native GTK build, Gio routing/shutdown smoke and synthetic dashboard smoke. PR #61 merged normally at `51480af4650c7f71068e8ceecdeb8fc2efa16d30` at 2026-11-01 16:06:16 UTC and is live `origin/main` (E101). U04's local formats, 81 core tests, 76 backend tests + 1 integration, 23 GTK tests, all four Clippy targets, PyO3 build, default Python 214 (21 expected skips), Rust-opt-in Python 214, tray 3, and three native GTK Xvfb smokes passed (E102). PR #62's initial head `6b2171f0b5ab3285a0ec8bfa7ac7e82ee78f8743` passed `tray-dbus` in run `41327401899`; `test` is in progress. Recheck final head after any handoff update (E103). |
-| UI validation | U02's inspected synthetic Wayland capture [`u02-dashboard-wayland.png`](screenshots/u02-dashboard-wayland.png) and Xvfb capture [`u02-history-native-xvfb.png`](screenshots/u02-history-native-xvfb.png) remain current. U03's six-provider Wayland capture [`u03-panel-wayland.png`](screenshots/u03-panel-wayland.png) was visually inspected; exact-head CI passed the GTK routing/shutdown and synthetic dashboard smokes. U04's synthetic Xvfb captures cover Spend loading/success/hover/empty/retained-error and Sessions loading/success/empty/retained-error; the usage smoke exercised pointer/keyboard heatmap interaction, range selection and central routes. See E098–E102. |
+| Latest checks | U03 PR #61 exact head `781aacc6a9ca3cd2f97afa2cc2c48660ed7ee148` passed `test` and `tray-dbus` in run `41324106655`; PR #61 merged normally at `51480af4650c7f71068e8ceecdeb8fc2efa16d30` and is live main (E101). U04 PR #62 final exact head `ed69eabbb92bd74cccee90c0b61083fbf3f11760` passed both `test` and `tray-dbus` in run `41327529193`; it merged normally at `82b9f254e351ad983d3827d87c78c2de29ec92e9`, now live `origin/main` (E104). U05 PR #63 head `9c566778a8c37c45600adbd95e3cd26acb6f185a` passed `tray-dbus` but failed the native Settings smoke in `test` run `41332816502`; E107 records the missing-`rg` and no-capture window-size fixes and local passes. Replacement-head checks and merge remain pending. |
+| UI validation | U02 synthetic dashboard/history and U03 panel captures remain recorded in E098–E101. U04's nine synthetic Xvfb captures and keyboard/pointer heatmap smoke are recorded in E102. U05's Settings panes, provider/hook/plugin fixtures and central About build-62 screenshots were visually inspected under private D-Bus/Xvfb and are recorded in E105. |
 
 **First commands for a new model/session:**
 
@@ -256,10 +256,10 @@ the Resume here table. BG passed after PR #54; Phase U may now be coordinated.
   Preserve central `app.settings`/`--settings`, `app.about`/`--about`, and page
   navigation routes so U04/U05 can replace their placeholders independently.
   See the U03 handoff in E093 and closeout E101.
-- [ ] **U04** Usage & Spend and Sessions pages, heatmap interaction/tooltips,
+- [x] **U04** Usage & Spend and Sessions pages, heatmap interaction/tooltips,
   filters and empty/error/loading/partial states (`spend.py`, `sessions.py`).
-  **Active build 61** on `orchestrated/luna-u04-spend-sessions`, based on live
-  main `51480af`. Session status is optional for old JSON and carries sticky
+  Completed on build 61 in PR #62 from `orchestrated/luna-u04-spend-sessions`.
+  Session status is optional for old JSON and carries sticky
   successful-scan state plus a sanitized last error; failures retain rows.
   Heatmap days bucket duplicate provider rows, preserve unknown versus explicit
   zero, and propagate known subtotals/partialness to weeks and cumulative
@@ -267,12 +267,25 @@ the Resume here table. BG passed after PR #54; Phase U may now be coordinated.
   absent-to-zero heatmap behavior is intentionally improved. Native page and
   keyboard/pointer accessibility work must retain central navigation. U05 owns
   Settings and all settings/CLI-path/timezone writes; U04 dispatches the central
-  settings action only. The implementation passes local checks and synthetic
-  GTK Xvfb state/interaction review. PR #62 is open and its final exact-head
-  checks remain pending. See E101–E103.
+  settings action only. Final PR head `ed69eabbb92bd74cccee90c0b61083fbf3f11760`
+  passed `test` and `tray-dbus` in run `41327529193`; PR #62 merged normally at
+  `82b9f254e351ad983d3827d87c78c2de29ec92e9`, now live main. See E101–E104.
 - [ ] **U05** Every preferences pane, provider/source/API-key controls,
   hooks/plugins, login dialog, import/export/reset, acknowledgements and About
-  (`settings.py`, `login_dialog.py`). Backend actions use Rust services.
+  (`settings.py`, `login_dialog.py`). **Active build 62** on
+  `orchestrated/luna-u05-settings`, based on live main at `82b9f254`. The native
+  Settings actor serializes preference mutations and CLI reconfiguration;
+  import is a known-key transactional patch, reset is a transactional replace,
+  and committed operations distinguish queued refresh from closed-channel
+  partial success. Reject nonempty invalid imported `cliPath` intentionally;
+  empty/default path resolution follows startup. Import/reset do not change
+  autostart. API keys and login events remain transient. Local tests, runtime
+  smoke and synthetic screenshots are recorded in E105. The first exact-head
+  `test` check exposed a runner-only `rg` dependency; E107 records its removal,
+  a deterministic Settings window size for pointer checks, and a full smoke
+  pass with `rg` excluded from `PATH`. Replacement-head CI and merge remain
+  pending. After U05 merges, U06 owns SNI/dbusmenu integration and retains the
+  central `app.settings`, `app.about` and `app.page` routes.
 - [ ] **U06** StatusNotifierItem and dbusmenu, icon/pixmap export and all signal
   signatures; host re-registration, refresh/restart/settings/quit actions and
   updated tooltips. Port the private-bus regression coverage from PR #15.

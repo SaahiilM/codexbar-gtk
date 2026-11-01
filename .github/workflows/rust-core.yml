@@ -9,8 +9,10 @@ on:
       - "rust-python/**"
       - "rust-backend/**"
       - "rust-gtk/**"
+      - "codexbar_gtk/assets/provider_icons/**"
       - "scripts/smoke-native-gtk.sh"
       - "scripts/smoke-native-dashboard.sh"
+      - "scripts/smoke-native-wayland-assets.sh"
       - "scripts/smoke-native-usage-pages.sh"
       - "scripts/smoke-native-settings.sh"
       - "scripts/capture-native-gtk-wayland.sh"
@@ -63,6 +65,8 @@ jobs:
         run: cargo test --manifest-path rust-backend/Cargo.toml --locked
       - name: Test native GTK bootstrap contracts
         run: dbus-run-session -- cargo test --manifest-path rust-gtk/Cargo.toml --locked
+      - name: Smoke provider artwork decoding and accessibility roles on X11
+        run: xvfb-run -a dbus-run-session -- cargo test --manifest-path rust-gtk/Cargo.toml --locked --test a11y_assets -- --ignored
       - name: Build PyO3 extension
         run: ./scripts/build-rust-core.sh
       - name: Run Python tests with default backend
@@ -81,6 +85,8 @@ jobs:
         run: ./scripts/smoke-native-gtk.sh
       - name: Exercise the native dashboard with synthetic provider data
         run: ./scripts/smoke-native-dashboard.sh
+      - name: Exercise native dashboard keyboard navigation at 2x display scale
+        run: NATIVE_GTK_SCALE=2 ./scripts/smoke-native-dashboard.sh
       - name: Exercise native Spend and Sessions with synthetic data
         run: ./scripts/smoke-native-usage-pages.sh
       - name: Exercise native Settings with synthetic preferences and providers

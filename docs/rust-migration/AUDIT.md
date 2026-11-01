@@ -3455,3 +3455,95 @@ future models must verify the linked PR's status rather than trusting a stale
   unchanged. Exact-head CI/reviews/merge have not yet been observed. Next:
   publish the focused build-64 PR, verify its exact-head checks and review state,
   then merge normally before handing the next serialized task to the coordinator.
+
+### E115 — 2026-11-01: U08 build 65 implementation
+
+- **Base and scope:** branch `orchestrated/luna-u08-assets`, build `0.82.0
+  (65)`, based on verified U07 PR #65 merge `e373e019f7701f5f3a5e204153b7163763abac90`
+  (E114). The scope is provider artwork/assets, Cairo meter and percentage icon
+  rasterization, GTK theme and responsive layout, accessibility and keyboard
+  navigation. U07 continues to own display readiness, restart/autostart,
+  shutdown and tray lifecycle.
+- **Artwork:** `rust-gtk/build.rs` embeds the existing licensed
+  `codexbar_gtk/assets/provider_icons` catalog into the native binary without
+  generating files in the source tree. `rust-gtk/src/icons.rs` applies the
+  established brand-first, accent-tinted monochrome, alias and initial-fallback
+  selection. Decorative artwork uses `AccessibleRole::Presentation`; provider
+  names and usage remain text in the dashboard/panel. Shared CSS covers artwork,
+  stat tiles and visible focus.
+- **Pure tray renderer:** Cairo rasterization accepts a borrowed `TraySummary`
+  and a `RequestedSize`, returns network-order ARGB32 bytes, and performs no GTK,
+  filesystem, D-Bus or lifecycle work. Both `meter` and `iconPercent` use the
+  existing selected provider, percentage, accent, style and initial fields;
+  missing/unknown usage stays visually empty or returns no percent pixmap rather
+  than inventing a usage value. Native `tray_presentation` passes the pixels
+  through the unchanged `TrayPresentation.pixmap`. The caller requests 32×32 for
+  the existing SNI projection; the pure renderer tests additional dimensions.
+  No U07 presentation fields or lifecycle code changed.
+- **GTK behavior:** dashboard summary tiles flow between one and four columns
+  as width changes. Native application shortcuts route Ctrl+1/2/3 to Usage,
+  Sessions and Usage & Spend, Ctrl+R to refresh and Ctrl+Q to quit. The existing
+  textual routes, provider cards and Settings remain in place; Python stays the
+  default until UG.
+- **Scope limit:** the wider UG matrix remains open, including full action-by-
+  action parity, compact-panel placement/dismissal, all Spend filters/states,
+  Settings provider/key flows and all OS lifecycle fixtures. U08 evidence below
+  is a focused renderer/dashboard/accessibility slice, not a UG pass.
+
+### E116 — 2026-11-01: U08 local checks and display evidence
+
+- **Rust/Python checks:** formatting passed for `rust-core`, `rust-python`,
+  `rust-backend` and `rust-gtk`. Tests passed: 85 `rust-core`; 85 backend unit
+  plus 1 backend integration; 37 GTK tests under `dbus-run-session`; 0
+  `rust-python` unit tests. The GTK test run without a private session bus first
+  failed its bus lifecycle assertion (3 registrations observed where 1 was
+  expected); the prescribed private-bus rerun passed all 37. `rust-gtk` Clippy
+  and all other crate Clippy commands passed with warnings denied. The optional
+  Rust extension built atomically. Python default tests passed 214 (21 expected
+  skips); Rust-opt-in tests passed all 214; the isolated tray signal suite
+  passed all 3. Renderer unit tests passed within the GTK suite.
+- **Native UI checks:** the GTK binary built. `smoke-native-gtk.sh`, dashboard
+  smoke at 1× and 2×, Spend/Sessions smoke, Settings smoke, and the ignored
+  display-dependent `a11y_assets` test passed under Xvfb/private D-Bus. The
+  dashboard fixture verified `iconPercent` through the SNI `IconPixmap` property
+  at 32×32, synthetic refresh and central routes; keyboard shortcuts reached
+  Usage, Sessions and Usage & Spend. Artwork decoding passed for a brand asset,
+  tinted monochrome asset and unknown-provider fallback. The test confirms
+  decorative artwork has the Presentation role while provider names remain
+  visible text. Existing private-bus tray tests also passed, including
+  registration, actions, watcher recovery and teardown.
+- **Wayland:** `scripts/smoke-native-wayland-assets.sh` passed in the active KDE
+  Plasma Wayland session using a temporary home and synthetic `codex` fixture.
+  It verified refresh completion, native SNI registration, dashboard routing,
+  an actual compositor screenshot, normal quit and tray-name release. The
+  capture is at the compositor's current scale; forcing `GDK_SCALE=2` in this
+  Wayland session produced a solid-black active-window capture, which was
+  discarded. Therefore 2× evidence is X11/Xvfb only, while Wayland evidence is
+  at the session's default scale. The current Actions workflow still has no
+  Wayland job; this is local actual-session evidence and does not close the UG
+  Wayland matrix.
+- **Screenshots:** the three synthetic captures are
+  `docs/rust-migration/screenshots/u08-native-dashboard-iconpercent-xvfb.png`
+  (X11/Xvfb 1×), `docs/rust-migration/screenshots/u08-native-dashboard-2x-xvfb.png`
+  (X11/Xvfb 2×), and
+  `docs/rust-migration/screenshots/u08-native-dashboard-wayland.png` (active KDE
+  Wayland). All use fixture values and `example.invalid`; no account or secret
+  data is present. `.gitignore:9` globally ignores `*.png`, so these exact three
+  files are force-added to the PR rather than broadening the ignore rule.
+- **2× responsive assessment:** at a 560-pixel logical window width, the
+  secondary `Usage dashboard` subtitle visibly ellipsizes to `Usage das...`.
+  This is acceptable at that reduced width with the caveat recorded: the
+  subtitle is secondary, the source label remains the full string, all header
+  actions remain visible, the dashboard stat cards reflow from four columns to
+  three plus one, and the synthetic provider card remains readable in the
+  vertical scroller. No primary usage number, provider label or action is
+  clipped. The actual Wayland 1× capture also shows the full-width responsive
+  layout.
+- **Environment and release state:** GTK linking and Xvfb tools used the ignored
+  SDK/tool extraction from the U04 worktree; no files there or in the root
+  checkout were edited. Portal/FUSE and EGL DRI3 warnings appeared under Xvfb;
+  those smokes do not invoke portal file selection and completed successfully.
+  `git diff --check` and shell syntax checks passed. No remote U08 PR checks,
+  review, merge, Wayland 2× pass or full UG acceptance are claimed here; Python
+  remains the default. Next: publish the focused PR, then verify its exact head
+  and merge normally.

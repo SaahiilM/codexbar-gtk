@@ -95,8 +95,15 @@ impl DashboardView {
         overview_card.set_child(Some(&overview_content));
         content.append(&overview_card);
 
-        let stat_row = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+        let stat_row = gtk::FlowBox::new();
+        stat_row.set_selection_mode(gtk::SelectionMode::None);
         stat_row.set_homogeneous(true);
+        stat_row.set_max_children_per_line(4);
+        stat_row.set_min_children_per_line(1);
+        stat_row.set_row_spacing(10);
+        stat_row.set_column_spacing(10);
+        stat_row.set_can_focus(false);
+        stat_row.add_css_class("cb-stat-flow");
         let mut stats_vec = Vec::new();
         let mut captions_vec = Vec::new();
         for (title, initial) in [
@@ -107,6 +114,9 @@ impl DashboardView {
         ] {
             let tile = gtk::Frame::new(None);
             tile.add_css_class("card");
+            tile.set_size_request(150, -1);
+            tile.set_accessible_role(gtk::AccessibleRole::Group);
+            tile.update_property(&[gtk::accessible::Property::Label(title)]);
             let body = gtk::Box::new(gtk::Orientation::Vertical, 5);
             body.set_margin_top(10);
             body.set_margin_bottom(10);
@@ -125,7 +135,7 @@ impl DashboardView {
             caption.set_visible(false);
             body.append(&caption);
             tile.set_child(Some(&body));
-            stat_row.append(&tile);
+            stat_row.insert(&tile, -1);
             stats_vec.push(value);
             captions_vec.push(caption);
         }
@@ -257,6 +267,11 @@ impl Default for DashboardView {
 fn provider_card(model: &ProviderCardModel) -> gtk::Widget {
     let frame = gtk::Frame::new(None);
     frame.add_css_class("card");
+    frame.set_accessible_role(gtk::AccessibleRole::Group);
+    frame.update_property(&[
+        gtk::accessible::Property::Label(&model.name),
+        gtk::accessible::Property::Description(&model.subtitle),
+    ]);
     let body = gtk::Box::new(gtk::Orientation::Vertical, 12);
     body.set_margin_top(12);
     body.set_margin_bottom(12);
@@ -264,6 +279,12 @@ fn provider_card(model: &ProviderCardModel) -> gtk::Widget {
     body.set_margin_end(18);
 
     let header = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+    header.append(&crate::icons::provider_mark(
+        &model.provider_id,
+        &model.name,
+        &model.accent,
+        38,
+    ));
     let name = label(&model.name, "title-3");
     name.set_xalign(0.0);
     name.set_hexpand(true);

@@ -884,43 +884,17 @@ fn emit_empty_signal(connection: &gio::DBusConnection, path: &str, interface: &s
 /// Render a compact StatusNotifierItem pixmap in network byte order ARGB32.
 /// Each output pixel is exactly `[alpha, red, green, blue]` as required by SNI.
 pub fn meter_pixmap(percent: Option<f64>, accent: &str) -> (i32, i32, Vec<u8>) {
-    const SIZE: i32 = 32;
-    let (red, green, blue) = parse_color(accent);
-    let clamped = percent.unwrap_or(0.0).clamp(0.0, 100.0);
-    let filled = ((SIZE - 8) as f64 * clamped / 100.0).round() as i32;
-    let mut bytes = Vec::with_capacity((SIZE * SIZE * 4) as usize);
-    for y in 0..SIZE {
-        for x in 0..SIZE {
-            let inside = (6..26).contains(&y) && (3..29).contains(&x);
-            let edge = inside && (y == 6 || y == 25 || x == 3 || x == 28);
-            let fill = inside && !edge && x < 4 + filled;
-            let (a, r, g, b) = if edge {
-                (230, 255, 255, 255)
-            } else if fill {
-                (255, red, green, blue)
-            } else if inside {
-                (42, 255, 255, 255)
-            } else {
-                (0, 0, 0, 0)
-            };
-            bytes.extend_from_slice(&[a, r, g, b]);
-        }
-    }
-    (SIZE, SIZE, bytes)
-}
-
-fn parse_color(value: &str) -> (u8, u8, u8) {
-    let text = value.strip_prefix('#').unwrap_or(value);
-    if text.len() == 6 && text.is_ascii() {
-        if let (Ok(red), Ok(green), Ok(blue)) = (
-            u8::from_str_radix(&text[..2], 16),
-            u8::from_str_radix(&text[2..4], 16),
-            u8::from_str_radix(&text[4..6], 16),
-        ) {
-            return (red, green, blue);
-        }
-    }
-    (16, 163, 127)
+    let level = percent
+        .filter(|value| value.is_finite())
+        .map(|value| (value.clamp(0.0, 100.0) / 10.0).floor() as u8);
+    crate::icons::render_meter(
+        level,
+        accent,
+        crate::icons::RequestedSize {
+            width: 32,
+            height: 32,
+        },
+    )
 }
 
 #[cfg(test)]
@@ -929,7 +903,7 @@ mod tests {
 
     #[test]
     fn pixmap_has_network_argb32_shape_and_known_color() {
-        let (width, height, pixels) = meter_pixmap(Some(100.0), "#10A37F");
+        let (width, height, pixels) = meter_pixmap(Some(40.0), "#10A37F");
         assert_eq!((width, height), (32, 32));
         assert_eq!(pixels.len(), (width * height * 4) as usize);
         assert!(pixels.chunks(4).any(|pixel| pixel == [255, 16, 163, 127]));

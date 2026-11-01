@@ -46,12 +46,13 @@ issues are corrected and the no-capture smoke passes locally, including with
 `orchestrated/luna-u06-tray`; local private-bus tests, native GTK route smokes
 and the synthetic tray-routed dashboard screenshot are recorded in E110. PR #64
 merged normally at `678b6b9cf3e10e5b9cd926cb488b5ffbf62ce1da`; its exact head
-passed both required checks (E111). U07 owns build 64 for native notifications,
-OS adapters, display readiness, restart/autostart integration and orderly
-shutdown. Its implementation, local checks and synthetic runtime evidence are
-recorded in E113; exact-head PR checks remain pending. Python remains the
-default until UG passes. Some Python edge-input behavior remains available only
-through the default Python path as described below.
+passed both required checks (E111). U07 build 64 merged normally in PR #65 at
+`e373e019f7701f5f3a5e204153b7163763abac90`; its exact head passed both required
+checks in run `41340840860` (E114). U08 owns build 65 for native provider
+artwork, tray raster generation, GTK theme/scaling and accessibility/keyboard
+parity. Its active implementation and fixture evidence are recorded in E115/E116.
+Python remains the default until UG passes. Some Python edge-input behavior
+remains available only through the default Python path as described below.
 
 The file inventory and named functions below were inspected, not just inferred
 from filenames. Test results and limitations are recorded separately in AUDIT.
@@ -286,9 +287,9 @@ no workspace commands are assumed.
   Actions startup failure and the separately verified local evidence.
 - **UG — native UI complete:** all U tasks accepted against the same backend;
   functional/visual parity and Wayland/X11/D-Bus behavior verified. Preserve the
-  old app until this gate is passed. BG, U01, U02, U03 and U04 have passed; U05
-  is active and U06–U08 remain, so UG is not yet passed and the Python app
-  remains the default.
+  old app until this gate is passed. BG, U01, U02, U03 and U04 have passed;
+  U05–U08 must also pass the full matrix before UG can pass and the Python app
+  can stop being the default.
 - **CG — cutover complete:** native release/install works without Python,
   PyGObject or `_rust_core.so`; preferences/history survive the switch; native
   CI and packaging are proven. Remove bridge, fallback implementations, Python

@@ -853,6 +853,15 @@ class Controller:
         samples: list[Sample] = []
         for provider in self.state.providers:
             for window in provider.windows:
+                # Match the Rust controller: unknown and placeholder windows
+                # must not become indistinguishable from a known 0% sample in
+                # the shared, compatibility-format history file.
+                if (
+                    not window.usage_known
+                    or window.is_placeholder
+                    or not math.isfinite(window.used_percent)
+                ):
+                    continue
                 samples.append(
                     Sample(
                         timestamp=now,

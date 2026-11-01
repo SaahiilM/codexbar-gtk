@@ -3210,3 +3210,17 @@ future models must verify the linked PR's status rather than trusting a stale
   verification remain pending. Once U05 merges, update the U06 build/branch
   assignment and retain the central `app.settings`, `app.about` and `app.page`
   seams. Do not cut over from Python before UG.
+
+### E106 — 2026-11-01: U05 PR #63 opened; first exact-head status
+
+- **PR:** [#63 — Add native Settings panes and serialized preferences actor](https://github.com/SaahiilM/codexbar-gtk/pull/63),
+  branch `orchestrated/luna-u05-settings` to `main`, open and non-draft. Its
+  first pushed head was `0b7b3df23c979d122561fc858971510f926ceb71`.
+- **Observed Actions state:** run `41332745531` passed required `tray-dbus`;
+  required `test` was still in progress at the first check. No review or PR
+  comments had been submitted. E105 records the local verification and the 11
+  force-added synthetic screenshots on this initial head.
+- **Next step:** push this handoff-state update, then verify the new exact PR
+  head and both required checks, including the native Settings smoke. Merge
+  normally only after checks pass and review/mergeability state is clear; then
+  verify live `origin/main` and hand the next serialized slot to U06.

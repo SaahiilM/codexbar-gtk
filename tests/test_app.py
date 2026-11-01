@@ -16,6 +16,7 @@ import os
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
@@ -1278,6 +1279,20 @@ class ActivityHeatmapTests(unittest.TestCase):
 
 
 class MonthlyDailyTargetTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls._original_tz = os.environ.get("TZ")
+        os.environ["TZ"] = "America/New_York"
+        time.tzset()
+
+    @classmethod
+    def tearDownClass(cls):
+        if cls._original_tz is None:
+            os.environ.pop("TZ", None)
+        else:
+            os.environ["TZ"] = cls._original_tz
+        time.tzset()
+
     @staticmethod
     def _local(*args):
         return datetime(*args, tzinfo=ZoneInfo("America/New_York"))

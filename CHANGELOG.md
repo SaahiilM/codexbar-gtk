@@ -4,6 +4,26 @@ Client-side changelog for the CodexBar GTK front-end. Each entry keys a build
 number (`CURRENT_PROJECT_VERSION`) to the upstream macOS CodexBar release its
 short version tracks, so "which version has what" maps cleanly onto both trees.
 
+## 0.82.0 (61) — 2026-11-01
+
+Tracks upstream CodexBar 0.82.0.
+
+### Changed
+
+- Add native Usage & Spend and Sessions pages with sticky scan status,
+  unknown-aware token heatmap, filters, and accessible interaction (U04).
+
+### Validation
+
+- Local Rust formatting, tests and Clippy passed for all four crates; core has
+  81 tests, backend has 76 plus one integration test, and native GTK has 23.
+  The PyO3 build, default Python (214 passed, 21 expected opt-in skips),
+  Rust-opt-in Python (214 passed), and the 3-test tray D-Bus suite passed.
+  Synthetic GTK Xvfb routing, refresh, accessibility interaction and
+  empty/loading/partial/error screenshots passed locally. U04 PR #62's first
+  head passed `tray-dbus`; `test` and merge remain pending. See migration audit
+  E102–E103.
+
 ## 0.82.0 (60) — 2026-11-01
 
 Tracks upstream CodexBar 0.82.0.
@@ -21,8 +41,9 @@ Tracks upstream CodexBar 0.82.0.
   opt-in skips, Rust-opt-in Python passed all 214, and tray D-Bus passed 3.
 - A synthetic six-provider Wayland GTK fixture and screenshot were inspected;
   a live X11 fixture verified the panel at the selected work-area corner and
-  exercised dashboard/page/settings/about routing. Local Xvfb/xdotool smoke is
-  unavailable on this host. Exact-head CI and merge remain pending.
+  exercised dashboard/page/settings/about routing. Exact-head PR #61 passed
+  `test` and `tray-dbus` in run `41324106655`, including routing/shutdown and
+  synthetic dashboard GTK smokes, then merged normally at `51480af` (E101).
 
 ## 0.82.0 (59) — 2026-11-01
 

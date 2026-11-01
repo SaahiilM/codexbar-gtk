@@ -11,6 +11,7 @@ on:
       - "rust-gtk/**"
       - "scripts/smoke-native-gtk.sh"
       - "scripts/smoke-native-dashboard.sh"
+      - "scripts/smoke-native-usage-pages.sh"
       - "scripts/capture-native-gtk-wayland.sh"
       - "codexbar_gtk/providers.py"
       - "codexbar_gtk/activity.py"
@@ -79,3 +80,5 @@ jobs:
         run: ./scripts/smoke-native-gtk.sh
       - name: Exercise the native dashboard with synthetic provider data
         run: ./scripts/smoke-native-dashboard.sh
+      - name: Exercise native Spend and Sessions with synthetic data
+        run: ./scripts/smoke-native-usage-pages.sh

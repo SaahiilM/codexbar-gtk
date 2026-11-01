@@ -29,9 +29,13 @@ in PR #58 at `549908e`, U02b history plots/burndown merged in PR #59 at
 `81b7b8f`, and final U02 acceptance merged in PR #60 at `317078a`. Python and
 Rust history writers now both skip unknown/placeholder/non-finite samples while
 retaining known zero. Pre-existing JSONL rows do not contain knownness and
-remain ambiguous. U03's compact native panel implementation is active on build
-60; its panel and routing evidence is recorded in AUDIT E098 while exact-head
-CI and merge are pending. Python remains the default until UG passes.
+remain ambiguous. U03's compact native panel and central routing merged in PR
+#61 at `51480af` on build 60; exact-head CI and native GTK routing/dashboard
+smokes passed (AUDIT E101). U04 Usage & Spend/Sessions owns provisional build
+61 on the next serialized slot; its native pages and typed scan/heatmap
+contracts are implemented and locally verified. U04 PR #62 is open; its first
+exact-head run passed `tray-dbus` while `test` was still running (E102–E103).
+U05 follows U04. Python remains the default until UG passes.
 Some Python edge-input behavior remains available only through the default
 Python path as described below.
 
@@ -70,8 +74,8 @@ Python GTK widgets                        Rust GTK4/libadwaita widgets
   Tokio worker, polls immutable watch state and drains lossless events on the
   GLib context. It has no PyO3/Python bridge; the Rust `codexbar` CLI service
   remains its only subprocess integration. U02 provides the native dashboard
-  and U03 adds a compact panel; Sessions, Spend and Settings remain placeholders
-  until their assigned UI slices. The existing Python launcher remains the
+  and U03 adds a compact panel; U04 owns Sessions and Spend, while U05 owns
+  Settings. The existing Python launcher remains the
   default until UG passes.
 - The backend publishes immutable snapshots/state; the frontend marshals them
   to its GUI thread. `watch` deliberately coalesces intermediate updates; if a
@@ -267,8 +271,8 @@ no workspace commands are assumed.
   Actions startup failure and the separately verified local evidence.
 - **UG — native UI complete:** all U tasks accepted against the same backend;
   functional/visual parity and Wayland/X11/D-Bus behavior verified. Preserve the
-  old app until this gate is passed. BG, U01 and U02 have passed; U03 is active
-  and U04–U08 remain, so UG is not yet passed and the Python app remains the
+  old app until this gate is passed. BG, U01, U02 and U03 have passed; U04 is
+  active and U05–U08 remain, so UG is not yet passed and the Python app remains the
   default.
 - **CG — cutover complete:** native release/install works without Python,
   PyGObject or `_rust_core.so`; preferences/history survive the switch; native

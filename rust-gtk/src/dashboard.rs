@@ -940,6 +940,7 @@ mod tests {
             providers,
             spend: None,
             sessions: vec![],
+            session_scan_status: None,
             history: vec![],
             tray_selection: None,
         }

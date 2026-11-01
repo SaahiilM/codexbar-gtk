@@ -13,6 +13,7 @@ use codexbar_backend::{
         ControllerCommand, ControllerSnapshot, RefreshControllerConfig, RefreshControllerHandle,
     },
     currency::CurrencyService,
+    presentation::{sessions_view_model, spend_view_model, SpendViewRequest},
     BackendEvent, BackendState, BackendStatus,
 };
 use codexbar_core::{
@@ -21,6 +22,7 @@ use codexbar_core::{
 use codexbar_gtk_native::dashboard::project_dashboard;
 use codexbar_gtk_native::dashboard_widget::DashboardView;
 use codexbar_gtk_native::panel_widget::PanelView;
+use codexbar_gtk_native::usage_pages::{SessionsView, SpendView};
 use gio::prelude::*;
 use gtk::prelude::*;
 use libadwaita as adw;
@@ -170,6 +172,13 @@ struct NativeApp {
     dashboard: Option<DashboardView>,
     dashboard_sequence: Option<u64>,
     dashboard_rendered_at: Option<Instant>,
+    sessions_view: Option<SessionsView>,
+    sessions_sequence: Option<u64>,
+    sessions_rendered_at: Option<Instant>,
+    spend_view: Option<SpendView>,
+    spend_sequence: Option<u64>,
+    spend_rendered_at: Option<Instant>,
+    spend_range: String,
     panel_window: Option<gtk::ApplicationWindow>,
     panel: Option<PanelView>,
     panel_sequence: Option<u64>,
@@ -196,6 +205,13 @@ impl NativeApp {
             dashboard: None,
             dashboard_sequence: None,
             dashboard_rendered_at: None,
+            sessions_view: None,
+            sessions_sequence: None,
+            sessions_rendered_at: None,
+            spend_view: None,
+            spend_sequence: None,
+            spend_rendered_at: None,
+            spend_range: "30 days".to_owned(),
             panel_window: None,
             panel: None,
             panel_sequence: None,
@@ -253,6 +269,14 @@ impl NativeApp {
     fn show_route(&mut self, route: LaunchRoute) {
         if matches!(route, LaunchRoute::Default | LaunchRoute::Page(Page::Usage)) {
             self.show_dashboard(route);
+            return;
+        }
+        if route == LaunchRoute::Page(Page::Sessions) {
+            self.show_sessions();
+            return;
+        }
+        if route == LaunchRoute::Page(Page::Spend) {
+            self.show_spend();
             return;
         }
         if route == LaunchRoute::Panel {
@@ -390,6 +414,109 @@ impl NativeApp {
         }
         self.dashboard_sequence = Some(state.sequence);
         self.dashboard_rendered_at = Some(Instant::now());
+    }
+
+    fn show_sessions(&mut self) {
+        self.hide_panel();
+        let window = self.ensure_main_window();
+        window.set_title(Some(&format!("{APP_NAME} — Sessions")));
+        window.set_default_size(920, 700);
+        if self.sessions_view.is_none() {
+            self.sessions_view = Some(SessionsView::new(&self.application));
+        }
+        if self.backend_start_failed {
+            self.sessions_view
+                .as_ref()
+                .expect("Sessions page was created")
+                .show_backend_start_error();
+        } else if let Some(bridge) = &self.bridge {
+            let state = bridge.state.borrow().clone();
+            self.render_sessions_state(&state);
+        }
+        let widget = self
+            .sessions_view
+            .as_ref()
+            .expect("Sessions page was created")
+            .widget();
+        window.set_child(Some(&widget));
+        window.present();
+    }
+
+    fn render_sessions_state(&mut self, state: &BackendState<ControllerSnapshot>) {
+        if let Some(view) = &self.sessions_view {
+            view.render(&sessions_view_model(state));
+        }
+        self.sessions_sequence = Some(state.sequence);
+        self.sessions_rendered_at = Some(Instant::now());
+    }
+
+    fn show_spend(&mut self) {
+        self.hide_panel();
+        let window = self.ensure_main_window();
+        window.set_title(Some(&format!("{APP_NAME} — Usage & Spend")));
+        window.set_default_size(1080, 820);
+        if self.spend_view.is_none() {
+            self.spend_view = Some(SpendView::new(&self.application, &self.spend_range));
+        }
+        if self.backend_start_failed {
+            self.spend_view
+                .as_ref()
+                .expect("Spend page was created")
+                .show_backend_start_error();
+        } else if let Some(bridge) = &self.bridge {
+            let state = bridge.state.borrow().clone();
+            self.render_spend_state(&state);
+        }
+        let widget = self
+            .spend_view
+            .as_ref()
+            .expect("Spend page was created")
+            .widget();
+        window.set_child(Some(&widget));
+        window.present();
+    }
+
+    fn render_spend_state(&mut self, state: &BackendState<ControllerSnapshot>) {
+        let Some(bridge) = &self.bridge else {
+            return;
+        };
+        let preferred_currency = bridge
+            .preferences
+            .get("preferredCurrencyCode")
+            .and_then(|value| value.as_str().map(ToOwned::to_owned))
+            .unwrap_or_else(|| "auto".to_owned());
+        let currencies = bridge.currencies.clone();
+        let model = spend_view_model(
+            state,
+            &SpendViewRequest {
+                selected_range: self.spend_range.clone(),
+                preferred_currency,
+            },
+            &currencies,
+        );
+        if let Some(view) = &self.spend_view {
+            view.render(&model);
+        }
+        self.spend_sequence = Some(state.sequence);
+        self.spend_rendered_at = Some(Instant::now());
+    }
+
+    fn request_spend_range(&mut self, value: &str) {
+        self.spend_range = match value {
+            "7 days" | "7d" => "7 days".to_owned(),
+            "90 days" | "90d" => "90 days".to_owned(),
+            "All" => "All".to_owned(),
+            _ => "30 days".to_owned(),
+        };
+        if self.route == LaunchRoute::Page(Page::Spend) {
+            if let Some(state) = self
+                .bridge
+                .as_ref()
+                .map(|bridge| bridge.state.borrow().clone())
+            {
+                self.render_spend_state(&state);
+            }
+        }
     }
 
     fn ensure_panel_window(&mut self) -> gtk::ApplicationWindow {
@@ -601,6 +728,24 @@ impl NativeApp {
             if should_render {
                 self.render_dashboard_state(&state);
             }
+            let should_render_sessions = self.route == LaunchRoute::Page(Page::Sessions)
+                && self.sessions_view.is_some()
+                && (self.sessions_sequence != Some(state.sequence)
+                    || self
+                        .sessions_rendered_at
+                        .is_none_or(|last| last.elapsed() >= Duration::from_secs(5)));
+            if should_render_sessions {
+                self.render_sessions_state(&state);
+            }
+            let should_render_spend = self.route == LaunchRoute::Page(Page::Spend)
+                && self.spend_view.is_some()
+                && (self.spend_sequence != Some(state.sequence)
+                    || self
+                        .spend_rendered_at
+                        .is_none_or(|last| last.elapsed() >= Duration::from_secs(5)));
+            if should_render_spend {
+                self.render_spend_state(&state);
+            }
             let panel_visible = self
                 .panel_window
                 .as_ref()
@@ -636,6 +781,12 @@ impl NativeApp {
             }
             if let Some(panel) = &self.panel {
                 panel.show_backend_start_error();
+            }
+            if let Some(view) = &self.sessions_view {
+                view.show_backend_start_error();
+            }
+            if let Some(view) = &self.spend_view {
+                view.show_backend_start_error();
             }
         }
 
@@ -722,20 +873,20 @@ fn page_description(page: Page) -> &'static str {
         Page::Usage => {
             "The native Usage dashboard with provider history charts and quota burndown."
         }
-        Page::Sessions => {
-            "The native Sessions page is a placeholder. Session history is scheduled for U04."
-        }
-        Page::Spend => {
-            "The native Usage & Spend page is a placeholder. Spend parity is scheduled for U04."
-        }
+        Page::Sessions => "The native Sessions page with scan status and retained recent activity.",
+        Page::Spend => "The native Usage & Spend page with cost history and token activity.",
     }
 }
 
 fn currency_cache_path() -> PathBuf {
-    std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join(".cache/codexbar-gtk/currency-rates.json")
+    if let Some(cache_home) = std::env::var_os("XDG_CACHE_HOME") {
+        PathBuf::from(cache_home).join("codexbar-gtk/currency-rates.json")
+    } else {
+        std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join(".cache/codexbar-gtk/currency-rates.json")
+    }
 }
 
 fn status_label(state: &BackendState<ControllerSnapshot>) -> String {
@@ -809,6 +960,15 @@ fn main() {
         }
     });
     application.add_action(&page);
+
+    let spend_range = gio::SimpleAction::new("spend-range", Some(glib::VariantTy::STRING));
+    let spend_range_state = state.clone();
+    spend_range.connect_activate(move |_, parameter| {
+        if let Some(value) = parameter.and_then(|parameter| parameter.str()) {
+            spend_range_state.borrow_mut().request_spend_range(value);
+        }
+    });
+    application.add_action(&spend_range);
 
     let settings = gio::SimpleAction::new("settings", None);
     let settings_state = state.clone();

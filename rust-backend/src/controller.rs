@@ -184,6 +184,16 @@ impl From<BackendError> for ControllerError {
     }
 }
 
+/// Optional status of the most recent session scan. Its absence means the
+/// scan has never completed (or the snapshot predates this field).
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct SessionScanStatus {
+    /// Sticky across failures once any scan, including an empty one, succeeds.
+    pub has_successful_scan: bool,
+    /// A sanitized category and static operation identifier, never CLI text.
+    pub last_error: Option<ControllerError>,
+}
+
 /// Immutable complete state published by the refresh service.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ControllerSnapshot {
@@ -195,6 +205,8 @@ pub struct ControllerSnapshot {
     pub providers: Vec<ProviderUsage>,
     pub spend: Option<SpendSummary>,
     pub sessions: Vec<AgentSession>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_scan_status: Option<SessionScanStatus>,
     pub history: Vec<Sample>,
     pub tray_selection: Option<AutomaticQuotaSelection>,
 }
@@ -498,24 +510,41 @@ async fn refresh_once(
             .and_then(|snapshot| snapshot.spend.clone()),
     )
     .await;
-    let sessions = match config
+    let (sessions, session_scan_status) = match config
         .cli
         .sessions(config.sessions_timeout, Some(cancellation.clone()))
         .await
     {
         Ok(payloads) => {
-            domain::agent_sessions_from_value(&Value::Array(payloads)).unwrap_or_else(|| {
-                data.snapshot
-                    .as_ref()
-                    .map(|snapshot| snapshot.sessions.clone())
-                    .unwrap_or_default()
-            })
+            let sessions =
+                domain::agent_sessions_from_value(&Value::Array(payloads)).unwrap_or_default();
+            (
+                sessions,
+                Some(SessionScanStatus {
+                    has_successful_scan: true,
+                    last_error: None,
+                }),
+            )
         }
-        Err(_) => data
-            .snapshot
-            .as_ref()
-            .map(|snapshot| snapshot.sessions.clone())
-            .unwrap_or_default(),
+        Err(error) => {
+            let previous_status = data
+                .snapshot
+                .as_ref()
+                .and_then(|snapshot| snapshot.session_scan_status.as_ref());
+            let sessions = data
+                .snapshot
+                .as_ref()
+                .map(|snapshot| snapshot.sessions.clone())
+                .unwrap_or_default();
+            (
+                sessions,
+                Some(SessionScanStatus {
+                    has_successful_scan: previous_status
+                        .is_some_and(|status| status.has_successful_scan),
+                    last_error: Some(ControllerError::from(error.backend_error())),
+                }),
+            )
+        }
     };
 
     let now = Utc::now();
@@ -569,6 +598,7 @@ async fn refresh_once(
         providers,
         spend,
         sessions,
+        session_scan_status,
         history,
         tray_selection,
     };
@@ -1131,8 +1161,122 @@ mod tests {
         assert_eq!(after.providers[0].windows[0].used_percent, 65.0);
         assert_eq!(after.spend, before.spend);
         assert_eq!(after.sessions, before.sessions);
+        assert_eq!(
+            after.session_scan_status,
+            Some(SessionScanStatus {
+                has_successful_scan: true,
+                last_error: Some(ControllerError {
+                    kind: ControllerErrorKind::Process,
+                    operation: "cli_sessions".into(),
+                }),
+            })
+        );
         assert_eq!(after.cost_error.as_ref().unwrap().operation, "cli_cost");
         assert_eq!(after.history.len(), 2);
+        handle.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn session_scan_status_distinguishes_never_from_repeated_failures() {
+        let fake = Arc::new(FakeCli::new());
+        fake.sessions.lock().unwrap().clear();
+        fake.sessions.lock().unwrap().extend([
+            Err(cli_error("cli_sessions")),
+            Err(cli_error("cli_sessions")),
+        ]);
+        let handle = RefreshControllerHandle::start(test_config(fake, "session-scan-failures"));
+        let mut state = handle.state();
+        wait_revision(&mut state, 1).await;
+        let first = state.borrow().snapshot.as_ref().unwrap().clone();
+        assert!(first.sessions.is_empty());
+        assert_eq!(
+            first.session_scan_status,
+            Some(SessionScanStatus {
+                has_successful_scan: false,
+                last_error: Some(ControllerError {
+                    kind: ControllerErrorKind::Process,
+                    operation: "cli_sessions".into(),
+                }),
+            })
+        );
+
+        let mut old_json = serde_json::to_value(&*first).unwrap();
+        old_json
+            .as_object_mut()
+            .unwrap()
+            .remove("session_scan_status");
+        let old_snapshot: ControllerSnapshot = serde_json::from_value(old_json).unwrap();
+        assert_eq!(old_snapshot.session_scan_status, None);
+        assert!(!serde_json::to_value(old_snapshot)
+            .unwrap()
+            .as_object()
+            .unwrap()
+            .contains_key("session_scan_status"));
+
+        let serialized =
+            serde_json::to_string(first.session_scan_status.as_ref().unwrap()).unwrap();
+        assert!(serialized.contains("cli_sessions"));
+        assert!(!serialized.contains("stderr"));
+        assert!(!serialized.contains("password"));
+
+        handle.force_refresh().await.unwrap();
+        wait_revision(&mut state, 2).await;
+        let repeated = state.borrow().snapshot.as_ref().unwrap().clone();
+        assert_eq!(repeated.sessions, first.sessions);
+        assert!(
+            !repeated
+                .session_scan_status
+                .as_ref()
+                .unwrap()
+                .has_successful_scan
+        );
+        assert!(repeated
+            .session_scan_status
+            .as_ref()
+            .unwrap()
+            .last_error
+            .is_some());
+        handle.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn empty_session_success_sets_sticky_bit_and_failures_preserve_it() {
+        let fake = Arc::new(FakeCli::new());
+        fake.sessions.lock().unwrap().clear();
+        fake.sessions.lock().unwrap().extend([
+            Ok(Vec::new()),
+            Err(cli_error("cli_sessions")),
+            Err(cli_error("cli_sessions")),
+        ]);
+        let handle = RefreshControllerHandle::start(test_config(fake, "session-empty-sticky"));
+        let mut state = handle.state();
+        wait_revision(&mut state, 1).await;
+        let success = state.borrow().snapshot.as_ref().unwrap().clone();
+        assert!(success.sessions.is_empty());
+        assert_eq!(
+            success.session_scan_status,
+            Some(SessionScanStatus {
+                has_successful_scan: true,
+                last_error: None,
+            })
+        );
+
+        for revision in [2, 3] {
+            handle.force_refresh().await.unwrap();
+            wait_revision(&mut state, revision).await;
+            let failed = state.borrow().snapshot.as_ref().unwrap().clone();
+            assert_eq!(failed.sessions, success.sessions);
+            let status = failed.session_scan_status.as_ref().unwrap();
+            assert!(status.has_successful_scan);
+            assert_eq!(
+                status.last_error.as_ref().unwrap().operation,
+                "cli_sessions"
+            );
+            assert_eq!(
+                status.last_error.as_ref().unwrap().kind,
+                ControllerErrorKind::Process
+            );
+        }
         handle.shutdown().await.unwrap();
     }
 

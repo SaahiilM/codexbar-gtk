@@ -7,9 +7,9 @@
 use std::collections::BTreeMap;
 
 use codexbar_core::{
-    activity::{daily_series, DailyCostEntry},
+    activity::{daily_series, token_heatmap, DailyCostEntry, DailyTokenEntry, TokenHeatmap},
     currency::CurrencyCatalog,
-    domain::{ProviderUsage, RateWindow, SpendProvider},
+    domain::{AgentSession, ProviderUsage, RateWindow, SpendProvider},
     formatting::compact_window_label,
     ordering::AutomaticQuotaSelection,
 };
@@ -17,7 +17,7 @@ use serde::Serialize;
 use serde_json::Value;
 
 use crate::{
-    controller::{ControllerError, ControllerSnapshot},
+    controller::{ControllerError, ControllerSnapshot, SessionScanStatus},
     currency::CurrencyService,
     BackendState, BackendStatus,
 };
@@ -108,6 +108,8 @@ pub struct SpendViewModel {
     pub daily_chart: Vec<SpendDailyPoint>,
     /// Full unfiltered daily data for the GTK heatmap.
     pub heatmap_daily: Vec<Value>,
+    /// Typed option-aware projection; cost history coverage is not token coverage.
+    pub token_heatmap: TokenHeatmap,
     pub providers: Vec<SpendProviderRow>,
     pub projects: Vec<SpendEntryRow>,
     pub models: Vec<SpendEntryRow>,
@@ -115,6 +117,25 @@ pub struct SpendViewModel {
     pub cost_error: Option<ControllerError>,
     /// Safe reason code; raw provider/CLI error strings are never copied here.
     pub notice: Option<&'static str>,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq)]
+pub struct SessionsViewModel {
+    pub backend_status: String,
+    pub backend_error: Option<ControllerError>,
+    /// Absent means the CLI session scan has never completed or this is an old snapshot.
+    pub scan_status: Option<SessionScanStatus>,
+    pub sessions: Vec<AgentSession>,
+}
+
+pub fn sessions_view_model(state: &BackendState<ControllerSnapshot>) -> SessionsViewModel {
+    let snapshot = state.snapshot.as_deref();
+    SessionsViewModel {
+        backend_status: status_name(state.status).to_owned(),
+        backend_error: state.last_error.map(Into::into),
+        scan_status: snapshot.and_then(|snapshot| snapshot.session_scan_status.clone()),
+        sessions: snapshot.map_or_else(Vec::new, |snapshot| snapshot.sessions.clone()),
+    }
 }
 
 impl Default for SpendViewModel {
@@ -164,6 +185,7 @@ impl Default for SpendViewModel {
             history_coverage_established: false,
             daily_chart: Vec::new(),
             heatmap_daily: Vec::new(),
+            token_heatmap: project_token_heatmap(&[], chrono::Local::now().date_naive()),
             providers: Vec::new(),
             projects: Vec::new(),
             models: Vec::new(),
@@ -246,6 +268,7 @@ pub fn spend_view_model(
             display_amount: convert(point.cost),
         })
         .collect();
+    let token_heatmap = project_token_heatmap(&spend.daily, chrono::Local::now().date_naive());
     let providers = spend
         .providers
         .iter()
@@ -341,6 +364,7 @@ pub fn spend_view_model(
         history_coverage_established: spend.history_coverage_established,
         daily_chart,
         heatmap_daily: spend.daily.clone(),
+        token_heatmap,
         providers,
         projects,
         models,
@@ -348,6 +372,31 @@ pub fn spend_view_model(
         cost_error: cost_error.cloned(),
         notice,
     }
+}
+
+fn project_token_heatmap(daily: &[Value], today: chrono::NaiveDate) -> TokenHeatmap {
+    let entries = daily
+        .iter()
+        .filter_map(|entry| {
+            Some(DailyTokenEntry {
+                date: entry.get("date")?.as_str()?.to_owned(),
+                total_tokens: entry.get("totalTokens").and_then(usable_token_count),
+            })
+        })
+        .collect::<Vec<_>>();
+    token_heatmap(&entries, today)
+}
+
+fn usable_token_count(value: &Value) -> Option<i64> {
+    let count = value
+        .as_i64()
+        .or_else(|| value.as_u64().and_then(|value| i64::try_from(value).ok()))
+        .or_else(|| {
+            let value = value.as_f64()?;
+            (value.is_finite() && value >= 0.0 && value.fract() == 0.0 && value < i64::MAX as f64)
+                .then_some(value as i64)
+        })?;
+    (count >= 0).then_some(count)
 }
 
 fn canonical_range(value: &str) -> &'static str {
@@ -867,6 +916,7 @@ fn switcher_row(provider: &ProviderUsage, rows_option: &str) -> TraySwitcherRow 
 mod tests {
     use super::*;
     use crate::controller::{ControllerError, ControllerErrorKind, ControllerSnapshot};
+    use chrono::NaiveDate;
     use codexbar_core::domain::{AgentSession, Pace, ProviderUsage, RateWindow, SpendSummary};
     use serde_json::json;
     use std::collections::HashMap;
@@ -1014,6 +1064,7 @@ mod tests {
             providers,
             spend: None,
             sessions: Vec::<AgentSession>::new(),
+            session_scan_status: None,
             history: Vec::new(),
             tray_selection: selection,
         }
@@ -1147,6 +1198,64 @@ mod tests {
         );
         assert_eq!(covered_view.selected_range, "90 days");
         assert_eq!(covered_view.daily_chart[1].source_amount, Some(0.0));
+    }
+
+    #[test]
+    fn typed_heatmap_groups_duplicate_rows_without_borrowing_cost_coverage() {
+        let today = NaiveDate::from_ymd_opt(2026, 10, 24).unwrap();
+        let first = today - chrono::Duration::days(3);
+        let second = today - chrono::Duration::days(2);
+        let third = today - chrono::Duration::days(1);
+        let fourth = today;
+        let mut value = spend();
+        value.history_coverage_established = true;
+        value.daily = vec![
+            json!({"date": first.to_string(), "totalTokens": 10}),
+            json!({"date": first.to_string(), "totalTokens": 15}),
+            json!({"date": first.to_string(), "totalTokens": null}),
+            json!({"date": second.to_string(), "totalTokens": null}),
+            json!({"date": third.to_string(), "totalTokens": 0}),
+            json!({"date": third.to_string(), "totalTokens": 7}),
+        ];
+        let projected = project_token_heatmap(&value.daily, today);
+        let at = |date: NaiveDate| (date - projected.start).num_days() as usize;
+        assert_eq!(projected.days[at(first)].value.tokens, Some(25));
+        assert!(projected.days[at(first)].value.partial);
+        assert_eq!(projected.days[at(second)].value.tokens, None);
+        assert!(projected.days[at(second)].value.partial);
+        assert_eq!(projected.days[at(third)].value.tokens, Some(7));
+        assert!(!projected.days[at(third)].value.partial);
+        assert_eq!(projected.days[at(fourth)].value.tokens, None);
+        assert!(!projected.days[at(fourth)].value.partial);
+        assert!(projected.days[at(fourth)].visible);
+    }
+
+    #[test]
+    fn sessions_projection_exposes_sticky_scan_status_and_retained_rows() {
+        let mut snapshot = snapshot(Vec::new(), None);
+        snapshot.sessions.push(AgentSession {
+            id: "fixture-session".into(),
+            provider: "codex".into(),
+            state: "running".into(),
+            project_name: "fixture".into(),
+            cwd: "/tmp/fixture".into(),
+            pid: 17,
+            started_at: None,
+            last_activity_at: None,
+            host: "synthetic".into(),
+        });
+        snapshot.session_scan_status = Some(SessionScanStatus {
+            has_successful_scan: true,
+            last_error: Some(error()),
+        });
+        let projected = sessions_view_model(&tray_state(snapshot));
+        assert!(projected.scan_status.as_ref().unwrap().has_successful_scan);
+        assert_eq!(
+            projected.scan_status.as_ref().unwrap().last_error,
+            Some(error())
+        );
+        assert_eq!(projected.sessions.len(), 1);
+        assert_eq!(projected.sessions[0].id, "fixture-session");
     }
 
     #[test]

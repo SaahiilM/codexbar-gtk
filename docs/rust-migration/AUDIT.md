@@ -2958,3 +2958,125 @@ future models must verify the linked PR's status rather than trusting a stale
 - **Matcher audit:** all five positive Panel assertions plus the panel placement, pre-refresh, dismissal and hidden-after-navigation selectors use the panel-specific title. The broad main-window `^CodexBar GTK` checks occur only while Panel should be hidden; the About check has its own `^About CodexBar GTK` prefix. The separate dashboard smoke starts a fresh application and validates that its sole matched application window is Dashboard before later checking the same window changes to Settings. Thus the more specific Panel check still fails if Panel is absent and does not allow another route to satisfy it.
 - **Local evidence:** replayed the delayed refresh/toggle sequence with a synthetic CLI on live X11. After Settings remained open and Panel was opened, both windows were viewable; the generic match selected Settings and the specific match selected `CodexBar GTK — Panel`. The pending-toggle cancellation also passed. Then ran the full `scripts/smoke-native-gtk.sh` and `scripts/smoke-native-dashboard.sh` on live X11 under private `dbus-run-session`; both passed. `xdotool` and `libxdo3` were downloaded and extracted into a temporary directory because system installation requires a sudo password. `bash -n scripts/smoke-native-gtk.sh` and `git diff --check` passed. `Xvfb`/`xvfb-run` remain unavailable locally, so exact CI must still verify the Xvfb run.
 - **Next action:** push this correction and audit update, then inspect the next exact-head `test` and `tray-dbus` results. Confirm the Xvfb/xdotool smoke and following synthetic dashboard smoke both run and pass before normal merge.
+
+### E101 — 2026-11-01: U03 PR #61 verified merged; U04 build 61 claimed
+
+- **Observed merge and exact-head checks:** live GitHub reports PR #61 merged
+  at `2026-11-01T16:06:16Z` with merge commit
+  `51480af4650c7f71068e8ceecdeb8fc2efa16d30`, now `origin/main`. Its exact head
+  was `781aacc6a9ca3cd2f97afa2cc2c48660ed7ee148`. Actions run `41324106655`
+  completed successfully: `test` and `tray-dbus` both passed. The `test` job
+  passed formatting, Rust core/backend/native GTK contracts, PyO3, Python tests
+  in default and Rust-backed modes, Clippy, native GTK build, Gio routing and
+  async shutdown smoke, and synthetic dashboard GTK lifecycle/refresh smoke.
+  `tray-dbus` verified update signals on its private session bus. The earlier
+  exact-head smoke failures and matcher fixes are retained in E099–E100.
+- **Claim:** the user released U04 as the next serialized UI slice at
+  provisional build `0.82.0 (61)`, followed by U05. The isolated worktree
+  `orchestrated/luna-u04-spend-sessions` was clean before the documentation
+  claim and fast-forwarded to the verified merge commit. Root dirty checkout
+  and U05's worktree were left untouched. U04 is one focused PR; Python remains
+  the launcher default until UG.
+- **Session status contract:** add optional `SessionScanStatus` so absent data
+  continues to deserialize old snapshots as “never completed.” A present value
+  carries sticky `has_successful_scan` and optional sanitized `last_error`.
+  Every success, including empty, sets the bit and clears error. Failures retain
+  prior rows, set a safe error and preserve the success bit through repeated
+  failures, including following an empty success. Serialization omits absent
+  status. Audit consumers and cover old JSON, success/empty, first/repeated
+  failures, retained rows, sanitized error and round-trip cases.
+- **Token heatmap contract:** `SpendSummary.daily` concatenates provider rows,
+  so group duplicate dates. Sum explicit usable counts; if any contributing
+  row lacks a usable count, preserve the known subtotal and mark the date
+  partial. No rows or no known counts is unknown; explicit zero is known zero.
+  Do not spread spend-wide token partialness or cost-history coverage to each
+  date. Project a 53×7 Sunday-aligned grid over the last 365 days, threshold
+  only known token counts, and carry known subtotal plus partialness through
+  weekly and cumulative values. Unknown remains visually distinct from zero.
+  Pointer and keyboard interaction share the same date/week/cumulative label
+  and count. Python coalesces absent counts to zero; native unknown/partial
+  knownness is an intentional improvement. Fixtures cover duplicate known rows,
+  known-plus-missing, missing-only, zero-plus-known, week/cumulative
+  propagation, thresholds and accessibility labels.
+- **Navigation and ownership boundary:** U04 uses the central `app.page`
+  navigation and central back/dashboard/settings actions; `app.settings` and
+  `--settings` stay stable. U05 owns Settings rendering and bridge, CLI
+  path/timezone preference changes, import/reset and the serialized preferences
+  actor. U04 pages do not write Preferences or autostart; if needed they dispatch
+  the central Settings action. Settings is not embedded in the U04 pages.
+- **Current implementation status:** only the handoff, audit claim and build-61
+  metadata/changelog entry are recorded in this commit at claim time. U04 page,
+  controller, projection and runtime work remains in progress; no U04 tests,
+  GTK runtime screenshots or CI success are claimed by this entry. Continue in
+  this isolated worktree, then append exact checks, synthetic screenshot paths,
+  GTK interaction/accessibility evidence, skips and limits before PR review.
+
+### E102 — 2026-11-01: U04 implementation and local native verification
+
+- **Scope/build:** implemented U04 on `orchestrated/luna-u04-spend-sessions`,
+  build `0.82.0 (61)`, based on verified U03 merge `51480af4650c7f71068e8ceecdeb8fc2efa16d30`.
+  Python remains the launcher default. U04 did not write Preferences or
+  autostart, reconfigure CLI path/timezone, or change U05's Settings/bridge
+  boundary. Spend/Sessions page navigation, Settings and Dashboard actions use
+  the central Gio actions.
+- **Session projection:** `SessionScanStatus` is an optional snapshot field with
+  serde default and omission when absent; old JSON deserializes unchanged and
+  `None` stays omitted. Success, including an empty result, sets sticky
+  `has_successful_scan` and clears `last_error`. Failure retains the last
+  session rows, records only sanitized `ControllerError` metadata and carries
+  prior success through repeated failures, including after an empty success.
+  The native Sessions page distinguishes loading, never scanned, successful
+  empty, first failure and retained prior rows; its summary reports running
+  versus known sessions. This adds visible status to Python's silent
+  `CLIError` retention behavior.
+- **Token heatmap projection:** `SpendSummary.daily` provider rows are bucketed
+  by date. Explicit usable nonnegative counts sum; any missing/invalid
+  contribution marks the date partial while retaining its known subtotal.
+  No row/no known count stays unknown, distinct from `Some(0)`. Cost-history
+  coverage and spend-wide token partialness do not imply per-day token coverage.
+  The typed 53×7 Sunday-aligned grid shows the last 365 days, with partial-aware
+  weekly/cumulative subtotals and thresholds. Pointer hover, tooltip, keyboard
+  focus and the on-page value label share the same accessible date/week/count
+  text. Python's `int(entry.get("totalTokens") or 0)` coalesces missing values
+  to zero; native unknown/partial knownness is an intentional improvement.
+- **Native page/runtime work:** Spend includes total/session/token/coverage
+  cards, 7/30/90/All filters, daily cost chart, provider/project/model rows,
+  and loading/empty/error/partial states. Sessions includes safe error text,
+  scan progress, retained rows and empty/success states. `scripts/smoke-native-usage-pages.sh`
+  runs against synthetic CLI data in Xvfb/private D-Bus; it exercises delayed
+  loading, successful rows, repeated refresh failure with retained rows, empty
+  successful results, keyboard heatmap movement, pointer hover, the 7-day range,
+  central page routes, Settings and Dashboard actions, and GTK shutdown. The
+  workflow now runs this smoke. Existing native GTK routing/cancellation and
+  dashboard smokes also passed locally.
+- **Local checks:** all four `cargo fmt -- --check` commands passed; `cargo test`
+  passed for core (81), backend (76 plus one end-to-end integration test), and
+  GTK (23); all four crate Clippy commands passed with `-D warnings`; the native
+  binary and `scripts/build-rust-core.sh` PyO3 extension built. Default Python
+  passed 214 tests with 21 expected Rust-opt-in skips; Rust-opt-in Python passed
+  all 214 and tray D-Bus passed 3. `git diff --check` passed.
+  Local GTK build/smokes used the ignored `.deps` GTK SDK and extracted Xvfb
+  tools because system GTK development metadata/tools are absent. The private
+  D-Bus desktop-portal startup logged a document FUSE mount warning and fell
+  back; no portal action was used. Every required check command ran; the only
+  skips were the 21 expected Rust-opt-in tests in default Python mode.
+- **Synthetic screenshots, visually inspected:**
+  [Spend loading](screenshots/u04-spend-loading-native-xvfb.png),
+  [Spend success](screenshots/u04-spend-success-native-xvfb.png),
+  [Spend hover label](screenshots/u04-spend-hover-native-xvfb.png),
+  [Spend empty](screenshots/u04-spend-empty-native-xvfb.png),
+  [Spend retained error/partial](screenshots/u04-spend-retained-error-native-xvfb.png),
+  [Sessions loading](screenshots/u04-sessions-loading-native-xvfb.png),
+  [Sessions success with rows](screenshots/u04-sessions-success-native-xvfb.png),
+  [Sessions empty](screenshots/u04-sessions-empty-native-xvfb.png), and
+  [Sessions retained error](screenshots/u04-sessions-retained-error-native-xvfb.png).
+  All fixture names, paths, counts, and CLI outputs are synthetic. The captures
+  use a 1080×820 viewport; Spend content below the viewport is in the page's
+  vertical scroller and is not represented in a single screenshot.
+- **Parity and next step:** Python's Sessions page has no scan outcome field,
+  and its heatmap coalesces missing token counts to zero. Both differences are
+  recorded as deliberate native improvements. Range changes are held in the
+  current native app session; U04 does not persist preferences while U05 owns
+  the preferences bridge. Local verification is complete. PR creation,
+  exact-head `test`/`tray-dbus`, review and merge are pending; append observed
+  GitHub evidence before marking U04 complete or handing build 62 to U05.

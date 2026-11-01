@@ -9,16 +9,16 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Field | Current checkpoint |
 | --- | --- |
 | Goal | Fully native Rust GTK4/libadwaita app; backend first, UI second |
-| Current phase | BG passed in PR #54 at `e1abf7b3e1db0e7f23e3be063a3ef067d85be1a1`; U01 PR #56 merged at `3eea06f99760048b51407b446781981e5edb49db`; build-56 closeout PR #57 merged at `043e273b83053f02ffcd96b203ac9af5fd87f791`; U02a PR #58 merged at `549908e42195ce04479424c5fd22ca5ea52d8109`; U02b PR #59 merged at `81b7b8f5bb3bc816efd34324466c1a257a582778`; U02 acceptance PR #60 merged at `317078aa46bfaf31a7bb1464bd52100950b8a549`. Phase U is active. |
-| Last merged implementation | U02c Python history writer parity and final acceptance PR #60 merged normally at `317078aa46bfaf31a7bb1464bd52100950b8a549`, build `0.82.0 (59)`. U02 is accepted; older JSONL rows retain irrecoverable knownness ambiguity. |
+| Current phase | BG passed in PR #54 at `e1abf7b3e1db0e7f23e3be063a3ef067d85be1a1`; U01 PR #56 merged at `3eea06f99760048b51407b446781981e5edb49db`; build-56 closeout PR #57 merged at `043e273b83053f02ffcd96b203ac9af5fd87f791`; U02a PR #58 merged at `549908e42195ce04479424c5fd22ca5ea52d8109`; U02b PR #59 merged at `81b7b8f5bb3bc816efd34324466c1a257a582778`; U02 acceptance PR #60 merged at `317078aa46bfaf31a7bb1464bd52100950b8a549`; U03 PR #61 merged at `51480af4650c7f71068e8ceecdeb8fc2efa16d30`. Phase U is active. |
+| Last merged implementation | U03 native compact panel, dismissal/placement and central routing PR #61 merged normally at `51480af4650c7f71068e8ceecdeb8fc2efa16d30`, build `0.82.0 (60)`. U03 is accepted; U04 is the released next serialized slot at provisional build 61. |
 | Planning change | [PR #18](https://github.com/SaahiilM/codexbar-gtk/pull/18), merged at `69c5496`, build `0.81.0 (17)` |
 | Backend tasks completed after that baseline | B00–B15 and BG are accepted and merged. B11's Actions startup failures remain documented as failures; see E086. |
-| Active implementation task / owner | U03 compact native panel, dismissal, anchoring, Wayland/X11 placement and dashboard/settings/about routing, branch `orchestrated/luna-u03-panel`, build `0.82.0 (60)`, based on live `origin/main` `317078aa46bfaf31a7bb1464bd52100950b8a549`. PR #61's first two exact-head test runs failed because panel assertions used a generic title matcher while Settings remained visible; both assertions now target Panel specifically. Full GTK and dashboard smokes pass locally on live X11/private D-Bus; exact-head rerun and merge are pending (E098–E100). |
+| Active implementation task / owner | U04 Usage & Spend/Sessions, branch `orchestrated/luna-u04-spend-sessions`, provisional build `0.82.0 (61)`, based on verified live `origin/main` `51480af4650c7f71068e8ceecdeb8fc2efa16d30`. Claim and contract are recorded in E101. Preserve central `app.page`, `app.settings` and `--settings`; U05 owns Settings rendering, the settings bridge, CLI path/timezone preferences, import/reset and serialized preference writes. |
 | Latest gate result | **BG passed** — PR #54 merged and verified on live main. Headless Rust-only integration, Rust-opt-in GTK fixture smoke and residual-Python inventory are recorded in E085/E086. |
-| Next domain slice | Verify PR #61's exact-head checks, including its Xvfb/xdotool smoke, and merge normally only when all required checks pass. Then continue to U04 Usage & Spend/Sessions and U05 Settings/About as separate slices after the serialized build handoff. Keep Python as default until UG passes; do not start cutover work before UG. |
+| Next domain slice | Open U04's focused PR, verify exact-head `test` and `tray-dbus`, then merge normally when both pass and record the live merge. U05 follows U04 after coordinator handoff. Keep Python as default until UG passes; do not start cutover work before UG. |
 | Open external blockers | No external blocker at claim. U02's legacy JSONL rows cannot identify whether some stored zeros came from unknown usage; new Python/Rust writes preserve knownness. GTK development metadata may require the ignored local SDK extraction; CI installs GTK4/libadwaita development packages. B11's zero-job Actions startup failures remain documented, not CI successes. |
-| Latest checks | U02a PR #58 exact head `c2a3078d7ec304ef94323749d68d21d59d9cc21b` passed `test` and `tray-dbus` in run `41172651348` (E091). U02b PR #59 exact head `89ae294b6e1238ae404cb7b685388c69b2f32fe2` passed both in run `41174965540` and merged at `81b7b8f` (E093). U02c PR #60 exact head `b2fc92c0ee81a2d8b65cc36b3870065600c5f2d0` passed `test` and `tray-dbus` in run `41314701763`, then merged normally at `317078aa46bfaf31a7bb1464bd52100950b8a549`, now live `origin/main` (E097). U03 PR #61 head `19304c8ee36735dea904aa9dffc8a3112ba8f35b` failed the Gio smoke assertion in run `41322829201`; head `936fc1b18697139f0d6601e7fee7577169b7fc04` failed the same assertion in delayed-refresh coverage in run `41323345908` because a second generic panel matcher remained. Both panel assertions are now specific; see E099–E100. Exact-head rerun is pending. |
-| UI validation | U02's inspected synthetic Wayland capture [`u02-dashboard-wayland.png`](screenshots/u02-dashboard-wayland.png) and Xvfb capture [`u02-history-native-xvfb.png`](screenshots/u02-history-native-xvfb.png) remain current. U03's six-provider Wayland capture [`u03-panel-wayland.png`](screenshots/u03-panel-wayland.png) was visually inspected; a live X11 fixture confirmed selected work-area placement and central actions. The full U03 GTK and dashboard smokes also passed on live X11/private D-Bus using temporary extracted xdotool. Xvfb/xvfb-run remain unavailable locally, and Xwayland blocks a valid local X11 screenshot; CI must confirm its Xvfb run. Evidence and limits are in E098–E100. |
+| Latest checks | U03 PR #61 exact head `781aacc6a9ca3cd2f97afa2cc2c48660ed7ee148` passed `test` and `tray-dbus` in Actions run `41324106655`; `test` passed format, core/backend/GTK contracts, PyO3, default and Rust-backed Python, Clippy, native GTK build, Gio routing/shutdown smoke and synthetic dashboard smoke. PR #61 merged normally at `51480af4650c7f71068e8ceecdeb8fc2efa16d30` at 2026-11-01 16:06:16 UTC and is live `origin/main` (E101). U04's local formats, 81 core tests, 76 backend tests + 1 integration, 23 GTK tests, all four Clippy targets, PyO3 build, two 214-test Python modes, 3 tray tests, and three native GTK Xvfb smokes passed; exact-head CI is pending (E102). |
+| UI validation | U02's inspected synthetic Wayland capture [`u02-dashboard-wayland.png`](screenshots/u02-dashboard-wayland.png) and Xvfb capture [`u02-history-native-xvfb.png`](screenshots/u02-history-native-xvfb.png) remain current. U03's six-provider Wayland capture [`u03-panel-wayland.png`](screenshots/u03-panel-wayland.png) was visually inspected; exact-head CI passed the GTK routing/shutdown and synthetic dashboard smokes. U04's synthetic Xvfb captures cover Spend loading/success/hover/empty/retained-error and Sessions loading/success/empty/retained-error; the usage smoke exercised pointer/keyboard heatmap interaction, range selection and central routes. See E098–E102. |
 
 **First commands for a new model/session:**
 
@@ -241,15 +241,11 @@ the Resume here table. BG passed after PR #54; Phase U may now be coordinated.
     knownness ambiguity remains documented in E093/E097. Fresh Xvfb smoke was
     unavailable (`xvfb-run`, `Xvfb`, `xdotool` missing); #60 changed no GTK
     rendering and prior synthetic #58/#59 captures were visually inspected.
-- [ ] **U03** Compact panel, dismissal, anchoring and Wayland/X11 placement
+- [x] **U03** Compact panel, dismissal, anchoring and Wayland/X11 placement
   (`popup.py`, `x11_position.py`); preserve dashboard/settings navigation.
-  Active build 60 on `orchestrated/luna-u03-panel`, based on live main at
-  `317078aa`. Implementation is locally verified. PR #61's first two
-  exact-head test runs failed because generic visible-window title matchers
-  selected the still-open Settings window after opening Panel; both assertions
-  now select the Panel title. Exact-head rerun and merge are pending
-  (E098–E100). Both full smoke scripts pass locally on live X11/private D-Bus;
-  exact-head Xvfb rerun is pending. Use a separate `PanelView` over shared
+  Merged normally in PR #61 at `51480af`; exact head `781aacc` passed `test`
+  and `tray-dbus` in run `41324106655`, including both native GTK smokes
+  (E101). Use a separate `PanelView` over shared
   `DashboardModel`, refresh it on backend
   sequence changes, hide it before Dashboard/Settings/About actions, and
   support Escape/close/toggle dismissal
@@ -259,9 +255,21 @@ the Resume here table. BG passed after PR #54; Phase U may now be coordinated.
   GDK reports no monitor geometry. See E093, E097 and E098.
   Preserve central `app.settings`/`--settings`, `app.about`/`--about`, and page
   navigation routes so U04/U05 can replace their placeholders independently.
-  See the U03 handoff in E093 and active claim E097.
+  See the U03 handoff in E093 and closeout E101.
 - [ ] **U04** Usage & Spend and Sessions pages, heatmap interaction/tooltips,
   filters and empty/error/loading/partial states (`spend.py`, `sessions.py`).
+  **Active build 61** on `orchestrated/luna-u04-spend-sessions`, based on live
+  main `51480af`. Session status is optional for old JSON and carries sticky
+  successful-scan state plus a sanitized last error; failures retain rows.
+  Heatmap days bucket duplicate provider rows, preserve unknown versus explicit
+  zero, and propagate known subtotals/partialness to weeks and cumulative
+  labels. Cost-history coverage does not imply token coverage. Python's
+  absent-to-zero heatmap behavior is intentionally improved. Native page and
+  keyboard/pointer accessibility work must retain central navigation. U05 owns
+  Settings and all settings/CLI-path/timezone writes; U04 dispatches the central
+  settings action only. The implementation passes local checks and synthetic
+  GTK Xvfb state/interaction review; the focused PR and exact-head CI remain
+  pending. See E101–E102.
 - [ ] **U05** Every preferences pane, provider/source/API-key controls,
   hooks/plugins, login dialog, import/export/reset, acknowledgements and About
   (`settings.py`, `login_dialog.py`). Backend actions use Rust services.

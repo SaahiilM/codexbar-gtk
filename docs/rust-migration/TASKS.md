@@ -9,16 +9,16 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Field | Current checkpoint |
 | --- | --- |
 | Goal | Fully native Rust GTK4/libadwaita app; backend first, UI second |
-| Current phase | BG passed in PR #54 at `e1abf7b3e1db0e7f23e3be063a3ef067d85be1a1`; U01 PR #56 merged at `3eea06f99760048b51407b446781981e5edb49db`; build-56 closeout PR #57 merged at `043e273b83053f02ffcd96b203ac9af5fd87f791`; U02a PR #58 merged at `549908e42195ce04479424c5fd22ca5ea52d8109`; U02b PR #59 merged at `81b7b8f5bb3bc816efd34324466c1a257a582778`. Phase U is active. |
-| Last merged implementation | U02b native charts/history PR #59 merged normally at `81b7b8f5bb3bc816efd34324466c1a257a582778`, build `0.82.0 (58)`; build 59 closes the Python history writer parity gap and records final U02 acceptance. |
+| Current phase | BG passed in PR #54 at `e1abf7b3e1db0e7f23e3be063a3ef067d85be1a1`; U01 PR #56 merged at `3eea06f99760048b51407b446781981e5edb49db`; build-56 closeout PR #57 merged at `043e273b83053f02ffcd96b203ac9af5fd87f791`; U02a PR #58 merged at `549908e42195ce04479424c5fd22ca5ea52d8109`; U02b PR #59 merged at `81b7b8f5bb3bc816efd34324466c1a257a582778`; U02 acceptance PR #60 merged at `317078aa46bfaf31a7bb1464bd52100950b8a549`. Phase U is active. |
+| Last merged implementation | U02c Python history writer parity and final acceptance PR #60 merged normally at `317078aa46bfaf31a7bb1464bd52100950b8a549`, build `0.82.0 (59)`. U02 is accepted; older JSONL rows retain irrecoverable knownness ambiguity. |
 | Planning change | [PR #18](https://github.com/SaahiilM/codexbar-gtk/pull/18), merged at `69c5496`, build `0.81.0 (17)` |
 | Backend tasks completed after that baseline | B00–B15 and BG are accepted and merged. B11's Actions startup failures remain documented as failures; see E086. |
-| Active implementation task / owner | U02c final history writer parity and U02 acceptance, `frontend/u02-final-acceptance-build59`, build `0.82.0 (59)`, [PR #60](https://github.com/SaahiilM/codexbar-gtk/pull/60) open at exact head `cb2ede09397087de44b09f3a3d0b6e306b39b975`; U02 remains partial until this focused PR merges. |
+| Active implementation task / owner | U03 compact native panel, dismissal, anchoring, Wayland/X11 placement and dashboard/settings/about routing, branch `orchestrated/luna-u03-panel`, build `0.82.0 (60)`, based on live `origin/main` `317078aa46bfaf31a7bb1464bd52100950b8a549`. PR #61's first two exact-head test runs failed because panel assertions used a generic title matcher while Settings remained visible; both assertions now target Panel specifically. Full GTK and dashboard smokes pass locally on live X11/private D-Bus; exact-head rerun and merge are pending (E098–E100). |
 | Latest gate result | **BG passed** — PR #54 merged and verified on live main. Headless Rust-only integration, Rust-opt-in GTK fixture smoke and residual-Python inventory are recorded in E085/E086. |
-| Next domain slice | Close U02c and verify the focused PR, then start U03 from the accepted panel contract in AUDIT E094. Keep Python as default until UG passes; do not start cutover work before UG. |
-| Open external blockers | No external blocker. Pre-existing JSONL samples cannot identify whether a stored zero came from unknown usage; this irrecoverable legacy ambiguity is documented and does not affect new writes. Local GTK runtime libraries are installed, but system GTK4/libadwaita development packages and pkg-config files are absent; local build 59 uses the ignored worktree-local SDK extraction. CI installs `libgtk-4-dev` and `libadwaita-1-dev` explicitly. B11's zero-job Actions startup failures remain documented, not CI successes. |
-| Latest checks | U02a PR #58 exact head `c2a3078d7ec304ef94323749d68d21d59d9cc21b` passed `test` and `tray-dbus` in run `41172651348` (E091). U02b PR #59 exact head `89ae294b6e1238ae404cb7b685388c69b2f32fe2` passed `test` and `tray-dbus` in run `41174965540`; normal merge `81b7b8f5bb3bc816efd34324466c1a257a582778` is live main (E093). PR #60 head `b95b311ff1587df9d53546889de95af9f8d4db3f` failed `test` in run `41314251378`; `tray-dbus` passed. Follow-up timezone fix is prepared and requires new exact-head checks (E096). Do not merge until the exact current head has both required checks successful. |
-| UI validation | U02b native synthetic [Xvfb screenshot](screenshots/u02-history-native-xvfb.png) shows quota trend, burndown, model bars and credit bars after completed fixture refresh. The smoke uses temporary HOME/private D-Bus and synthetic CLI data; no real account or credentials. U02a native dashboard [Wayland capture](screenshots/u02-dashboard-wayland.png); U01 synthetic native bootstrap [Wayland capture](screenshots/u01-native-bootstrap-wayland.png); B13c pair [Python](screenshots/b13-last30-python-wayland.png) / [Rust opt-in](screenshots/b13-last30-rust-wayland.png); BG pair [Python reference](screenshots/bg-python-reference-wayland.png) / [Rust opt-in](screenshots/bg-rust-opt-in-wayland.png). A U02b Spectacle attempt captured a stale loading frame and is not used as verification; U02b runtime/drawing evidence is from the completed Xvfb GTK window. |
+| Next domain slice | Verify PR #61's exact-head checks, including its Xvfb/xdotool smoke, and merge normally only when all required checks pass. Then continue to U04 Usage & Spend/Sessions and U05 Settings/About as separate slices after the serialized build handoff. Keep Python as default until UG passes; do not start cutover work before UG. |
+| Open external blockers | No external blocker at claim. U02's legacy JSONL rows cannot identify whether some stored zeros came from unknown usage; new Python/Rust writes preserve knownness. GTK development metadata may require the ignored local SDK extraction; CI installs GTK4/libadwaita development packages. B11's zero-job Actions startup failures remain documented, not CI successes. |
+| Latest checks | U02a PR #58 exact head `c2a3078d7ec304ef94323749d68d21d59d9cc21b` passed `test` and `tray-dbus` in run `41172651348` (E091). U02b PR #59 exact head `89ae294b6e1238ae404cb7b685388c69b2f32fe2` passed both in run `41174965540` and merged at `81b7b8f` (E093). U02c PR #60 exact head `b2fc92c0ee81a2d8b65cc36b3870065600c5f2d0` passed `test` and `tray-dbus` in run `41314701763`, then merged normally at `317078aa46bfaf31a7bb1464bd52100950b8a549`, now live `origin/main` (E097). U03 PR #61 head `19304c8ee36735dea904aa9dffc8a3112ba8f35b` failed the Gio smoke assertion in run `41322829201`; head `936fc1b18697139f0d6601e7fee7577169b7fc04` failed the same assertion in delayed-refresh coverage in run `41323345908` because a second generic panel matcher remained. Both panel assertions are now specific; see E099–E100. Exact-head rerun is pending. |
+| UI validation | U02's inspected synthetic Wayland capture [`u02-dashboard-wayland.png`](screenshots/u02-dashboard-wayland.png) and Xvfb capture [`u02-history-native-xvfb.png`](screenshots/u02-history-native-xvfb.png) remain current. U03's six-provider Wayland capture [`u03-panel-wayland.png`](screenshots/u03-panel-wayland.png) was visually inspected; a live X11 fixture confirmed selected work-area placement and central actions. The full U03 GTK and dashboard smokes also passed on live X11/private D-Bus using temporary extracted xdotool. Xvfb/xvfb-run remain unavailable locally, and Xwayland blocks a valid local X11 screenshot; CI must confirm its Xvfb run. Evidence and limits are in E098–E100. |
 
 **First commands for a new model/session:**
 
@@ -212,8 +212,9 @@ the Resume here table. BG passed after PR #54; Phase U may now be coordinated.
 - [x] **U01** Native application/bootstrap crate, direct backend connection,
   GTK main-context dispatch, single-instance/command-line behavior and version
   metadata. Preserve `--panel`, `--settings`, `--about`, and `--page` behavior.
-  Merged in PR #56 at `3eea06f`; see E089. Native surfaces remain placeholders.
-- [ ] **U02** Dashboard, provider cards, quota meters, reset/pace/credit chips,
+  Merged in PR #56 at `3eea06f`; see E089. U02 replaces the dashboard
+  placeholder; U03 adds the compact panel. U04/U05 routes remain placeholders.
+- [x] **U02** Dashboard, provider cards, quota meters, reset/pace/credit chips,
   charts/history and burndown presentation (`window.py`, `cards.py`).
   - [x] **U02a** Native dashboard overview and provider cards/meters/chips,
     with loading, empty, error and refresh states. Build 57 on
@@ -221,7 +222,7 @@ the Resume here table. BG passed after PR #54; Phase U may now be coordinated.
     `549908e`; exact head `c2a3078` passed both required checks and synthetic
     Wayland/GTK evidence is recorded in E090/E091.
     Projection consumes B10 snapshot fields and preferences; GTK only renders.
-  - [ ] **U02b** History sparklines/detail charts, history-derived burndown,
+  - [x] **U02b** History sparklines/detail charts, history-derived burndown,
     quota warning/workday marks and daily target labels. Active build 58 on
     `frontend/u02b-history-build58`; verified and merged in PR #59 at
     `81b7b8f`; exact head `89ae294` passed both required checks. Projections use
@@ -232,17 +233,33 @@ the Resume here table. BG passed after PR #54; Phase U may now be coordinated.
     readable, but their original format lacks knownness, so prior unknown-zero
     records remain ambiguous and cannot be repaired without discarding history.
     See E093/E094.
-  - [ ] **U02c** Python default history writer parity and final U02 acceptance,
-    `frontend/u02-final-acceptance-build59`; skip unknown, placeholder and
-    non-finite observations while retaining known zero. Verify shared behavior
-    and exact-head CI; U02 stays partial until this focused PR merges.
+  - [x] **U02c** Python default history writer parity and final U02 acceptance,
+    `frontend/u02-final-acceptance-build59`, build 59; merged normally in PR #60
+    at `317078a`. Exact head `b2fc92c` passed `test` and `tray-dbus` in run
+    `41314701763`. Both Python and Rust writers skip unknown, placeholder and
+    non-finite observations while retaining known zero. The legacy JSONL
+    knownness ambiguity remains documented in E093/E097. Fresh Xvfb smoke was
+    unavailable (`xvfb-run`, `Xvfb`, `xdotool` missing); #60 changed no GTK
+    rendering and prior synthetic #58/#59 captures were visually inspected.
 - [ ] **U03** Compact panel, dismissal, anchoring and Wayland/X11 placement
   (`popup.py`, `x11_position.py`); preserve dashboard/settings navigation.
-  Use a separate `PanelView` over the shared `DashboardModel`, refresh it on
-  backend sequence changes, and keep anchor metadata optional until U06 SNI
-  activation exists. Wayland must use compositor placement unless a supported
-  anchor token is available; X11 can use the actual GDK surface and selected
-  monitor work area. See the U03 handoff in E094.
+  Active build 60 on `orchestrated/luna-u03-panel`, based on live main at
+  `317078aa`. Implementation is locally verified. PR #61's first two
+  exact-head test runs failed because generic visible-window title matchers
+  selected the still-open Settings window after opening Panel; both assertions
+  now select the Panel title. Exact-head rerun and merge are pending
+  (E098–E100). Both full smoke scripts pass locally on live X11/private D-Bus;
+  exact-head Xvfb rerun is pending. Use a separate `PanelView` over shared
+  `DashboardModel`, refresh it on backend
+  sequence changes, hide it before Dashboard/Settings/About actions, and
+  support Escape/close/toggle dismissal
+  without assuming focus-loss. Wayland uses compositor placement;
+  `PanelAnchor` remains optional until U06 SNI. X11 uses the actual GDK/X11
+  surface and selected monitor work area, with an EWMH work-area fallback if
+  GDK reports no monitor geometry. See E093, E097 and E098.
+  Preserve central `app.settings`/`--settings`, `app.about`/`--about`, and page
+  navigation routes so U04/U05 can replace their placeholders independently.
+  See the U03 handoff in E093 and active claim E097.
 - [ ] **U04** Usage & Spend and Sessions pages, heatmap interaction/tooltips,
   filters and empty/error/loading/partial states (`spend.py`, `sessions.py`).
 - [ ] **U05** Every preferences pane, provider/source/API-key controls,

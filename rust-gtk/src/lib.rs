@@ -4,6 +4,8 @@ use std::{collections::VecDeque, ffi::OsString};
 
 pub mod dashboard;
 pub mod dashboard_widget;
+pub mod panel_widget;
+pub mod x11_placement;
 
 pub const APPLICATION_ID: &str = "com.steipete.CodexBarGTK";
 const VERSION_FILE: &str = include_str!("../../VERSION");
@@ -16,7 +18,7 @@ pub enum Page {
 }
 
 impl Page {
-    fn parse(value: &str) -> Self {
+    pub fn parse(value: &str) -> Self {
         match value {
             "sessions" => Self::Sessions,
             "spend" => Self::Spend,
@@ -72,6 +74,12 @@ pub fn route_from_arguments(arguments: &[OsString]) -> LaunchRoute {
         return LaunchRoute::Page(Page::parse(page));
     }
     LaunchRoute::Default
+}
+
+/// Convert a string target passed to the `app.page` action into a native route.
+/// Unknown targets retain the established Usage fallback for U04 navigation.
+pub fn route_from_page_action(target: &str) -> LaunchRoute {
+    LaunchRoute::Page(Page::parse(target))
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -226,6 +234,22 @@ mod tests {
         );
         assert_eq!(
             route_from_arguments(&args(&["app", "--page", "not-a-page"])),
+            LaunchRoute::Page(Page::Usage)
+        );
+    }
+
+    #[test]
+    fn page_action_uses_the_same_typed_routes_and_safe_fallback() {
+        assert_eq!(
+            route_from_page_action("sessions"),
+            LaunchRoute::Page(Page::Sessions)
+        );
+        assert_eq!(
+            route_from_page_action("spend"),
+            LaunchRoute::Page(Page::Spend)
+        );
+        assert_eq!(
+            route_from_page_action("unknown"),
             LaunchRoute::Page(Page::Usage)
         );
     }

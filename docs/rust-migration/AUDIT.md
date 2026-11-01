@@ -2826,3 +2826,135 @@ future models must verify the linked PR's status rather than trusting a stale
 - **Correction:** the original fixture update used `ZoneInfo` only on its datetimes; it still did not control the process-local zone used by `daily_target()`. The test class now sets `TZ=America/New_York` and calls `time.tzset()` for its duration, then restores the prior environment value. This tests the intended local-calendar/DST behavior on CI and this New York workstation without altering product policy.
 - **Local recheck:** under `TZ=UTC`, both `TZ=UTC python3 -m unittest discover -s tests -v` (214 tests, 21 expected opt-in skips) and `TZ=UTC CODEXBAR_RUST_CORE=1 python3 -m unittest discover -s tests -v` (214 tests, no skips) passed after the correction. The new commit's exact-head GitHub checks are pending. No merge is claimed.
 - **Next action:** commit/push the fixture correction and this audit update to PR #60. Wait for both required checks on its latest exact head; merge normally only if both succeed.
+
+### E097 — 2026-11-01: U02 acceptance merged; U03 build-60 claim
+
+- **Observed U02 acceptance merge:** PR #60 exact head
+  `b2fc92c0ee81a2d8b65cc36b3870065600c5f2d0` passed `test` and `tray-dbus` in
+  Actions run `41314701763`; GitHub showed no reviews/comments and a clean,
+  mergeable base before the owner merged normally without bypass. The merge is
+  `317078aa46bfaf31a7bb1464bd52100950b8a549`, verified as live `origin/main`.
+  U02 is accepted. Both Python and Rust writers skip unknown, placeholder and
+  non-finite quota samples while retaining known zero. Older JSONL rows may
+  retain irrecoverable unknown-zero ambiguity because the historical format
+  has no knownness field.
+- **U02 UI verification limit:** no fresh Xvfb smoke could run because
+  `xvfb-run`, `Xvfb`, and `xdotool` are unavailable. PR #60 changed no GTK
+  rendering; existing synthetic U02 Wayland (`u02-dashboard-wayland.png`) and
+  Xvfb (`u02-history-native-xvfb.png`) captures were visually inspected. No
+  new UI result is claimed for U02c.
+- **U03 claim:** branch `orchestrated/luna-u03-panel`, build `0.82.0 (60)`,
+  fast-forwarded to verified `origin/main` `317078aa46bfaf31a7bb1464bd52100950b8a549`.
+  Scope is the native compact panel, dismissal, optional anchoring, Wayland/X11
+  placement, and navigation compatibility. Implementation has not yet been
+  verified; no tests or GTK runtime smoke are claimed at this claim entry.
+- **Accepted panel/navigation contract:** a distinct compact `PanelView`
+  consumes the shared `DashboardModel`/provider DTOs and refreshes on each
+  backend sequence while open. Escape, close and toggle dismiss it; focus-loss
+  dismissal is not assumed. Dashboard, Settings and About actions hide the
+  panel before dispatch. Preserve `app.settings`/`--settings` and
+  `app.about`/`--about`; a typed central page action supports the U04 navigation
+  handoff while U05 owns Settings/About content and its async settings bridge.
+  Keep optional `PanelAnchor` metadata ready for U06 SNI. Wayland uses
+  compositor placement without a supported anchor. X11 placement must use the
+  actual GDK/X11 surface and selected monitor work area, avoiding title search,
+  display-0 geometry and fixed offsets.
+- **Downstream coordination:** U04 owns the optional sticky session scan outcome
+  and controller changes; U03 will not modify backend session/controller
+  contracts. U05 owns Settings/About content, its GTK-facing settings actor,
+  and import/reset synchronization. U03 only preserves their central routing
+  seams. Python remains the default until UG passes.
+- **Next exact action:** implement the panel view/window and platform placement
+  seam in `rust-gtk/`, add fixture navigation/dismissal/runtime coverage, then
+  capture synthetic Wayland and X11 evidence before opening a focused PR.
+
+### E098 — 2026-11-01: U03 panel implemented and locally verified; PR pending
+
+- **Implementation:** `rust-gtk/src/panel_widget.rs` renders the shared
+  `DashboardModel` and provider DTOs with a compact card/quota-meter layout,
+  loading/empty/error states and a bounded scroller. `main.rs` owns a separate
+  panel window and rerenders it on each new backend sequence plus the existing
+  five-second countdown tick. Escape, close-request and `app.panel` toggle hide
+  the panel; a second toggle also cancels a panel request waiting for the first
+  refresh. Dashboard, Settings, About and page navigation hide the panel before
+  dispatch. Registered central actions are `app.dashboard`, `app.panel`
+  and `app.page` with a string target; `app.settings`, `app.about`, `--settings`
+  and `--about` remain unchanged. `app.page` routes `usage`, `sessions` and
+  `spend` through the existing typed page route, with the existing Usage fallback
+  for unknown values. No U04 session/activity or U05 settings behavior changed.
+- **Placement:** Wayland uses compositor placement; the optional `PanelAnchor`
+  type remains available for U06 SNI metadata and no unsupported global
+  positioning request is made. X11 resolves the actual GDK/X11 surface and
+  places it at the selected monitor/work-area corner after mapping. Monitor
+  work area is the intersection of GDK monitor geometry and the current EWMH
+  work area. This active Xwayland desktop reports zero-sized GDK monitor
+  geometry, so the placement code falls back to the valid EWMH work area. A
+  live X11 fixture placed the 489×420 surface at `1419,648` in the 1920×1080
+  work area (12-pixel margin). Pure placement tests cover intersection and
+  fallback to the monitor rectangle.
+- **Rust verification:** formatting passed for core, PyO3, backend and GTK.
+  `cargo test` passed for core (78), backend (72 unit + 1 integration), and
+  native GTK (21). `scripts/build-rust-core.sh`, native GTK binary build, and
+  strict Clippy for all four crates passed. The first full backend test run
+  had one failure in
+  `cli::tests::output_pipe_drain_is_bounded_when_a_descendant_outlives_leader`:
+  its `assert_eq!(error.kind, CliErrorKind::Timeout)` received `Spawn`. In
+  `run_operation`, `Spawn` is returned only when `Command::spawn()` fails with
+  an I/O error other than `NotFound`; this occurs before the timeout timer,
+  output readers, and output-drain branch are created. The test holds the
+  module's `PROCESS_TEST_LOCK`, which serializes the CLI subprocess fixtures.
+  `CliError` intentionally omits the underlying `std::io::Error`, so the
+  original OS errno and its trigger were not retained and cannot now be
+  recovered. The evidence therefore identifies the exact failed boundary but
+  does not establish an OS-level cause or a synchronization race. The targeted
+  test passed, the full backend suite passed, and ten consecutive full
+  `cargo test --manifest-path rust-backend/Cargo.toml --locked` runs using
+  Cargo's normal parallel test scheduling each passed 72 unit tests plus the
+  end-to-end integration test. No backend code was changed; record the initial
+  failure as an unreproduced process-creation error, not as a proven race or a
+  fixed backend defect.
+- **Python verification:** default `python3 -m unittest discover -s tests -v`
+  passed 214 tests with 21 expected opt-in skips; Rust-opt-in passed all 214;
+  the tray D-Bus suite passed 3/3.
+- **Native runtime/UI evidence:**
+  `scripts/capture-native-panel-wayland.sh` ran with a temporary HOME and
+  synthetic CLI output. The actual GTK Wayland window and
+  [six-provider panel capture](screenshots/u03-panel-wayland.png) were visually
+  inspected: known 72%, known zero, unknown as Unavailable, and a provider list
+  extending below the visible scroller. A live X11 GTK fixture verified actual
+  surface placement against `_NET_WORKAREA` and invoked dashboard, panel,
+  `app.page 'sessions'`, Settings, About and Quit actions successfully. A
+  delayed live X11 fixture also confirmed that toggling a pending panel request
+  cancels it, then a new toggle opens the panel after refresh at the expected
+  work-area corner.
+- **Local smoke limit:** this host lacks `xvfb-run`, `Xvfb` and `xdotool`, so
+  `scripts/smoke-native-gtk.sh` and `scripts/smoke-native-dashboard.sh` could
+  not run locally. The former now checks X11 bottom-right placement, Escape and
+  central navigation; `.github/workflows/rust-core.yml` installs Xvfb, xdotool
+  and `x11-utils` before running it. Exact-head CI must confirm that job and
+  its smoke step succeeded before a normal merge. The live desktop is Wayland
+  with Xwayland; Spectacle's active-window capture of the X11 surface returned a
+  black frame, and direct XGetImage via `xwd` returned X11 `BadMatch`. Therefore
+  only the Wayland capture is retained as an image; X11 has live geometry and
+  action evidence, but no valid local screenshot. No real account or credential
+  data was used.
+- **Handoff:** local verification is complete on build 60 and the focused PR is
+  pending. Python remains the default until UG. After opening the PR, verify the
+  exact head and required `test`/`tray-dbus` checks, inspect the Xvfb smoke step,
+  merge normally only after all required checks pass, then verify live main and
+  hand off the stable navigation seam to U04/U05.
+
+### E099 — 2026-11-01: U03 first CI smoke failure and matcher correction
+
+- **Observed exact-head failure:** PR #61 head `19304c8ee36735dea904aa9dffc8a3112ba8f35b`, Actions run `41322829201`, failed the `test` job in `Exercise Gio routing and async in-flight shutdown` at the assertion after the smoke opens the panel. The exact message was `expected window title containing 'Panel', got 'CodexBar GTK — Settings — Native UI bootstrap'`; the synthetic dashboard smoke was consequently skipped. The failure was not in compilation, Rust tests, Python tests, or the earlier smoke actions.
+- **Cause:** `window_title` returns the first visible X11 window matching its supplied regex. The smoke opens Settings and then About before opening the compact panel; Settings remains a separate visible main window while About and Panel are presented. The assertion used the broad `^CodexBar GTK` matcher, so it could select Settings even when Panel was visible. Later smoke assertions already used a panel-specific regex. No incorrect Settings/panel route behavior is evidenced by this failure.
+- **Correction and local evidence:** the first panel assertion now matches `CodexBar GTK.*Panel`, making it verify the intended panel window directly while preserving the routing sequence and Settings/About behavior. Replayed the same route sequence in a live X11 fixture using xprop/xwininfo: Settings, About, and Panel were all visible separate windows; the first generic `^CodexBar GTK` match was Settings, while the panel-specific match selected `CodexBar GTK — Panel`. `bash -n scripts/smoke-native-gtk.sh` and `git diff --check` passed. Local Xvfb/xdotool remains unavailable, so the next exact-head Actions run must validate the actual smoke step. No CI rerun or merge success is claimed yet.
+- **Next action:** push the focused matcher/docs correction, verify exact-head `test` and `tray-dbus`, confirm `Exercise Gio routing and async in-flight shutdown` succeeds and the following synthetic dashboard smoke runs, then merge normally and verify live main before U04 handoff.
+
+### E100 — 2026-11-01: U03 delayed-refresh smoke matcher also narrowed
+
+- **Observed exact-head failure:** PR #61 head `936fc1b18697139f0d6601e7fee7577169b7fc04`, Actions run `41323345908`, failed the same smoke step with `expected window title containing 'Panel', got 'CodexBar GTK — Settings — Native UI bootstrap'`. The earlier initial-route panel assertion had been corrected, but the delayed-refresh block had a second `assert_title_contains '^CodexBar GTK' "Panel"` after opening Panel; the dashboard smoke was skipped again.
+- **Cause and correction:** this was the same visible-window selection issue in the second launch path, not a pending-refresh or panel-routing failure. Changed the delayed-refresh assertion to the panel-specific `CodexBar GTK.*Panel` match. All panel-title assertions in the smoke now target the panel window explicitly.
+- **Matcher audit:** all five positive Panel assertions plus the panel placement, pre-refresh, dismissal and hidden-after-navigation selectors use the panel-specific title. The broad main-window `^CodexBar GTK` checks occur only while Panel should be hidden; the About check has its own `^About CodexBar GTK` prefix. The separate dashboard smoke starts a fresh application and validates that its sole matched application window is Dashboard before later checking the same window changes to Settings. Thus the more specific Panel check still fails if Panel is absent and does not allow another route to satisfy it.
+- **Local evidence:** replayed the delayed refresh/toggle sequence with a synthetic CLI on live X11. After Settings remained open and Panel was opened, both windows were viewable; the generic match selected Settings and the specific match selected `CodexBar GTK — Panel`. The pending-toggle cancellation also passed. Then ran the full `scripts/smoke-native-gtk.sh` and `scripts/smoke-native-dashboard.sh` on live X11 under private `dbus-run-session`; both passed. `xdotool` and `libxdo3` were downloaded and extracted into a temporary directory because system installation requires a sudo password. `bash -n scripts/smoke-native-gtk.sh` and `git diff --check` passed. `Xvfb`/`xvfb-run` remain unavailable locally, so exact CI must still verify the Xvfb run.
+- **Next action:** push this correction and audit update, then inspect the next exact-head `test` and `tray-dbus` results. Confirm the Xvfb/xdotool smoke and following synthetic dashboard smoke both run and pass before normal merge.

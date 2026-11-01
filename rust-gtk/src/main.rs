@@ -20,6 +20,7 @@ use codexbar_core::{
 };
 use codexbar_gtk_native::dashboard::project_dashboard;
 use codexbar_gtk_native::dashboard_widget::DashboardView;
+use codexbar_gtk_native::panel_widget::PanelView;
 use gio::prelude::*;
 use gtk::prelude::*;
 use libadwaita as adw;
@@ -169,6 +170,10 @@ struct NativeApp {
     dashboard: Option<DashboardView>,
     dashboard_sequence: Option<u64>,
     dashboard_rendered_at: Option<Instant>,
+    panel_window: Option<gtk::ApplicationWindow>,
+    panel: Option<PanelView>,
+    panel_sequence: Option<u64>,
+    panel_rendered_at: Option<Instant>,
     state_label: Option<gtk::Label>,
     events_label: Option<gtk::Label>,
     route: LaunchRoute,
@@ -191,6 +196,10 @@ impl NativeApp {
             dashboard: None,
             dashboard_sequence: None,
             dashboard_rendered_at: None,
+            panel_window: None,
+            panel: None,
+            panel_sequence: None,
+            panel_rendered_at: None,
             state_label: None,
             events_label: None,
             route: LaunchRoute::Default,
@@ -222,6 +231,9 @@ impl NativeApp {
         if self.shutting_down {
             return;
         }
+        if route != LaunchRoute::Panel {
+            self.hide_panel();
+        }
         self.route = route;
         self.pending_panel = route == LaunchRoute::Panel;
         if route == LaunchRoute::About {
@@ -230,6 +242,7 @@ impl NativeApp {
         }
         if self.pending_panel {
             if self.backend_has_completed_initial_refresh() {
+                self.pending_panel = false;
                 self.show_route(route);
             }
             return;
@@ -242,14 +255,13 @@ impl NativeApp {
             self.show_dashboard(route);
             return;
         }
+        if route == LaunchRoute::Panel {
+            self.show_panel();
+            return;
+        }
         let window = self.ensure_main_window();
         let (title, body, width, height) = match route {
-            LaunchRoute::Panel => (
-                format!("{APP_NAME} — Panel — Native UI bootstrap"),
-                "The native compact panel is a placeholder. Full panel behavior is scheduled for U03.",
-                420,
-                220,
-            ),
+            LaunchRoute::Panel => unreachable!("panel route has a separate native window"),
             LaunchRoute::Settings => (
                 format!("{APP_NAME} — Settings — Native UI bootstrap"),
                 "Settings controls are placeholders. The native settings panes are scheduled for U05.",
@@ -335,6 +347,7 @@ impl NativeApp {
     }
 
     fn show_dashboard(&mut self, route: LaunchRoute) {
+        self.hide_panel();
         let window = self.ensure_main_window();
         let title = match route {
             LaunchRoute::Page(Page::Usage) => format!("{APP_NAME} — Usage"),
@@ -377,6 +390,104 @@ impl NativeApp {
         }
         self.dashboard_sequence = Some(state.sequence);
         self.dashboard_rendered_at = Some(Instant::now());
+    }
+
+    fn ensure_panel_window(&mut self) -> gtk::ApplicationWindow {
+        if let Some(window) = &self.panel_window {
+            return window.clone();
+        }
+        let window = gtk::ApplicationWindow::builder()
+            .application(&self.application)
+            .title(format!("{APP_NAME} — Panel"))
+            .default_width(420)
+            .default_height(420)
+            .decorated(false)
+            .resizable(false)
+            .build();
+        let panel = PanelView::new();
+        window.set_child(Some(&panel.widget()));
+
+        let close_window = window.clone();
+        let keys = gtk::EventControllerKey::new();
+        keys.connect_key_pressed(move |_, key, _, _| {
+            if key == gtk::gdk::Key::Escape {
+                close_window.hide();
+                glib::Propagation::Stop
+            } else {
+                glib::Propagation::Proceed
+            }
+        });
+        window.add_controller(keys);
+        window.connect_close_request(|window| {
+            window.hide();
+            glib::Propagation::Stop
+        });
+
+        let placement_window = window.clone();
+        window.connect_map(move |_| {
+            let placement_window = placement_window.clone();
+            glib::timeout_add_local_once(Duration::from_millis(150), move || {
+                let _ = codexbar_gtk_native::x11_placement::place_panel(&placement_window, None);
+            });
+        });
+        self.panel = Some(panel);
+        self.panel_window = Some(window.clone());
+        window
+    }
+
+    fn show_panel(&mut self) {
+        let window = self.ensure_panel_window();
+        if self.backend_start_failed {
+            if let Some(panel) = &self.panel {
+                panel.show_backend_start_error();
+            }
+        } else if let Some(bridge) = &self.bridge {
+            let state = bridge.state.borrow().clone();
+            self.render_panel_state(&state);
+        }
+        window.present();
+    }
+
+    fn hide_panel(&self) {
+        if let Some(window) = &self.panel_window {
+            window.hide();
+        }
+    }
+
+    fn toggle_panel(&mut self) {
+        if self.pending_panel {
+            self.pending_panel = false;
+            return;
+        }
+        if self
+            .panel_window
+            .as_ref()
+            .is_some_and(|window| window.is_visible())
+        {
+            self.hide_panel();
+            self.pending_panel = false;
+            return;
+        }
+        if self.backend_has_completed_initial_refresh() || self.backend_start_failed {
+            self.pending_panel = false;
+            self.show_route(LaunchRoute::Panel);
+        } else {
+            self.pending_panel = true;
+        }
+    }
+
+    fn render_panel_state(&mut self, state: &BackendState<ControllerSnapshot>) {
+        let Some(bridge) = &self.bridge else {
+            return;
+        };
+        let preferences = bridge.preferences.values();
+        let currencies: CurrencyCatalog = bridge.currencies.catalog();
+        let model = project_dashboard(state, &preferences, &currencies, chrono::Utc::now());
+        if let Some(panel) = &self.panel {
+            panel.render(&model);
+        }
+        self.panel_sequence = Some(state.sequence);
+        self.panel_rendered_at = Some(Instant::now());
     }
 
     fn install_window_actions(
@@ -490,6 +601,18 @@ impl NativeApp {
             if should_render {
                 self.render_dashboard_state(&state);
             }
+            let panel_visible = self
+                .panel_window
+                .as_ref()
+                .is_some_and(|window| window.is_visible());
+            let should_render_panel = panel_visible
+                && (self.panel_sequence != Some(state.sequence)
+                    || self
+                        .panel_rendered_at
+                        .is_none_or(|last| last.elapsed() >= Duration::from_secs(5)));
+            if should_render_panel {
+                self.render_panel_state(&state);
+            }
             if self.pending_panel && state.status != BackendStatus::Idle {
                 let refresh_complete = matches!(
                     state.status,
@@ -510,6 +633,9 @@ impl NativeApp {
         if self.backend_start_failed {
             if let Some(dashboard) = &self.dashboard {
                 dashboard.show_backend_start_error();
+            }
+            if let Some(panel) = &self.panel {
+                panel.show_backend_start_error();
             }
         }
 
@@ -539,12 +665,24 @@ impl NativeApp {
         }
     }
 
-    fn request_about(&self) {
-        self.show_about();
+    fn request_about(&mut self) {
+        self.dispatch_route(LaunchRoute::About);
     }
 
     fn request_settings(&mut self) {
         self.dispatch_route(LaunchRoute::Settings);
+    }
+
+    fn request_dashboard(&mut self) {
+        self.dispatch_route(LaunchRoute::Default);
+    }
+
+    fn request_panel_toggle(&mut self) {
+        self.toggle_panel();
+    }
+
+    fn request_page(&mut self, name: &str) {
+        self.dispatch_route(codexbar_gtk_native::route_from_page_action(name));
     }
 
     fn begin_shutdown(&mut self) {
@@ -648,6 +786,29 @@ fn main() {
         refresh_state.borrow_mut().request_refresh();
     });
     application.add_action(&refresh);
+
+    let dashboard = gio::SimpleAction::new("dashboard", None);
+    let dashboard_state = state.clone();
+    dashboard.connect_activate(move |_, _| {
+        dashboard_state.borrow_mut().request_dashboard();
+    });
+    application.add_action(&dashboard);
+
+    let panel = gio::SimpleAction::new("panel", None);
+    let panel_state = state.clone();
+    panel.connect_activate(move |_, _| {
+        panel_state.borrow_mut().request_panel_toggle();
+    });
+    application.add_action(&panel);
+
+    let page = gio::SimpleAction::new("page", Some(glib::VariantTy::STRING));
+    let page_state = state.clone();
+    page.connect_activate(move |_, parameter| {
+        if let Some(name) = parameter.and_then(|parameter| parameter.str()) {
+            page_state.borrow_mut().request_page(name);
+        }
+    });
+    application.add_action(&page);
 
     let settings = gio::SimpleAction::new("settings", None);
     let settings_state = state.clone();

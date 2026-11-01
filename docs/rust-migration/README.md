@@ -25,10 +25,13 @@ and residual-Python audit are recorded in AUDIT E085/E086. Phase U is now
 unblocked. U01's separate native GTK bootstrap merged in PR #56 at `3eea06f`;
 its placeholder routes are not screen parity, and the Python launcher remains
 the default until UG passes. U02a native dashboard/provider-card work merged
-in PR #58 at `549908e`, and U02b history plots/burndown merged in PR #59 at
-`81b7b8f`. U02's final acceptance is closing one shared-history writer parity
-gap on build 59; Python and Rust now both need to skip unknown/placeholder
-samples. Pre-existing JSONL rows do not contain knownness and remain ambiguous.
+in PR #58 at `549908e`, U02b history plots/burndown merged in PR #59 at
+`81b7b8f`, and final U02 acceptance merged in PR #60 at `317078a`. Python and
+Rust history writers now both skip unknown/placeholder/non-finite samples while
+retaining known zero. Pre-existing JSONL rows do not contain knownness and
+remain ambiguous. U03's compact native panel implementation is active on build
+60; its panel and routing evidence is recorded in AUDIT E098 while exact-head
+CI and merge are pending. Python remains the default until UG passes.
 Some Python edge-input behavior remains available only through the default
 Python path as described below.
 
@@ -66,9 +69,10 @@ Python GTK widgets                        Rust GTK4/libadwaita widgets
   It consumes `rust-backend` directly, starts one controller on a dedicated
   Tokio worker, polls immutable watch state and drains lossless events on the
   GLib context. It has no PyO3/Python bridge; the Rust `codexbar` CLI service
-  remains its only subprocess integration. Its current routes are explicitly
-  placeholders for U02–U05, not completed screens. The existing Python
-  launcher remains the default until UG passes.
+  remains its only subprocess integration. U02 provides the native dashboard
+  and U03 adds a compact panel; Sessions, Spend and Settings remain placeholders
+  until their assigned UI slices. The existing Python launcher remains the
+  default until UG passes.
 - The backend publishes immutable snapshots/state; the frontend marshals them
   to its GUI thread. `watch` deliberately coalesces intermediate updates; if a
   future user-visible operation needs a lossless event stream, define a bounded
@@ -263,8 +267,9 @@ no workspace commands are assumed.
   Actions startup failure and the separately verified local evidence.
 - **UG — native UI complete:** all U tasks accepted against the same backend;
   functional/visual parity and Wayland/X11/D-Bus behavior verified. Preserve the
-  old app until this gate is passed. BG and U01 have passed; U02–U08 remain, so
-  UG is not yet passed and the Python app remains the default.
+  old app until this gate is passed. BG, U01 and U02 have passed; U03 is active
+  and U04–U08 remain, so UG is not yet passed and the Python app remains the
+  default.
 - **CG — cutover complete:** native release/install works without Python,
   PyGObject or `_rust_core.so`; preferences/history survive the switch; native
   CI and packaging are proven. Remove bridge, fallback implementations, Python

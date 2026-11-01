@@ -32,6 +32,27 @@ Tracks upstream CodexBar 0.82.0.
   states are untested, with no mutation action required. See
   `docs/rust-migration/UG_GATE.md`. Python remains the default.
 
+## 0.82.0 (65) — 2026-11-01
+
+Tracks upstream CodexBar 0.82.0.
+
+### Changed
+
+- Embed the existing licensed provider artwork catalog into the native app and
+  show brand or accent-tinted provider marks with an initial-letter fallback.
+- Render native meter and `iconPercent` tray pixmaps from the existing
+  `TraySummary`, with Cairo-generated ARGB pixels at caller-requested sizes.
+- Add responsive dashboard summary tiles, shared theme CSS, decorative
+  accessible provider artwork, and keyboard navigation shortcuts.
+
+### Validation
+
+- U07 PR #65 merged at `e373e019f7701f5f3a5e204153b7163763abac90`; exact head
+  `70bba1c52562c7670916a51a28fb9f37a29cd3ec` passed `test` and `tray-dbus` in
+  run `41340840860` (E114). U08 local Rust/Python checks, X11/Xvfb and actual
+  Wayland synthetic captures, and renderer/accessibility smokes are in E115/E116;
+  this PR's exact-head CI and merge remain pending.
+
 ## 0.82.0 (64) — 2026-11-01
 
 Tracks upstream CodexBar 0.82.0.

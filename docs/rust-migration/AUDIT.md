@@ -3256,3 +3256,110 @@ future models must verify the linked PR's status rather than trusting a stale
   do not merge until the replacement `test` and `tray-dbus` checks pass and the
   normal review/mergeability checks are clear. U06 should use the replacement
   U05 head as its base once PR #63 merges.
+### E108 — 2026-11-01: U05 PR #63 verified merged; U06 build 63 released
+
+- **Observed merge and exact-head checks:** PR #63, [Add native Settings panes
+  and serialized preferences actor](https://github.com/SaahiilM/codexbar-gtk/pull/63),
+  merged normally into `main` at
+  `0c298afc0c4cd24bd8fd13b6979b06758dca1f21` at 2026-11-01 17:59:27 UTC;
+  fetched `origin/main` matches. Final head
+  `562a8a7a3afff939f34d7359c360bde4196e7932` passed required `test` and
+  `tray-dbus` checks in run `41333765485`. No review decision was present.
+- **Handoff:** U05 completed native Settings and retained central Gio actions.
+  U06 was released as the next serialized task on build `0.82.0 (63)`, branch
+  `orchestrated/luna-u06-tray`, based on the live merge above. Python remains
+  the launcher default until UG.
+
+### E109 — 2026-11-01: U06 native tray implementation claimed
+
+- **Scope/base:** U06 owns native `org.kde.StatusNotifierItem` and
+  `com.canonical.dbusmenu`, stable bus/object identity, typed property and
+  signal contracts, icon/pixmap and tooltip projection, watcher re-registration,
+  activation/action routing, explicit D-Bus release, and private-bus regression
+  coverage. Implementation branch is `orchestrated/luna-u06-tray`, build
+  `0.82.0 (63)`, based on verified U05 merge
+  `0c298afc0c4cd24bd8fd13b6979b06758dca1f21`.
+- **Action/navigation contract:** preserve Python actions for usage panel,
+  refresh, dashboard, update, restart, Settings and Quit. Bind existing Gio
+  actions for refresh/dashboard/settings/quit, adding only missing native
+  actions. U05 remains the owner of Settings and serialized preferences.
+- **Activation placement contract:** `PanelAnchor { monitor, rect }` is an
+  optional typed activation input. Use activation coordinates only on X11 when
+  their space and monitor can be validated. Wayland remains compositor-placed
+  when no supported anchor exists. Panel position must not be inferred from
+  SNI coordinates on Wayland.
+- **Lifecycle/U07 boundary:** U06 owns watcher owner-change recovery and tray
+  unregister/name/object cleanup. U07's shutdown acceptance should verify there
+  are no remaining tray registrations after shutdown; U06 private-bus tests
+  cover release on the D-Bus service side.
+- **Verification state at claim:** no U06 implementation, test, screenshot,
+  CI or merge result is claimed by this entry. Next action is to implement the
+  protocol module and native GTK integration, add private-bus and synthetic
+  Xvfb coverage, then record exact checks and screenshot paths before PR review.
+
+### E110 — 2026-11-01: U06 tray implementation and local verification
+
+- **Owner/base/build:** `orchestrated/luna-u06-tray`, build `0.82.0 (63)`,
+  based on verified U05 PR #63 merge
+  `0c298afc0c4cd24bd8fd13b6979b06758dca1f21`. U06 remains unmerged; exact-head
+  Actions, review and ordinary merge are pending.
+- **Implementation:** added a native GIO export for
+  `org.kde.StatusNotifierItem` at the stable service name and `/StatusNotifierItem`
+  path, plus `com.canonical.dbusmenu` at `/MenuBar`. The item exposes typed
+  properties, ARGB pixmap/tooltip updates and change signals. Native GTK reads
+  the existing `tray_summary` projection and PreferencesStore snapshot for
+  selection, tooltip and provider switcher rows; changing rows emits
+  `LayoutUpdated`, and each row remains a central Dashboard action with an
+  accessible label. The menu also exposes central panel, refresh, update,
+  restart, Settings, About and Quit actions. Check-update and restart work stays
+  on the existing backend worker. Watcher owner changes cause re-registration;
+  failed stable-name registration falls back to the object path. Idempotent
+  shutdown cancels registration, unsubscribes, unexports both objects and
+  releases the well-known name before application shutdown.
+- **Protocol compatibility:** the StatusNotifierItem `Scroll` method uses the
+  published `(i,s)` signature; Python's reference annotation is `(i,i,s)`.
+  `AboutToShowGroup` returns its two protocol arrays `(aiai)`; the Python method
+  annotation only declares one. Both native signatures are checked in the
+  private-bus tests. See the [StatusNotifierItem specification](https://specifications.freedesktop.org/status-notifier-item/latest/status-notifier-item.html)
+  and the [Plasma dbusmenu introspection XML](https://sources.debian.org/src/plasma-workspace/4%3A5.27.5-2%2Bdeb12u2/libdbusmenuqt/com.canonical.dbusmenu.xml/).
+- **Placement and navigation:** SNI activation coordinates are accepted only
+  when an X11 monitor validates them; otherwise panel placement uses the
+  existing selected-surface fallback. Wayland receives no inferred anchor.
+  Tray rows use central Gio application actions, including `app.settings` and
+  `app.page`-owned navigation; U05's Settings and preferences boundary is
+  unchanged.
+- **Private-bus coverage:** the Rust regression starts a separate watcher and
+  client connection. It exercises introspection, `GetAll`, typed icon/tooltip
+  projection, signals, dbusmenu layout/properties/events, every action route,
+  object-path registration fallback, watcher loss/reappearance and idempotent
+  stop. It asserts the stable bus name is gone and the watcher receives no new
+  registration after stop.
+- **Native runtime evidence:** `scripts/smoke-native-gtk.sh` runs the built
+  binary with a temporary home, synthetic Codex quota data, Xvfb and a private
+  D-Bus session. It verifies the exported SNI name and signatures, menu layout,
+  activation, X11 bottom-right placement, menu refresh/Settings/About/Quit,
+  central navigation and name release. The visually inspected screenshot
+  `docs/rust-migration/screenshots/u06-native-sni-dashboard-xvfb.png` shows only
+  synthetic fixture data. It depicts the GTK dashboard after routing from the
+  tray; the status item host rendering is covered at the D-Bus protocol level
+  by the private-bus test.
+- **Local checks:** formatting checks passed for all four Rust crates. The
+  private-session GTK tests passed (29), and all four Rust Clippy targets
+  (`rust-core`, `rust-python`, `rust-backend`, `rust-gtk`) passed with warnings
+  denied. Rust core tests passed (85); backend tests passed (82 unit and one
+  integration); Python tests passed in default and Rust-opt-in modes (214 each,
+  with 21 expected opt-in skips in default mode); the isolated tray signal
+  suite passed (3). The optional extension build, native GTK binary build,
+  `bash -n scripts/smoke-native-gtk.sh`, and `git diff --check` passed. All four
+  Xvfb/private-D-Bus runtime scripts passed: `smoke-native-gtk.sh`,
+  `smoke-native-dashboard.sh`, `smoke-native-usage-pages.sh`, and
+  `smoke-native-settings.sh`.
+- **Environment and limits:** local compilation used the ignored GTK SDK and
+  GUI-tool extraction from the U04 worktree because system GTK development
+  metadata and `xvfb-run` are absent. The runtime used the extracted Xvfb tools;
+  CI installs its own dependencies. No real provider/account data was used.
+  `iconPercent` raster rendering is left for U08's icon-generation task; the
+  current native tray sends the typed meter projection for both supported
+  styles. These local results do not claim remote CI or merge success. Next:
+  finish the review pass, push the focused PR, then verify exact-head
+  checks/reviews and merge normally before handing build 64 to U07.

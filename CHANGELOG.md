@@ -4,6 +4,22 @@ Client-side changelog for the CodexBar GTK front-end. Each entry keys a build
 number (`CURRENT_PROJECT_VERSION`) to the upstream macOS CodexBar release its
 short version tracks, so "which version has what" maps cleanly onto both trees.
 
+## 0.82.0 (63) — 2026-11-01
+
+Tracks upstream CodexBar 0.82.0.
+
+### Changed
+
+- Implement the native StatusNotifierItem and dbusmenu tray, including icon
+  pixmap/tooltip updates, projected provider switcher rows, watcher recovery,
+  central native actions, and explicit bus teardown.
+
+### Validation
+
+- U06 implementation and native GTK synthetic runtime evidence are recorded in
+  migration audit E110. Exact-head CI and merge status will be recorded after
+  observing them.
+
 ## 0.82.0 (62) — 2026-11-01
 
 Tracks upstream CodexBar 0.82.0.

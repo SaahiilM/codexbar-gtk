@@ -18,6 +18,44 @@ pub struct Rect {
     pub height: i32,
 }
 
+/// Preserve an SNI activation hint only when GTK is using X11 and the screen
+/// point maps to a real monitor in that same coordinate space. Wayland
+/// activation coordinates are intentionally left to the compositor.
+pub fn activation_anchor(x: i32, y: i32) -> Option<PanelAnchor> {
+    let display = gtk::gdk::Display::default()?;
+    if !display.type_().name().starts_with("GdkX11Display") {
+        return None;
+    }
+    for index in 0..display.monitors().n_items() {
+        let Some(monitor) = display
+            .monitors()
+            .item(index)
+            .and_downcast::<gtk::gdk::Monitor>()
+        else {
+            continue;
+        };
+        let geometry = monitor.geometry();
+        if point_inside(
+            geometry.x(),
+            geometry.y(),
+            geometry.width(),
+            geometry.height(),
+            x,
+            y,
+        ) {
+            return Some(PanelAnchor {
+                monitor: monitor.connector().map(|connector| connector.to_string()),
+                rect: Some((x, y, 1, 1)),
+            });
+        }
+    }
+    None
+}
+
+fn point_inside(x: i32, y: i32, width: i32, height: i32, px: i32, py: i32) -> bool {
+    width > 0 && height > 0 && px >= x && py >= y && px < x + width && py < y + height
+}
+
 pub fn bottom_right_position(
     monitor: Rect,
     workarea: Option<Rect>,
@@ -48,20 +86,21 @@ fn intersection(left: Rect, right: Rect) -> Option<Rect> {
 
 /// Ask the X11 window manager to place the mapped panel inside its selected
 /// monitor's EWMH work area. This intentionally does nothing on Wayland.
-pub fn place_panel(window: &gtk::ApplicationWindow, _anchor: Option<&PanelAnchor>) -> bool {
+pub fn place_panel(window: &gtk::ApplicationWindow, anchor: Option<&PanelAnchor>) -> bool {
     #[cfg(target_os = "linux")]
     {
-        unsafe { place_panel_x11(window) }
+        unsafe { place_panel_x11(window, anchor) }
     }
     #[cfg(not(target_os = "linux"))]
     {
         let _ = window;
+        let _ = anchor;
         false
     }
 }
 
 #[cfg(target_os = "linux")]
-unsafe fn place_panel_x11(window: &gtk::ApplicationWindow) -> bool {
+unsafe fn place_panel_x11(window: &gtk::ApplicationWindow, anchor: Option<&PanelAnchor>) -> bool {
     use std::ffi::{c_char, c_int, c_uint, c_ulong, c_void};
 
     #[link(name = "gtk-4")]
@@ -103,14 +142,48 @@ unsafe fn place_panel_x11(window: &gtk::ApplicationWindow) -> bool {
         return false;
     }
 
-    let mut monitor = display.monitor_at_surface(&surface).map(|monitor| {
-        let rect = monitor.geometry();
-        Rect {
-            x: rect.x(),
-            y: rect.y(),
-            width: rect.width(),
-            height: rect.height(),
+    let anchor_monitor = anchor.and_then(|anchor| {
+        let (x, y, width, height) = anchor.rect?;
+        if width <= 0 || height <= 0 {
+            return None;
         }
+        (0..display.monitors().n_items()).find_map(|index| {
+            let monitor = display
+                .monitors()
+                .item(index)?
+                .downcast::<gtk::gdk::Monitor>()
+                .ok()?;
+            let connector_matches = anchor
+                .monitor
+                .as_deref()
+                .is_none_or(|name| monitor.connector().as_deref() == Some(name));
+            let geometry = monitor.geometry();
+            let contains_point = point_inside(
+                geometry.x(),
+                geometry.y(),
+                geometry.width(),
+                geometry.height(),
+                x,
+                y,
+            );
+            (connector_matches && contains_point).then(|| Rect {
+                x: geometry.x(),
+                y: geometry.y(),
+                width: geometry.width(),
+                height: geometry.height(),
+            })
+        })
+    });
+    let mut monitor = anchor_monitor.or_else(|| {
+        display.monitor_at_surface(&surface).map(|monitor| {
+            let rect = monitor.geometry();
+            Rect {
+                x: rect.x(),
+                y: rect.y(),
+                width: rect.width(),
+                height: rect.height(),
+            }
+        })
     });
     if monitor
         .as_ref()
@@ -279,7 +352,7 @@ unsafe fn read_current_workarea(
 
 #[cfg(test)]
 mod tests {
-    use super::{bottom_right_position, Rect};
+    use super::{bottom_right_position, point_inside, Rect};
 
     #[test]
     fn placement_uses_workarea_intersected_with_selected_monitor() {
@@ -335,5 +408,13 @@ mod tests {
             ),
             (1168, 528),
         );
+    }
+
+    #[test]
+    fn activation_points_must_fit_the_selected_monitor() {
+        assert!(point_inside(-1920, 0, 1920, 1080, -1, 100));
+        assert!(!point_inside(-1920, 0, 1920, 1080, 0, 100));
+        assert!(point_inside(0, 0, 1920, 1080, 10, 10));
+        assert!(!point_inside(0, 0, 1920, 1080, 1920, 10));
     }
 }

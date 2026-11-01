@@ -5,6 +5,7 @@ use std::{collections::VecDeque, ffi::OsString};
 pub mod dashboard;
 pub mod dashboard_widget;
 pub mod panel_widget;
+pub mod tray;
 pub mod usage_pages;
 pub mod x11_placement;
 

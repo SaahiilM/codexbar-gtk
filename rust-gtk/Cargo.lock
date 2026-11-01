@@ -178,6 +178,7 @@ dependencies = [
 name = "codexbar-gtk-native"
 version = "0.82.0"
 dependencies = [
+ "cairo-rs",
  "chrono",
  "codexbar-backend",
  "codexbar-core",

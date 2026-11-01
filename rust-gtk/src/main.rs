@@ -35,7 +35,8 @@ use libadwaita::prelude::*;
 use tokio::sync::{mpsc as tokio_mpsc, oneshot, watch};
 
 use codexbar_gtk_native::{
-    tray::{meter_pixmap, NativeTray, TrayPresentation},
+    icons::{render_meter, render_tray_summary, RequestedSize},
+    tray::{NativeTray, TrayPresentation},
     x11_placement::PanelAnchor,
     BuildMetadata, EventInbox, LaunchRoute, Page, APPLICATION_ID,
 };
@@ -352,6 +353,7 @@ impl NativeApp {
     }
 
     fn start(&mut self) {
+        codexbar_gtk_native::icons::install_theme();
         self.hold_guard = Some(self.application.hold());
         match NativeTray::start(&self.application.clone().upcast::<gio::Application>()) {
             Ok(tray) => self.tray = Some(tray),
@@ -951,7 +953,14 @@ impl NativeApp {
                 icon_name: "codexbar-gtk".to_owned(),
                 title: APP_NAME.to_owned(),
                 body: "Provider data unavailable\nUse Refresh to check again.".to_owned(),
-                pixmap: Some(meter_pixmap(None, "#10A37F")),
+                pixmap: Some(render_meter(
+                    None,
+                    "#10A37F",
+                    RequestedSize {
+                        width: 32,
+                        height: 32,
+                    },
+                )),
                 switcher_rows: Vec::new(),
             });
             if let Some(dashboard) = &self.dashboard {
@@ -1316,7 +1325,14 @@ fn tray_presentation(
             icon_name: String::new(),
             title: APP_NAME.to_owned(),
             body,
-            pixmap: Some(meter_pixmap(None, "#10A37F")),
+            pixmap: Some(render_meter(
+                None,
+                "#10A37F",
+                RequestedSize {
+                    width: 32,
+                    height: 32,
+                },
+            )),
             switcher_rows: Vec::new(),
         };
     }
@@ -1329,17 +1345,33 @@ fn tray_presentation(
             switcher_rows_option: tray_preference(preferences, "switcherRowsOption", "progress"),
         },
     );
-    let accent = summary.accent_color.as_deref().unwrap_or("#10A37F");
     let body = if summary.tooltip_rows.is_empty() {
         "Provider data unavailable\nUse Refresh to check again.".to_owned()
     } else {
         summary.tooltip_rows.join("\n")
     };
+    let pixmap = render_tray_summary(
+        &summary,
+        RequestedSize {
+            width: 32,
+            height: 32,
+        },
+    )
+    .or_else(|| {
+        Some(render_meter(
+            summary.meter_level,
+            summary.accent_color.as_deref().unwrap_or("#10A37F"),
+            RequestedSize {
+                width: 32,
+                height: 32,
+            },
+        ))
+    });
     TrayPresentation {
         icon_name: String::new(),
         title: summary.title,
         body,
-        pixmap: Some(meter_pixmap(summary.used_percent, accent)),
+        pixmap,
         switcher_rows: summary
             .switcher_rows
             .into_iter()
@@ -1469,6 +1501,14 @@ fn main() {
         about_state.borrow_mut().request_about();
     });
     application.add_action(&about);
+
+    // Keep keyboard navigation on the same Gio actions used by buttons,
+    // command-line routes and the StatusNotifierItem menu.
+    application.set_accels_for_action("app.refresh", &["<Primary>r"]);
+    application.set_accels_for_action("app.page('usage')", &["<Primary>1"]);
+    application.set_accels_for_action("app.page('sessions')", &["<Primary>2"]);
+    application.set_accels_for_action("app.page('spend')", &["<Primary>3"]);
+    application.set_accels_for_action("app.quit", &["<Primary>q"]);
 
     let weak = Rc::downgrade(&state);
     glib::timeout_add_local(Duration::from_millis(40), move || {

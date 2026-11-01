@@ -4,6 +4,27 @@ Client-side changelog for the CodexBar GTK front-end. Each entry keys a build
 number (`CURRENT_PROJECT_VERSION`) to the upstream macOS CodexBar release its
 short version tracks, so "which version has what" maps cleanly onto both trees.
 
+## 0.82.0 (65) — 2026-11-01
+
+Tracks upstream CodexBar 0.82.0.
+
+### Changed
+
+- Embed the existing licensed provider artwork catalog into the native app and
+  show brand or accent-tinted provider marks with an initial-letter fallback.
+- Render native meter and `iconPercent` tray pixmaps from the existing
+  `TraySummary`, with Cairo-generated ARGB pixels at caller-requested sizes.
+- Add responsive dashboard summary tiles, shared theme CSS, decorative
+  accessible provider artwork, and keyboard navigation shortcuts.
+
+### Validation
+
+- U07 PR #65 merged at `e373e019f7701f5f3a5e204153b7163763abac90`; exact head
+  `70bba1c52562c7670916a51a28fb9f37a29cd3ec` passed `test` and `tray-dbus` in
+  run `41340840860` (E114). U08 local Rust/Python checks, X11/Xvfb and actual
+  Wayland synthetic captures, and renderer/accessibility smokes are in E115/E116;
+  this PR's exact-head CI and merge remain pending.
+
 ## 0.82.0 (64) — 2026-11-01
 
 Tracks upstream CodexBar 0.82.0.
@@ -17,9 +38,11 @@ Tracks upstream CodexBar 0.82.0.
 ### Validation
 
 - U06 PR #64 merged normally at `678b6b9`; exact head passed both required
-  checks in run `41337858935`. U07 local Rust/Python/GTK checks and synthetic
-  Xvfb/private-bus runtime evidence are in migration audit E113; exact-head PR
-  checks remain pending.
+  checks in run `41337858935`. U07 PR #65 exact head
+  `70bba1c52562c7670916a51a28fb9f37a29cd3ec` passed `test` and `tray-dbus` in
+  run `41340840860` and merged normally at
+  `e373e019f7701f5f3a5e204153b7163763abac90` (E114). U07 local Rust/Python/GTK
+  checks and synthetic Xvfb/private-bus runtime evidence are in E113.
 
 ## 0.82.0 (63) — 2026-11-01
 

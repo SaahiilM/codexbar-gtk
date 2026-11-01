@@ -4,6 +4,7 @@ use std::{collections::VecDeque, ffi::OsString};
 
 pub mod dashboard;
 pub mod dashboard_widget;
+pub mod icons;
 pub mod lifecycle;
 pub mod notifications;
 pub mod panel_widget;

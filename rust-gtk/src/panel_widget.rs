@@ -149,6 +149,11 @@ fn action_button(label: &str, action: &str) -> gtk::Button {
 fn compact_provider_card(model: &ProviderCardModel) -> gtk::Widget {
     let frame = gtk::Frame::new(None);
     frame.add_css_class("card");
+    frame.set_accessible_role(gtk::AccessibleRole::Group);
+    frame.update_property(&[
+        gtk::accessible::Property::Label(&model.name),
+        gtk::accessible::Property::Description(&model.subtitle),
+    ]);
     let body = gtk::Box::new(gtk::Orientation::Vertical, 6);
     body.set_margin_top(9);
     body.set_margin_bottom(9);
@@ -156,6 +161,12 @@ fn compact_provider_card(model: &ProviderCardModel) -> gtk::Widget {
     body.set_margin_end(11);
 
     let header = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+    header.append(&crate::icons::provider_mark(
+        &model.provider_id,
+        &model.name,
+        &model.accent,
+        30,
+    ));
     let name = gtk::Label::new(Some(&model.name));
     name.add_css_class("heading");
     name.set_xalign(0.0);

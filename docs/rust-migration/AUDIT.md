@@ -3455,3 +3455,168 @@ future models must verify the linked PR's status rather than trusting a stale
   unchanged. Exact-head CI/reviews/merge have not yet been observed. Next:
   publish the focused build-64 PR, verify its exact-head checks and review state,
   then merge normally before handing the next serialized task to the coordinator.
+
+### E115 — 2026-11-01: U08 build 65 implementation
+
+- **Base and scope:** branch `orchestrated/luna-u08-assets`, build `0.82.0
+  (65)`, based on verified U07 PR #65 merge `e373e019f7701f5f3a5e204153b7163763abac90`
+  (E114). The scope is provider artwork/assets, Cairo meter and percentage icon
+  rasterization, GTK theme and responsive layout, accessibility and keyboard
+  navigation. U07 continues to own display readiness, restart/autostart,
+  shutdown and tray lifecycle.
+- **Artwork:** `rust-gtk/build.rs` embeds the existing licensed
+  `codexbar_gtk/assets/provider_icons` catalog into the native binary without
+  generating files in the source tree. `rust-gtk/src/icons.rs` applies the
+  established brand-first, accent-tinted monochrome, alias and initial-fallback
+  selection. Decorative artwork uses `AccessibleRole::Presentation`; provider
+  names and usage remain text in the dashboard/panel. Shared CSS covers artwork,
+  stat tiles and visible focus.
+- **Pure tray renderer:** Cairo rasterization accepts a borrowed `TraySummary`
+  and a `RequestedSize`, returns network-order ARGB32 bytes, and performs no GTK,
+  filesystem, D-Bus or lifecycle work. Both `meter` and `iconPercent` use the
+  existing selected provider, percentage, accent, style and initial fields;
+  missing/unknown usage stays visually empty or returns no percent pixmap rather
+  than inventing a usage value. Native `tray_presentation` passes the pixels
+  through the unchanged `TrayPresentation.pixmap`. The caller requests 32×32 for
+  the existing SNI projection; the pure renderer tests additional dimensions.
+  No U07 presentation fields or lifecycle code changed.
+- **GTK behavior:** dashboard summary tiles flow between one and four columns
+  as width changes. Native application shortcuts route Ctrl+1/2/3 to Usage,
+  Sessions and Usage & Spend, Ctrl+R to refresh and Ctrl+Q to quit. The existing
+  textual routes, provider cards and Settings remain in place; Python stays the
+  default until UG.
+- **Scope limit:** the wider UG matrix remains open, including full action-by-
+  action parity, compact-panel placement/dismissal, all Spend filters/states,
+  Settings provider/key flows and all OS lifecycle fixtures. U08 evidence below
+  is a focused renderer/dashboard/accessibility slice, not a UG pass.
+
+### E116 — 2026-11-01: U08 local checks and display evidence
+
+- **Rust/Python checks:** formatting passed for `rust-core`, `rust-python`,
+  `rust-backend` and `rust-gtk`. Tests passed: 85 `rust-core`; 85 backend unit
+  plus 1 backend integration; 37 GTK tests under `dbus-run-session`; 0
+  `rust-python` unit tests. The GTK test run without a private session bus first
+  failed its bus lifecycle assertion (3 registrations observed where 1 was
+  expected); the prescribed private-bus rerun passed all 37. `rust-gtk` Clippy
+  and all other crate Clippy commands passed with warnings denied. The optional
+  Rust extension built atomically. Python default tests passed 214 (21 expected
+  skips); Rust-opt-in tests passed all 214; the isolated tray signal suite
+  passed all 3. Renderer unit tests passed within the GTK suite.
+- **Native UI checks:** the GTK binary built. `smoke-native-gtk.sh`, dashboard
+  smoke at 1× and 2×, Spend/Sessions smoke, Settings smoke, and the ignored
+  display-dependent `a11y_assets` test passed under Xvfb/private D-Bus. The
+  dashboard fixture verified `iconPercent` through the SNI `IconPixmap` property
+  at 32×32, synthetic refresh and central routes; keyboard shortcuts reached
+  Usage, Sessions and Usage & Spend. Artwork decoding passed for a brand asset,
+  tinted monochrome asset and unknown-provider fallback. The test confirms
+  decorative artwork has the Presentation role while provider names remain
+  visible text. Existing private-bus tray tests also passed, including
+  registration, actions, watcher recovery and teardown.
+- **Wayland:** `scripts/smoke-native-wayland-assets.sh` passed in the active KDE
+  Plasma Wayland session using a temporary home and synthetic `codex` fixture.
+  It verified refresh completion, native SNI registration, dashboard routing,
+  an actual compositor screenshot, normal quit and tray-name release. The
+  capture is at the compositor's current scale; forcing `GDK_SCALE=2` in this
+  Wayland session produced a solid-black active-window capture, which was
+  discarded. Therefore 2× evidence is X11/Xvfb only, while Wayland evidence is
+  at the session's default scale. The current Actions workflow still has no
+  Wayland job; this is local actual-session evidence and does not close the UG
+  Wayland matrix.
+- **Screenshots:** the three synthetic captures are
+  `docs/rust-migration/screenshots/u08-native-dashboard-iconpercent-xvfb.png`
+  (X11/Xvfb 1×), `docs/rust-migration/screenshots/u08-native-dashboard-2x-xvfb.png`
+  (X11/Xvfb 2×), and
+  `docs/rust-migration/screenshots/u08-native-dashboard-wayland.png` (active KDE
+  Wayland). All use fixture values and `example.invalid`; no account or secret
+  data is present. `.gitignore:9` globally ignores `*.png`, so these exact three
+  files are force-added to the PR rather than broadening the ignore rule.
+- **2× responsive assessment:** at a 560-pixel logical window width, the
+  secondary `Usage dashboard` subtitle visibly ellipsizes to `Usage das...`.
+  This is acceptable at that reduced width with the caveat recorded: the
+  subtitle is secondary, the source label remains the full string, all header
+  actions remain visible, the dashboard stat cards reflow from four columns to
+  three plus one, and the synthetic provider card remains readable in the
+  vertical scroller. No primary usage number, provider label or action is
+  clipped. The actual Wayland 1× capture also shows the full-width responsive
+  layout.
+- **Environment and release state:** GTK linking and Xvfb tools used the ignored
+  SDK/tool extraction from the U04 worktree; no files there or in the root
+  checkout were edited. Portal/FUSE and EGL DRI3 warnings appeared under Xvfb;
+  those smokes do not invoke portal file selection and completed successfully.
+  `git diff --check` and shell syntax checks passed. No remote U08 PR checks,
+  review, merge, Wayland 2× pass or full UG acceptance are claimed here; Python
+  remains the default. Next: publish the focused PR, then verify its exact head
+  and merge normally.
+
+### E117 — 2026-11-01: U08 PR #66 artwork-loader failure and repair
+
+- **Observed CI failure:** PR #66 head `68c1752b4ea116ce572cb367512b85ad7ddb9dc7`
+  ran as Actions run `41342989891`. `tray-dbus` passed; `test` failed in “Smoke
+  provider artwork decoding and accessibility roles on X11” at
+  `rust-gtk/tests/a11y_assets.rs:15`: DeepSeek's monochrome provider mark was a
+  `GtkLabel`, while the test expected `GtkImage`. The earlier Codex preferred
+  brand assertions at lines 9–11 had already passed. The GTK warning about not
+  acquiring the `org.a11y.Bus` address was separate from the failed assertion.
+- **Failure analysis:** `provider_mark` used `brand.map(load_texture).or_else(...)
+  .flatten()`. A present brand whose decode returned `None` became `Some(None)`;
+  `or_else` saw the outer `Some` and skipped the monochrome candidate. The
+  Codex preferred catalog file is actually the 104×104 PNG
+  `Brand-ProviderIcon-codex.png`; its fallback is the SVG
+  `ProviderIcon-codex.svg`. The original failure was not a preferred-image
+  decode failure: the CI log shows the Codex PNG rendered first, then DeepSeek's
+  monochrome SVG fell through to a label. The original workflow installed
+  `libgtk-4-dev` with `--no-install-recommends`; its APT log explicitly lists
+  `librsvg2-common` under “Recommended packages”, and that package was omitted.
+  That package supplies the GDK SVG image loader, so its absence explains the
+  observed DeepSeek failure and would also prevent bundled brand SVGs from
+  rendering. Separately, `brand.map(decode).or_else(...).flatten()` has a latent
+  fallback bug when a present preferred asset fails decoding: `Some(None)` stops
+  the `or_else` before the monochrome candidate is tried. The checked-in Codex
+  PNG is ordinary RGBA PNG data and passed in the original CI run. The repaired
+  smoke directly decodes that PNG and a real bundled brand SVG with explicit
+  diagnostics, asserts the PNG's 104px source width, and exercises all three
+  candidate-chain outcomes with fixtures.
+- **Repair and fixtures:** the candidate chain now uses `brand.and_then(decode)`
+  followed by `mono.and_then(decode)`. `provider_mark_from_assets` keeps the
+  same embedded asset-selection path while allowing fixture coverage. A
+  display-dependent fixture test covers: decodable preferred SVG wins over a
+  decodable monochrome SVG (distinct 2px/4px sources); undecodable preferred
+  bytes fall through to a valid monochrome source; and missing/undecodable
+  candidates return the initial `GtkLabel` fallback with Presentation role.
+  The real catalog smoke also exercises the Codex PNG, DeepSeek monochrome SVG
+  and Claude brand SVG. CI now explicitly installs `librsvg2-common`; native
+  binary assets remain embedded rather than resolved relative to the install
+  directory. Debian/Ubuntu package guidance records `librsvg2-common` as a
+  runtime dependency for packaged native installs (C01).
+- **Local repair checks:** formatter checks passed for all four Rust crates;
+  tests passed with 85 core, 85 backend unit + 1 backend integration, 37 GTK
+  tests under a private bus (one display fixture ignored in this headless run),
+  the ignored display fixture passed under Xvfb, and the actual-asset/accessibility
+  smoke passed under Xvfb. Clippy passed for all four crates with warnings
+  denied. The native binary rebuilt; the synthetic dashboard smoke passed at
+  1× and 2× Xvfb, and the active KDE Wayland fixture/capture passed at the
+  compositor's default scale. After the final repair-test change, the focused
+  fixture and expanded catalog/accessibility smoke passed again on XWayland
+  (`GDK_BACKEND=x11`, `DISPLAY=:0`); the catalog smoke switches to the system
+  temporary directory before asking the native renderer for assets, verifying
+  that lookup does not depend on the repository/install working directory. The
+  GTK suite passed 37 tests with the display fixture ignored in the ordinary
+  run, and GTK Clippy plus formatting passed. `xvfb-run` is unavailable in this
+  shell; the workflow runs both display-dependent tests under Xvfb. Fresh remote
+  exact-head CI is pending on the repair commit. PR #66 remains open and
+  unmerged; Python remains the default.
+
+### E118 — 2026-11-01: U08 artwork repair exact-head checks
+
+- **Observed exact-head CI:** PR #66 head
+  `a8c8d91e409a6c46450a28cf5e25027fd35010d5` completed Actions run
+  `41344373281` successfully. Both required jobs passed: `test` and
+  `tray-dbus`. The `test` job passed the explicit Xvfb provider decode-fallback
+  fixture and the real-asset/accessibility smoke, in addition to the Rust,
+  Python, Clippy, build and native UI smoke steps; `tray-dbus` passed its
+  private-session-bus signal check.
+- **Review and gate state:** no PR reviews or review comments were present at
+  this exact head. PR #66 remains open and unmerged. The audit/handoff update
+  that records this result creates a newer PR head, so that head must pass its
+  own exact-head checks before any normal merge. UG remains gated, Python stays
+  the default, and no U07 lifecycle ownership or `TrayPresentation` API changed.

@@ -4,6 +4,26 @@ Client-side changelog for the CodexBar GTK front-end. Each entry keys a build
 number (`CURRENT_PROJECT_VERSION`) to the upstream macOS CodexBar release its
 short version tracks, so "which version has what" maps cleanly onto both trees.
 
+## 0.82.0 (60) — 2026-11-01
+
+Tracks upstream CodexBar 0.82.0.
+
+### Changed
+
+- Implement the native compact usage panel with shared dashboard projections,
+  panel dismissal, navigation, and platform-aware placement (U03).
+
+### Validation
+
+- All four Rust crates pass formatting and strict Clippy. Tests pass for core
+  (78), backend (72 plus 1 integration), and native GTK (21). The optional
+  PyO3 extension build passed; default Python passed 214 tests with 21 expected
+  opt-in skips, Rust-opt-in Python passed all 214, and tray D-Bus passed 3.
+- A synthetic six-provider Wayland GTK fixture and screenshot were inspected;
+  a live X11 fixture verified the panel at the selected work-area corner and
+  exercised dashboard/page/settings/about routing. Local Xvfb/xdotool smoke is
+  unavailable on this host. Exact-head CI and merge remain pending.
+
 ## 0.82.0 (59) — 2026-11-01
 
 Tracks upstream CodexBar 0.82.0.
@@ -21,11 +41,11 @@ Tracks upstream CodexBar 0.82.0.
   crates. The build-59 optional extension build passed; default Python ran 214
   tests (21 opt-in skips) and Rust-opt-in Python ran 214 tests with no skips.
 - U02b PR #59 exact head `89ae294` passed `test` and `tray-dbus` in run
-  `41174965540` and merged normally at `81b7b8f`. Build-59 acceptance evidence
-  is in AUDIT E093/E094. A fresh Xvfb smoke could not run because `xvfb-run`
-  and `xdotool` are absent; the synthetic native screenshots from merged U02
-  were inspected. PR #60 is open; `tray-dbus` passed and `test` was in progress
-  on its initial exact head when observed. Python remains default until UG passes.
+  `41174965540` and merged normally at `81b7b8f`. U02 acceptance PR #60 exact
+  head `b2fc92c` passed both checks in run `41314701763` and merged normally at
+  `317078a`. A fresh Xvfb smoke could not run because `xvfb-run`, `Xvfb`, and
+  `xdotool` are absent; #60 changed no GTK rendering and the synthetic native
+  screenshots from merged U02 were inspected. Python remains default until UG.
 
 ## 0.82.0 (57) — 2026-10-31
 

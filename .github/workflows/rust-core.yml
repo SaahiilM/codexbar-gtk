@@ -48,7 +48,7 @@ jobs:
       - name: Install native GTK build and smoke dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libgtk-4-dev libadwaita-1-dev xvfb xauth xdotool libglib2.0-bin dbus-daemon
+          sudo apt-get install -y --no-install-recommends libgtk-4-dev libadwaita-1-dev xvfb xauth xdotool x11-utils libglib2.0-bin dbus-daemon
       - name: Check Rust formatting
         run: |
           cargo fmt --manifest-path rust-core/Cargo.toml -- --check

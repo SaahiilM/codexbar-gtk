@@ -8,7 +8,7 @@ if [[ "${CODEXBAR_NATIVE_SMOKE_INNER:-}" != "1" ]]; then
     exec xvfb-run -a dbus-run-session -- env CODEXBAR_NATIVE_SMOKE_INNER=1 "$0" "$binary"
 fi
 
-for tool in xdotool gapplication timeout; do
+for tool in xdotool gapplication timeout xwininfo xprop; do
     command -v "$tool" >/dev/null || { echo "missing smoke dependency: $tool" >&2; exit 2; }
 done
 [[ -x "$binary" ]] || { echo "native GTK binary not found: $binary" >&2; exit 2; }
@@ -86,6 +86,34 @@ assert_title_contains() {
     }
 }
 
+assert_panel_bottom_right() {
+    local window_id=$1 panel_info root_info panel_x panel_y panel_width panel_height root_width root_height
+    local area_x area_y area_width area_height expected_x expected_y dx dy deadline
+    deadline=$((SECONDS + 5))
+    while (( SECONDS < deadline )); do
+        panel_info=$(xwininfo -id "$window_id")
+        root_info=$(xwininfo -root)
+        panel_x=$(sed -n 's/^[[:space:]]*Absolute upper-left X:[[:space:]]*//p' <<<"$panel_info")
+        panel_y=$(sed -n 's/^[[:space:]]*Absolute upper-left Y:[[:space:]]*//p' <<<"$panel_info")
+        panel_width=$(sed -n 's/^[[:space:]]*Width:[[:space:]]*//p' <<<"$panel_info")
+        panel_height=$(sed -n 's/^[[:space:]]*Height:[[:space:]]*//p' <<<"$panel_info")
+        root_width=$(sed -n 's/^[[:space:]]*Width:[[:space:]]*//p' <<<"$root_info")
+        root_height=$(sed -n 's/^[[:space:]]*Height:[[:space:]]*//p' <<<"$root_info")
+        read -r area_x area_y area_width area_height < <(xprop -root _NET_WORKAREA 2>/dev/null | sed -n 's/.*= //p' | tr ',' ' ') || true
+        if [[ -z "${area_width:-}" || -z "${area_height:-}" ]]; then
+            area_x=0 area_y=0 area_width=$root_width area_height=$root_height
+        fi
+        expected_x=$((area_x + area_width - panel_width - 12))
+        expected_y=$((area_y + area_height - panel_height - 12))
+        dx=$((panel_x - expected_x)); (( dx < 0 )) && dx=$((-dx))
+        dy=$((panel_y - expected_y)); (( dy < 0 )) && dy=$((-dy))
+        (( dx <= 2 && dy <= 2 )) && return 0
+        sleep 0.05
+    done
+    echo "panel placement mismatch: got ($panel_x,$panel_y), expected bottom-right ($expected_x,$expected_y)" >&2
+    exit 1
+}
+
 # The primary instance exercises an invalid --page value. The legacy stack
 # leaves Usage selected instead of failing the process.
 "$binary" --page not-a-page >"$scratch/primary.log" 2>&1 &
@@ -134,6 +162,7 @@ if xdotool search --onlyvisible --name 'CodexBar GTK.*Panel' >/dev/null 2>&1; th
     echo "panel appeared before the first refresh completed" >&2
     exit 1
 fi
+gapplication action com.steipete.CodexBarGTK panel
 "$binary" --settings
 assert_title_contains '^CodexBar GTK' "Settings"
 : > "$NATIVE_USAGE_RELEASE"
@@ -143,8 +172,54 @@ while [[ ! -e "$NATIVE_USAGE_FINISHED" ]] && (( SECONDS < deadline )); do sleep 
     echo "synthetic CLI did not finish after release" >&2
     exit 1
 }
+if xdotool search --onlyvisible --name 'CodexBar GTK.*Panel' >/dev/null 2>&1; then
+    echo "pending panel toggle did not cancel the open request" >&2
+    exit 1
+fi
 "$binary" --panel
 assert_title_contains '^CodexBar GTK' "Panel"
+
+# The compact panel is a separate window. Escape, toggle, central page and
+# Settings/About actions all close it without changing their application APIs.
+panel_window=$(xdotool search --onlyvisible --name 'CodexBar GTK.*Panel' | head -n 1)
+[[ -n "$panel_window" ]] || { echo "native panel window was not visible" >&2; exit 1; }
+assert_panel_bottom_right "$panel_window"
+xdotool windowfocus "$panel_window"
+xdotool key --window "$panel_window" Escape
+deadline=$((SECONDS + 5))
+while xdotool search --onlyvisible --name 'CodexBar GTK.*Panel' >/dev/null 2>&1 && (( SECONDS < deadline )); do sleep 0.05; done
+if xdotool search --onlyvisible --name 'CodexBar GTK.*Panel' >/dev/null 2>&1; then
+    echo "Escape did not dismiss the native panel" >&2
+    exit 1
+fi
+
+gapplication action com.steipete.CodexBarGTK panel
+assert_title_contains 'CodexBar GTK.*Panel' "Panel"
+gapplication action com.steipete.CodexBarGTK page "'sessions'"
+assert_title_contains '^CodexBar GTK' "Sessions"
+if xdotool search --onlyvisible --name 'CodexBar GTK.*Panel' >/dev/null 2>&1; then
+    echo "page navigation left the native panel visible" >&2
+    exit 1
+fi
+
+gapplication action com.steipete.CodexBarGTK panel
+assert_title_contains 'CodexBar GTK.*Panel' "Panel"
+gapplication action com.steipete.CodexBarGTK settings
+assert_title_contains '^CodexBar GTK' "Settings"
+if xdotool search --onlyvisible --name 'CodexBar GTK.*Panel' >/dev/null 2>&1; then
+    echo "Settings navigation left the native panel visible" >&2
+    exit 1
+fi
+
+gapplication action com.steipete.CodexBarGTK panel
+assert_title_contains 'CodexBar GTK.*Panel' "Panel"
+gapplication action com.steipete.CodexBarGTK about
+assert_title_contains '^About CodexBar GTK' "About CodexBar GTK"
+if xdotool search --onlyvisible --name 'CodexBar GTK.*Panel' >/dev/null 2>&1; then
+    echo "About navigation left the native panel visible" >&2
+    exit 1
+fi
+
 gapplication action com.steipete.CodexBarGTK quit
 wait "$app_pid"
 app_pid=

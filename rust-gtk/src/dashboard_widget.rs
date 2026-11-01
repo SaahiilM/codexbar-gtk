@@ -289,7 +289,7 @@ fn provider_card(model: &ProviderCardModel) -> gtk::Widget {
     }
 
     for window in &model.windows {
-        body.append(&quota_row(window));
+        body.append(&quota_row(window, false));
     }
 
     if let Some(burndown) = &model.burndown {
@@ -361,8 +361,8 @@ fn provider_card(model: &ProviderCardModel) -> gtk::Widget {
     frame.upcast()
 }
 
-fn quota_row(model: &QuotaWindowModel) -> gtk::Widget {
-    let row = gtk::Box::new(gtk::Orientation::Vertical, 5);
+pub(crate) fn quota_row(model: &QuotaWindowModel, compact: bool) -> gtk::Widget {
+    let row = gtk::Box::new(gtk::Orientation::Vertical, if compact { 3 } else { 5 });
     let heading = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     let title = label(&model.title, "heading");
     title.set_xalign(0.0);
@@ -454,8 +454,10 @@ fn quota_row(model: &QuotaWindowModel) -> gtk::Widget {
     }
     row.append(&meter_overlay);
 
-    if let Some(trend) = &model.trend {
-        row.append(&trend_chart(trend, &model.fill_color));
+    if !compact {
+        if let Some(trend) = &model.trend {
+            row.append(&trend_chart(trend, &model.fill_color));
+        }
     }
 
     let chips = gtk::Box::new(gtk::Orientation::Horizontal, 12);
@@ -476,16 +478,18 @@ fn quota_row(model: &QuotaWindowModel) -> gtk::Widget {
     if chips.first_child().is_some() {
         row.append(&chips);
     }
-    if let Some(target) = &model.daily_target {
-        let target_label = label(target, "caption");
-        target_label.add_css_class("dim-label");
-        target_label.set_xalign(0.0);
-        target_label.set_wrap(true);
-        target_label.update_property(&[
-            gtk::accessible::Property::Label("Daily target"),
-            gtk::accessible::Property::Description(target),
-        ]);
-        row.append(&target_label);
+    if !compact {
+        if let Some(target) = &model.daily_target {
+            let target_label = label(target, "caption");
+            target_label.add_css_class("dim-label");
+            target_label.set_xalign(0.0);
+            target_label.set_wrap(true);
+            target_label.update_property(&[
+                gtk::accessible::Property::Label("Daily target"),
+                gtk::accessible::Property::Description(target),
+            ]);
+            row.append(&target_label);
+        }
     }
     row.upcast()
 }
@@ -634,7 +638,7 @@ fn label(text: &str, class: &str) -> gtk::Label {
     label
 }
 
-fn clear_box(container: &gtk::Box) {
+pub(crate) fn clear_box(container: &gtk::Box) {
     while let Some(child) = container.first_child() {
         container.remove(&child);
     }

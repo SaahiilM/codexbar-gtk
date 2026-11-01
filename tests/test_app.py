@@ -16,8 +16,10 @@ import os
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -552,6 +554,36 @@ class CLITests(unittest.TestCase):
 
 
 class ControllerTests(unittest.TestCase):
+    def test_history_records_known_zero_but_skips_unknown_and_placeholder_windows(self):
+        with tempfile.TemporaryDirectory() as folder:
+            controller = Controller(Preferences(os.path.join(folder, "settings.json")), object())
+            controller.history = HistoryStore(os.path.join(folder, "history.jsonl"))
+            provider = provider_usage_from_payload(CODEX_PAYLOAD)
+            provider.windows = [
+                RateWindow(key="known-zero", title="Known zero", used_percent=0),
+                RateWindow(
+                    key="unknown", title="Unknown", used_percent=0, usage_known=False
+                ),
+                RateWindow(
+                    key="placeholder",
+                    title="Placeholder",
+                    used_percent=0,
+                    is_placeholder=True,
+                ),
+                RateWindow(
+                    key="non-finite",
+                    title="Non-finite",
+                    used_percent=float("nan"),
+                ),
+            ]
+            controller.state.providers = [provider]
+
+            controller._record_history()
+
+            samples = controller.history.read_all()
+            self.assertEqual([(sample.window, sample.used_percent) for sample in samples],
+                             [("known-zero", 0.0)])
+
     def test_refresh_fills_the_state(self):
         with tempfile.TemporaryDirectory() as folder:
             prefs = Preferences(os.path.join(folder, "settings.json"))
@@ -1247,9 +1279,23 @@ class ActivityHeatmapTests(unittest.TestCase):
 
 
 class MonthlyDailyTargetTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls._original_tz = os.environ.get("TZ")
+        os.environ["TZ"] = "America/New_York"
+        time.tzset()
+
+    @classmethod
+    def tearDownClass(cls):
+        if cls._original_tz is None:
+            os.environ.pop("TZ", None)
+        else:
+            os.environ["TZ"] = cls._original_tz
+        time.tzset()
+
     @staticmethod
     def _local(*args):
-        return datetime(*args, tzinfo=datetime.now().astimezone().tzinfo)
+        return datetime(*args, tzinfo=ZoneInfo("America/New_York"))
 
     def test_only_month_long_windows_count(self):
         from codexbar_gtk.pace import is_monthly_window

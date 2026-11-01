@@ -4,25 +4,28 @@ Client-side changelog for the CodexBar GTK front-end. Each entry keys a build
 number (`CURRENT_PROJECT_VERSION`) to the upstream macOS CodexBar release its
 short version tracks, so "which version has what" maps cleanly onto both trees.
 
-## 0.82.0 (58) — 2026-10-31
+## 0.82.0 (59) — 2026-11-01
 
 Tracks upstream CodexBar 0.82.0.
 
 ### Changed
 
-- Continue U02 with native history charts, burndown and remaining provider-card
-  presentation; Python remains the default until UG passes.
+- Close the Python history writer parity gap so unknown and placeholder quota
+  windows cannot be persisted as zero-valued trend samples. Record the observed
+  U02b merge and the remaining ambiguity in pre-existing history rows.
 
 ### Validation
 
-- Rust tests: core 78; backend 72 plus the headless integration test; native GTK
-  18. Clippy passed for all four Rust crates, and the optional extension build
-  passed. Python default and Rust-opt-in suites each ran 213 tests (21 skipped
-  in default mode; none skipped in opt-in mode); tray D-Bus tests passed 3/3.
-- Native GTK command-line/cancellation and synthetic dashboard refresh/drawing
-  smokes passed under Xvfb/private D-Bus. The screenshot is
-  `docs/rust-migration/screenshots/u02-history-native-xvfb.png`. See migration
-  handoff and AUDIT E092; U02 remains partial pending merge/acceptance.
+- Rust tests from the merged U02b implementation: core 78; backend 72 plus the
+  headless integration test; native GTK 18. Clippy passed for all four Rust
+  crates. The build-59 optional extension build passed; default Python ran 214
+  tests (21 opt-in skips) and Rust-opt-in Python ran 214 tests with no skips.
+- U02b PR #59 exact head `89ae294` passed `test` and `tray-dbus` in run
+  `41174965540` and merged normally at `81b7b8f`. Build-59 acceptance evidence
+  is in AUDIT E093/E094. A fresh Xvfb smoke could not run because `xvfb-run`
+  and `xdotool` are absent; the synthetic native screenshots from merged U02
+  were inspected. PR #60 is open; `tray-dbus` passed and `test` was in progress
+  on its initial exact head when observed. Python remains default until UG passes.
 
 ## 0.82.0 (57) — 2026-10-31
 

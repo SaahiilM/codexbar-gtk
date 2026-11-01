@@ -9,15 +9,15 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Field | Current checkpoint |
 | --- | --- |
 | Goal | Fully native Rust GTK4/libadwaita app; backend first, UI second |
-| Current phase | BG passed in PR #54 at `e1abf7b3e1db0e7f23e3be063a3ef067d85be1a1`; U01 PR #56 merged at `3eea06f99760048b51407b446781981e5edb49db`; build-56 closeout PR #57 merged at `043e273b83053f02ffcd96b203ac9af5fd87f791`; U02a PR #58 merged at `549908e42195ce04479424c5fd22ca5ea52d8109`. Phase U is active. |
-| Last merged implementation | U02a native dashboard/provider cards PR #58 merged normally at `549908e42195ce04479424c5fd22ca5ea52d8109`, build `0.82.0 (57)`; U02b is active on build 58. |
+| Current phase | BG passed in PR #54 at `e1abf7b3e1db0e7f23e3be063a3ef067d85be1a1`; U01 PR #56 merged at `3eea06f99760048b51407b446781981e5edb49db`; build-56 closeout PR #57 merged at `043e273b83053f02ffcd96b203ac9af5fd87f791`; U02a PR #58 merged at `549908e42195ce04479424c5fd22ca5ea52d8109`; U02b PR #59 merged at `81b7b8f5bb3bc816efd34324466c1a257a582778`. Phase U is active. |
+| Last merged implementation | U02b native charts/history PR #59 merged normally at `81b7b8f5bb3bc816efd34324466c1a257a582778`, build `0.82.0 (58)`; build 59 closes the Python history writer parity gap and records final U02 acceptance. |
 | Planning change | [PR #18](https://github.com/SaahiilM/codexbar-gtk/pull/18), merged at `69c5496`, build `0.81.0 (17)` |
 | Backend tasks completed after that baseline | B00–B15 and BG are accepted and merged. B11's Actions startup failures remain documented as failures; see E086. |
-| Active implementation task / owner | U02b native history charts, burndown and remaining card parity, `frontend/u02b-history-build58`, build `0.82.0 (58)`; U02 parent remains partial. |
+| Active implementation task / owner | U02c final history writer parity and U02 acceptance, `frontend/u02-final-acceptance-build59`, build `0.82.0 (59)`, [PR #60](https://github.com/SaahiilM/codexbar-gtk/pull/60) open at exact head `cb2ede09397087de44b09f3a3d0b6e306b39b975`; U02 remains partial until this focused PR merges. |
 | Latest gate result | **BG passed** — PR #54 merged and verified on live main. Headless Rust-only integration, Rust-opt-in GTK fixture smoke and residual-Python inventory are recorded in E085/E086. |
-| Next domain slice | Complete U02b history plots/burndown and card parity, then U03. Keep Python as default until UG passes; do not start cutover work before UG. |
-| Open external blockers | No U02b implementation blocker. Local GTK runtime libraries are installed, but system GTK4/libadwaita development packages and pkg-config files are absent; build 58 uses the ignored worktree-local SDK extraction. CI installs `libgtk-4-dev` and `libadwaita-1-dev` explicitly. B11's zero-job Actions startup failures remain documented, not CI successes. |
-| Latest checks | U02a PR #58 exact head `c2a3078d7ec304ef94323749d68d21d59d9cc21b` passed `test` and `tray-dbus` in run `41172651348`; normal merge `549908e42195ce04479424c5fd22ca5ea52d8109` is live `origin/main` (E091). U02b core/backend/native tests, Clippy, extension build, default and opt-in Python suites, and native GTK smokes pass locally; focused PR checks pending. Exact commands and counts are in E092. |
+| Next domain slice | Close U02c and verify the focused PR, then start U03 from the accepted panel contract in AUDIT E094. Keep Python as default until UG passes; do not start cutover work before UG. |
+| Open external blockers | No external blocker. Pre-existing JSONL samples cannot identify whether a stored zero came from unknown usage; this irrecoverable legacy ambiguity is documented and does not affect new writes. Local GTK runtime libraries are installed, but system GTK4/libadwaita development packages and pkg-config files are absent; local build 59 uses the ignored worktree-local SDK extraction. CI installs `libgtk-4-dev` and `libadwaita-1-dev` explicitly. B11's zero-job Actions startup failures remain documented, not CI successes. |
+| Latest checks | U02a PR #58 exact head `c2a3078d7ec304ef94323749d68d21d59d9cc21b` passed `test` and `tray-dbus` in run `41172651348` (E091). U02b PR #59 exact head `89ae294b6e1238ae404cb7b685388c69b2f32fe2` passed `test` and `tray-dbus` in run `41174965540`; normal merge `81b7b8f5bb3bc816efd34324466c1a257a582778` is live main (E093). PR #60 head `b95b311ff1587df9d53546889de95af9f8d4db3f` failed `test` in run `41314251378`; `tray-dbus` passed. Follow-up timezone fix is prepared and requires new exact-head checks (E096). Do not merge until the exact current head has both required checks successful. |
 | UI validation | U02b native synthetic [Xvfb screenshot](screenshots/u02-history-native-xvfb.png) shows quota trend, burndown, model bars and credit bars after completed fixture refresh. The smoke uses temporary HOME/private D-Bus and synthetic CLI data; no real account or credentials. U02a native dashboard [Wayland capture](screenshots/u02-dashboard-wayland.png); U01 synthetic native bootstrap [Wayland capture](screenshots/u01-native-bootstrap-wayland.png); B13c pair [Python](screenshots/b13-last30-python-wayland.png) / [Rust opt-in](screenshots/b13-last30-rust-wayland.png); BG pair [Python reference](screenshots/bg-python-reference-wayland.png) / [Rust opt-in](screenshots/bg-rust-opt-in-wayland.png). A U02b Spectacle attempt captured a stale loading frame and is not used as verification; U02b runtime/drawing evidence is from the completed Xvfb GTK window. |
 
 **First commands for a new model/session:**
@@ -223,15 +223,26 @@ the Resume here table. BG passed after PR #54; Phase U may now be coordinated.
     Projection consumes B10 snapshot fields and preferences; GTK only renders.
   - [ ] **U02b** History sparklines/detail charts, history-derived burndown,
     quota warning/workday marks and daily target labels. Active build 58 on
-    `frontend/u02b-history-build58`; projections use the B10 snapshot's retained
-    history and existing Rust chart/pace policy. Known zero remains distinct
-    from unknown; new Rust history records skip unknown/placeholder observations.
-    Older JSONL records remain readable, but their original format did not
-    persist knownness, so old unknown-zero samples cannot be retroactively
-    distinguished from known zero. U02 remains partial until this slice is
-    verified and merged.
+    `frontend/u02b-history-build58`; verified and merged in PR #59 at
+    `81b7b8f`; exact head `89ae294` passed both required checks. Projections use
+    the B10 snapshot history and existing Rust chart/pace policy. Charts expose
+    accessible descriptions and units; unknown current usage produces no trend
+    or burndown, while known zero remains a real 0%. Rust and Python now both
+    skip new unknown/placeholder history writes. Older JSONL rows remain
+    readable, but their original format lacks knownness, so prior unknown-zero
+    records remain ambiguous and cannot be repaired without discarding history.
+    See E093/E094.
+  - [ ] **U02c** Python default history writer parity and final U02 acceptance,
+    `frontend/u02-final-acceptance-build59`; skip unknown, placeholder and
+    non-finite observations while retaining known zero. Verify shared behavior
+    and exact-head CI; U02 stays partial until this focused PR merges.
 - [ ] **U03** Compact panel, dismissal, anchoring and Wayland/X11 placement
   (`popup.py`, `x11_position.py`); preserve dashboard/settings navigation.
+  Use a separate `PanelView` over the shared `DashboardModel`, refresh it on
+  backend sequence changes, and keep anchor metadata optional until U06 SNI
+  activation exists. Wayland must use compositor placement unless a supported
+  anchor token is available; X11 can use the actual GDK surface and selected
+  monitor work area. See the U03 handoff in E094.
 - [ ] **U04** Usage & Spend and Sessions pages, heatmap interaction/tooltips,
   filters and empty/error/loading/partial states (`spend.py`, `sessions.py`).
 - [ ] **U05** Every preferences pane, provider/source/API-key controls,

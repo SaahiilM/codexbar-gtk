@@ -25,9 +25,12 @@ and residual-Python audit are recorded in AUDIT E085/E086. Phase U is now
 unblocked. U01's separate native GTK bootstrap merged in PR #56 at `3eea06f`;
 its placeholder routes are not screen parity, and the Python launcher remains
 the default until UG passes. U02a native dashboard/provider-card work merged
-in PR #58 at `549908e`; U02b history plots and burndown is now active. Some
-Python edge-input behavior remains available only through the default Python
-path as described below.
+in PR #58 at `549908e`, and U02b history plots/burndown merged in PR #59 at
+`81b7b8f`. U02's final acceptance is closing one shared-history writer parity
+gap on build 59; Python and Rust now both need to skip unknown/placeholder
+samples. Pre-existing JSONL rows do not contain knownness and remain ambiguous.
+Some Python edge-input behavior remains available only through the default
+Python path as described below.
 
 The file inventory and named functions below were inspected, not just inferred
 from filenames. Test results and limitations are recorded separately in AUDIT.

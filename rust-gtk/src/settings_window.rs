@@ -250,6 +250,28 @@ impl SettingsWindow {
         }
     }
 
+    pub fn handle_terminal_login_result(
+        &self,
+        result: Result<
+            codexbar_backend::application::TerminalLoginResult,
+            codexbar_backend::application::LoginOperationError,
+        >,
+    ) {
+        if let Some(dialog) = self.login_dialog.borrow().as_ref() {
+            dialog.status.set_text(match result {
+                Ok(result) if result.launched => "Codex login started in a terminal.",
+                Ok(_) => "No supported terminal was found. Continue with browser sign-in.",
+                Err(error)
+                    if error.kind
+                        == codexbar_backend::application::LoginOperationErrorKind::CliNotFound =>
+                {
+                    "Codex CLI was not found. Continue with browser sign-in."
+                }
+                Err(_) => "Could not open a terminal. Continue with browser sign-in.",
+            });
+        }
+    }
+
     fn request(&self, operation: SettingsOperation, action: PendingAction) {
         let request_id = self.next_request.get();
         self.next_request.set(request_id.wrapping_add(1));
@@ -770,9 +792,11 @@ impl SettingsWindow {
         let source_button = gtk::Button::with_label("Open");
         source_button.set_valign(gtk::Align::Center);
         source_button.connect_clicked(|_| {
-            let _ = gio::AppInfo::launch_default_for_uri(
+            gio::AppInfo::launch_default_for_uri_async(
                 "https://github.com/SaahiilM/codexbar-gtk",
                 None::<&gio::AppLaunchContext>,
+                None::<&gio::Cancellable>,
+                |_| {},
             );
         });
         source.add_suffix(&source_button);
@@ -810,9 +834,11 @@ impl SettingsWindow {
         let project_button = gtk::Button::with_label("Open");
         project_button.set_valign(gtk::Align::Center);
         project_button.connect_clicked(|_| {
-            let _ = gio::AppInfo::launch_default_for_uri(
+            gio::AppInfo::launch_default_for_uri_async(
                 "https://github.com/SaahiilM/codexbar-gtk",
                 None::<&gio::AppLaunchContext>,
+                None::<&gio::Cancellable>,
+                |_| {},
             );
         });
         project_row.add_suffix(&project_button);
@@ -1546,16 +1572,36 @@ impl LoginDialog {
         let open_button = gtk::Button::with_label("Open in browser");
         open_button.set_sensitive(false);
         let url_for_open = url.clone();
+        let status_for_open = status.clone();
         open_button.connect_clicked(move |_| {
             let link = url_for_open.text();
             if link.starts_with("https://") && !link.chars().any(char::is_whitespace) {
-                let _ = gio::AppInfo::launch_default_for_uri(
+                let status = status_for_open.clone();
+                gio::AppInfo::launch_default_for_uri_async(
                     link.as_str(),
                     None::<&gio::AppLaunchContext>,
+                    None::<&gio::Cancellable>,
+                    move |result| {
+                        if result.is_err() {
+                            status.set_text("Could not open the authorization link.");
+                        }
+                    },
                 );
             }
         });
         actions.append(&open_button);
+        if provider_id == "codex" {
+            let terminal_button = gtk::Button::with_label("Use terminal");
+            let status_for_terminal = status.clone();
+            let app_for_terminal = window.application();
+            terminal_button.connect_clicked(move |_| {
+                status_for_terminal.set_text("Opening Codex login in a terminal…");
+                if let Some(application) = &app_for_terminal {
+                    application.activate_action("login-terminal", None);
+                }
+            });
+            actions.append(&terminal_button);
+        }
         let copy = gtk::Button::with_label("Copy link");
         let url_for_copy = url.clone();
         let window_for_copy = window.clone();

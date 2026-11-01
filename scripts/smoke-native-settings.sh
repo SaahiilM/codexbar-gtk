@@ -72,7 +72,15 @@ wait_for_window() {
         window=$(xdotool search --onlyvisible --name "$pattern" 2>/dev/null | head -n 1 || true)
         [[ -n "$window" ]] || sleep 0.05
     done
-    [[ -n "$window" ]] || { cat "$scratch/app.log" >&2; echo "native settings window not found: $pattern" >&2; exit 1; }
+    [[ -n "$window" ]] || {
+        cat "$scratch/app.log" >&2
+        while read -r visible_window; do
+            printf 'visible window %s: ' "$visible_window" >&2
+            xdotool getwindowname "$visible_window" >&2 || true
+        done < <(xdotool search --onlyvisible --name '.*' 2>/dev/null || true)
+        echo "native settings window not found: $pattern" >&2
+        exit 1
+    }
     printf '%s\n' "$window"
 }
 
@@ -122,6 +130,27 @@ done
     exit 1
 }
 
+# Exercise the native launch-at-login switch and verify its private desktop
+# entry is created atomically, then removed again through SettingsActor.
+autostart_file="$HOME/.config/autostart/codexbar-gtk.desktop"
+xdotool mousemove --window "$settings_window" 810 432 click 1
+autostart_deadline=$((SECONDS + 8))
+while [[ ! -s "$autostart_file" ]] && (( SECONDS < autostart_deadline )); do sleep 0.05; done
+expected_executable=$(readlink -f "$binary")
+[[ -s "$autostart_file" ]] && grep -Fx -- "Exec=\"$expected_executable\"" "$autostart_file" >/dev/null || {
+    cat "$scratch/app.log" >&2
+    echo "native launch-at-login switch did not write the expected executable entry" >&2
+    exit 1
+}
+xdotool mousemove --window "$settings_window" 810 432 click 1
+autostart_deadline=$((SECONDS + 8))
+while [[ -e "$autostart_file" ]] && (( SECONDS < autostart_deadline )); do sleep 0.05; done
+[[ ! -e "$autostart_file" ]] || {
+    cat "$scratch/app.log" >&2
+    echo "native launch-at-login switch did not remove its desktop entry" >&2
+    exit 1
+}
+
 # Capture representative panes from the live PreferencesWindow.
 xdotool mousemove --window "$settings_window" 166 800 click 1
 sleep 0.3
@@ -146,6 +175,34 @@ capture "$settings_window" "${NATIVE_SETTINGS_PLUGINS_SCREENSHOT:-}"
 xdotool mousemove --window "$settings_window" 856 800 click 1
 sleep 0.3
 capture "$settings_window" "${NATIVE_SETTINGS_ADVANCED_SCREENSHOT:-}"
+before_dialog_windows=$(xdotool search --onlyvisible --name '.*' 2>/dev/null | sort -n || true)
+xdotool mousemove --window "$settings_window" 790 333 click 1
+dialog_deadline=$((SECONDS + 8))
+new_dialog_windows=
+while (( SECONDS < dialog_deadline )); do
+    new_dialog_windows=$(comm -13 <(printf '%s\n' "$before_dialog_windows" | sed '/^$/d') \
+        <(xdotool search --onlyvisible --name '.*' 2>/dev/null | sort -n || true) || true)
+    [[ -n "$new_dialog_windows" ]] && break
+    sleep 0.05
+done
+[[ -n "$new_dialog_windows" ]] || {
+    cat "$scratch/app.log" >&2
+    echo "native file chooser did not map a window" >&2
+    exit 1
+}
+xdotool key Escape
+dialog_deadline=$((SECONDS + 5))
+still_open_windows=
+while (( SECONDS < dialog_deadline )); do
+    still_open_windows=$(comm -13 <(printf '%s\n' "$before_dialog_windows" | sed '/^$/d') \
+        <(xdotool search --onlyvisible --name '.*' 2>/dev/null | sort -n || true) || true)
+    [[ -n "$still_open_windows" ]] || break
+    sleep 0.05
+done
+if [[ -n "$still_open_windows" ]]; then
+    echo "native file chooser did not close after the cancel response" >&2
+    exit 1
+fi
 xdotool mousemove --window "$settings_window" 1052 800 click 1
 sleep 0.3
 capture "$settings_window" "${NATIVE_SETTINGS_ABOUT_SCREENSHOT:-}"

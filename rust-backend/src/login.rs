@@ -277,12 +277,14 @@ impl LoginSession {
 #[derive(Clone)]
 pub struct LoginActor {
     sender: mpsc::Sender<LoginRequest>,
+    task: Arc<tokio::sync::Mutex<Option<tokio::task::JoinHandle<()>>>>,
 }
 
 pub enum LoginRequest {
     Start { provider_id: String },
     SubmitCode { code: String },
     Cancel,
+    Shutdown,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -310,6 +312,7 @@ impl LoginUiReceiver {
 struct ActiveLogin {
     control: LoginControl,
     completion: tokio::task::JoinHandle<Result<LoginCompletion, LoginError>>,
+    event_forwarder: Option<tokio::task::JoinHandle<()>>,
 }
 
 impl LoginActor {
@@ -319,17 +322,20 @@ impl LoginActor {
     ) -> (Self, LoginUiReceiver) {
         let (sender, mut requests) = mpsc::channel::<LoginRequest>(8);
         let (event_sender, event_receiver) = mpsc::unbounded_channel();
-        runtime.spawn(async move {
+        let task = runtime.spawn(async move {
             let mut active: Option<ActiveLogin> = None;
-            loop {
+            'actor: loop {
                 if let Some(session) = active.as_mut() {
                     tokio::select! {
                         request = requests.recv() => {
-                            let Some(request) = request else { break; };
+                            let Some(request) = request else { break 'actor; };
                             match request {
                                 LoginRequest::Start { provider_id } => {
                                     session.control.cancel().await;
                                     let _ = (&mut session.completion).await;
+                                    if let Some(forwarder) = session.event_forwarder.take() {
+                                        let _ = forwarder.await;
+                                    }
                                     active = None;
                                     start_login(&cli, provider_id, &event_sender, &mut active).await;
                                 }
@@ -339,10 +345,15 @@ impl LoginActor {
                                     }
                                 }
                                 LoginRequest::Cancel => session.control.cancel().await,
+                                LoginRequest::Shutdown => break 'actor,
                             }
                         }
                         result = &mut session.completion => {
+                            let forwarder = session.event_forwarder.take();
                             active = None;
+                            if let Some(forwarder) = forwarder {
+                                let _ = forwarder.await;
+                            }
                             let event = match result {
                                 Ok(Ok(completion)) => LoginUiEvent::Finished(completion.kind),
                                 Ok(Err(error)) => LoginUiEvent::Failed(error.kind),
@@ -352,7 +363,7 @@ impl LoginActor {
                         }
                     }
                 } else {
-                    let Some(request) = requests.recv().await else { break; };
+                    let Some(request) = requests.recv().await else { break 'actor; };
                     match request {
                         LoginRequest::Start { provider_id } => {
                             start_login(&cli, provider_id, &event_sender, &mut active).await;
@@ -361,16 +372,23 @@ impl LoginActor {
                             let _ = event_sender.send(LoginUiEvent::Failed(LoginErrorKind::Input));
                         }
                         LoginRequest::Cancel => {}
+                        LoginRequest::Shutdown => break 'actor,
                     }
                 }
             }
             if let Some(session) = active {
                 session.control.cancel().await;
                 let _ = session.completion.await;
+                if let Some(forwarder) = session.event_forwarder {
+                    let _ = forwarder.await;
+                }
             }
         });
         (
-            Self { sender },
+            Self {
+                sender,
+                task: Arc::new(tokio::sync::Mutex::new(Some(task))),
+            },
             LoginUiReceiver {
                 receiver: event_receiver,
             },
@@ -382,6 +400,14 @@ impl LoginActor {
         request: LoginRequest,
     ) -> Result<(), mpsc::error::TrySendError<LoginRequest>> {
         self.sender.try_send(request)
+    }
+
+    /// Cancel an active PTY session, reap its process group, and join the actor.
+    pub async fn shutdown(&self) {
+        let _ = self.sender.send(LoginRequest::Shutdown).await;
+        if let Some(task) = self.task.lock().await.take() {
+            let _ = task.await;
+        }
     }
 }
 
@@ -408,9 +434,9 @@ async fn start_login(
     {
         Ok(mut session) => {
             let control = session.control();
-            if let Some(mut stream) = session.take_events() {
+            let event_forwarder = if let Some(mut stream) = session.take_events() {
                 let event_sender = events.clone();
-                tokio::spawn(async move {
+                Some(tokio::spawn(async move {
                     while let Some(event) = stream.recv().await {
                         let event = match event {
                             LoginEvent::AuthorizationUrl(url) => {
@@ -425,12 +451,15 @@ async fn start_login(
                             }
                         }
                     }
-                });
-            }
+                }))
+            } else {
+                None
+            };
             let completion = tokio::spawn(session.wait());
             *active = Some(ActiveLogin {
                 control,
                 completion,
+                event_forwarder,
             });
         }
         Err(error) => {
@@ -1028,6 +1057,65 @@ mod tests {
         .expect("login actor should finish the synthetic PTY flow");
         assert!(saw_url);
         assert!(saw_code_prompt);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn login_actor_shutdown_cancels_and_reaps_active_pty_child() {
+        let fixture = LoginFixture::new("");
+        let pid_file = fixture.0.parent().unwrap().join("login-child.pid");
+        std::fs::write(
+            fixture.executable(),
+            format!(
+                "#!/bin/sh\nprintf 'https://synthetic.invalid/authorize Paste code here\\n'\nprintf '%s\\n' \"$$\" > '{}'\nread code\n",
+                pid_file.display()
+            ),
+        )
+        .unwrap();
+        std::fs::set_permissions(fixture.executable(), std::fs::Permissions::from_mode(0o700))
+            .unwrap();
+        let cli = Arc::new(SharedCliService::new(Arc::new(CliService::new(
+            fixture.executable(),
+            None,
+        ))));
+        let (actor, mut events) = LoginActor::start(&tokio::runtime::Handle::current(), cli);
+        actor
+            .try_send(LoginRequest::Start {
+                provider_id: "codex".to_owned(),
+            })
+            .expect("start synthetic login");
+
+        async_timeout(Duration::from_secs(3), async {
+            while let Some(event) = events.recv().await {
+                if matches!(event, LoginUiEvent::Prompt(LoginPrompt::PasteCode)) {
+                    break;
+                }
+            }
+        })
+        .await
+        .expect("synthetic login should reach the PTY prompt");
+        let child_pid: i32 = async_timeout(Duration::from_secs(1), async {
+            loop {
+                if let Ok(value) = std::fs::read_to_string(&pid_file) {
+                    if let Ok(pid) = value.trim().parse() {
+                        break pid;
+                    }
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("fake login process should record its pid");
+
+        async_timeout(Duration::from_secs(3), actor.shutdown())
+            .await
+            .expect("login actor should join after cancelling its PTY child");
+        assert!(actor.task.lock().await.is_none());
+        assert_eq!(unsafe { libc::kill(child_pid, 0) }, -1);
+        assert_eq!(
+            std::io::Error::last_os_error().raw_os_error(),
+            Some(libc::ESRCH)
+        );
     }
 
     #[cfg(unix)]

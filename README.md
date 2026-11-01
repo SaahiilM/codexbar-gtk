@@ -130,12 +130,13 @@ PR #56; the remaining Phase U screens are still pending.
 - [Decisions, verification evidence and audit trail](docs/rust-migration/AUDIT.md)
 
 Future coding agents should start with [`AGENTS.md`](AGENTS.md). B00–B15 and BG
-are accepted. U01–U05 are merged through U05 PR #63 at
-`0c298afc0c4cd24bd8fd13b6979b06758dca1f21`. U06 native StatusNotifierItem and
-dbusmenu work is active on build 63; its synthetic Xvfb dashboard screenshot
-and local verification are recorded in E110. U07 and U08 remain. The Python
-launcher remains default until the UG cutover gate passes. See E086 for the BG
-merge, B11 CI limitation and B15 compatibility bounds.
+are accepted. U01–U06 are merged through U06 PR #64 at
+`678b6b9cf3e10e5b9cd926cb488b5ffbf62ce1da`; its exact-head checks and synthetic
+Xvfb dashboard screenshot are recorded in E110/E111. U07 native desktop
+integration is implemented and locally verified on build 64 (E113); exact-head
+PR checks are pending. U08 and UG follow. The Python launcher
+remains default until the UG cutover gate passes. See E086 for the BG merge,
+B11 CI limitation and B15 compatibility bounds.
 
 ### Existing opt-in module integrations
 
@@ -217,7 +218,7 @@ The GTK front-end uses the same version pair as the macOS bundle:
   this client is feature-compatible with (`0.82.0`).
 * `CURRENT_PROJECT_VERSION` is the build number of the Linux front-end.
 * `codexbar_gtk/version.py` turns the pair into the macOS-style
-  `"0.82.0 (63)"` string shown under Settings → About, in the tray menu and by
+  `"0.82.0 (64)"` string shown under Settings → About, in the tray menu and by
   `./run.sh --about`.
 
 Increment `CURRENT_PROJECT_VERSION` for each merged PR and keep it in sync with

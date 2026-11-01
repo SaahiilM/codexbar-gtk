@@ -4,6 +4,23 @@ Client-side changelog for the CodexBar GTK front-end. Each entry keys a build
 number (`CURRENT_PROJECT_VERSION`) to the upstream macOS CodexBar release its
 short version tracks, so "which version has what" maps cleanly onto both trees.
 
+## 0.82.0 (64) — 2026-11-01
+
+Tracks upstream CodexBar 0.82.0.
+
+### Changed
+
+- Complete native desktop notification delivery, OS adapters, display
+  readiness, restart and launch-at-login integration, and orderly worker/tray
+  shutdown (U07).
+
+### Validation
+
+- U06 PR #64 merged normally at `678b6b9`; exact head passed both required
+  checks in run `41337858935`. U07 local Rust/Python/GTK checks and synthetic
+  Xvfb/private-bus runtime evidence are in migration audit E113; exact-head PR
+  checks remain pending.
+
 ## 0.82.0 (63) — 2026-11-01
 
 Tracks upstream CodexBar 0.82.0.

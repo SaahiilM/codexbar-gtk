@@ -44,10 +44,14 @@ issues are corrected and the no-capture smoke passes locally, including with
 `tray-dbus` in run `41333765485`, and PR #63 merged normally at
 `0c298afc0c4cd24bd8fd13b6979b06758dca1f21` (AUDIT E108). U06 owns build 63 on
 `orchestrated/luna-u06-tray`; local private-bus tests, native GTK route smokes
-and the synthetic tray-routed dashboard screenshot are recorded in E110. Its
-PR checks and merge remain pending. Python remains the default until UG passes.
-Some Python edge-input behavior remains available only through the default
-Python path as described below.
+and the synthetic tray-routed dashboard screenshot are recorded in E110. PR #64
+merged normally at `678b6b9cf3e10e5b9cd926cb488b5ffbf62ce1da`; its exact head
+passed both required checks (E111). U07 owns build 64 for native notifications,
+OS adapters, display readiness, restart/autostart integration and orderly
+shutdown. Its implementation, local checks and synthetic runtime evidence are
+recorded in E113; exact-head PR checks remain pending. Python remains the
+default until UG passes. Some Python edge-input behavior remains available only
+through the default Python path as described below.
 
 The file inventory and named functions below were inspected, not just inferred
 from filenames. Test results and limitations are recorded separately in AUDIT.
@@ -84,9 +88,10 @@ Python GTK widgets                        Rust GTK4/libadwaita widgets
   Tokio worker, polls immutable watch state and drains lossless events on the
   GLib context. It has no PyO3/Python bridge; the Rust `codexbar` CLI service
   remains its only subprocess integration. U02 provides the native dashboard
-  and U03 adds a compact panel; U04 owns Sessions and Spend, while U05 owns
-  Settings. The existing Python launcher remains the
-  default until UG passes.
+  and U03 adds a compact panel; U04 owns Sessions and Spend, U05 owns Settings,
+  U06 owns StatusNotifierItem/dbusmenu, and U07 owns desktop notification and OS
+  lifecycle integration. The existing Python launcher remains the default
+  until UG passes.
 - The backend publishes immutable snapshots/state; the frontend marshals them
   to its GUI thread. `watch` deliberately coalesces intermediate updates; if a
   future user-visible operation needs a lossless event stream, define a bounded

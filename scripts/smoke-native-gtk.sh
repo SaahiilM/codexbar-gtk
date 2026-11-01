@@ -8,7 +8,7 @@ if [[ "${CODEXBAR_NATIVE_SMOKE_INNER:-}" != "1" ]]; then
     exec xvfb-run -a dbus-run-session -- env CODEXBAR_NATIVE_SMOKE_INNER=1 "$0" "$binary"
 fi
 
-for tool in xdotool gapplication gdbus timeout xwininfo xprop; do
+for tool in xdotool gapplication gdbus timeout xwininfo xprop python3; do
     command -v "$tool" >/dev/null || { echo "missing smoke dependency: $tool" >&2; exit 2; }
 done
 if [[ -n "${NATIVE_GTK_TRAY_PANEL_SCREENSHOT:-}${NATIVE_GTK_TRAY_DASHBOARD_SCREENSHOT:-}" ]]; then
@@ -26,6 +26,10 @@ cleanup() {
         kill "$app_pid" 2>/dev/null || true
         wait "$app_pid" 2>/dev/null || true
     fi
+    if [[ -n "${notification_pid:-}" ]] && kill -0 "$notification_pid" 2>/dev/null; then
+        kill "$notification_pid" 2>/dev/null || true
+        wait "$notification_pid" 2>/dev/null || true
+    fi
     if [[ "${NATIVE_GTK_KEEP_TMP:-0}" == "1" ]]; then
         echo "synthetic native GTK smoke files kept at $scratch" >&2
     else
@@ -41,6 +45,10 @@ cat > "$scratch/fake-codexbar" <<'CLI'
 printf '%s\n' "$1" >> "$NATIVE_CLI_LOG"
 if [ "$1" = usage ] && [ "${NATIVE_DELAY_USAGE:-0}" = 1 ]; then
     : > "$NATIVE_USAGE_STARTED"
+    if [ -n "${NATIVE_CHILD_PID_FILE:-}" ]; then
+        printf '%s\n' "$$" > "$NATIVE_CHILD_PID_FILE"
+        exec sleep 10
+    fi
     sleep 10
 fi
 if [ "$1" = usage ] && [ "${NATIVE_WAIT_FOR_RELEASE:-0}" = 1 ]; then
@@ -53,7 +61,7 @@ fi
 case "$1" in
     --version) printf 'CodexBar synthetic fixture 0.82.0\n' ;;
     usage)
-        printf '%s\n' '[{"provider":"codex","source":"synthetic","pace":{"primary":{"stage":"slightlyAhead","deltaPercent":18}},"usage":{"updatedAt":"2026-11-01T12:00:00Z","primary":{"usedPercent":42,"resetsAt":"2026-11-01T18:00:00Z","windowMinutes":300},"secondary":{"usedPercent":31,"resetsAt":"2026-11-05T18:00:00Z","windowMinutes":10080}}}]'
+        printf '%s\n' '[{"provider":"codex","source":"synthetic","pace":{"primary":{"stage":"slightlyAhead","deltaPercent":18}},"usage":{"updatedAt":"2026-11-01T12:00:00Z","primary":{"usedPercent":62,"resetsAt":"2026-11-01T18:00:00Z","windowMinutes":300},"secondary":{"usedPercent":31,"resetsAt":"2026-11-05T18:00:00Z","windowMinutes":10080}}}]'
         ;;
     cost|sessions) printf '[]\n' ;;
     *) printf '[]\n' ;;
@@ -68,10 +76,98 @@ export XDG_DATA_HOME="$scratch/home/.local/share"
 export XDG_CACHE_HOME="$scratch/home/.cache"
 export CODEXBAR_CLI="$scratch/fake-codexbar"
 export NATIVE_CLI_LOG="$scratch/cli-calls"
+export NATIVE_NOTIFICATION_LOG="$scratch/notifications"
+export NATIVE_TERMINAL_LOG="$scratch/terminal-argv"
+export NATIVE_TERMINAL_PID="$scratch/terminal.pid"
+mkdir -p "$scratch/bin"
+cat > "$scratch/fake-codex" <<'CODEX'
+#!/bin/sh
+exit 0
+CODEX
+cat > "$scratch/bin/konsole" <<'TERMINAL'
+#!/bin/sh
+printf '%s\n' "$$" > "$NATIVE_TERMINAL_PID"
+printf '%s\n' "$@" > "$NATIVE_TERMINAL_LOG"
+TERMINAL
+chmod 700 "$scratch/fake-codex" "$scratch/bin/konsole"
+export CODEX_CLI="$scratch/fake-codex"
+export PATH="$scratch/bin:$PATH"
 export GTK_A11Y=none
 export GTK_USE_PORTAL=0
 export GDK_BACKEND=x11
 export GSK_RENDERER=cairo
+
+# Capture Gio's native notification delivery over this isolated session bus.
+python_bin=$(command -v python3)
+if ! "$python_bin" -c 'import dbus, gi' >/dev/null 2>&1; then
+    python_bin=/usr/bin/python3
+fi
+"$python_bin" -c 'import dbus, gi' >/dev/null 2>&1 || {
+    echo "private-bus notification smoke needs python3-dbus and python3-gi" >&2
+    exit 2
+}
+cat > "$scratch/notifications.py" <<'PY'
+import sys
+
+import dbus
+import dbus.service
+import gi
+
+gi.require_version("GLib", "2.0")
+from dbus.mainloop.glib import DBusGMainLoop
+from gi.repository import GLib
+
+DBusGMainLoop(set_as_default=True)
+bus = dbus.SessionBus()
+name = dbus.service.BusName("org.freedesktop.Notifications", bus=bus)
+
+
+class Notifications(dbus.service.Object):
+    def __init__(self):
+        super().__init__(bus, "/org/freedesktop/Notifications")
+        self.next_id = 1
+
+    @dbus.service.method("org.freedesktop.Notifications", in_signature="", out_signature="as")
+    def GetCapabilities(self):
+        return ["body"]
+
+    @dbus.service.method("org.freedesktop.Notifications", in_signature="", out_signature="ssss")
+    def GetServerInformation(self):
+        return ["Synthetic", "CodexBar GTK fixture", "1.0", "1.2"]
+
+    @dbus.service.method(
+        "org.freedesktop.Notifications",
+        in_signature="susssasa{sv}i",
+        out_signature="u",
+    )
+    def Notify(self, app_name, replaces_id, app_icon, summary, body, actions, hints, expire_timeout):
+        with open(sys.argv[1], "a", encoding="utf-8") as output:
+            output.write(f"{app_name}\t{summary}\t{body}\n")
+        self.next_id += 1
+        return dbus.UInt32(self.next_id)
+
+    @dbus.service.method("org.freedesktop.Notifications", in_signature="u", out_signature="")
+    def CloseNotification(self, notification_id):
+        return None
+
+
+Notifications()
+GLib.MainLoop().run()
+PY
+"$python_bin" "$scratch/notifications.py" "$NATIVE_NOTIFICATION_LOG" >"$scratch/notifications.log" 2>&1 &
+notification_pid=$!
+deadline=$((SECONDS + 8))
+while ! gdbus call --session --dest org.freedesktop.DBus --object-path /org/freedesktop/DBus \
+    --method org.freedesktop.DBus.NameHasOwner org.freedesktop.Notifications 2>/dev/null \
+    | grep -q '(true,)' \
+    && (( SECONDS < deadline )); do sleep 0.05; done
+gdbus call --session --dest org.freedesktop.Notifications \
+    --object-path /org/freedesktop/Notifications \
+    --method org.freedesktop.Notifications.GetServerInformation >/dev/null || {
+    cat "$scratch/notifications.log" >&2
+    echo "synthetic notification service did not acquire the private bus name" >&2
+    exit 1
+}
 
 window_title() {
     local pattern=$1
@@ -189,6 +285,17 @@ dashboard_window=$(xdotool search --onlyvisible --name '^CodexBar GTK' | head -n
 capture_window "$dashboard_window" "${NATIVE_GTK_TRAY_DASHBOARD_SCREENSHOT:-}"
 tray_menu_event 7
 assert_title_contains '^CodexBar Settings' "CodexBar Settings"
+gapplication action com.steipete.CodexBarGTK login-terminal
+deadline=$((SECONDS + 8))
+while [[ ! -s "$NATIVE_TERMINAL_LOG" ]] && (( SECONDS < deadline )); do sleep 0.05; done
+[[ -s "$NATIVE_TERMINAL_LOG" ]] || {
+    cat "$scratch/primary.log" >&2
+    echo "native terminal login adapter did not launch its synthetic terminal" >&2
+    exit 1
+}
+grep -Fx -- '-e' "$NATIVE_TERMINAL_LOG" >/dev/null
+grep -Fx -- "$CODEX_CLI" "$NATIVE_TERMINAL_LOG" >/dev/null
+grep -Fx -- 'login' "$NATIVE_TERMINAL_LOG" >/dev/null
 tray_menu_event 8
 assert_title_contains '^About CodexBar GTK' "About CodexBar GTK"
 tray_menu_event 2
@@ -199,6 +306,15 @@ done
 [[ $(grep -c '^usage$' "$NATIVE_CLI_LOG" 2>/dev/null || true) -ge 2 ]] || {
     cat "$scratch/primary.log" >&2
     echo "dbusmenu Refresh did not reach the synthetic CLI" >&2
+    exit 1
+}
+deadline=$((SECONDS + 8))
+while ! grep -q 'Quota warning' "$NATIVE_NOTIFICATION_LOG" 2>/dev/null && (( SECONDS < deadline )); do
+    sleep 0.05
+done
+grep -q 'Quota warning' "$NATIVE_NOTIFICATION_LOG" || {
+    cat "$scratch/primary.log" "$scratch/notifications.log" >&2
+    echo "typed quota event was not delivered through Gio on the private bus" >&2
     exit 1
 }
 
@@ -223,10 +339,52 @@ version_calls=$(grep -c '^--version$' "$NATIVE_CLI_LOG" || true)
 tray_menu_event 10
 wait "$app_pid"
 app_pid=
+terminal_pid=$(cat "$NATIVE_TERMINAL_PID")
+terminal_state=$(ps -o stat= -p "$terminal_pid" 2>/dev/null | awk '{print $1}' || true)
+[[ -z "$terminal_state" || "$terminal_state" == Z* ]] || {
+    echo "synthetic terminal child remained active after its exit: pid $terminal_pid ($terminal_state)" >&2
+    exit 1
+}
 if gdbus call --session --dest org.freedesktop.DBus --object-path /org/freedesktop/DBus \
     --method org.freedesktop.DBus.NameHasOwner org.kde.StatusNotifierItem-codexbar-gtk \
     | grep -q '(true,)'; then
     echo "native tray bus name remained owned after application shutdown" >&2
+    exit 1
+fi
+kill "$notification_pid" 2>/dev/null || true
+wait "$notification_pid" 2>/dev/null || true
+
+# In a non-systemd launch, restart releases the old tray registration, joins
+# the worker and execs the same process before it registers the item again.
+unset INVOCATION_ID
+: > "$NATIVE_CLI_LOG"
+"$binary" --page usage >"$scratch/restart.log" 2>&1 &
+app_pid=$!
+assert_title_contains '^CodexBar GTK' "Usage"
+wait_for_tray_name
+[[ $(grep -c '^--version$' "$NATIVE_CLI_LOG" 2>/dev/null || true) -ge 1 ]] || {
+    echo "restart fixture did not reach its initial native backend" >&2
+    exit 1
+}
+gapplication action com.steipete.CodexBarGTK restart
+deadline=$((SECONDS + 20))
+while [[ $(grep -c '^--version$' "$NATIVE_CLI_LOG" 2>/dev/null || true) -lt 2 ]] && (( SECONDS < deadline )); do
+    sleep 0.05
+done
+[[ $(grep -c '^--version$' "$NATIVE_CLI_LOG" 2>/dev/null || true) -ge 2 ]] || {
+    cat "$scratch/restart.log" >&2
+    echo "native fallback restart did not exec a fresh backend instance" >&2
+    exit 1
+}
+assert_title_contains '^CodexBar GTK' "Usage"
+wait_for_tray_name
+gapplication action com.steipete.CodexBarGTK quit
+wait "$app_pid"
+app_pid=
+if gdbus call --session --dest org.freedesktop.DBus --object-path /org/freedesktop/DBus \
+    --method org.freedesktop.DBus.NameHasOwner org.kde.StatusNotifierItem-codexbar-gtk \
+    | grep -q '(true,)'; then
+    echo "native tray bus name remained owned after restarted application shutdown" >&2
     exit 1
 fi
 
@@ -321,6 +479,7 @@ unset NATIVE_WAIT_FOR_RELEASE
 unset NATIVE_USAGE_FINISHED
 export NATIVE_DELAY_USAGE=1
 export NATIVE_USAGE_STARTED="$scratch/usage-started"
+export NATIVE_CHILD_PID_FILE="$scratch/usage-child.pid"
 : > "$NATIVE_CLI_LOG"
 "$binary" --page usage >"$scratch/inflight.log" 2>&1 &
 app_pid=$!
@@ -343,5 +502,10 @@ timeout 4 bash -c '
 ' _ "$app_pid"
 wait "$app_pid"
 app_pid=
+child_pid=$(cat "$NATIVE_CHILD_PID_FILE")
+if kill -0 "$child_pid" 2>/dev/null; then
+    echo "synthetic CLI child remained alive after native shutdown: $child_pid" >&2
+    exit 1
+fi
 
 printf 'native GTK command-line and cancellation smoke passed\n'

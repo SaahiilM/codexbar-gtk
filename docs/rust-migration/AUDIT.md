@@ -3363,3 +3363,95 @@ future models must verify the linked PR's status rather than trusting a stale
   styles. These local results do not claim remote CI or merge success. Next:
   finish the review pass, push the focused PR, then verify exact-head
   checks/reviews and merge normally before handing build 64 to U07.
+
+### E111 — 2026-11-01: U06 PR #64 verified merged; U07 build 64 released
+
+- **Observed merge and exact-head checks:** PR #64, “feat: add native
+  StatusNotifierItem and dbusmenu tray,” merged normally at
+  `678b6b9cf3e10e5b9cd926cb488b5ffbf62ce1da` on 2026-11-01 18:46:34Z. Its
+  final head `9bc166138b0b8551bd8bb4471936991a4a5365ab` passed required checks
+  `test` and `tray-dbus` in run `41337858935`. No reviews or review threads
+  were present at merge. The merged-head synthetic GTK screenshot is
+  `docs/rust-migration/screenshots/u06-native-sni-dashboard-xvfb.png`; it
+  depicts the dashboard reached through the native tray using fixture data.
+- **Handoff:** U06 delivered explicit idempotent SNI/dbusmenu unregister and
+  bus-name release, watcher recovery, tray action routing, and X11-only valid
+  activation anchoring; see E110 for implementation and local evidence. U07 is
+  released on `orchestrated/luna-u07-os-integration`, build `0.82.0 (64)`,
+  based on this verified live-main merge. Python remains the default until UG.
+
+### E112 — 2026-11-01: U07 implementation claim
+
+- **Scope:** native OS notification delivery from ordered typed backend events;
+  browser, terminal and file-dialog adapters; display readiness; restart and
+  launch-at-login compatibility; and explicit shutdown of the controller,
+  settings/login actors, child processes and U06 tray registration.
+- **Contract boundaries:** U05 continues to own persisted settings and the
+  launch-at-login desktop entry. U06 owns the idempotent tray teardown API.
+  U07 invokes that API before application exit and verifies no bus owner or
+  object registration survives shutdown. U08's pure renderer consumes the
+  existing TraySummary render inputs and feeds pixmaps through the existing
+  TrayPresentation field; U07 does not add renderer-specific state or alter
+  tray lifecycle for display scaling.
+- **Status:** active on build 64. The isolated worktree was clean at U05 merge
+  `0c298af` before fast-forwarding to `678b6b9`; it is now based on verified
+  U06 merge #64. This claim records no U07 implementation, test, runtime or
+  screenshot result. Record exact changed paths, decisions, check outcomes,
+  skips, fixture-only smoke scope, screenshot paths, limits and the next step
+  in a follow-up audit entry before opening the focused PR.
+
+### E113 — 2026-11-01: U07 build 64 implementation and local verification
+
+- **Implementation:** `rust-gtk/src/notifications.rs` maps typed policy events
+  to Gio notification content and stable, account-obscuring notification IDs;
+  `main.rs` drains them on the GTK/GLib context through
+  `gio::Application::send_notification`. `lifecycle.rs` waits up to 30 seconds
+  for GTK initialization and a usable display. Browser launches use Gio's
+  asynchronous URI adapter; the Codex login dialog can launch its terminal
+  adapter through the existing backend discovery/process seam. The native
+  `GtkFileChooserNative` response callback routes selected paths through the
+  serialized SettingsActor for import/export.
+- **Shutdown and restart:** `SettingsActor` and `LoginActor` now own joinable
+  task handles and expose explicit async shutdown. Login shutdown cancels the
+  active PTY process group, waits for the child and event-forwarder tasks, and
+  then joins the actor. The GTK worker stops settings/login actors, aborts and
+  joins the currency refresh, and joins the refresh controller. GTK shutdown
+  stops U06's tray before dropping windows and waits for the worker before
+  quitting; the non-systemd restart path execs the current binary only after
+  that join, while systemd restart keeps the existing unit policy. Launch at
+  login remains owned by U05's settings actor and its private desktop entry.
+- **U08 boundary:** the existing `TraySummary` projection and its selected
+  provider, usage, accent, style and initial fields remain available to the
+  rendering call. U07 adds no `TrayPresentation` fields, artwork projection
+  state, display-scale lifecycle, or renderer side effect. U08 can render from
+  the summary or a borrowed input view and pass pixmaps through the existing
+  `TrayPresentation.pixmap` ownership contract.
+- **Local checks:** formatting passed for all four Rust crates. Tests passed:
+  85 `rust-core`, 0 `rust-python` unit tests, 85 backend unit plus 1 backend
+  integration test, and 33 native GTK tests under `dbus-run-session`. Clippy
+  passed with `-D warnings` for core, Python bridge, backend and GTK. The
+  optional extension and native GTK binary built. Python default mode passed
+  214 tests with 21 expected Rust-opt-in skips; `CODEXBAR_RUST_CORE=1` passed
+  all 214; the separate private-bus tray-signal suite passed all 3 tests.
+  `bash -n` on the changed smoke scripts and `git diff --check` passed.
+- **Native fixture evidence:** `smoke-native-gtk.sh` passed with a private
+  session bus, synthetic provider data and fake terminal/CLI programs. The
+  notification fixture recorded both quota threshold events. The terminal
+  adapter received a separate `-e`, Codex executable and `login` argv. The
+  non-systemd restart smoke observed a fresh backend startup after process
+  replacement; normal and restarted shutdown both released the SNI bus name.
+  The delayed fake CLI child was gone after in-flight shutdown. The script also
+  passed existing Gio routing and panel cancellation checks. The Settings
+  smoke passed launch-at-login create/remove with the current native executable
+  and opened/cancelled the native file chooser. Synthetic dashboard, Spend and
+  Sessions Xvfb smokes passed. Captures are
+  `docs/rust-migration/screenshots/u07-native-notification-dashboard-xvfb.png`
+  and `docs/rust-migration/screenshots/u07-native-settings-launch-at-login-xvfb.png`.
+- **Environment, limits and next step:** local native GTK linking/runtime used
+  the ignored GTK SDK and Xvfb/tool extraction from the U04 worktree because
+  this host lacks system GTK development metadata and `xvfb-run` on PATH. The
+  executed runtime was X11/Xvfb, with synthetic-only data; no Wayland screenshot
+  or real provider/account run is claimed. The default Python launcher remains
+  unchanged. Exact-head CI/reviews/merge have not yet been observed. Next:
+  publish the focused build-64 PR, verify its exact-head checks and review state,
+  then merge normally before handing the next serialized task to the coordinator.

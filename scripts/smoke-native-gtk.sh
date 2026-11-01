@@ -8,9 +8,14 @@ if [[ "${CODEXBAR_NATIVE_SMOKE_INNER:-}" != "1" ]]; then
     exec xvfb-run -a dbus-run-session -- env CODEXBAR_NATIVE_SMOKE_INNER=1 "$0" "$binary"
 fi
 
-for tool in xdotool gapplication timeout xwininfo xprop; do
+for tool in xdotool gapplication gdbus timeout xwininfo xprop; do
     command -v "$tool" >/dev/null || { echo "missing smoke dependency: $tool" >&2; exit 2; }
 done
+if [[ -n "${NATIVE_GTK_TRAY_PANEL_SCREENSHOT:-}${NATIVE_GTK_TRAY_DASHBOARD_SCREENSHOT:-}" ]]; then
+    for tool in xwd ffmpeg; do
+        command -v "$tool" >/dev/null || { echo "missing screenshot dependency: $tool" >&2; exit 2; }
+    done
+fi
 [[ -x "$binary" ]] || { echo "native GTK binary not found: $binary" >&2; exit 2; }
 
 scratch=$(mktemp -d)
@@ -21,7 +26,11 @@ cleanup() {
         kill "$app_pid" 2>/dev/null || true
         wait "$app_pid" 2>/dev/null || true
     fi
-    rm -rf "$scratch"
+    if [[ "${NATIVE_GTK_KEEP_TMP:-0}" == "1" ]]; then
+        echo "synthetic native GTK smoke files kept at $scratch" >&2
+    else
+        rm -rf "$scratch"
+    fi
 }
 trap cleanup EXIT
 
@@ -43,7 +52,10 @@ if [ "$1" = usage ] && [ -n "${NATIVE_USAGE_FINISHED:-}" ]; then
 fi
 case "$1" in
     --version) printf 'CodexBar synthetic fixture 0.82.0\n' ;;
-    usage|cost|sessions) printf '[]\n' ;;
+    usage)
+        printf '%s\n' '[{"provider":"codex","source":"synthetic","pace":{"primary":{"stage":"slightlyAhead","deltaPercent":18}},"usage":{"updatedAt":"2026-11-01T12:00:00Z","primary":{"usedPercent":42,"resetsAt":"2026-11-01T18:00:00Z","windowMinutes":300},"secondary":{"usedPercent":31,"resetsAt":"2026-11-05T18:00:00Z","windowMinutes":10080}}}]'
+        ;;
+    cost|sessions) printf '[]\n' ;;
     *) printf '[]\n' ;;
 esac
 CLI
@@ -86,6 +98,38 @@ assert_title_contains() {
     }
 }
 
+capture_window() {
+    local window_id=$1 output=$2
+    [[ -n "$output" ]] || return 0
+    mkdir -p "$(dirname "$output")"
+    xdotool windowsize "$window_id" 1120 820
+    sleep 0.3
+    xwd -silent -id "$window_id" -out "$scratch/tray-window.xwd"
+    ffmpeg -nostdin -y -loglevel error -f xwd_pipe -i "$scratch/tray-window.xwd" -frames:v 1 "$output"
+    [[ -s "$output" ]] || { echo "native tray runtime screenshot is empty: $output" >&2; exit 1; }
+}
+
+wait_for_tray_name() {
+    local deadline=$((SECONDS + 8))
+    while (( SECONDS < deadline )); do
+        if gdbus call --session --dest org.freedesktop.DBus --object-path /org/freedesktop/DBus \
+            --method org.freedesktop.DBus.NameHasOwner org.kde.StatusNotifierItem-codexbar-gtk 2>/dev/null \
+            | grep -q '(true,)'; then
+            return 0
+        fi
+        sleep 0.05
+    done
+    cat "$scratch/primary.log" >&2
+    echo "native StatusNotifierItem name was not acquired" >&2
+    exit 1
+}
+
+tray_menu_event() {
+    local id=$1
+    gdbus call --session --dest org.kde.StatusNotifierItem-codexbar-gtk --object-path /MenuBar \
+        --method com.canonical.dbusmenu.Event "$id" clicked "<''>" 0 >/dev/null
+}
+
 assert_panel_bottom_right() {
     local window_id=$1 panel_info root_info panel_x panel_y panel_width panel_height root_width root_height
     local area_x area_y area_width area_height expected_x expected_y dx dy deadline
@@ -119,6 +163,44 @@ assert_panel_bottom_right() {
 "$binary" --page not-a-page >"$scratch/primary.log" 2>&1 &
 app_pid=$!
 assert_title_contains '^CodexBar GTK' "Usage"
+wait_for_tray_name
+tray_introspection=$(gdbus introspect --session --dest org.kde.StatusNotifierItem-codexbar-gtk --object-path /StatusNotifierItem)
+grep -q 'Scroll' <<<"$tray_introspection" || { echo "native SNI Scroll method was not exported" >&2; exit 1; }
+menu_layout=$(gdbus call --session --dest org.kde.StatusNotifierItem-codexbar-gtk --object-path /MenuBar \
+    --method com.canonical.dbusmenu.GetLayout 0 1 '@as []')
+grep -q 'About CodexBar GTK' <<<"$menu_layout" || { echo "native dbusmenu About action was not exported" >&2; exit 1; }
+gdbus call --session --dest org.kde.StatusNotifierItem-codexbar-gtk --object-path /StatusNotifierItem \
+    --method org.kde.StatusNotifierItem.Activate 31 47 >/dev/null
+assert_title_contains 'CodexBar GTK.*Panel' "Panel"
+panel_window=$(xdotool search --onlyvisible --name 'CodexBar GTK.*Panel' | head -n 1)
+assert_panel_bottom_right "$panel_window"
+capture_window "$panel_window" "${NATIVE_GTK_TRAY_PANEL_SCREENSHOT:-}"
+xdotool windowfocus "$panel_window"
+xdotool key --window "$panel_window" Escape
+deadline=$((SECONDS + 5))
+while xdotool search --onlyvisible --name 'CodexBar GTK.*Panel' >/dev/null 2>&1 && (( SECONDS < deadline )); do sleep 0.05; done
+if xdotool search --onlyvisible --name 'CodexBar GTK.*Panel' >/dev/null 2>&1; then
+    echo "SNI activation panel did not dismiss with Escape" >&2
+    exit 1
+fi
+tray_menu_event 3
+assert_title_contains '^CodexBar GTK' "Dashboard"
+dashboard_window=$(xdotool search --onlyvisible --name '^CodexBar GTK' | head -n 1)
+capture_window "$dashboard_window" "${NATIVE_GTK_TRAY_DASHBOARD_SCREENSHOT:-}"
+tray_menu_event 7
+assert_title_contains '^CodexBar Settings' "CodexBar Settings"
+tray_menu_event 8
+assert_title_contains '^About CodexBar GTK' "About CodexBar GTK"
+tray_menu_event 2
+deadline=$((SECONDS + 8))
+while [[ $(grep -c '^usage$' "$NATIVE_CLI_LOG" 2>/dev/null || true) -lt 2 ]] && (( SECONDS < deadline )); do
+    sleep 0.05
+done
+[[ $(grep -c '^usage$' "$NATIVE_CLI_LOG" 2>/dev/null || true) -ge 2 ]] || {
+    cat "$scratch/primary.log" >&2
+    echo "dbusmenu Refresh did not reach the synthetic CLI" >&2
+    exit 1
+}
 
 # Secondary processes are forwarded through Gio to that same primary app.
 "$binary" --page sessions
@@ -134,13 +216,19 @@ assert_title_contains 'CodexBar GTK.*Panel' "Panel"
 
 sleep 0.3
 version_calls=$(grep -c '^--version$' "$NATIVE_CLI_LOG" || true)
-[[ "$version_calls" == "2" ]] || {
-    echo "expected one controller and one Settings CLI-version query across primary/secondary processes; saw $version_calls version calls" >&2
+[[ "$version_calls" == "3" ]] || {
+    echo "expected one controller and two tray/secondary Settings CLI-version queries; saw $version_calls version calls" >&2
     exit 1
 }
-gapplication action com.steipete.CodexBarGTK quit
+tray_menu_event 10
 wait "$app_pid"
 app_pid=
+if gdbus call --session --dest org.freedesktop.DBus --object-path /org/freedesktop/DBus \
+    --method org.freedesktop.DBus.NameHasOwner org.kde.StatusNotifierItem-codexbar-gtk \
+    | grep -q '(true,)'; then
+    echo "native tray bus name remained owned after application shutdown" >&2
+    exit 1
+fi
 
 # `--panel` remains hidden until the first refresh completes. A second process
 # can still route settings while that CLI operation is in flight, proving GTK

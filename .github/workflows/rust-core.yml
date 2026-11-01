@@ -62,7 +62,7 @@ jobs:
       - name: Run headless backend contract tests
         run: cargo test --manifest-path rust-backend/Cargo.toml --locked
       - name: Test native GTK bootstrap contracts
-        run: cargo test --manifest-path rust-gtk/Cargo.toml --locked
+        run: dbus-run-session -- cargo test --manifest-path rust-gtk/Cargo.toml --locked
       - name: Build PyO3 extension
         run: ./scripts/build-rust-core.sh
       - name: Run Python tests with default backend

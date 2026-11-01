@@ -14,8 +14,11 @@ use codexbar_backend::{
     },
     currency::CurrencyService,
     login::{LoginActor, LoginUiEvent},
-    presentation::{sessions_view_model, spend_view_model, SpendViewRequest},
+    presentation::{
+        sessions_view_model, spend_view_model, tray_summary, SpendViewRequest, TraySummaryRequest,
+    },
     settings::{SettingsActor, SettingsResponse},
+    updates::{self, UpdateCheck, UpdateCheckRequest, UpdateError, UpdateRelation},
     BackendEvent, BackendState, BackendStatus,
 };
 use codexbar_core::{
@@ -28,13 +31,34 @@ use codexbar_gtk_native::usage_pages::{SessionsView, SpendView};
 use gio::prelude::*;
 use gtk::prelude::*;
 use libadwaita as adw;
+use libadwaita::prelude::*;
 use tokio::sync::{mpsc as tokio_mpsc, oneshot, watch};
 
-use codexbar_gtk_native::{BuildMetadata, EventInbox, LaunchRoute, Page, APPLICATION_ID};
+use codexbar_gtk_native::{
+    tray::{meter_pixmap, NativeTray, TrayPresentation},
+    x11_placement::PanelAnchor,
+    BuildMetadata, EventInbox, LaunchRoute, Page, APPLICATION_ID,
+};
 
 mod settings_window;
 
 const APP_NAME: &str = "CodexBar GTK";
+const PROJECT_URL: &str = "https://github.com/SaahiilM/codexbar-gtk";
+
+enum BackendUiOperation {
+    CheckUpdates(UpdateCheckRequest),
+    Restart,
+}
+
+enum BackendUiResult {
+    Update(Result<UpdateCheck, UpdateError>),
+    Restart(
+        Result<
+            codexbar_backend::application::RestartResult,
+            codexbar_backend::application::RestartError,
+        >,
+    ),
+}
 
 struct BackendBridge {
     state: watch::Receiver<BackendState<ControllerSnapshot>>,
@@ -46,6 +70,8 @@ struct BackendBridge {
     login_events: codexbar_backend::login::LoginUiReceiver,
     preferences: std::sync::Arc<PreferencesStore>,
     currencies: std::sync::Arc<CurrencyService>,
+    ui_operations: tokio_mpsc::UnboundedSender<BackendUiOperation>,
+    ui_results: Receiver<BackendUiResult>,
 }
 
 struct BackendWorker {
@@ -60,6 +86,8 @@ impl BackendWorker {
         let (ready_tx, ready) = mpsc::sync_channel(1);
         let (finished_tx, finished) = mpsc::sync_channel(1);
         let (shutdown, shutdown_rx) = oneshot::channel();
+        let (ui_operations, mut ui_operation_rx) = tokio_mpsc::unbounded_channel();
+        let (ui_result_tx, ui_results) = mpsc::channel();
         let worker = thread::Builder::new()
             .name("codexbar-backend-runtime".to_owned())
             .spawn(move || {
@@ -69,6 +97,7 @@ impl BackendWorker {
                     .build();
                 match result {
                     Ok(runtime) => runtime.block_on(async move {
+                        let mut shutdown_rx = shutdown_rx;
                         let preferences = std::sync::Arc::new(PreferencesStore::new(
                             PreferencesStore::default_path(),
                         ));
@@ -124,12 +153,34 @@ impl BackendWorker {
                             login_events,
                             preferences,
                             currencies,
+                            ui_operations,
+                            ui_results,
                         };
                         if ready_tx.send(Ok(bridge)).is_err() {
                             let _ = controller.shutdown().await;
                             return;
                         }
-                        let _ = shutdown_rx.await;
+                        'service: loop {
+                            tokio::select! {
+                                _ = &mut shutdown_rx => break 'service,
+                                operation = ui_operation_rx.recv() => {
+                                    match operation {
+                                        Some(BackendUiOperation::CheckUpdates(request)) => {
+                                            let result = tokio::select! {
+                                                _ = &mut shutdown_rx => break 'service,
+                                                result = updates::check(request) => result,
+                                            };
+                                            let _ = ui_result_tx.send(BackendUiResult::Update(result));
+                                        }
+                                        Some(BackendUiOperation::Restart) => {
+                                            let result = codexbar_backend::application::restart_application();
+                                            let _ = ui_result_tx.send(BackendUiResult::Restart(result));
+                                        }
+                                        None => break 'service,
+                                    }
+                                }
+                            }
+                        }
                         let _ = controller.shutdown().await;
                     }),
                     Err(_) => {
@@ -214,8 +265,11 @@ struct NativeApp {
     spend_rendered_at: Option<Instant>,
     spend_range: String,
     settings_window: Option<Rc<settings_window::SettingsWindow>>,
+    update_dialog: Option<adw::MessageDialog>,
     panel_window: Option<gtk::ApplicationWindow>,
     panel: Option<PanelView>,
+    panel_anchor: Rc<RefCell<Option<PanelAnchor>>>,
+    tray: Option<NativeTray>,
     panel_sequence: Option<u64>,
     panel_rendered_at: Option<Instant>,
     state_label: Option<gtk::Label>,
@@ -248,8 +302,11 @@ impl NativeApp {
             spend_rendered_at: None,
             spend_range: "30 days".to_owned(),
             settings_window: None,
+            update_dialog: None,
             panel_window: None,
             panel: None,
+            panel_anchor: Rc::new(RefCell::new(None)),
+            tray: None,
             panel_sequence: None,
             panel_rendered_at: None,
             state_label: None,
@@ -266,6 +323,10 @@ impl NativeApp {
 
     fn start(&mut self) {
         self.hold_guard = Some(self.application.hold());
+        match NativeTray::start(&self.application.clone().upcast::<gio::Application>()) {
+            Ok(tray) => self.tray = Some(tray),
+            Err(error) => eprintln!("{APP_NAME}: tray integration unavailable: {error}"),
+        }
         match BackendWorker::start() {
             Ok(worker) => self.worker = Some(worker),
             Err(_) => {
@@ -591,10 +652,16 @@ impl NativeApp {
         });
 
         let placement_window = window.clone();
+        let anchor_state = self.panel_anchor.clone();
         window.connect_map(move |_| {
             let placement_window = placement_window.clone();
+            let anchor_state = anchor_state.clone();
             glib::timeout_add_local_once(Duration::from_millis(150), move || {
-                let _ = codexbar_gtk_native::x11_placement::place_panel(&placement_window, None);
+                let anchor = anchor_state.borrow().clone();
+                let _ = codexbar_gtk_native::x11_placement::place_panel(
+                    &placement_window,
+                    anchor.as_ref(),
+                );
             });
         });
         self.panel = Some(panel);
@@ -621,7 +688,8 @@ impl NativeApp {
         }
     }
 
-    fn toggle_panel(&mut self) {
+    fn toggle_panel(&mut self, anchor: Option<PanelAnchor>) {
+        *self.panel_anchor.borrow_mut() = anchor;
         if self.pending_panel {
             self.pending_panel = false;
             return;
@@ -729,9 +797,14 @@ impl NativeApp {
             }
         }
 
+        let tray_preferences = self
+            .bridge
+            .as_ref()
+            .map(|bridge| bridge.preferences.clone());
         let mut latest_state = None;
         let mut settings_responses = Vec::<SettingsResponse>::new();
         let mut login_events = Vec::<LoginUiEvent>::new();
+        let mut ui_results = Vec::<BackendUiResult>::new();
         if let Some(bridge) = &mut self.bridge {
             latest_state = Some(bridge.state.borrow_and_update().clone());
             while let Ok(response) = bridge.settings_responses.try_recv() {
@@ -739,6 +812,9 @@ impl NativeApp {
             }
             while let Ok(event) = bridge.login_events.try_recv() {
                 login_events.push(event);
+            }
+            while let Ok(result) = bridge.ui_results.try_recv() {
+                ui_results.push(result);
             }
             loop {
                 match bridge.events.try_recv() {
@@ -749,6 +825,9 @@ impl NativeApp {
                     Err(tokio_mpsc::error::TryRecvError::Disconnected) => break,
                 }
             }
+        }
+        for result in ui_results {
+            self.handle_backend_ui_result(result);
         }
         if self.route == LaunchRoute::Settings && self.settings_window.is_none() {
             self.show_settings();
@@ -761,8 +840,9 @@ impl NativeApp {
                 settings.handle_login_event(event);
             }
         }
-        if let Some(state) = latest_state {
+        if let (Some(state), Some(preferences)) = (latest_state, tray_preferences) {
             self.set_backend_status(&status_label(&state));
+            self.update_tray(&tray_presentation(&state, &preferences));
             if let Some(label) = &self.events_label {
                 let progress = self.event_inbox.progress();
                 let suffix = progress
@@ -836,6 +916,13 @@ impl NativeApp {
         }
 
         if self.backend_start_failed {
+            self.update_tray(&TrayPresentation {
+                icon_name: "codexbar-gtk".to_owned(),
+                title: APP_NAME.to_owned(),
+                body: "Provider data unavailable\nUse Refresh to check again.".to_owned(),
+                pixmap: Some(meter_pixmap(None, "#10A37F")),
+                switcher_rows: Vec::new(),
+            });
             if let Some(dashboard) = &self.dashboard {
                 dashboard.show_backend_start_error();
             }
@@ -876,6 +963,127 @@ impl NativeApp {
         }
     }
 
+    fn request_restart(&self) {
+        let Some(bridge) = self.bridge.as_ref() else {
+            self.set_backend_status("Restart is unavailable while the backend starts.");
+            return;
+        };
+        let _ = bridge.ui_operations.send(BackendUiOperation::Restart);
+    }
+
+    fn request_update_check(&mut self) {
+        if self
+            .update_dialog
+            .as_ref()
+            .is_some_and(|dialog| dialog.is_visible())
+        {
+            return;
+        }
+        let Some(bridge) = self.bridge.as_ref() else {
+            self.set_backend_status("Update check is unavailable while the backend starts.");
+            return;
+        };
+        let current = updates::Version::new(
+            self.metadata.marketing_version.clone(),
+            self.metadata.build.to_string(),
+        )
+        .expect("bundled version metadata is validated at startup");
+        let request = UpdateCheckRequest::new(current, updates::VERSION_URL, updates::MAX_TIMEOUT);
+        if bridge
+            .ui_operations
+            .send(BackendUiOperation::CheckUpdates(request))
+            .is_err()
+        {
+            self.show_update_result(Err(UpdateError::Network));
+            return;
+        }
+
+        let dialog = adw::MessageDialog::new(
+            self.window.as_ref(),
+            Some("Checking for updates…"),
+            Some("Reading the public version marker."),
+        );
+        dialog.add_response("close", "Close");
+        dialog.set_default_response(Some("close"));
+        dialog.present();
+        self.update_dialog = Some(dialog);
+    }
+
+    fn handle_backend_ui_result(&mut self, result: BackendUiResult) {
+        match result {
+            BackendUiResult::Update(result) => self.show_update_result(result),
+            BackendUiResult::Restart(Ok(_)) => self.begin_shutdown(),
+            BackendUiResult::Restart(Err(_)) => self.show_restart_error(),
+        }
+    }
+
+    fn show_restart_error(&self) {
+        let dialog = adw::MessageDialog::new(
+            self.window.as_ref(),
+            Some("Couldn’t restart CodexBar"),
+            Some("The application could not start a replacement process."),
+        );
+        dialog.add_response("close", "Close");
+        dialog.set_default_response(Some("close"));
+        dialog.present();
+    }
+
+    fn show_update_result(&mut self, result: Result<UpdateCheck, UpdateError>) {
+        if let Some(progress) = self.update_dialog.take() {
+            progress.close();
+        }
+        let (heading, body) = match result {
+            Err(error) => (
+                "Couldn’t check for updates".to_owned(),
+                format!(
+                    "The update check failed: {error}. You can still open the project page and check manually."
+                ),
+            ),
+            Ok(check) => {
+                let current = display_update_version(&check.current);
+                let latest = display_update_version(&check.latest);
+                match check.relation {
+                    UpdateRelation::Available => (
+                        format!("Update available: {latest}"),
+                        format!(
+                            "You have {current}. This client is distributed as source; pull the latest changes in your checkout, run ./scripts/install.sh --no-autostart, then restart the app."
+                        ),
+                    ),
+                    UpdateRelation::Current => (
+                        "You’re up to date".to_owned(),
+                        format!("CodexBar GTK {current} is the latest public build."),
+                    ),
+                    UpdateRelation::Ahead => (
+                        "This build is newer than the public version".to_owned(),
+                        format!("Installed: {current}\nPublic main: {latest}"),
+                    ),
+                }
+            }
+        };
+        let dialog = adw::MessageDialog::new(self.window.as_ref(), Some(&heading), Some(&body));
+        dialog.add_response("open", "Open project");
+        dialog.add_response("close", "Close");
+        dialog.set_response_appearance("open", adw::ResponseAppearance::Suggested);
+        dialog.set_default_response(Some("close"));
+        dialog.connect_response(None, |dialog, response| {
+            if response == "open" {
+                let _ = gio::AppInfo::launch_default_for_uri(
+                    PROJECT_URL,
+                    None::<&gio::AppLaunchContext>,
+                );
+            }
+            dialog.close();
+        });
+        dialog.present();
+        self.update_dialog = Some(dialog);
+    }
+
+    fn update_tray(&self, presentation: &TrayPresentation) {
+        if let Some(tray) = &self.tray {
+            tray.update(presentation.clone());
+        }
+    }
+
     fn request_about(&mut self) {
         self.dispatch_route(LaunchRoute::About);
     }
@@ -913,7 +1121,12 @@ impl NativeApp {
     }
 
     fn request_panel_toggle(&mut self) {
-        self.toggle_panel();
+        self.toggle_panel(None);
+    }
+
+    fn request_panel_toggle_at(&mut self, x: i32, y: i32) {
+        let anchor = codexbar_gtk_native::x11_placement::activation_anchor(x, y);
+        self.toggle_panel(anchor);
     }
 
     fn request_page(&mut self, name: &str) {
@@ -925,6 +1138,9 @@ impl NativeApp {
             return;
         }
         self.shutting_down = true;
+        if let Some(tray) = &mut self.tray {
+            tray.stop();
+        }
         if let Some(worker) = &mut self.worker {
             worker.request_shutdown();
         } else {
@@ -983,6 +1199,66 @@ fn status_label(state: &BackendState<ControllerSnapshot>) -> String {
     }
 }
 
+fn display_update_version(version: &updates::Version) -> String {
+    format!("{} ({})", version.marketing, version.build)
+}
+
+fn tray_preference(preferences: &PreferencesStore, key: &str, default: &str) -> String {
+    preferences
+        .get(key)
+        .and_then(|value| value.as_str().map(str::to_owned))
+        .unwrap_or_else(|| default.to_owned())
+}
+
+fn tray_presentation(
+    state: &BackendState<ControllerSnapshot>,
+    preferences: &PreferencesStore,
+) -> TrayPresentation {
+    if state.snapshot.is_none() {
+        let body = match state.status {
+            BackendStatus::Idle => "Loading provider usage…".to_owned(),
+            BackendStatus::Refreshing => "Refreshing provider usage…".to_owned(),
+            BackendStatus::Ready | BackendStatus::Failed => {
+                "Provider data unavailable\nUse Refresh to check again.".to_owned()
+            }
+            BackendStatus::Stopped => "Provider refresh stopped.".to_owned(),
+        };
+        return TrayPresentation {
+            icon_name: String::new(),
+            title: APP_NAME.to_owned(),
+            body,
+            pixmap: Some(meter_pixmap(None, "#10A37F")),
+            switcher_rows: Vec::new(),
+        };
+    }
+
+    let summary = tray_summary(
+        state,
+        &TraySummaryRequest {
+            unified_icon_source: tray_preference(preferences, "unifiedIconSource", "highest"),
+            menu_bar_icon_style: tray_preference(preferences, "menuBarIconStyle", "meter"),
+            switcher_rows_option: tray_preference(preferences, "switcherRowsOption", "progress"),
+        },
+    );
+    let accent = summary.accent_color.as_deref().unwrap_or("#10A37F");
+    let body = if summary.tooltip_rows.is_empty() {
+        "Provider data unavailable\nUse Refresh to check again.".to_owned()
+    } else {
+        summary.tooltip_rows.join("\n")
+    };
+    TrayPresentation {
+        icon_name: String::new(),
+        title: summary.title,
+        body,
+        pixmap: Some(meter_pixmap(summary.used_percent, accent)),
+        switcher_rows: summary
+            .switcher_rows
+            .into_iter()
+            .map(|row| row.text)
+            .collect(),
+    }
+}
+
 fn main() {
     let metadata = BuildMetadata::current().unwrap_or_else(|error| {
         eprintln!("{APP_NAME}: invalid bundled version metadata ({error})");
@@ -1035,6 +1311,32 @@ fn main() {
         panel_state.borrow_mut().request_panel_toggle();
     });
     application.add_action(&panel);
+
+    let panel_at = gio::SimpleAction::new(
+        "panel-at",
+        Some(glib::VariantTy::new("(ii)").expect("panel activation uses an integer point")),
+    );
+    let panel_at_state = state.clone();
+    panel_at.connect_activate(move |_, parameter| {
+        if let Some((x, y)) = parameter.and_then(|value| value.get::<(i32, i32)>()) {
+            panel_at_state.borrow_mut().request_panel_toggle_at(x, y);
+        }
+    });
+    application.add_action(&panel_at);
+
+    let check_updates = gio::SimpleAction::new("check-updates", None);
+    let update_state = state.clone();
+    check_updates.connect_activate(move |_, _| {
+        update_state.borrow_mut().request_update_check();
+    });
+    application.add_action(&check_updates);
+
+    let restart = gio::SimpleAction::new("restart", None);
+    let restart_state = state.clone();
+    restart.connect_activate(move |_, _| {
+        restart_state.borrow().request_restart();
+    });
+    application.add_action(&restart);
 
     let page = gio::SimpleAction::new("page", Some(glib::VariantTy::STRING));
     let page_state = state.clone();

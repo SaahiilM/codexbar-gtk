@@ -40,8 +40,12 @@ head `9c566778a8c37c45600adbd95e3cd26acb6f185a` passed `tray-dbus` but failed
 the Settings smoke in `test` because CI lacked `rg` and the no-capture smoke did
 not size the window before its fixed-coordinate click (AUDIT E106–E107). Both
 issues are corrected and the no-capture smoke passes locally, including with
-`rg` absent from `PATH`; replacement-head CI is pending. U06 follows U05.
-Python remains the default until UG passes.
+`rg` absent from `PATH`; final exact head `562a8a7` passed `test` and
+`tray-dbus` in run `41333765485`, and PR #63 merged normally at
+`0c298afc0c4cd24bd8fd13b6979b06758dca1f21` (AUDIT E108). U06 owns build 63 on
+`orchestrated/luna-u06-tray`; local private-bus tests, native GTK route smokes
+and the synthetic tray-routed dashboard screenshot are recorded in E110. Its
+PR checks and merge remain pending. Python remains the default until UG passes.
 Some Python edge-input behavior remains available only through the default
 Python path as described below.
 

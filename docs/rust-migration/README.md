@@ -33,9 +33,9 @@ remain ambiguous. U03's compact native panel and central routing merged in PR
 #61 at `51480af` on build 60; exact-head CI and native GTK routing/dashboard
 smokes passed (AUDIT E101). U04 Usage & Spend/Sessions owns provisional build
 61 on the next serialized slot; its native pages and typed scan/heatmap
-contracts are implemented and locally verified, with the focused PR still
-pending review/CI (E102). U05 follows U04. Python remains the default until UG
-passes.
+contracts are implemented and locally verified. U04 PR #62 is open; its first
+exact-head run passed `tray-dbus` while `test` was still running (E102–E103).
+U05 follows U04. Python remains the default until UG passes.
 Some Python edge-input behavior remains available only through the default
 Python path as described below.
 

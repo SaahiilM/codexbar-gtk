@@ -3080,3 +3080,18 @@ future models must verify the linked PR's status rather than trusting a stale
   the preferences bridge. Local verification is complete. PR creation,
   exact-head `test`/`tray-dbus`, review and merge are pending; append observed
   GitHub evidence before marking U04 complete or handing build 62 to U05.
+
+### E103 — 2026-11-01: U04 PR #62 opened; first exact-head status
+
+- **PR:** [#62 — Add native Usage & Spend and Sessions pages](https://github.com/SaahiilM/codexbar-gtk/pull/62),
+  branch `orchestrated/luna-u04-spend-sessions` to `main`; open, non-draft.
+  Its first pushed head was `6b2171f0b5ab3285a0ec8bfa7ac7e82ee78f8743`.
+- **Observed Actions state:** run `41327401899` reported required check
+  `tray-dbus` successful (job `124910123943`) and `test` in progress (job
+  `124910124094`) when checked. No review decision was present. This records the
+  first head only; after the handoff update below, verify the latest pushed head
+  and its own required checks before merging.
+- **Next step:** finish the migration handoff update, push it, then verify the
+  resulting exact PR head and both required checks. Merge normally only after
+  both pass; record the observed merge SHA/time and hand build 62 to U05 only
+  after coordinator assignment.

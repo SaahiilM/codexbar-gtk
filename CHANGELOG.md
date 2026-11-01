@@ -20,8 +20,9 @@ Tracks upstream CodexBar 0.82.0.
   The PyO3 build, default Python (214 passed, 21 expected opt-in skips),
   Rust-opt-in Python (214 passed), and the 3-test tray D-Bus suite passed.
   Synthetic GTK Xvfb routing, refresh, accessibility interaction and
-  empty/loading/partial/error screenshots passed locally. U04 PR exact-head CI
-  and merge are pending; see migration audit E102.
+  empty/loading/partial/error screenshots passed locally. U04 PR #62's first
+  head passed `tray-dbus`; `test` and merge remain pending. See migration audit
+  E102–E103.
 
 ## 0.82.0 (60) — 2026-11-01
 

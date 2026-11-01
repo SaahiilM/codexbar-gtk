@@ -3605,3 +3605,18 @@ future models must verify the linked PR's status rather than trusting a stale
   shell; the workflow runs both display-dependent tests under Xvfb. Fresh remote
   exact-head CI is pending on the repair commit. PR #66 remains open and
   unmerged; Python remains the default.
+
+### E118 — 2026-11-01: U08 artwork repair exact-head checks
+
+- **Observed exact-head CI:** PR #66 head
+  `a8c8d91e409a6c46450a28cf5e25027fd35010d5` completed Actions run
+  `41344373281` successfully. Both required jobs passed: `test` and
+  `tray-dbus`. The `test` job passed the explicit Xvfb provider decode-fallback
+  fixture and the real-asset/accessibility smoke, in addition to the Rust,
+  Python, Clippy, build and native UI smoke steps; `tray-dbus` passed its
+  private-session-bus signal check.
+- **Review and gate state:** no PR reviews or review comments were present at
+  this exact head. PR #66 remains open and unmerged. The audit/handoff update
+  that records this result creates a newer PR head, so that head must pass its
+  own exact-head checks before any normal merge. UG remains gated, Python stays
+  the default, and no U07 lifecycle ownership or `TrayPresentation` API changed.

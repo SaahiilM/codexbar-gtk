@@ -13,11 +13,11 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Last merged implementation | U07 native notifications/OS integration PR #65 merged normally at `e373e019f7701f5f3a5e204153b7163763abac90`, build `0.82.0 (64)`. U08 is released as the next serialized slot, build `0.82.0 (65)`. |
 | Planning change | [PR #18](https://github.com/SaahiilM/codexbar-gtk/pull/18), merged at `69c5496`, build `0.81.0 (17)` |
 | Backend tasks completed after that baseline | B00–B15 and BG are accepted and merged. B11's Actions startup failures remain documented as failures; see E086. |
-| Active implementation task / owner | U08 provider artwork/assets, Cairo tray pixmaps and icon preferences, theme/scaling, accessibility and keyboard parity; implementation locally verified on `orchestrated/luna-u08-assets`, build `0.82.0 (65)`, based on verified U07 merge `e373e019f7701f5f3a5e204153b7163763abac90`. U07 PR #65 head `70bba1c52562c7670916a51a28fb9f37a29cd3ec` passed both required checks in run `41340840860` and merged normally at 2026-11-01 19:20:44Z; see E114. U08 focused PR is next; preserve U07 lifecycle ownership and keep Python as default until UG passes. |
+| Active implementation task / owner | U08 provider artwork/assets, Cairo tray pixmaps and icon preferences, theme/scaling, accessibility and keyboard parity; implementation locally verified on `orchestrated/luna-u08-assets`, build `0.82.0 (65)`, based on verified U07 merge `e373e019f7701f5f3a5e204153b7163763abac90`. U07 PR #65 head `70bba1c52562c7670916a51a28fb9f37a29cd3ec` passed both required checks in run `41340840860` and merged normally at 2026-11-01 19:20:44Z; see E114. U08 PR #66 is open; exact head `a8c8d91e409a6c46450a28cf5e25027fd35010d5` passed `test` and `tray-dbus` in run `41344373281` (E118). Keep U07 lifecycle ownership and Python default until UG passes. |
 | Latest gate result | **BG passed** — PR #54 merged and verified on live main. Headless Rust-only integration, Rust-opt-in GTK fixture smoke and residual-Python inventory are recorded in E085/E086. |
-| Next domain slice | Open the focused U08 build-65 PR from `orchestrated/luna-u08-assets`; exact-head CI/review/merge are pending. Local renderer, backend, Python, GTK, X11/Xvfb and active Wayland evidence is recorded in E115/E116. Preserve `TraySummary` render inputs and the existing SNI `TrayPresentation.pixmap`; do not change U07 lifecycle. After U08 merges, continue the full UG action-by-action coverage ledger and keep Python as default until UG passes. |
+| Next domain slice | Keep U08 PR #66 active until its normal merge. Exact-head checks passed on `a8c8d91e409a6c46450a28cf5e25027fd35010d5` in run `41344373281`; review/merge remain pending. This handoff/audit update will trigger checks on a newer head, which must also pass before merge. Local renderer, backend, Python, GTK, X11/Xvfb and active Wayland evidence is recorded in E115–E118. Preserve `TraySummary` render inputs and the existing SNI `TrayPresentation.pixmap`; do not change U07 lifecycle. After U08 merges, continue the full UG action-by-action coverage ledger and keep Python as default until UG passes. |
 | Open external blockers | No external blocker at claim. U02's legacy JSONL rows cannot identify whether some stored zeros came from unknown usage; new Python/Rust writes preserve knownness. GTK development metadata may require the ignored local SDK extraction; CI installs GTK4/libadwaita development packages. B11's zero-job Actions startup failures remain documented, not CI successes. |
-| Latest checks | U07 PR #65 final exact head `70bba1c52562c7670916a51a28fb9f37a29cd3ec` passed `test` and `tray-dbus` in run `41340840860`; it merged normally at `e373e019f7701f5f3a5e204153b7163763abac90` (E114). U08 local formatter/tests/Clippy, extension and Python checks, X11/Xvfb smokes and active Wayland smoke passed (E116); exact-head PR checks are pending. |
+| Latest checks | U07 PR #65 final exact head `70bba1c52562c7670916a51a28fb9f37a29cd3ec` passed `test` and `tray-dbus` in run `41340840860`; it merged normally at `e373e019f7701f5f3a5e204153b7163763abac90` (E114). U08 exact head `a8c8d91e409a6c46450a28cf5e25027fd35010d5` passed `test` and `tray-dbus` in run `41344373281` (E118). The audit/handoff update creates a new head; verify its checks before merge. |
 | UI validation | U02 synthetic dashboard/history and U03 panel captures remain recorded in E098–E101. U04's nine synthetic Xvfb captures and keyboard/pointer heatmap smoke are recorded in E102. U05 Settings screenshots are recorded in E105. U06's synthetic tray-routed dashboard screenshot is `screenshots/u06-native-sni-dashboard-xvfb.png`; D-Bus/runtime evidence is in E110. U07 Xvfb captures and OS lifecycle evidence are recorded in E113. U08’s 1×/2× Xvfb and actual Wayland captures plus keyboard/pixmap/accessibility smoke are `screenshots/u08-native-dashboard-iconpercent-xvfb.png`, `screenshots/u08-native-dashboard-2x-xvfb.png`, and `screenshots/u08-native-dashboard-wayland.png` (E116). |
 
 **First commands for a new model/session:**
@@ -311,8 +311,10 @@ the Resume here table. BG passed after PR #54; Phase U may now be coordinated.
   rendering, accessibility, keyboard navigation and display scaling. Locally
   implemented and verified on `orchestrated/luna-u08-assets`, build `0.82.0
   (65)`, based on U07 PR #65 merge `e373e019f7701f5f3a5e204153b7163763abac90`
-  (E114–E116); focused PR and exact-head CI/review/merge pending. Keep rendering
-  pure over `TraySummary` and pass generated pixels through the unchanged
+  (E114–E118); PR #66 is open and exact-head checks passed on
+  `a8c8d91e409a6c46450a28cf5e25027fd35010d5` in run `41344373281`; review and
+  merge remain pending. Keep rendering pure over `TraySummary` and pass
+  generated pixels through the unchanged
   `TrayPresentation.pixmap`; do not change U07 display readiness,
   restart/autostart, shutdown or tray lifecycle. Python remains the default
   until UG.
@@ -343,8 +345,8 @@ exact-head CI/review/merge evidence remains pending.
 ### U08 handoff — 2026-11-01
 
 Owner: current coding-agent session; branch `orchestrated/luna-u08-assets`.
-Status: implementation complete and locally verified; focused PR pending on
-build `0.82.0 (65)`, based on verified
+Status: implementation complete and locally verified; PR #66 is open on build
+`0.82.0 (65)`, based on verified
 U07 PR #65 merge `e373e019f7701f5f3a5e204153b7163763abac90`. Its final head
 `70bba1c52562c7670916a51a28fb9f37a29cd3ec` passed `test` and `tray-dbus` in
 run `41340840860`; no reviews or review threads were present (E114).
@@ -360,9 +362,11 @@ Do not redesign screens or change the Python default before UG.
 
 Exact local checks, screenshots, and the 2× Xvfb subtitle assessment are in
 E115/E116. The three captures ignored by the global `*.png` rule are force-added
-to the focused PR. The wider UG acceptance matrix remains outstanding; U08 does
-not claim full UG parity. Next: open the focused PR, verify its exact-head
-checks/reviews and merge normally.
+to the focused PR. The repair analysis and exact-head check result are in E117
+and E118. PR #66 remains open; the a8c8d91 exact-head checks passed, and this
+handoff update requires a fresh check on the new head before normal merge. The
+wider UG acceptance matrix remains outstanding; U08 does not claim full UG
+parity. Python remains the default.
 
 ## Phase C — native cutover (blocked by UG)
 

@@ -3620,3 +3620,129 @@ future models must verify the linked PR's status rather than trusting a stale
   that records this result creates a newer PR head, so that head must pass its
   own exact-head checks before any normal merge. UG remains gated, Python stays
   the default, and no U07 lifecycle ownership or `TrayPresentation` API changed.
+
+### E119 — 2026-11-01: U08 PR #66 merged on live main
+
+- **Observed merge:** queried GitHub after the orchestration status changed.
+  PR #66 is `MERGED` at `5de83def98ad5ebd09035ee9120698fbf710541c`, merged at
+  `2026-11-01T20:12:18Z`. Exact PR head was
+  `fb89f0b6c702dff92992916e14951b385f5189bf`. There were no PR reviews or
+  review comments. `origin/main` and this worktree base both resolve to the
+  merge commit; no other PR was open at assessment start. This observation
+  supersedes the earlier open-PR state in E117/E118.
+- **Exact-head CI:** run
+  [41345048163](https://github.com/SaahiilM/codexbar-gtk/actions/runs/41345048163)
+  completed successfully for that exact head. `test` and `tray-dbus` both
+  passed. The `test` job completed Rust core/backend/bootstrap and artwork
+  checks, PyO3 build, Python default and Rust-opt-in suites, Clippy, native GTK
+  build, Gio/in-flight-shutdown, dashboard 1×/2× keyboard, Spend/Sessions and
+  Settings Xvfb steps. `tray-dbus` passed its private-session-bus signal test.
+  CI is Xvfb evidence; it is not a Wayland test.
+- **Gate state:** U01–U08 implementation PRs are all merged. This closes the
+  U08 merge prerequisite, but does not pass UG. Python remains the default.
+  C01–CG stay behind UG.
+
+### E120 — 2026-11-01: UG build-66 matrix and unresolved interactions
+
+- **Base and scope:** started from live main/U08 merge
+  `5de83def98ad5ebd09035ee9120698fbf710541c`, with no open PRs. Build 66 is
+  reserved to branch `orchestrated/luna-ug`; `VERSION` and
+  `codexbar_gtk/version.py` are both bumped to 66. No UI/backend/service
+  contract changed. The root checkout's dirty work and the separate
+  `orchestrated-luna-ug-acceptance-build66` worktree remain untouched; only
+  read-only status/source/evidence inspection was performed there. No `.deps`
+  symlink or uncommitted file from that worktree was copied.
+- **Build and GTK checks:** after the build-number bump,
+  `cargo build --manifest-path rust-gtk/Cargo.toml` passed with the extracted
+  GTK SDK (`PKG_CONFIG_PATH` and `PKG_CONFIG_SYSROOT_DIR` pointed at the ignored
+  U04 SDK). `bash -n` passed for both modified smoke scripts.
+  `dbus-run-session -- cargo test --manifest-path rust-gtk/Cargo.toml --locked`
+  passed 37 GTK crate tests; one display-dependent unit and one display
+  integration fixture were ignored because that run was headless.
+  `scripts/smoke-native-settings.sh` passed under `xvfb-run` plus a private
+  `dbus-run-session`. It exercised isolated preference writes through visible
+  controls: refresh-on-panel-open, launch-at-login create/remove, USD currency,
+  all four Menu Bar options, the tested Display options, all four notification
+  switches, test-notification delivery, local cost-scan enablement and timezone.
+  A synthetic `org.freedesktop.Notifications` service received the expected
+  summary and the UI displayed its success status. All Settings pages and the
+  central About route were captured. The expanded run clicked the single
+  actionable Hooks control, global `Enable hooks`, off then on. The synthetic
+  CLI log showed `hooks disable` followed by `hooks enable`, and its isolated
+  state file changed `true → false → true`; the off-state screenshot is
+  `settings-hooks-actions-xvfb.png`. Configured hook rows are display-only.
+  The Plugins pane rendered one non-empty synthetic fixture row; source review
+  confirms it is a read-only list with no plugin mutation action. Empty,
+  loading and error list states were not exercised. The first attempt using
+  the existing U04 `.deps` Xvfb tools lacked the bundled `libxdo.so.3` loader
+  path and timed out before UI interaction; the passing rerun added that
+  existing `.deps` library directory to `LD_LIBRARY_PATH` without modifying
+  that worktree. `scripts/smoke-native-usage-pages.sh`
+  passed under Xvfb/private D-Bus after clicking and capturing the four spend
+  ranges and three heatmap modes, and exercising tooltip, loading/success/
+  partial/empty/error, refresh and central navigation fixtures. Build-66
+  Sessions/Spend states and tooltip captures were also visually inspected.
+- **Observed failed Settings attempt:** before the passing run, the synthetic
+  `showPopupOnStart` click was unstable: one run timed out expecting the second
+  toggle-off and observed `True`; a later single-toggle run expected `True` but
+  observed `False`. The action was removed from the passing smoke and remains
+  unverified. The passing script includes a short wait after preference-file
+  persistence so the GTK actor response settles before subsequent pointer
+  actions.
+- **Screenshots:** build-66 Xvfb Settings, range and heatmap screenshots were
+  captured after rebuilding, visually inspected, and stored under
+  `docs/rust-migration/screenshots/ug-build66/`; the individual inventory and
+  interaction status are in `docs/rust-migration/UG_GATE.md`. The Hooks off
+  capture was visually inspected beside the enabled state; the Plugins capture
+  contains one synthetic list row only. All fixture data is synthetic, all
+  test homes are temporary, and no credentials or API keys appear. Xvfb emitted
+  DRI3 and portal/FUSE warnings; the successful script runs exited successfully.
+  Full Rust core/backend suites, Clippy and Python suites were not rerun locally;
+  the GTK crate test result is recorded above. Exact U08 results are E119 and
+  this PR must pass its own CI before merge.
+- **Actual Wayland evidence:** before launching fixtures, the active session
+  D-Bus reported `com.steipete.CodexBarGTK`, `org.kde.spectacle` and
+  `org.kde.StatusNotifierItem-codexbar-gtk` unowned. The captures were one app
+  at a time, each used a fresh fixture home and normal app quit. After cleanup
+  the names were unowned; no Spectacle process remained and the capture slot
+  was released. We did not send quit calls to Spectacle or interact with other
+  user apps. Personally inspected valid states include Sessions loading,
+  running success, empty and first-scan failure; Spend success, refreshing,
+  empty and first-scan failure; and a Settings General startup. The two
+  15-second Sessions/Spend success images came from separate `--page` starts on
+  U08 source `fb89f0b`. Stale retained-error images, a 5-second spinner, and
+  repeated-capture frames showing the wrong Spend state were excluded. The
+  accepted Wayland captures were made from U08 build-65 runtime before the
+  build-66 metadata-only change; Xvfb captures use build 66.
+- **Wayland limits:** the U08 actual KDE Wayland smoke passed at the
+  compositor's default scale. Forcing `GDK_SCALE=2` produced a black/unusable
+  capture; this is not evidence that default Wayland is unsupported. `wtype`
+  reported the compositor does not support its virtual-keyboard protocol, so
+  Wayland pointer/keyboard interaction is not verified. CI has no Wayland job.
+  After cleanup, the active bus again reported the CodexBar and Spectacle names
+  unowned. Keep the user-provided and run logs outside git; no stale or black
+  images are included.
+- **Panel local-history reconciliation:** retain unmodified local
+  `smoke-native-gtk.sh` SNI timeout `/tmp/tmp.RU7wtzLQMQ`, the instrumented
+  focus/Escape then Settings timeout `/tmp/tmp.ymZauUWFLQ`, and the local
+  `X_SetInputFocus BadMatch`. A separate acceptance-worktree owner reported
+  one successful local native GTK smoke; U08 exact-head CI also passed its
+  native GTK steps. These separate pass results do not erase the observed local
+  failures, so the local panel check remains non-repeatable.
+- **Remaining UG blockers:** no GTK action interaction evidence yet for provider
+  enable/source/API-key/login mutations; import/export/reset selections and
+  confirmation; update-check action/result; General show-panel/refresh-interval;
+  and the remaining Display controls. The Hooks switch passed on Xvfb but its
+  Wayland interaction remains open. Plugins is a read-only fixture list, not a
+  mutation surface; its empty/loading/error list states remain untested. Wayland
+  lacks pointer/keyboard action coverage. The complete matrix and per-state
+  screenshots are maintained in `UG_GATE.md`; backend tests do not substitute
+  for missing UI action evidence.
+- **Next step:** continue fixture-driven visible GTK tests for those actions,
+  coordinate any further sole-owner Wayland session slot, preserve exact
+  per-run evidence, and reevaluate UG only after every required action/state is
+  covered or explicitly justified as unsupported. Keep Python as default.
+  C01 installed upgrade/rollback with isolated prefix/home, C02 no
+  Python/PyGObject/PyO3, C03 Python removal after equivalent native coverage,
+  and CG final audit remain blocked by UG. Include `librsvg2-common` in C01
+  packaging verification.

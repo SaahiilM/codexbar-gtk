@@ -4,26 +4,33 @@ Client-side changelog for the CodexBar GTK front-end. Each entry keys a build
 number (`CURRENT_PROJECT_VERSION`) to the upstream macOS CodexBar release its
 short version tracks, so "which version has what" maps cleanly onto both trees.
 
-## 0.82.0 (65) — 2026-11-01
+## 0.82.0 (66) — 2026-11-01
 
 Tracks upstream CodexBar 0.82.0.
 
 ### Changed
 
-- Embed the existing licensed provider artwork catalog into the native app and
-  show brand or accent-tinted provider marks with an initial-letter fallback.
-- Render native meter and `iconPercent` tray pixmaps from the existing
-  `TraySummary`, with Cairo-generated ARGB pixels at caller-requested sizes.
-- Add responsive dashboard summary tiles, shared theme CSS, decorative
-  accessible provider artwork, and keyboard navigation shortcuts.
+- Close out the U08 merge record and add a build-66 UG interaction/evidence
+  ledger. UG remains open while the remaining Settings actions and complete
+  Wayland interaction matrix are verified.
+- Extend the synthetic GTK smoke to click and capture all four Spend ranges and
+  all three heatmap modes. Exercise Menu Bar, selected Display, Notifications,
+  currency/time-zone, launch-at-login and private notification delivery through
+  visible Settings controls.
+- Add visually inspected build-66 Xvfb Settings/range/mode captures and retain
+  valid synthetic Wayland Sessions/Spend state captures with their provenance.
 
 ### Validation
 
-- U07 PR #65 merged at `e373e019f7701f5f3a5e204153b7163763abac90`; exact head
-  `70bba1c52562c7670916a51a28fb9f37a29cd3ec` passed `test` and `tray-dbus` in
-  run `41340840860` (E114). U08 local Rust/Python checks, X11/Xvfb and actual
-  Wayland synthetic captures, and renderer/accessibility smokes are in E115/E116;
-  this PR's exact-head CI and merge remain pending.
+- U08 PR #66 merged normally at `5de83def98ad5ebd09035ee9120698fbf710541c`;
+  exact head `fb89f0b6c702dff92992916e14951b385f5189bf` passed `test` and
+  `tray-dbus` in run `41345048163` (E119). Build-66 Settings and Usage & Spend
+  Xvfb smokes passed, including private notification delivery and Hooks global
+  enable/disable persistence (E120). UG remains **NOT PASSED**: provider,
+  import/export/reset and update-check actions and Wayland interaction evidence
+  remain incomplete. Plugins is a read-only fixture list; empty/loading/error
+  states are untested, with no mutation action required. See
+  `docs/rust-migration/UG_GATE.md`. Python remains the default.
 
 ## 0.82.0 (64) — 2026-11-01
 

@@ -176,6 +176,31 @@ assert_window 'CodexBar GTK.*Usage & Spend' "Usage & Spend"
 gapplication action com.steipete.CodexBarGTK spend-range "'7 days'"
 assert_window 'CodexBar GTK.*Usage & Spend' "Usage & Spend"
 
+# Exercise all visible range filters and heatmap display modes with pointer
+# input. The fixed Xvfb window size keeps the control centers stable.
+xdotool windowsize "$spend_window" 1080 820
+for range in 7-days 30-days 90-days all; do
+    case "$range" in
+        7-days) range_x=745; screenshot=${NATIVE_USAGE_RANGE_7D_SCREENSHOT:-} ;;
+        30-days) range_x=820; screenshot=${NATIVE_USAGE_RANGE_30D_SCREENSHOT:-} ;;
+        90-days) range_x=900; screenshot=${NATIVE_USAGE_RANGE_90D_SCREENSHOT:-} ;;
+        all) range_x=1000; screenshot=${NATIVE_USAGE_RANGE_ALL_SCREENSHOT:-} ;;
+    esac
+    xdotool mousemove --window "$spend_window" "$range_x" 334 click 1
+    sleep 0.2
+    capture_window "$spend_window" "$screenshot"
+done
+for mode in weekly cumulative daily; do
+    case "$mode" in
+        weekly) mode_x=160; screenshot=${NATIVE_USAGE_WEEKLY_SCREENSHOT:-} ;;
+        cumulative) mode_x=251; screenshot=${NATIVE_USAGE_CUMULATIVE_SCREENSHOT:-} ;;
+        daily) mode_x=85; screenshot=${NATIVE_USAGE_DAILY_SCREENSHOT:-} ;;
+    esac
+    xdotool mousemove --window "$spend_window" "$mode_x" 430 click 1
+    sleep 0.2
+    capture_window "$spend_window" "$screenshot"
+done
+
 # Page routing remains on Gio's central app.page action.
 gapplication action com.steipete.CodexBarGTK page "'sessions'"
 assert_window 'CodexBar GTK.*Sessions' "Sessions"

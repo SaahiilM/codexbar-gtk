@@ -34,6 +34,15 @@ pub struct RestartResult {
     pub mode: RestartMode,
 }
 
+/// Native GTK restart policy. The UI stops and joins its workers before
+/// replacing itself, avoiding a second GApplication instance racing the old
+/// tray registration.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum NativeRestartAction {
+    SystemdRestartRequested,
+    ExecCurrentProcess,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RestartError {
     pub category: &'static str,
@@ -157,6 +166,23 @@ pub fn restart_application() -> Result<RestartResult, RestartError> {
         &invocation,
         &mut SystemApplicationLauncher,
     )
+}
+
+pub fn request_native_restart_with(
+    invocation_id_present: bool,
+    launcher: &mut impl ApplicationLauncher,
+) -> NativeRestartAction {
+    if invocation_id_present && launcher.spawn_systemd_restart(APPLICATION_UNIT).is_ok() {
+        NativeRestartAction::SystemdRestartRequested
+    } else {
+        NativeRestartAction::ExecCurrentProcess
+    }
+}
+
+pub fn request_native_restart() -> NativeRestartAction {
+    let invocation_id_present =
+        std::env::var_os("INVOCATION_ID").is_some_and(|value| !value.is_empty());
+    request_native_restart_with(invocation_id_present, &mut SystemApplicationLauncher)
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -332,6 +358,25 @@ mod tests {
         assert!(!format!("{error:?}").contains("private"));
         assert_eq!(launcher.systemd, [APPLICATION_UNIT]);
         assert_eq!(launcher.processes.len(), 1);
+    }
+
+    #[test]
+    fn native_restart_execs_only_after_shutdown_when_systemd_is_not_available() {
+        let mut launcher = RecordingLauncher::default();
+        assert_eq!(
+            request_native_restart_with(false, &mut launcher),
+            NativeRestartAction::ExecCurrentProcess
+        );
+        assert!(launcher.systemd.is_empty());
+        assert!(launcher.processes.is_empty());
+
+        let mut launcher = RecordingLauncher::default();
+        assert_eq!(
+            request_native_restart_with(true, &mut launcher),
+            NativeRestartAction::SystemdRestartRequested
+        );
+        assert_eq!(launcher.systemd, [APPLICATION_UNIT]);
+        assert!(launcher.processes.is_empty());
     }
 
     #[test]

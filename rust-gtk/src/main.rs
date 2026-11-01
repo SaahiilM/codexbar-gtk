@@ -19,7 +19,7 @@ use codexbar_backend::{
     },
     settings::{SettingsActor, SettingsResponse},
     updates::{self, UpdateCheck, UpdateCheckRequest, UpdateError, UpdateRelation},
-    BackendEvent, BackendState, BackendStatus,
+    BackendEvent, BackendEventKind, BackendState, BackendStatus,
 };
 use codexbar_core::{
     currency::CurrencyCatalog, history::HistoryStore, preferences::PreferencesStore,
@@ -48,14 +48,16 @@ const PROJECT_URL: &str = "https://github.com/SaahiilM/codexbar-gtk";
 enum BackendUiOperation {
     CheckUpdates(UpdateCheckRequest),
     Restart,
+    LaunchCodexLoginTerminal,
 }
 
 enum BackendUiResult {
     Update(Result<UpdateCheck, UpdateError>),
-    Restart(
+    Restart(codexbar_backend::application::NativeRestartAction),
+    TerminalLogin(
         Result<
-            codexbar_backend::application::RestartResult,
-            codexbar_backend::application::RestartError,
+            codexbar_backend::application::TerminalLoginResult,
+            codexbar_backend::application::LoginOperationError,
         >,
     ),
 }
@@ -112,7 +114,7 @@ impl BackendWorker {
                             .and_then(|value| value.as_str().map(ToOwned::to_owned))
                             .unwrap_or_else(|| "auto".to_owned());
                         let currency_refresh = currencies.clone();
-                        tokio::spawn(async move {
+                        let currency_refresh_task = tokio::spawn(async move {
                             let _ = currency_refresh.ensure_rates(&preferred).await;
                         });
                         let default_executable = default_cli_executable();
@@ -141,6 +143,8 @@ impl BackendWorker {
                             );
                         let (login, login_events) =
                             LoginActor::start(&tokio::runtime::Handle::current(), shared_cli);
+                        let settings_shutdown = settings.clone();
+                        let login_shutdown = login.clone();
                         let bridge = BackendBridge {
                             state: controller.state(),
                             events: controller
@@ -157,6 +161,10 @@ impl BackendWorker {
                             ui_results,
                         };
                         if ready_tx.send(Ok(bridge)).is_err() {
+                            settings_shutdown.shutdown().await;
+                            login_shutdown.shutdown().await;
+                            currency_refresh_task.abort();
+                            let _ = currency_refresh_task.await;
                             let _ = controller.shutdown().await;
                             return;
                         }
@@ -173,14 +181,34 @@ impl BackendWorker {
                                             let _ = ui_result_tx.send(BackendUiResult::Update(result));
                                         }
                                         Some(BackendUiOperation::Restart) => {
-                                            let result = codexbar_backend::application::restart_application();
+                                            let result = codexbar_backend::application::request_native_restart();
                                             let _ = ui_result_tx.send(BackendUiResult::Restart(result));
+                                        }
+                                        Some(BackendUiOperation::LaunchCodexLoginTerminal) => {
+                                            let package_dir = std::env::current_exe()
+                                                .ok()
+                                                .and_then(|path| path.parent().map(PathBuf::from))
+                                                .unwrap_or_else(|| PathBuf::from("."));
+                                            let codex = discover_executable("codex", Some("CODEX_CLI"), &package_dir).ok();
+                                            let terminal = ["konsole", "gnome-terminal", "xterm", "kitty", "alacritty"]
+                                                .iter()
+                                                .find_map(|candidate| codexbar_backend::cli::find_executable_on_path(candidate));
+                                            let result = codexbar_backend::application::launch_codex_login_terminal_with(
+                                                codex,
+                                                terminal,
+                                                &mut codexbar_backend::application::SystemApplicationLauncher,
+                                            );
+                                            let _ = ui_result_tx.send(BackendUiResult::TerminalLogin(result));
                                         }
                                         None => break 'service,
                                     }
                                 }
                             }
                         }
+                        settings_shutdown.shutdown().await;
+                        login_shutdown.shutdown().await;
+                        currency_refresh_task.abort();
+                        let _ = currency_refresh_task.await;
                         let _ = controller.shutdown().await;
                     }),
                     Err(_) => {
@@ -279,6 +307,7 @@ struct NativeApp {
     backend_start_failed: bool,
     shutting_down: bool,
     worker_stopped: bool,
+    restart_after_shutdown: bool,
     hold_guard: Option<gio::ApplicationHoldGuard>,
     event_inbox: EventInbox<BackendEvent>,
 }
@@ -316,6 +345,7 @@ impl NativeApp {
             backend_start_failed: false,
             shutting_down: false,
             worker_stopped: false,
+            restart_after_shutdown: false,
             hold_guard: None,
             event_inbox: EventInbox::default(),
         }
@@ -826,6 +856,7 @@ impl NativeApp {
                 }
             }
         }
+        self.deliver_notifications();
         for result in ui_results {
             self.handle_backend_ui_result(result);
         }
@@ -951,6 +982,21 @@ impl NativeApp {
         })
     }
 
+    fn deliver_notifications(&mut self) {
+        while let Some(event) = self.event_inbox.pop_front() {
+            if self.shutting_down {
+                continue;
+            }
+            let BackendEventKind::Notification(policy_event) = event.kind;
+            let content = codexbar_gtk_native::notifications::notification_content(&policy_event);
+            let notification = gio::Notification::new(&content.title);
+            notification.set_body(Some(&content.body));
+            notification.set_priority(gio::NotificationPriority::Normal);
+            self.application
+                .send_notification(Some(&content.id), &notification);
+        }
+    }
+
     fn set_backend_status(&self, message: &str) {
         if let Some(label) = &self.state_label {
             label.set_text(message);
@@ -969,6 +1015,20 @@ impl NativeApp {
             return;
         };
         let _ = bridge.ui_operations.send(BackendUiOperation::Restart);
+    }
+
+    fn request_codex_terminal_login(&self) {
+        let Some(bridge) = self.bridge.as_ref() else {
+            self.set_backend_status("Terminal login is unavailable while the backend starts.");
+            return;
+        };
+        if bridge
+            .ui_operations
+            .send(BackendUiOperation::LaunchCodexLoginTerminal)
+            .is_err()
+        {
+            self.set_backend_status("Terminal login service is closed.");
+        }
     }
 
     fn request_update_check(&mut self) {
@@ -1012,20 +1072,17 @@ impl NativeApp {
     fn handle_backend_ui_result(&mut self, result: BackendUiResult) {
         match result {
             BackendUiResult::Update(result) => self.show_update_result(result),
-            BackendUiResult::Restart(Ok(_)) => self.begin_shutdown(),
-            BackendUiResult::Restart(Err(_)) => self.show_restart_error(),
+            BackendUiResult::Restart(action) => {
+                self.restart_after_shutdown = action
+                    == codexbar_backend::application::NativeRestartAction::ExecCurrentProcess;
+                self.begin_shutdown();
+            }
+            BackendUiResult::TerminalLogin(result) => {
+                if let Some(settings) = &self.settings_window {
+                    settings.handle_terminal_login_result(result);
+                }
+            }
         }
-    }
-
-    fn show_restart_error(&self) {
-        let dialog = adw::MessageDialog::new(
-            self.window.as_ref(),
-            Some("Couldn’t restart CodexBar"),
-            Some("The application could not start a replacement process."),
-        );
-        dialog.add_response("close", "Close");
-        dialog.set_default_response(Some("close"));
-        dialog.present();
     }
 
     fn show_update_result(&mut self, result: Result<UpdateCheck, UpdateError>) {
@@ -1067,9 +1124,11 @@ impl NativeApp {
         dialog.set_default_response(Some("close"));
         dialog.connect_response(None, |dialog, response| {
             if response == "open" {
-                let _ = gio::AppInfo::launch_default_for_uri(
+                gio::AppInfo::launch_default_for_uri_async(
                     PROJECT_URL,
                     None::<&gio::AppLaunchContext>,
+                    None::<&gio::Cancellable>,
+                    |_| {},
                 );
             }
             dialog.close();
@@ -1141,11 +1200,18 @@ impl NativeApp {
         if let Some(tray) = &mut self.tray {
             tray.stop();
         }
+        self.settings_window.take();
+        self.panel_window.take();
+        self.window.take();
         if let Some(worker) = &mut self.worker {
             worker.request_shutdown();
         } else {
             self.worker_stopped = true;
             self.hold_guard.take();
+            if self.restart_after_shutdown && relaunch_current_process().is_err() {
+                eprintln!("{APP_NAME}: could not replace the process during restart");
+                std::process::exit(1);
+            }
             self.application.quit();
         }
     }
@@ -1163,6 +1229,10 @@ impl NativeApp {
             }
             self.worker_stopped = true;
             self.hold_guard.take();
+            if self.restart_after_shutdown && relaunch_current_process().is_err() {
+                eprintln!("{APP_NAME}: could not replace the process during restart");
+                std::process::exit(1);
+            }
             self.application.quit();
         }
     }
@@ -1175,6 +1245,25 @@ fn page_description(page: Page) -> &'static str {
         }
         Page::Sessions => "The native Sessions page with scan status and retained recent activity.",
         Page::Spend => "The native Usage & Spend page with cost history and token activity.",
+    }
+}
+
+fn relaunch_current_process() -> std::io::Result<()> {
+    let executable = std::env::current_exe()?;
+    let arguments: Vec<_> = std::env::args_os().skip(1).collect();
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        Err(std::process::Command::new(executable)
+            .args(arguments)
+            .exec())
+    }
+    #[cfg(not(unix))]
+    {
+        std::process::Command::new(executable)
+            .args(arguments)
+            .spawn()
+            .map(drop)
     }
 }
 
@@ -1260,6 +1349,10 @@ fn tray_presentation(
 }
 
 fn main() {
+    if !codexbar_gtk_native::lifecycle::wait_for_display(Duration::from_secs(30)) {
+        eprintln!("{APP_NAME}: no graphical display became available within 30 seconds");
+        std::process::exit(1);
+    }
     let metadata = BuildMetadata::current().unwrap_or_else(|error| {
         eprintln!("{APP_NAME}: invalid bundled version metadata ({error})");
         std::process::exit(2);
@@ -1337,6 +1430,13 @@ fn main() {
         restart_state.borrow().request_restart();
     });
     application.add_action(&restart);
+
+    let terminal_login = gio::SimpleAction::new("login-terminal", None);
+    let terminal_login_state = state.clone();
+    terminal_login.connect_activate(move |_, _| {
+        terminal_login_state.borrow().request_codex_terminal_login();
+    });
+    application.add_action(&terminal_login);
 
     let page = gio::SimpleAction::new("page", Some(glib::VariantTy::STRING));
     let page_state = state.clone();

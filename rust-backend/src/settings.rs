@@ -102,6 +102,8 @@ pub struct CliReconfigureActor {
 #[derive(Clone)]
 pub struct SettingsActor {
     sender: mpsc::Sender<SettingsRequest>,
+    shutdown: tokio::sync::watch::Sender<bool>,
+    task: std::sync::Arc<tokio::sync::Mutex<Option<tokio::task::JoinHandle<()>>>>,
 }
 
 pub struct SettingsResponseReceiver {
@@ -238,8 +240,22 @@ impl SettingsActor {
     ) -> (Self, SettingsResponseReceiver) {
         let (sender, mut receiver) = mpsc::channel::<SettingsRequest>(32);
         let (response_sender, response_receiver) = mpsc::unbounded_channel();
-        runtime.spawn(async move {
-            while let Some(request) = receiver.recv().await {
+        let (shutdown, mut shutdown_rx) = tokio::sync::watch::channel(false);
+        let task = runtime.spawn(async move {
+            loop {
+                let request = tokio::select! {
+                    biased;
+                    changed = shutdown_rx.changed() => {
+                        if changed.is_err() || *shutdown_rx.borrow() {
+                            break;
+                        }
+                        continue;
+                    }
+                    request = receiver.recv() => request,
+                };
+                let Some(request) = request else {
+                    break;
+                };
                 let result = execute_settings_operation(
                     &cli,
                     &preferences,
@@ -257,7 +273,11 @@ impl SettingsActor {
             }
         });
         (
-            Self { sender },
+            Self {
+                sender,
+                shutdown,
+                task: std::sync::Arc::new(tokio::sync::Mutex::new(Some(task))),
+            },
             SettingsResponseReceiver {
                 receiver: response_receiver,
             },
@@ -269,6 +289,15 @@ impl SettingsActor {
         request: SettingsRequest,
     ) -> Result<(), mpsc::error::TrySendError<SettingsRequest>> {
         self.sender.try_send(request)
+    }
+
+    /// Stop accepting settings work and join the serialized actor. An active
+    /// operation is allowed to finish within its own bounded timeout.
+    pub async fn shutdown(&self) {
+        self.shutdown.send_replace(true);
+        if let Some(task) = self.task.lock().await.take() {
+            let _ = task.await;
+        }
     }
 }
 
@@ -1090,6 +1119,34 @@ mod tests {
             .await
             .expect("settings actor response timeout")
             .expect("settings actor response stream closed")
+    }
+
+    #[tokio::test]
+    async fn settings_shutdown_joins_actor_and_closes_request_channel() {
+        let fixture = Fixture::new("exit 0");
+        let cli = Arc::new(SharedCliService::new(Arc::new(fixture.cli())));
+        let preferences = Arc::new(PreferencesStore::new(fixture.home().join("settings.json")));
+        let (refresh, _refresh_requests) = mpsc::channel(1);
+        let (actor, _responses) = start_test_settings_actor(
+            &fixture,
+            cli,
+            preferences,
+            refresh,
+            fixture.executable.clone(),
+        );
+
+        actor.shutdown().await;
+
+        assert!(actor.task.lock().await.is_none());
+        assert!(matches!(
+            actor.try_send(SettingsRequest {
+                request_id: 1,
+                operation: SettingsOperation::Load {
+                    timeout: Duration::from_millis(10),
+                },
+            }),
+            Err(mpsc::error::TrySendError::Closed(_))
+        ));
     }
 
     #[tokio::test]

@@ -3931,3 +3931,26 @@ future models must verify the linked PR's status rather than trusting a stale
   through the ordinary path, release the serialized slot to U04's queued panel
   acceptance. The coordinator will assign that slice's build/base after U05
   merges. UG remains **NOT PASSED** and Python remains the default.
+
+### E125 — 2026-11-01: PR #68 Settings smoke preflight failure and correction
+
+- **Observed CI failure:** PR #68 head
+  `6ce367dbf9fa2c0dc106e199f65d06fcba1459a0` failed only the Settings smoke
+  step in Actions run
+  [41365654762](https://github.com/SaahiilM/codexbar-gtk/actions/runs/41365654762).
+  The step exited before starting the app because `xdotool version` returned
+  nonzero. Rust formatting/tests, provider artwork and accessibility tests,
+  Python suites, Clippy, native build, Gio/dashboard/Spend/Sessions smokes and
+  the separate `tray-dbus` job passed on that run. The preceding Spend/Sessions
+  smoke used Xdotool successfully on the same runner, isolating the failure to
+  the Settings preflight probe.
+- **Correction and local result:** `scripts/smoke-native-settings.sh` now
+  probes `xdotool help`, validating command startup without depending on an X
+  display or a version subcommand. The full Settings Xvfb/private-D-Bus smoke
+  passed locally with the probe and all provider/auth, CLI-path, chooser,
+  import/export/reset, update-check, preferences and lifecycle assertions.
+  `bash -n` passed. The failed run's message blamed runtime libraries; that
+  diagnosis was inaccurate for the runner and is superseded by this evidence.
+- **Handoff:** PR #68 remains open and unmerged. Push the correction and verify
+  both `test` and `tray-dbus` on the resulting exact head before normal merge.
+  Keep PR #68 watched; U04's panel acceptance remains queued behind this merge.

@@ -7,8 +7,8 @@ binary=${1:-"$repo_root/rust-gtk/target/debug/codexbar-gtk-native"}
 for tool in xvfb-run dbus-run-session xdotool gapplication gdbus xwd ffmpeg python3 grep xfwm4 xprop xwininfo; do
     command -v "$tool" >/dev/null || { echo "missing smoke dependency: $tool" >&2; exit 2; }
 done
-xdotool version >/dev/null 2>&1 || {
-    echo "xdotool was found but could not run; check its runtime library dependencies" >&2
+xdotool help >/dev/null 2>&1 || {
+    echo "xdotool was found but its help command failed; check its runtime libraries" >&2
     exit 2
 }
 

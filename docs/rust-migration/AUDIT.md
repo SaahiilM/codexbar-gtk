@@ -4663,3 +4663,9 @@ future models must verify the linked PR's status rather than trusting a stale
   isolated JSON change and visible result, or release without input if focus or
   cursor state changes. Provider, source, hooks/plugins, import/reset, update,
   Display/General and remaining page/action rows stay open.
+
+### E144 — 2026-11-02: U05 build-73 evidence PR checks observed
+
+- **PR/base/head:** PR #74 targets `main` at `cbdcc129ab4ac3ec5d6f3a8ef805567f96d354ff`; at observation it was open, mergeable, and based on build-73 evidence commit `2b6d252f55f64aaad87dbf0bad66b79361210e8c`.
+- **Exact-head checks/review:** Actions run `41524238686` passed both required jobs, `test` and `tray-dbus`, on that exact head. GitHub showed no submitted reviews or inline review threads. This is the observed state before this audit/handoff update; do not treat it as a check on the new commit that appends E144.
+- **Next step:** push the E144 handoff update, wait for fresh exact-head `test` and `tray-dbus` results, and merge normally only if both pass and the PR remains mergeable with no blocking review. UG remains **NOT PASSED**, Python remains the default, and the Wayland preference-action row remains open.

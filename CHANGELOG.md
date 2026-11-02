@@ -4,6 +4,26 @@ Client-side changelog for the CodexBar GTK front-end. Each entry keys a build
 number (`CURRENT_PROJECT_VERSION`) to the upstream macOS CodexBar release its
 short version tracks, so "which version has what" maps cleanly onto both trees.
 
+## 0.82.0 (67) — 2026-11-01
+
+Tracks upstream CodexBar 0.82.0.
+
+### Changed
+
+- Close the remaining synthetic GTK Settings interaction gaps from UG build 66,
+  including provider/auth controls, CLI-path Apply, hooks/plugins read states,
+  import/export/reset, update-check, and uncovered General/Display preferences.
+
+### Validation
+
+- Local Rust/Python tests, strict Clippy, native GTK smokes and the complete
+  synthetic Settings Xvfb interaction smoke passed on
+  `orchestrated/luna-u05-settings-interactions-build67`. Thirty-six captures,
+  including the visible sign-in success result, are recorded in E123. Exact-head
+  PR checks/review remain pending. UG remains **NOT PASSED** because Wayland
+  interaction and repeatable local panel evidence are open. Python remains the
+  default; see [UG_GATE.md](docs/rust-migration/UG_GATE.md).
+
 ## 0.82.0 (66) — 2026-11-01
 
 Tracks upstream CodexBar 0.82.0.

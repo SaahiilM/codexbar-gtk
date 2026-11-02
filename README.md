@@ -134,15 +134,17 @@ Future coding agents should start with [`AGENTS.md`](AGENTS.md). B00–B15 and B
 are accepted. U01–U08 implementation PRs are merged. U08 PR #66 merged at
 `5de83def98ad5ebd09035ee9120698fbf710541c`; exact head
 `fb89f0b6c702dff92992916e14951b385f5189bf` passed `test` and `tray-dbus` in
-run `41345048163` (E119). UG is **NOT PASSED**: provider/source/API-key,
-import/export/reset and update-check GTK actions still need fixture evidence.
-The global Hooks switch passed Xvfb interaction and synthetic persistence, but
-its Wayland action remains open. Plugins is a read-only fixture list; its
-empty/loading/error states remain untested, with no mutation action required.
-The Wayland interaction matrix is incomplete. See the [UG evidence
-ledger](docs/rust-migration/UG_GATE.md) and E120. The Python launcher remains
-the default until the gate passes. See E086 for the BG merge, B11 CI limitation
-and B15 compatibility bounds.
+run `41345048163` (E119). U05's build-67 Settings interaction matrix now passes
+locally with synthetic Xvfb/private-D-Bus fixtures, including provider/source/
+API-key and sign-in, Hooks and Plugins states, Advanced CLI path, chooser-backed
+import/export, reset, update-check and the remaining General/Display controls
+(E123). Its 36
+screenshots are catalogued in the [UG evidence
+ledger](docs/rust-migration/UG_GATE.md); the login completion capture follows
+an assertion of the GTK success result. UG remains **NOT PASSED** because the
+Wayland action matrix and repeatable local panel focus/SNI evidence remain
+open. The Python launcher remains the default until the gate passes. See E086
+for the BG merge, B11 CI limitation and B15 compatibility bounds.
 
 ### Existing opt-in module integrations
 
@@ -224,7 +226,7 @@ The GTK front-end uses the same version pair as the macOS bundle:
   this client is feature-compatible with (`0.82.0`).
 * `CURRENT_PROJECT_VERSION` is the build number of the Linux front-end.
 * `codexbar_gtk/version.py` turns the pair into the macOS-style
-  `"0.82.0 (66)"` string shown under Settings → About, in the tray menu and by
+  `"0.82.0 (67)"` string shown under Settings → About, in the tray menu and by
   `./run.sh --about`.
 
 Increment `CURRENT_PROJECT_VERSION` for each merged PR and keep it in sync with

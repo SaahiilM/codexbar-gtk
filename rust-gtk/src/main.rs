@@ -791,6 +791,7 @@ impl NativeApp {
 
     fn show_about(&self) {
         let about = adw::AboutWindow::builder()
+            .application(&self.application)
             .application_name(APP_NAME)
             .version(self.metadata.display())
             .developer_name("CodexBar GTK contributors")
@@ -1057,7 +1058,8 @@ impl NativeApp {
             self.metadata.build.to_string(),
         )
         .expect("bundled version metadata is validated at startup");
-        let request = UpdateCheckRequest::new(current, updates::VERSION_URL, updates::MAX_TIMEOUT);
+        let request =
+            UpdateCheckRequest::new(current, update_check_version_url(), updates::MAX_TIMEOUT);
         if bridge
             .ui_operations
             .send(BackendUiOperation::CheckUpdates(request))
@@ -1301,6 +1303,21 @@ fn display_update_version(version: &updates::Version) -> String {
     format!("{} ({})", version.marketing, version.build)
 }
 
+fn update_check_version_url() -> String {
+    #[cfg(debug_assertions)]
+    if let Ok(url) = std::env::var("CODEXBAR_NATIVE_TEST_UPDATE_URL") {
+        if is_loopback_update_url(&url) {
+            return url;
+        }
+    }
+    updates::VERSION_URL.to_owned()
+}
+
+#[cfg(debug_assertions)]
+fn is_loopback_update_url(url: &str) -> bool {
+    url.starts_with("http://127.0.0.1:") || url.starts_with("http://[::1]:")
+}
+
 fn tray_preference(preferences: &PreferencesStore, key: &str, default: &str) -> String {
     preferences
         .get(key)
@@ -1528,5 +1545,19 @@ fn main() {
     let context = glib::MainContext::default();
     while !state.borrow().worker_stopped {
         context.iteration(true);
+    }
+}
+
+#[cfg(all(test, debug_assertions))]
+mod update_url_tests {
+    use super::is_loopback_update_url;
+
+    #[test]
+    fn update_test_url_override_accepts_only_loopback_http_hosts() {
+        assert!(is_loopback_update_url("http://127.0.0.1:41991/VERSION"));
+        assert!(is_loopback_update_url("http://[::1]:41991/VERSION"));
+        assert!(!is_loopback_update_url("https://127.0.0.1:41991/VERSION"));
+        assert!(!is_loopback_update_url("http://example.test:41991/VERSION"));
+        assert!(!is_loopback_update_url("http://127.0.0.2:41991/VERSION"));
     }
 }

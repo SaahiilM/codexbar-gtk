@@ -3792,3 +3792,244 @@ future models must verify the linked PR's status rather than trusting a stale
   default. Push the corrected smoke and this handoff, verify CI/reviews/UI on
   the resulting exact PR head, and merge only after required checks succeed and
   orchestration confirms the serialized merge slot.
+
+### E122 — 2026-11-01: PR #67 merged; U05 build-67 interaction follow-up released
+
+- **Observed merge and checks:** PR #67 is merged normally at
+  `ba0fb7e1573715b9a8f8070246d933a9607f2665`, the current `origin/main`.
+  Its base was `5de83def98ad5ebd09035ee9120698fbf710541c` and final head was
+  `e6115c4bd3d8a9a8e8de7648c07aebe7cb321701`. Exact-head Actions run
+  [41358051892](https://github.com/SaahiilM/codexbar-gtk/actions/runs/41358051892)
+  completed with both `test` and `tray-dbus` successful. The `test` job ran
+  Rust formatting/core/backend/bootstrap tests, provider artwork and
+  accessibility checks, PyO3 build, Python default and Rust-opt-in suites,
+  Clippy, native GTK build and Gio/dashboard/Spend/Settings Xvfb smoke steps.
+  The separate `tray-dbus` job passed. This is Xvfb/private-D-Bus CI evidence,
+  not a Wayland interaction run.
+- **Scope distinction:** PR #67 adds build-66 UG evidence and a synchronized
+  launch-at-login smoke; it is not U05's new interaction implementation and it
+  does not pass UG. Earlier failing/superseded PR #67 runs and the successful
+  pre-harness-fix run remain individually documented in E121. Do not treat
+  those outcomes as contradicting the final exact-head result.
+- **Build-67 assignment:** serialized U05 follow-up is claimed on
+  `orchestrated/luna-u05-settings-interactions-build67`, based on the verified
+  PR #67 merge. It will add fixture-driven GTK interaction evidence for
+  provider/source/API-key and synthetic login, Hooks and Plugins states,
+  import/export/reset, update-check via injectable loopback request, and the
+  remaining General/Display controls. Wayland pointer/keyboard use awaits an
+  explicit safe slot from UG; until then the runtime uses isolated Xvfb and
+  private D-Bus. No runtime work or captures are claimed in this start entry.
+- **Gate/runtime invariants:** UG remains **NOT PASSED**. The Python launcher
+  remains the default. API keys and login events stay ephemeral and are never
+  written to fixtures, logs, screenshots or audit text. Preserve central
+  `app.settings`, the existing transactional import/reset and post-commit
+  refresh outcomes, and leave autostart unchanged on import/reset. U05 build-67
+  test, screenshot, review and merge evidence will be recorded after observed.
+
+### E123 — 2026-11-01: U05 build-67 Settings interaction closeout, local verification
+
+- **Base and status:** U05's serialized build-67 follow-up is on
+  `orchestrated/luna-u05-settings-interactions-build67`, based on verified live
+  main `ba0fb7e1573715b9a8f8070246d933a9607f2665` (UG PR #67 merge; see E122).
+  The focused PR is not open yet; exact-head CI, review and merge remain
+  pending. This entry records local evidence only.
+- **Scope:** extended `scripts/smoke-native-settings.sh` to exercise provider
+  enable/source/API-key Apply and fixture sign-in; Hooks enable/disable and
+  rules; Plugins populated/empty/loading/error read-only states; CLI-path Apply;
+  visible chooser-backed export and valid/empty imports; reset cancel/confirm;
+  the loopback-only update-check result; and the remaining General/Display
+  controls.
+  The smoke uses temporary home/config/data/cache/runtime directories and
+  synthetic CLI/provider/auth/preferences fixtures. Random API-key and login
+  sentinels were checked absent from settings, exported JSON, call logs, app
+  logs and notification logs. No real account, secret or auth event was used.
+- **Login result assertion:** `SettingsWindow::handle_login_event` writes a
+  debug-build-only generic status report after setting the GTK status label.
+  The smoke waits for exact `Sign-in completed.` content before capturing
+  `docs/rust-migration/screenshots/u05-build67-login-complete-xvfb.png`; that
+  image was visually inspected and contains no code or credential. The fixture
+  CLI completion file alone is not used as evidence of the displayed result.
+- **Chooser/runtime repair:** `SettingsWindow` retains each
+  `gtk::FileChooserNative` until its response callback, so the native Save/Open
+  dialog remains alive through user selection. The Xvfb smoke proves visible
+  chooser presentation, selected synthetic paths, exported JSON and import
+  results. It creates a mode-0700 synthetic `XDG_RUNTIME_DIR` before starting
+  `dbus-run-session`. Runtime GTK is 4.14.5 and libadwaita is 1.5.0; `ldd` on
+  `codexbar-gtk-native` resolved `/lib/x86_64-linux-gnu/libgtk-4.so.1` and
+  `/lib/x86_64-linux-gnu/libadwaita-1.so.0`. `GTK_USE_PORTAL=0` did not prevent
+  portal service activation on GTK 4.14.5, so no no-portal claim is made. The
+  run exited successfully despite benign portal/PipeWire/DRI3 warnings.
+- **CLI-path action:** the first attempted Enter-key interaction left the
+  setting empty. The screenshot showed text in the row but no visible Apply
+  control. The Advanced `EntryRow` now enables its existing Apply button; the
+  smoke clicks it, asserts persisted `cliPath` equals the synthetic executable,
+  and captures `u05-build67-cli-path-actions-xvfb.png` with the applied checkmark.
+- **Synthetic update request:** debug builds accept only a loopback URL from
+  `CODEXBAR_NATIVE_TEST_UPDATE_URL`; the smoke serves a fixture marker on
+  `127.0.0.1`, asserts the request arrived and verifies the visible update
+  result. Product release defaults remain unchanged.
+- **Files:** `rust-gtk/src/settings_window.rs`, `rust-gtk/src/main.rs`,
+  `scripts/smoke-native-settings.sh`, `.github/workflows/rust-core.yml`,
+  `README.md`, `CHANGELOG.md`, `VERSION`, `codexbar_gtk/version.py`,
+  `docs/rust-migration/TASKS.md`, `UG_GATE.md`, this audit, and 36 captured
+  images under `docs/rust-migration/screenshots/u05-build67-*.png`. The PNGs
+  match `.gitignore:9` and were explicitly staged with `git add -f`. The named
+  key captures include `u05-build67-provider-actions-xvfb.png`,
+  `u05-build67-login-prompt-xvfb.png`,
+  `u05-build67-login-complete-xvfb.png`,
+  `u05-build67-import-selected-xvfb.png`,
+  `u05-build67-empty-import-selected-xvfb.png`,
+  `u05-build67-export-chooser-xvfb.png`,
+  `u05-build67-export-status-xvfb.png`,
+  `u05-build67-cli-path-actions-xvfb.png`,
+  `u05-build67-reset-confirmation-xvfb.png`,
+  `u05-build67-reset-status-xvfb.png`,
+  `u05-build67-plugins-loading-xvfb.png`,
+  `u05-build67-plugins-populated-xvfb.png`,
+  `u05-build67-plugins-empty-xvfb.png`,
+  `u05-build67-plugins-error-xvfb.png`,
+  `u05-build67-update-result-xvfb.png`,
+  `u05-build67-general-actions-xvfb.png` and
+  `u05-build67-display-actions-xvfb.png`.
+- **Local verification:** Rust formatting passed for all four crates; core,
+  backend and GTK `cargo test --locked` passed; ignored GTK artwork fallback
+  and accessibility asset tests each passed under Xvfb/private D-Bus. Python
+  default tests passed (214 run, 21 skipped); Rust-backend Python tests passed
+  (214 run). Strict Clippy passed for core, Python bridge, backend and GTK.
+  `cargo build --locked --bin codexbar-gtk-native`, Gio routing/lifecycle
+  smoke, dashboard smoke at 1× and 2×, Spend/Sessions smoke, and the complete
+  Settings smoke passed. The Settings smoke verified the visible GTK login
+  success report before capture, actual Save/Open chooser selection, import and
+  export data, reset and autostart preservation, update-result presentation,
+  synthetic provider/auth actions, and clean GTK/D-Bus lifecycle. Shell syntax
+  and `git diff --check` passed. `.github/workflows/rust-core.yml` includes the
+  Settings smoke path filter, Xvfb step and `xfwm4` package.
+- **Scope limits and handoff:** no live Wayland pointer/keyboard interaction was
+  attempted; the compositor's `wtype` limitation and the unclaimed Wayland slot
+  remain as recorded in E120. Local panel focus/SNI repeatability also remains
+  unresolved. UG is **NOT PASSED**, Python stays the default, and no cutover is
+  claimed. Next: review the staged diff, commit and push the focused PR, link it
+  to this thread, then inspect exact-head `test`/`tray-dbus`, reviews and merge
+  state before normal merge.
+
+### E124 — 2026-11-01: U05 build-67 PR #68 opened
+
+- **PR/base/head:** PR [#68](https://github.com/SaahiilM/codexbar-gtk/pull/68)
+  targets `main` at the verified UG PR #67 merge
+  `ba0fb7e1573715b9a8f8070246d933a9607f2665`. The PR branch is
+  `orchestrated/luna-u05-settings-interactions-build67`; its initial pushed
+  head is `340daceace0c9eda20a9a3110c65086fce72bac0`. This is the serialized
+  build-67 Settings interaction follow-up, not a duplicate build-62 U05 start.
+- **Observed checks/reviews:** exact-head Actions run
+  [41365557402](https://github.com/SaahiilM/codexbar-gtk/actions/runs/41365557402)
+  started on `340dace`. At observation, `tray-dbus` was successful and `test`
+  was still in progress. The PR was open with no submitted/latest reviews or
+  comments. Any follow-up commit must receive fresh exact-head checks; no CI
+  completion or merge is claimed here.
+- **Handoff:** PR #68 is linked to the coordination thread. Once its current
+  head passes both required checks, has no blocking review feedback, and merges
+  through the ordinary path, release the serialized slot to U04's queued panel
+  acceptance. The coordinator will assign that slice's build/base after U05
+  merges. UG remains **NOT PASSED** and Python remains the default.
+
+### E125 — 2026-11-01: PR #68 Settings smoke preflight failure and correction
+
+- **Observed CI failure:** PR #68 head
+  `6ce367dbf9fa2c0dc106e199f65d06fcba1459a0` failed only the Settings smoke
+  step in Actions run
+  [41365654762](https://github.com/SaahiilM/codexbar-gtk/actions/runs/41365654762).
+  The step exited before starting the app because `xdotool version` returned
+  nonzero. Rust formatting/tests, provider artwork and accessibility tests,
+  Python suites, Clippy, native build, Gio/dashboard/Spend/Sessions smokes and
+  the separate `tray-dbus` job passed on that run. The preceding Spend/Sessions
+  smoke used Xdotool successfully on the same runner, isolating the failure to
+  the Settings preflight probe.
+- **Correction and local result:** `scripts/smoke-native-settings.sh` now
+  probes `xdotool help`, validating command startup without depending on an X
+  display or a version subcommand. The full Settings Xvfb/private-D-Bus smoke
+  passed locally with the probe and all provider/auth, CLI-path, chooser,
+  import/export/reset, update-check, preferences and lifecycle assertions.
+  `bash -n` passed. The failed run's message blamed runtime libraries; that
+  diagnosis was inaccurate for the runner and is superseded by this evidence.
+- **Handoff:** PR #68 remains open and unmerged. Push the correction and verify
+  both `test` and `tray-dbus` on the resulting exact head before normal merge.
+  Keep PR #68 watched; U04's panel acceptance remains queued behind this merge.
+
+### E126 — 2026-11-02: PR #68 removes unreliable Xdotool preflight
+
+- **Observed CI failure:** exact head
+  `6d0e8fb211b32dab97e85b1e6817af1a5e320cf8` failed the Settings smoke step in
+  Actions run
+  [41366305357](https://github.com/SaahiilM/codexbar-gtk/actions/runs/41366305357).
+  `tray-dbus` passed. The step exited at `xdotool help` before Xvfb started.
+  The preceding Spend/Sessions workflow step had already used Xdotool
+  successfully on the same runner, so this failure did not establish a missing
+  runtime library. E125's switch from `version` to `help` was also an invalid
+  gate: both probes returned nonzero in CI before the real smoke could run.
+- **Correction and local result:** removed the `version`/`help` preflight from
+  `scripts/smoke-native-settings.sh`; the existing command-availability loop
+  remains, and Xdotool is now exercised by actual window discovery, focus,
+  keyboard and pointer operations inside the Xvfb smoke. With the ignored U04
+  GUI-tools bundle and its `libxdo` on the local runtime path, the full Settings
+  Xvfb/private-D-Bus smoke passed, including visible chooser selection and the
+  synthetic Settings action/persistence assertions. `bash -n` passed.
+- **Handoff:** PR #68 remains open and unmerged. Run fresh exact-head `test`
+  and `tray-dbus` checks after pushing this correction; do not merge or release
+  U04's queued slot until both pass and review state is clear. UG remains
+  **NOT PASSED**, and Python remains the default.
+
+### E127 — 2026-11-02: PR #68 Gio About action/window correction
+
+- **Observed CI failure:** PR #68 exact head
+  `6e6f6c7c0661a28be660eed6e2474e9c7c1592b6` failed the `Exercise Gio routing
+  and async in-flight shutdown` step in Actions run
+  [41366925370](https://github.com/SaahiilM/codexbar-gtk/actions/runs/41366925370).
+  The `tray-dbus` job passed. The GTK smoke timed out waiting for
+  `^About CodexBar GTK` after dispatching the central About action from the
+  panel. DRI3/libEGL warnings preceded it; they did not identify the window
+  timeout as a rendering-library failure.
+- **Code finding and correction:** `NativeApp::show_about` created an
+  `AdwAboutWindow` without setting its GTK application property, unlike the
+  application-owned main, panel and Settings windows. The About window is now
+  built with `.application(&self.application)`, keeping central Gio action
+  presentation within the same application/window registry. The GTK smoke's
+  window timeout now prints visible X11 window titles and the primary app log
+  to make future mapping failures diagnosable.
+- **Local verification:** `cargo fmt --all -- --check`, native GTK build,
+  `dbus-run-session -- cargo test --manifest-path rust-gtk/Cargo.toml --locked`
+  (37 passed, one display-only ignored; main binary test 1 passed), strict GTK
+  Clippy (`--all-targets -- -D warnings`), and the full
+  `scripts/smoke-native-gtk.sh` passed. That smoke includes the failing panel
+  then About Gio action sequence. A prior unmodified local run also passed, so
+  the CI-only timing failure was not independently reproduced before the
+  ownership fix; fresh exact-head Actions results remain required.
+- **Handoff:** PR #68 remains open and unreviewed; do not merge or release
+  U04's queued slot until new exact-head `test` and `tray-dbus` checks pass.
+  UG remains **NOT PASSED**, and Python remains the default.
+
+### E128 — 2026-11-02: PR #68 Settings smoke BadWindow hardening
+
+- **Observed CI failure:** exact head
+  `c1aaeb22aabd63d43b438d189e23bece6b74c6d1` passed the Gio routing smoke but
+  failed the native Settings smoke in Actions run
+  [41367690518](https://github.com/SaahiilM/codexbar-gtk/actions/runs/41367690518).
+  `tray-dbus` passed. The Settings step exited with X `BadWindow` during
+  `X_GetWindowAttributes` (`0x200554`). Its log showed `xfwm4` startup shortly
+  before the error; it did not identify the issuing command. An instrumented
+  local full run found no Xdotool BadWindow (only expected nonzero title reads
+  after closed dialogs) and completed successfully, so the exact CI race was
+  not reproduced.
+- **Correction:** `wait_for_window` now checks that the returned candidate has
+  the requested title and remains viewable on a second query. Chooser handling
+  resolves a fresh ID after the map settle interval and before each pointer
+  action; focus and raise retry after resolving the current titled chooser if
+  the first XID has gone stale. This narrows stale-XID races while preserving
+  actual visible chooser and accepted-path assertions.
+- **Local verification:** `bash -n scripts/smoke-native-settings.sh` and two
+  complete synthetic Xvfb/private-D-Bus Settings smokes passed after the
+  change, including actual Save/Open chooser selection, import/export/reset,
+  provider/login/hook/plugin/update actions and persisted-state assertions.
+  No screenshot capture was requested or generated in these reruns.
+- **Handoff:** PR #68 remains open and unreviewed. Push this hardening and
+  require fresh exact-head `test` and `tray-dbus` success before merge or U04
+  slot release. UG remains **NOT PASSED**; Python remains the default.

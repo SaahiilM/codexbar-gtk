@@ -85,6 +85,7 @@ pub struct SettingsWindow {
     timezone_values: RefCell<Vec<String>>,
     cli_version_rows: RefCell<Vec<adw::ActionRow>>,
     login_dialog: RefCell<Option<LoginDialog>>,
+    file_chooser: RefCell<Option<gtk::FileChooserNative>>,
 }
 
 impl SettingsWindow {
@@ -130,6 +131,7 @@ impl SettingsWindow {
             timezone_values: RefCell::new(Vec::new()),
             cli_version_rows: RefCell::new(Vec::new()),
             login_dialog: RefCell::new(None),
+            file_chooser: RefCell::new(None),
         });
         view.build_pages(currency_catalog);
         view.request(
@@ -234,6 +236,11 @@ impl SettingsWindow {
                     LoginCompletionKind::Cancelled => "Sign-in cancelled.",
                 };
                 dialog.status.set_text(message);
+                #[cfg(debug_assertions)]
+                if let Some(path) = std::env::var_os("CODEXBAR_NATIVE_SETTINGS_LOGIN_STATUS_REPORT")
+                {
+                    let _ = fs::write(path, message);
+                }
                 if matches!(
                     kind,
                     LoginCompletionKind::Succeeded | LoginCompletionKind::Cancelled
@@ -682,7 +689,10 @@ impl SettingsWindow {
             "CodexBar CLI",
             Some("The desktop app uses this executable for provider data and account actions."),
         );
-        let cli_path = adw::EntryRow::builder().title("CLI path").build();
+        let cli_path = adw::EntryRow::builder()
+            .title("CLI path")
+            .show_apply_button(true)
+            .build();
         cli_path.set_text(self.preference("cliPath").as_str().unwrap_or_default());
         let weak = Rc::downgrade(self);
         let cli_handler = cli_path.connect_apply(move |row| {
@@ -1431,6 +1441,9 @@ impl SettingsWindow {
         filter.set_name(Some("JSON documents"));
         filter.add_pattern("*.json");
         chooser.add_filter(&filter);
+        // GtkNativeDialog is not a toplevel widget and GTK does not retain it
+        // after show(); keep the Rust object alive until its response arrives.
+        self.file_chooser.replace(Some(chooser.clone()));
         let weak = Rc::downgrade(self);
         chooser.connect_response(move |chooser, response| {
             if response == gtk::ResponseType::Accept {
@@ -1453,6 +1466,9 @@ impl SettingsWindow {
                 }
             }
             chooser.destroy();
+            if let Some(view) = weak.upgrade() {
+                view.file_chooser.borrow_mut().take();
+            }
         });
         chooser.show();
     }

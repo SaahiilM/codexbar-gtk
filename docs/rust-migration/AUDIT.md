@@ -3911,3 +3911,23 @@ future models must verify the linked PR's status rather than trusting a stale
   claimed. Next: review the staged diff, commit and push the focused PR, link it
   to this thread, then inspect exact-head `test`/`tray-dbus`, reviews and merge
   state before normal merge.
+
+### E124 — 2026-11-01: U05 build-67 PR #68 opened
+
+- **PR/base/head:** PR [#68](https://github.com/SaahiilM/codexbar-gtk/pull/68)
+  targets `main` at the verified UG PR #67 merge
+  `ba0fb7e1573715b9a8f8070246d933a9607f2665`. The PR branch is
+  `orchestrated/luna-u05-settings-interactions-build67`; its initial pushed
+  head is `340daceace0c9eda20a9a3110c65086fce72bac0`. This is the serialized
+  build-67 Settings interaction follow-up, not a duplicate build-62 U05 start.
+- **Observed checks/reviews:** exact-head Actions run
+  [41365557402](https://github.com/SaahiilM/codexbar-gtk/actions/runs/41365557402)
+  started on `340dace`. At observation, `tray-dbus` was successful and `test`
+  was still in progress. The PR was open with no submitted/latest reviews or
+  comments. Any follow-up commit must receive fresh exact-head checks; no CI
+  completion or merge is claimed here.
+- **Handoff:** PR #68 is linked to the coordination thread. Once its current
+  head passes both required checks, has no blocking review feedback, and merges
+  through the ordinary path, release the serialized slot to U04's queued panel
+  acceptance. The coordinator will assign that slice's build/base after U05
+  merges. UG remains **NOT PASSED** and Python remains the default.

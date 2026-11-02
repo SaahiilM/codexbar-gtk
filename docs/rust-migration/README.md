@@ -77,7 +77,15 @@ portal can identify the synthetic native app using a systemd app scope and a
 temporary desktop entry. Its named, one-time keyboard/pointer consent prompt
 timed out after 360 seconds without approval; no input was sent. The captured
 Settings page and prompt do not pass UI action parity. UG remains
-**NOT PASSED** and Python remains the default (E136).
+**NOT PASSED** and Python remains the default (E136). U05 PR #71 then merged
+normally at `2d3901067b0a6e15217fa0ca63cd712527363b4e`; its exact head
+`7bfeb868bdb7ed3be75a25ed5364efbfa90756f0` passed both required jobs in run
+`41381485242`, with no reviews or inline threads (E137). Build 71 starts a
+fresh attempt for the named nonpersistent pointer/keyboard portal request. The
+user approved it and the live request returned `Response=0 devices=3`, but the
+synthetic Settings child exited before input; the session was closed without
+any input event or action claim (E138). UG remains **NOT PASSED** and Python
+remains the default.
 
 The file inventory and named functions below were inspected, not just inferred
 from filenames. Test results and limitations are recorded separately in AUDIT.

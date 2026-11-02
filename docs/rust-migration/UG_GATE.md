@@ -7,9 +7,12 @@ remaining work; backend unit tests do not count as GTK interaction evidence.
 
 ## Baseline and merge state
 
-- Live `origin/main` base for the build-67 U05 follow-up:
-  `ba0fb7e1573715b9a8f8070246d933a9607f2665`, the normal merge commit for UG
-  evidence PR #67. Build-67 U05 Xvfb results are in E123; they do not pass UG.
+- Live `origin/main` base for the build-69 U05 evidence follow-up:
+  `ba0338091f28c458432a469d8fe1b973facf1b4e`, the normal merge commit for U04
+  PR #69. Exact head `ef5f8ebd96ceb716ea8529f85f81d119d41e24fc` passed `test`
+  and `tray-dbus` in run `41373288090`; reviews and inline review threads were
+  empty (E132). Build-69 live Wayland results are in E133; they do not pass UG.
+- Build-67 U05 Xvfb results remain in E123; those actions do not pass UG.
 - U08 PR [#66](https://github.com/SaahiilM/codexbar-gtk/pull/66) merged at
   `5de83def98ad5ebd09035ee9120698fbf710541c`, the prior base for UG PR #67.
   Exact head `fb89f0b6c702dff92992916e14951b385f5189bf` passed both
@@ -54,17 +57,17 @@ surface to accept; it does not treat source or backend tests as runtime proof.
 | Surface and actions | X11/Xvfb | Actual KDE Wayland | Private D-Bus / result |
 | --- | --- | --- | --- |
 | Dashboard/provider cards: startup, synthetic usage, refresh, central routes, responsive layout | **PASS.** U08 1× and 2× dashboard smokes passed in exact-head CI and locally; build-66 page/routing smokes also passed. At 560 logical pixels the secondary subtitle ellipsizes, while source label, actions, values and cards remain readable/reflowed (E116). Existing captures: [`u08-native-dashboard-iconpercent-xvfb.png`](screenshots/u08-native-dashboard-iconpercent-xvfb.png), [`u08-native-dashboard-2x-xvfb.png`](screenshots/u08-native-dashboard-2x-xvfb.png). | **PASS at session default scale.** U08 fixture smoke completed refresh, registered SNI, routed to Dashboard, captured and quit cleanly: [`u08-native-dashboard-wayland.png`](screenshots/u08-native-dashboard-wayland.png). No CI Wayland run. | **PASS in #66 test job** for native lifecycle; SNI release observed in the Wayland smoke. |
-| Compact panel: SNI toggle/open, focus, keyboard dismissal, anchor/placement | **PASS for the build-68 matrix.** The Xvfb/private-bus smoke covers hidden/visible × `Activate`/`SecondaryActivate`/`ContextMenu` × preference off/on with synthetic CLI counts. It asserts X11 bottom-right placement and focus before sending Escape. The broader native Gio/lifecycle smoke also passes. Build-66 timeouts and `X_SetInputFocus BadMatch` remain historical E120 evidence; build 68 passed with the updated focus check. See [`u04-panel-activate-open-native-xvfb.png`](screenshots/u04-panel-activate-open-native-xvfb.png) and [`u04-panel-context-open-native-xvfb.png`](screenshots/u04-panel-context-open-native-xvfb.png). | **CAPTURE/PARTIAL.** Live session-bus calls exercised all three SNI methods with fixture CLI counts. A synthetic panel capture after activation/context events is valid; Wayland placement remains compositor-owned. No pointer/keyboard action is claimed because this compositor rejects `wtype` input. See [`u04-panel-activate-open-wayland.png`](screenshots/u04-panel-activate-open-wayland.png). | **PASS locally** for native private-bus routing/coordinate dispatch and the Xvfb actual-method refresh matrix. CI remains to be observed for build 68. |
+| Compact panel: SNI toggle/open, focus, keyboard dismissal, anchor/placement | **PASS for the build-68 matrix.** The Xvfb/private-bus smoke covers hidden/visible × `Activate`/`SecondaryActivate`/`ContextMenu` × preference off/on with synthetic CLI counts. It asserts X11 bottom-right placement and focus before sending Escape. The broader native Gio/lifecycle smoke also passes. Build-66 timeouts and `X_SetInputFocus BadMatch` remain historical E120 evidence; build 68 passed with the updated focus check. See [`u04-panel-activate-open-native-xvfb.png`](screenshots/u04-panel-activate-open-native-xvfb.png) and [`u04-panel-context-open-native-xvfb.png`](screenshots/u04-panel-context-open-native-xvfb.png). | **CAPTURE/PARTIAL.** Live session-bus calls exercised all three SNI methods with fixture CLI counts. A synthetic panel capture after activation/context events is valid; Wayland placement remains compositor-owned. No pointer/keyboard action is claimed because this compositor rejects `wtype` input. See [`u04-panel-activate-open-wayland.png`](screenshots/u04-panel-activate-open-wayland.png). | **PASS** in exact-head Actions run `41373288090` for `test` and `tray-dbus`, plus local private-bus routing/coordinate dispatch and Xvfb refresh matrix. |
 | Usage/dashboard route and provider detail interactions | **PARTIAL.** Central route and refresh smoke passed; dashboard fixture screenshots exist. Not every provider card detail/hover/action is independently asserted in the UG matrix. | **CAPTURE/PARTIAL.** Dashboard capture and route smoke passed at default scale. No full Wayland pointer/keyboard action matrix. | **PASS for app/SNI lifecycle**; per-provider UI action coverage remains open. |
 | Sessions: loading, success, empty, first-scan failure, refresh, navigation | **PASS for synthetic states and refresh/navigation** in `smoke-native-usage-pages.sh` and U04 evidence. | **CAPTURE/PARTIAL.** Fresh `--page sessions` captures show loading, running-session success, empty and first-scan failure. Synthetic refresh action and tray release were exercised in the fixture run, but stale retained-error frames were excluded; no Wayland pointer/keyboard action pass. | **PASS for startup/quit and SNI release** in the Wayland fixture smoke; exact-head CI private-bus lifecycle also passed. |
 | Usage & Spend: loading/success/partial/empty/errors, four spend ranges, three heatmap modes, tooltip and refresh | **PASS for current synthetic matrix.** The build-66 script passed with visible pointer clicks on 7/30/90 days and All, Daily/Weekly/Cumulative, keyboard focus/range check, tooltip, refresh, empty and retained-error states. The four range and three mode screenshots are in `screenshots/ug-build66/`. | **CAPTURE/PARTIAL.** Valid startup captures show success, refreshing, empty and first-scan failure; fixture refresh was invoked. Wayland range/mode/tooltip interactions are **OPEN** because controlled pointer/keyboard input was not available. | **PASS for app/SNI lifecycle** in the fixture run; no claim that D-Bus unit coverage substitutes for UI actions. |
-| Settings — General: refresh-on-panel-open, startup, currency, refresh interval, show panel on start | **PASS on Xvfb.** Build-66 smoke persisted refresh-on-panel-open, USD and launch-at-login create/remove. Build-67 smoke clicked and persisted refresh interval `5m` and show-on-start on/off; the launch entry remains isolated to a temporary home. See [`u05-build67-general-actions-xvfb.png`](screenshots/u05-build67-general-actions-xvfb.png). | **CAPTURE only.** Initial General page is shown in [`settings-general-wayland.png`](screenshots/ug-build66/settings-general-wayland.png). No Wayland Settings action was exercised. | **PASS for isolated Settings actor writes**; no preference changes escape the temporary home. |
+| Settings — General: refresh-on-panel-open, startup, currency, refresh interval, show panel on start | **PASS on Xvfb.** Build-66 smoke persisted refresh-on-panel-open, USD and launch-at-login create/remove. Build-67 smoke clicked and persisted refresh interval `5m` and show-on-start on/off; the launch entry remains isolated to a temporary home. See [`u05-build67-general-actions-xvfb.png`](screenshots/u05-build67-general-actions-xvfb.png). | **CAPTURE only.** Fresh build-69 live capture shows Settings General at default Wayland scale in [`u05-build69-settings-general-wayland.png`](screenshots/u05-build69-settings-general-wayland.png). AT-SPI and KWin fake-input attempts did not produce a verified visible state/result; no Wayland preference action is counted (E133). | **PASS for isolated Settings actor writes**; no preference changes escape the temporary home. |
 | Settings — Providers: enable/disable, source selection, API-key entry/visibility, provider login | **PASS on Xvfb with synthetic fixtures.** The provider switch and source selector reached the fixture CLI; API-key Apply reached the CLI using a randomized synthetic value that was checked absent from preferences and logs. A synthetic PTY sign-in completed and the GTK status handler reported “Sign-in completed.” before capture. No real credentials or auth output were used. See [`u05-build67-provider-actions-xvfb.png`](screenshots/u05-build67-provider-actions-xvfb.png), [`u05-build67-login-complete-xvfb.png`](screenshots/u05-build67-login-complete-xvfb.png). | **OPEN.** No Wayland provider-action evidence. | Fixture CLI calls, secret redaction and handler-level login result were asserted by the Settings smoke. |
 | Settings — Menu Bar: icon style/source, provider row style, tray visibility | **PASS.** Four visible controls were clicked and the isolated preference JSON verified: `iconPercent`, `automatic`, `details`, and `showTray=false`. See [`settings-menu-bar-actions-xvfb.png`](screenshots/ug-build66/settings-menu-bar-actions-xvfb.png). | **OPEN for actions.** No Wayland menu-bar control interaction. | Preference writes passed through the native Settings actor in an isolated home. |
 | Settings — Display: usage bar, reset-time format, workday tick style, quota burndown | **PASS on Xvfb.** Build-66 covered the original four controls; build 67 also changed workday-count, pace visibility, hide-account and both numeric quota thresholds, then verified isolated preference writes. See [`u05-build67-display-actions-xvfb.png`](screenshots/u05-build67-display-actions-xvfb.png). | **OPEN for actions.** | Settings actor persistence passed for the tested values. |
 | Settings — Notifications: four preference switches and “Send a test notification” | **PASS.** All four switches were toggled off. The button delivered to an in-process synthetic `org.freedesktop.Notifications` service on the private session bus; the receiver log contained the expected test summary and the UI displayed “Test notification sent.” See [`settings-notification-received-xvfb.png`](screenshots/ug-build66/settings-notification-received-xvfb.png). | **OPEN for actions.** | **PASS for this UI notification action** on the private bus. Separate from the tray registration lifecycle check. |
 | Settings — Usage & Spend: local cost scanning and statistics time zone | **PASS.** The GTK toggle was changed to off and a non-default timezone was selected/persisted (`Africa/Abidjan`). See [`settings-usage-spend-actions-xvfb.png`](screenshots/ug-build66/settings-usage-spend-actions-xvfb.png). | **OPEN for actions.** | Settings actor persistence passed for tested values. |
-| Settings — Hooks | **PASS on Xvfb for the global `Enable hooks` switch and rules display.** The GTK switch was clicked off and back on; the fixture asserted `hooks disable` and `hooks enable` CLI calls and temporary state (`false`, then `true`). Build 67 also captured the empty rules state after selecting an empty fixture. See [`u05-build67-hooks-actions-xvfb.png`](screenshots/u05-build67-hooks-actions-xvfb.png) and [`u05-build67-hooks-empty-xvfb.png`](screenshots/u05-build67-hooks-empty-xvfb.png). Configured rule rows are display-only. | **OPEN.** No Wayland switch interaction or persistence evidence. | The tested switch persisted through the synthetic CLI fixture on Xvfb/private D-Bus. |
+| Settings — Hooks | **PASS on Xvfb for the global `Enable hooks` switch and rules display.** The GTK switch was clicked off and back on; the fixture asserted `hooks disable` and `hooks enable` CLI calls and temporary state (`false`, then `true`). Build 67 also captured the empty rules state after selecting an empty fixture. See [`u05-build67-hooks-actions-xvfb.png`](screenshots/u05-build67-hooks-actions-xvfb.png) and [`u05-build67-hooks-empty-xvfb.png`](screenshots/u05-build67-hooks-empty-xvfb.png). Configured rule rows are display-only. | **OPEN.** On build 69, AT-SPI reported Hooks selected while the visible capture stayed on General; the Hooks switch action caused no CLI call/state change. A bounded KWin fake-input click also produced no observable change. This is not counted as a product pass or failure because no input action was verified (E133). | The tested switch persisted through the synthetic CLI fixture on Xvfb/private D-Bus. |
 | Settings — Plugins | **PASS for read-only populated/empty/loading/error states on Xvfb.** The fixture controlled each response state and the smoke waited for the async rows before capture. There is no plugin mutation operation or click requirement. See the four [`u05-build67-plugins-*-xvfb.png`](screenshots/u05-build67-plugins-populated-xvfb.png) captures. | **OPEN.** No Wayland plugin-list state capture. | No plugin mutation action exists to verify. |
 | Settings — Advanced: CLI path, import, export, reset | **PASS on Xvfb.** The visible CLI-path Apply control reconfigured to the same synthetic executable and persisted the path. A visible Save chooser accepted the synthetic export path and the resulting JSON was checked. Valid and empty synthetic fixtures were selected in a visible import chooser; known-key overlay, unrelated preference retention, unknown-key omission and unchanged autostart were verified. Reset cancel/confirm and defaults were checked while preserving autostart. See [`u05-build67-cli-path-actions-xvfb.png`](screenshots/u05-build67-cli-path-actions-xvfb.png), [`u05-build67-export-chooser-xvfb.png`](screenshots/u05-build67-export-chooser-xvfb.png), [`u05-build67-import-selected-xvfb.png`](screenshots/u05-build67-import-selected-xvfb.png), and [`u05-build67-reset-status-xvfb.png`](screenshots/u05-build67-reset-status-xvfb.png). | **OPEN.** No Wayland Settings action was exercised. | The Settings actor used a temporary home; real credentials were absent from exported JSON, preferences and logs. |
 | Settings — About, Acknowledgements and central About route | **PASS for capture/navigation.** All pages captured; central About route opened. The build-67 About capture shows `0.82.0 (67)` in [`u05-build67-about-xvfb.png`](screenshots/u05-build67-about-xvfb.png). | **OPEN beyond General capture.** | No additional bus contract. |
@@ -145,22 +148,41 @@ increment when `Activate` closed the visible panel. Pointer/keyboard delivery
 remains open because `wtype` is unsupported by the current compositor; these
 images do not claim pointer/keyboard parity.
 
+Build-69 live KDE Wayland capture uses the native build with isolated
+HOME/config/cache and synthetic CLI responses. It shows the General Settings
+page only. The AT-SPI Hooks selection and KWin fake-input click are excluded as
+action evidence because neither produced a verified visible page or backend
+result. The single accepted build-69 capture is
+[`u05-build69-settings-general-wayland.png`](screenshots/u05-build69-settings-general-wayland.png).
+
 ## Wayland limits and live-session ownership
 
-- Before each Wayland capture run, D-Bus ownership checks showed
+- Before each earlier Wayland capture run, D-Bus ownership checks showed
   `com.steipete.CodexBarGTK`, `org.kde.spectacle` and
   `org.kde.StatusNotifierItem-codexbar-gtk` unowned. Captures used one app at a
   time, fresh fixture homes, ordinary one-shot Spectacle captures, and the
   app's normal quit path. After cleanup all three names were unowned and no
   native app or Spectacle process remained. The sole capture slot is released.
+- Build-69 preflight confirmed the session application name was unowned before
+  starting the synthetic Settings fixture; its owner then resolved to that
+  fixture PID. `org.kde.spectacle` was unowned and no Spectacle process existed
+  before each one-shot active-window capture. The unrelated pre-existing
+  `codexbar-linux --usage` process was left untouched. Graceful app quit, private
+  AT-SPI bus shutdown, and trap cleanup removed the fixture HOME/runtime. After
+  cleanup the CodexBar and Spectacle names were unowned, fixture processes were
+  gone, and the sole build-69 slot was released (E133).
 - Default-scale KDE Wayland is **supported and passed** for the U08 dashboard
   smoke and the listed page-state captures. Forcing `GDK_SCALE=2` yielded a
   solid-black capture and is **UNSUPPORTED HERE** as usable 2× evidence; do not
   generalize that result to default Wayland.
-- `wtype -k Tab` reported that this compositor does not support its virtual
-  keyboard protocol. Wayland pointer/keyboard interaction evidence is therefore
-  **OPEN/UNSUPPORTED HERE** for this input method. It is not a product defect or
-  proof of Wayland UI parity.
+- `wtype` is absent from the current PATH; E120 records its earlier rejection
+  of this compositor's virtual-keyboard protocol. Build 69's private AT-SPI
+  actions returned success without a visible switch/result change, and one
+  KWin fake-input click sent to the synthetic window produced no observable
+  action. The compositor advertises KWin fake-input v6, whose protocol permits
+  the compositor to ignore untrusted requests. Wayland pointer/keyboard action
+  evidence remains **OPEN/UNSUPPORTED HERE**; the no-op attempts are not proof
+  of either product failure or UI parity.
 - CI currently has Xvfb native smokes only; it cannot close any Wayland row.
 
 ## Local checks and failures retained
@@ -199,22 +221,26 @@ images do not claim pointer/keyboard parity.
   Clippy for all four Rust crates; build-rust-core; the native SNI matrix and
   broader Gio smokes; dashboard at 1×/2×; Usage & Spend/Sessions; and Settings.
   The build-68 Settings run initially exposed a stale update fixture fixed to
-  derive the next build from `VERSION`; the rerun passed. Exact-head GitHub
-  checks/review for build 68 are not yet recorded here.
+  derive the next build from `VERSION`; the rerun passed. U04 PR #69 exact-head
+  `test` and `tray-dbus` both passed in run `41373288090`; review threads were
+  empty (E132).
 - The broader exact-head #66 Rust, Python, Clippy, build, native GTK and tray
-  results belong to U08 E116–E119, not to this documentation-only gate review.
+  results belong to U08 E116–E119, not to this gate ledger update. U04 PR #69's
+  exact-head required checks passed in run `41373288090` (E132).
 
 ## Remaining blockers and next step
 
 Build-67 closed the listed Settings Xvfb action/state gaps. Build 68 closes the
-native panel SNI method matrix and X11 placement/focus checks. These results do
-not substitute for the remaining acceptance work:
+native panel SNI method matrix and X11 placement/focus checks. Build 69 adds a
+live synthetic Settings General capture but no verified Wayland control action.
+These results do not substitute for the remaining acceptance work:
 
 1. Wayland pointer/keyboard interactions for Settings (including Hooks),
-   cross-page navigation, and Usage & Spend range/mode/tooltip actions remain
-   open. The current compositor rejects `wtype`; build 68 exercised native SNI
-   methods over D-Bus and captured the synthetic panel, but did not deliver
-   pointer/keyboard input.
+   provider controls, cross-page navigation, and Usage & Spend range/mode/tooltip
+   actions remain open. The current compositor does not accept the available
+   `wtype` route; build-69 AT-SPI and KWin fake-input attempts had no verified
+   visible state/result. Build 68 exercised native SNI methods over D-Bus and
+   captured the synthetic panel, but did not deliver UI pointer/keyboard input.
 2. A complete Wayland page/action pass, or an explicitly justified per-case
    unsupported environment record, remains necessary. SNI D-Bus calls and a
    panel capture do not establish pointer/keyboard parity.

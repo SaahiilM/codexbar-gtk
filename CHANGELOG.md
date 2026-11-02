@@ -4,6 +4,18 @@ Client-side changelog for the CodexBar GTK front-end. Each entry keys a build
 number (`CURRENT_PROJECT_VERSION`) to the upstream macOS CodexBar release its
 short version tracks, so "which version has what" maps cleanly onto both trees.
 
+## 0.82.0 (69) — 2026-11-02
+
+Tracks upstream CodexBar 0.82.0.
+
+### Changed
+
+- Continue the native GTK acceptance follow-up with isolated Wayland page/action
+  interaction evidence. The build-69 live session captured Settings General,
+  but did not establish a verified Wayland control action because available
+  input routes produced no visible state/result change. See migration audit
+  E133; UG remains **NOT PASSED**.
+
 ## 0.82.0 (68) — 2026-11-02
 
 Tracks upstream CodexBar 0.82.0.

@@ -4280,3 +4280,90 @@ future models must verify the linked PR's status rather than trusting a stale
 - **Status:** these are local checks on build-69 source, before PR exact-head CI.
   The actual Wayland session is cleaned up and released; E133's input-path gap
   remains open. Python remains the default and UG remains **NOT PASSED**.
+
+### E135 — 2026-11-02: U05 PR #70 merged and exact-head checks passed
+
+- **Observed GitHub state:** PR #70 is `MERGED` to `main` at
+  `6fc6833059cf4ac1808f7f51fe16bcff66eb7867`, merged at
+  `2026-11-02T02:33:29Z`. Its base was `ba0338091f28c458432a469d8fe1b973facf1b4e`;
+  its exact head was `800dc57915216f90bfec18178ef26c7261299045`.
+- **Exact-head checks:** Actions run `41377674020` completed successfully on
+  that exact head. Both required jobs, `test` and `tray-dbus`, passed. The test
+  job included Rust/Python suites, Clippy, native GTK build and all configured
+  Xvfb native GTK smokes, including the synthetic Settings chooser/action flow.
+- **Review state:** GitHub showed no reviews or comments, and the PR was clean
+  and mergeable before the ordinary merge. Live GitHub `main` now matches the
+  merge commit above. The PR records build-69 live Wayland capture/input limits;
+  it does not pass UG.
+- **Handoff:** the serial U05 build-70 slot starts from this live main. Its next
+  scope is to test the installed KDE RemoteDesktop portal's consented keyboard
+  and pointer path against an isolated synthetic Settings window.
+
+### E136 — 2026-11-02: U05 build-70 RemoteDesktop portal consent evidence
+
+- **Portal capability and identity:** the live KDE Wayland session reported
+  xdg-desktop-portal 1.18.4, KDE backend 6.8.1, RemoteDesktop interface v2,
+  and `AvailableDeviceTypes=7` (keyboard, pointer and touchscreen). The
+  installed xdg-desktop-portal predates the host app registry introduced in
+  1.19.4. A direct launch produced KDE's “unidentifiable application” prompt;
+  that request was closed before approval and sent no input. The second launch
+  placed the synthetic native app under the documented systemd
+  `app[-launcher]-<ApplicationID>-<random>.scope` name and created a temporary
+  `NoDisplay=true` desktop entry matching `com.steipete.CodexBarGTK`. The app's
+  cgroup matched that scope and KDE's next prompt identified it as “CodexBar
+  GTK build 70 synthetic interaction test.” See the [RemoteDesktop interface
+  contract](https://github.com/flatpak/xdg-desktop-portal/blob/main/data/org.freedesktop.portal.RemoteDesktop.xml),
+  [portal 1.19.4 release note](https://github.com/flatpak/xdg-desktop-portal/blob/main/NEWS.md#changes-in-1194),
+  and [systemd desktop app-scope convention](https://systemd.io/DESKTOP_ENVIRONMENTS/).
+- **Consent and input result:** the test requested keyboard and pointer only
+  (`types=3`, `persist_mode=0`), with no ScreenCast or clipboard method. The
+  named KDE consent prompt was captured and left open for the portal client's
+  360-second request timeout. No approval arrived; `Start` timed out, the
+  portal session was closed, and no pointer or keyboard notification was
+  issued. This is a consent blocker for this run, not evidence of product input
+  failure or action parity. A fresh explicit consent would be required for a
+  future test.
+- **Synthetic UI and ownership:** the native build-70 Settings window opened
+  with a temporary HOME, config, cache, and fake CLI returning only synthetic
+  data. The captured General page proves startup/rendering only. The second
+  capture shows the named consent dialog and requested device scope. The
+  temporary desktop entry was removed by the shell trap and the fixture HOME
+  was removed by `TemporaryDirectory`. Before launch, the application,
+  Spectacle and CodexBar GTK SNI names were unowned; the app's D-Bus PID matched
+  its fixture process. After timeout, the app/Spectacle/SNI names and matching
+  processes were gone. The unrelated pre-existing `codexbar-linux --usage`
+  process was left untouched. No account data, API keys, or auth events were
+  present. The images are
+  [`u05-build70-settings-general-wayland.png`](screenshots/u05-build70-settings-general-wayland.png)
+  and
+  [`u05-build70-remote-desktop-consent-prompt-wayland.png`](screenshots/u05-build70-remote-desktop-consent-prompt-wayland.png);
+  they are CAPTURE evidence, not UI-action evidence.
+- **Cleanup incident:** a follow-up attempt to query the built version by
+  invoking the native binary with `--version` was not version-only; the binary
+  briefly started with the normal environment and its usual initial refresh.
+  I identified and quit that exact process with its Gio Quit action. The
+  history file's mtime showed two final JSONL rows written during that short
+  interval; I removed exactly those two timestamp-matched rows, retaining the
+  preceding 7,226 rows. The Settings file still had its older 2026-10-30
+  mtime after the probe; no settings action was requested. The history file's
+  mtime now reflects the cleanup write. I did not capture or commit provider
+  values, usage history or CLI output. The existing `codexbar-linux --usage`
+  process remained untouched. Use source metadata, not the native `--version`
+  argument, for future version checks.
+- **Local checks:** `cargo fmt --check` for all four Rust crates and
+  `git diff --check` passed.
+  Rust core tests passed (85); backend tests passed (85 plus one end-to-end);
+  GTK tests passed (37 library plus one binary, with one display-only library
+  and one display-only integration test ignored). Python default tests passed
+  (214, with 21 skipped). Strict Clippy passed for core, Python bridge,
+  backend and GTK crates. The native GTK binary build passed using the existing
+  U04 SDK. The first GTK cargo-test command without SDK environment
+  variables failed pkg-config lookup; its retry with the SDK's
+  `PKG_CONFIG_PATH` and `PKG_CONFIG_SYSROOT_DIR` passed. The local Settings
+  Xvfb smoke could not start because `xvfb-run` is not installed; no package
+  was installed. CI is configured to run that smoke. No Rust/Python source
+  changes were made in build 70; Python remains default and UG remains
+  **NOT PASSED**.
+- **Status:** live portal input remains unverified. No portal input session was
+  approved and no action parity is claimed. Exact-head CI and normal merge for
+  this build-70 evidence PR are pending.

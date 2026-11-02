@@ -69,6 +69,16 @@ packages must include `librsvg2-common` rather than relying on recommended
 packages, which may be omitted by `--no-install-recommends` (carry this into
 C01 packaging).
 
+U05 PR #70's build-69 evidence merged normally at
+`6fc6833059cf4ac1808f7f51fe16bcff66eb7867`; exact head
+`800dc57915216f90bfec18178ef26c7261299045` passed both required jobs in run
+`41377674020` (E135). Build 70 confirmed that the installed KDE RemoteDesktop
+portal can identify the synthetic native app using a systemd app scope and a
+temporary desktop entry. Its named, one-time keyboard/pointer consent prompt
+timed out after 360 seconds without approval; no input was sent. The captured
+Settings page and prompt do not pass UI action parity. UG remains
+**NOT PASSED** and Python remains the default (E136).
+
 The file inventory and named functions below were inspected, not just inferred
 from filenames. Test results and limitations are recorded separately in AUDIT.
 

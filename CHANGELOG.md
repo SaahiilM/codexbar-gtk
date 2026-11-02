@@ -4,6 +4,18 @@ Client-side changelog for the CodexBar GTK front-end. Each entry keys a build
 number (`CURRENT_PROJECT_VERSION`) to the upstream macOS CodexBar release its
 short version tracks, so "which version has what" maps cleanly onto both trees.
 
+## 0.82.0 (73) — 2026-11-02
+
+Tracks upstream CodexBar 0.82.0.
+
+### Changed
+
+- Record the build-73 Wayland attempt. The installed portal's app-ID scope
+  produced a named, nonpersistent pointer+keyboard consent prompt and a
+  successful grant; one pointer motion was sent, but cursor/focus checks then
+  changed and no Settings click or preference mutation is claimed. See audit
+  E141–E143. Python remains the default; UG remains **NOT PASSED**.
+
 ## 0.82.0 (72) — 2026-11-02
 
 Tracks upstream CodexBar 0.82.0.

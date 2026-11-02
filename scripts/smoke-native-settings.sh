@@ -330,14 +330,24 @@ export CODEXBAR_NATIVE_TEST_UPDATE_URL="http://127.0.0.1:$update_port/VERSION"
 app_pid=$!
 
 wait_for_window() {
-    local pattern=$1 deadline=$((SECONDS + 15)) window="" candidate map_state
+    local pattern=$1 deadline=$((SECONDS + 15)) window="" candidate map_state candidate_title confirmed_title confirmed_map_state
     while [[ -z "$window" ]] && (( SECONDS < deadline )); do
         while IFS= read -r candidate; do
             [[ -n "$candidate" ]] || continue
+            candidate_title=$(xdotool getwindowname "$candidate" 2>/dev/null || true)
+            [[ "$candidate_title" =~ $pattern ]] || continue
             map_state=$(xwininfo -id "$candidate" 2>/dev/null | sed -n 's/^  Map State: //p')
             if [[ "$map_state" == "IsViewable" ]]; then
-                window=$candidate
-                break
+                # GTK and the window manager can replace transient XIDs while
+                # a native chooser maps. Require the same title and map state
+                # on a second read before returning an ID for input.
+                sleep 0.05
+                confirmed_title=$(xdotool getwindowname "$candidate" 2>/dev/null || true)
+                confirmed_map_state=$(xwininfo -id "$candidate" 2>/dev/null | sed -n 's/^  Map State: //p')
+                if [[ "$confirmed_title" == "$candidate_title" && "$confirmed_map_state" == "IsViewable" ]]; then
+                    window=$candidate
+                    break
+                fi
             fi
         done < <(xdotool search --name "$pattern" 2>/dev/null || true)
         [[ -n "$window" ]] || sleep 0.05
@@ -445,10 +455,18 @@ select_chooser_path() {
         exit 1
     }
     sleep 0.35
+    chooser=$(wait_for_window "^${title}$")
     if [[ "$title" == "Export preferences" ]]; then
         capture_native_size "$chooser" "${NATIVE_SETTINGS_EXPORT_CHOOSER_SCREENSHOT:-}"
     fi
-    xdotool windowfocus --sync "$chooser"
+    if ! xdotool windowfocus --sync "$chooser" 2>/dev/null; then
+        chooser=$(wait_for_window "^${title}$")
+        if ! xdotool windowfocus --sync "$chooser" 2>"$scratch/chooser-focus.log"; then
+            cat "$scratch/chooser-focus.log" >&2
+            echo "native file chooser disappeared before it could receive keyboard focus: $title" >&2
+            exit 1
+        fi
+    fi
     local focused_window
     focused_window=$(xdotool getwindowfocus 2>/dev/null || true)
     [[ "$focused_window" == "$chooser" ]] || {
@@ -458,7 +476,14 @@ select_chooser_path() {
     # Xvfb starts without a window manager, so explicitly raise the real
     # titled chooser before pointer input. The title assertion above prevents
     # raising or interacting with the blank input-only XIDs from diagnostics.
-    xdotool windowraise "$chooser"
+    if ! xdotool windowraise "$chooser" 2>/dev/null; then
+        chooser=$(wait_for_window "^${title}$")
+        if ! xdotool windowraise "$chooser" 2>"$scratch/chooser-raise.log"; then
+            cat "$scratch/chooser-raise.log" >&2
+            echo "native file chooser disappeared before it could be raised: $title" >&2
+            exit 1
+        fi
+    fi
     sleep 0.1
     if [[ -n "${NATIVE_SETTINGS_CHOOSER_ROOT_SCREENSHOT:-}" ]]; then
         capture_root_debug "$NATIVE_SETTINGS_CHOOSER_ROOT_SCREENSHOT"
@@ -470,6 +495,7 @@ select_chooser_path() {
         }
         # The visible Save chooser starts in the isolated HOME and already has
         # preferences-export.json selected in its Name field.
+        chooser=$(wait_for_window "^${title}$")
         xdotool mousemove --window "$chooser" 770 389 click 1
         sleep 0.25
         if [[ -n "${NATIVE_SETTINGS_CHOOSER_AFTER_SCREENSHOT:-}" ]]; then
@@ -515,6 +541,7 @@ select_chooser_path() {
             exit 1
         }
         row_y=$((95 + row_index * 36))
+        chooser=$(wait_for_window "^${title}$")
         xdotool mousemove --window "$chooser" 300 "$row_y" click 1
         sleep 0.2
         if [[ "$target_name" == "preferences-import.json" ]]; then
@@ -522,6 +549,7 @@ select_chooser_path() {
         else
             capture_native_size "$chooser" "${NATIVE_SETTINGS_EMPTY_IMPORT_SELECTED_SCREENSHOT:-}"
         fi
+        chooser=$(wait_for_window "^${title}$")
         xdotool mousemove --window "$chooser" 762 355 click 1
         local close_deadline=$((SECONDS + 5))
         while xwininfo -id "$chooser" 2>/dev/null | grep -Fq 'Map State: IsViewable' \

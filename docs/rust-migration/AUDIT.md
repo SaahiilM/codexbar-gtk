@@ -4006,3 +4006,30 @@ future models must verify the linked PR's status rather than trusting a stale
 - **Handoff:** PR #68 remains open and unreviewed; do not merge or release
   U04's queued slot until new exact-head `test` and `tray-dbus` checks pass.
   UG remains **NOT PASSED**, and Python remains the default.
+
+### E128 — 2026-11-02: PR #68 Settings smoke BadWindow hardening
+
+- **Observed CI failure:** exact head
+  `c1aaeb22aabd63d43b438d189e23bece6b74c6d1` passed the Gio routing smoke but
+  failed the native Settings smoke in Actions run
+  [41367690518](https://github.com/SaahiilM/codexbar-gtk/actions/runs/41367690518).
+  `tray-dbus` passed. The Settings step exited with X `BadWindow` during
+  `X_GetWindowAttributes` (`0x200554`). Its log showed `xfwm4` startup shortly
+  before the error; it did not identify the issuing command. An instrumented
+  local full run found no Xdotool BadWindow (only expected nonzero title reads
+  after closed dialogs) and completed successfully, so the exact CI race was
+  not reproduced.
+- **Correction:** `wait_for_window` now checks that the returned candidate has
+  the requested title and remains viewable on a second query. Chooser handling
+  resolves a fresh ID after the map settle interval and before each pointer
+  action; focus and raise retry after resolving the current titled chooser if
+  the first XID has gone stale. This narrows stale-XID races while preserving
+  actual visible chooser and accepted-path assertions.
+- **Local verification:** `bash -n scripts/smoke-native-settings.sh` and two
+  complete synthetic Xvfb/private-D-Bus Settings smokes passed after the
+  change, including actual Save/Open chooser selection, import/export/reset,
+  provider/login/hook/plugin/update actions and persisted-state assertions.
+  No screenshot capture was requested or generated in these reruns.
+- **Handoff:** PR #68 remains open and unreviewed. Push this hardening and
+  require fresh exact-head `test` and `tray-dbus` success before merge or U04
+  slot release. UG remains **NOT PASSED**; Python remains the default.

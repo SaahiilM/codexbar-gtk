@@ -9,16 +9,16 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Field | Current checkpoint |
 | --- | --- |
 | Goal | Fully native Rust GTK4/libadwaita app; backend first, UI second |
-| Current phase | BG passed; U01–U08 implementation PRs are merged. U05 PR #72 merged normally at `4b2d25ed8e566efb27d335ce903ec29e2b32a333` (E139); UG remains **NOT PASSED**. Build 72 recorded a stable 360-second Settings lifecycle and one user-approved keyboard refresh action with a synthetic CLI side effect (E140). |
-| Last merged implementation | U05-UG4 portal evidence PR #72 merged normally at `4b2d25ed8e566efb27d335ce903ec29e2b32a333`; build `0.82.0 (71)`. Exact head `713736e90bd1abaabea4819418d49bb87b7cd423` has `test` and `tray-dbus` SUCCESS in run `41506793899`; the first `test` attempt failed at the Import chooser and the same-head rerun passed. No reviews/comments (E139). |
+| Current phase | BG passed; U01–U08 implementation PRs are merged. U05 evidence PR #73 merged normally at `cbdcc129ab4ac3ec5d6f3a8ef805567f96d354ff` (E141); UG remains **NOT PASSED**. Build 72 recorded a stable Settings lifecycle and keyboard refresh action. Build 73 captured a named nonpersistent portal request and one pointer motion, but cursor/focus checks changed and no Settings click or preference mutation is claimed (E143). |
+| Last merged implementation | U05-UG5 evidence PR #73 merged normally at `cbdcc129ab4ac3ec5d6f3a8ef805567f96d354ff`; build `0.82.0 (72)`. Exact head `06dabbe1b0d24f79a8e9fa5eaa78575038a1450c` passed `test` and `tray-dbus` in run `41514939406`; no reviews/comments (E141). |
 | Planning change | [PR #18](https://github.com/SaahiilM/codexbar-gtk/pull/18), merged at `69c5496`, build `0.81.0 (17)` |
 | Backend tasks completed after that baseline | B00–B15 and BG are accepted and merged. B11's Actions startup failures remain documented as failures; see E086. |
-| Active implementation task / owner | U05-UG5 evidence on `orchestrated/luna-u05-wayland-portal-build72`, provisional build `0.82.0 (72)`, based on live main/U05 PR #72 merge `4b2d25ed8e566efb27d335ce903ec29e2b32a333`. Local verification and synthetic Wayland evidence are recorded in E140; focused PR and exact-head checks remain pending. |
-| Latest gate result | **BG passed** (E085/E086). **UG NOT PASSED**: build 72 verified one consented keyboard shortcut and its synthetic CLI refresh result, but did not test pointer delivery or change a Settings preference. The earlier build-71 child exit remains unexplained (E138); no Wayland preference-action parity is claimed. |
-| Next domain slice | Finish the build-72 evidence PR with the audit, handoff, version/changelog and force-added synthetic screenshots; obtain exact-head `test` and `tray-dbus` results and merge normally. Keep remaining Wayland preference/provider/import/reset actions open for the next serialized slice. Preserve Python as default and C01 blocked until UG passes. |
-| Open external blockers | Build 71's child exit remains undiagnosed. Build-72 local Xvfb display-only tests/smokes were not run because `xvfb-run` is unavailable; exact-head CI must cover them. Only keyboard `Ctrl+R` was exercised on Wayland; pointer, Settings preference changes and remaining pages/actions are open. `wtype` remains unavailable/rejected; earlier AT-SPI/KWin attempts remain unverified (E133). Forced `GDK_SCALE=2` remains a black capture. B11 zero-job Actions startup failures remain documented in E086. |
-| Latest checks | Build 72 formatting, Rust core/backend/GTK tests, strict Clippy for four crates, native GTK build, Python default/opt-in suites and private-bus tray-signal tests passed. Two display-only Rust tests were ignored by default; local `xvfb-run` and Xvfb smokes were unavailable. Exact-head CI is pending. PR #72's merge and exact-head checks remain recorded in E139. |
-| UI validation | Build 72's named one-time RemoteDesktop request was approved (`Start Response=0`, `devices=3`, no clipboard). One `Ctrl+R` event to the visible synthetic Settings window increased fake CLI calls from 8 to 12 (`usage`, `cost`, `sessions`, `--version`). The consent and Settings captures are synthetic. This action is not evidence for the Settings preference controls; build 71's process exit cause remains unknown. |
+| Active implementation task / owner | U05-UG6 synthetic Wayland pointer and preference evidence on `orchestrated/luna-u05-wayland-pointer-build73`, provisional build `0.82.0 (73)`, based on live main at U05 PR #73 merge `cbdcc129ab4ac3ec5d6f3a8ef805567f96d354ff`. Current attempt is **blocked/partial**: a named consent prompt and successful pointer+keyboard `Start` were captured, then the cursor/focus checks changed. No click was sent and the fixture value stayed `false` (E143). |
+| Latest gate result | **BG passed** (E085/E086). **UG NOT PASSED**: build 72 verified one portal keyboard refresh action (E140). Build 73's named RemoteDesktop prompt was captured and `Start` returned `Response=0 devices=3 clipboard_enabled=false`. One relative motion was sent toward the General switch; later cursor/focus samples changed, so no top-hit target or preference action is claimed (E143). |
+| Next domain slice | For the next sole-owner Wayland slot, keep the pointer idle through the target check. Use the app-ID systemd scope required by this host's portal version, capture the named consent prompt, and wait for a successful `Start`. The corrected stack hit-test must show the synthetic Settings window topmost and the pointer stable before any click. Compare the isolated `settings.json` and capture the visible result; release immediately if state becomes ambiguous. Run exact-head `test`/`tray-dbus`; keep UG open and Python as default. |
+| Open external blockers | Build 71's child exit remains undiagnosed. Build 73's approved portal session sent one relative motion, after which cursor samples varied and Settings later became inactive; cause is unknown. The compositor top-hit check remained inconclusive and the isolated fixture stayed unchanged. A first helper prompt was unidentifiable and was not approved; the corrected app-ID scope produced the named prompt (E143). Other Wayland provider/import/reset/page actions remain open. Build-73 local Xvfb smoke is unavailable; exact-head CI must cover it. B11 zero-job Actions startup failures remain documented in E086. |
+| Latest checks | All four Rust crates pass formatting and strict Clippy. Core 85/85; backend 85/85 plus its end-to-end test (after one transient timeout on the first run); GTK 37 library + 1 binary passed, with one display-only library test and the display-only a11y test ignored. PyO3 extension build and native GTK binary build passed with the U04 SDK. Python default 214 (21 skipped), Rust opt-in 214, and private tray D-Bus 3 passed. Local `xvfb-run`, `Xvfb`, and `xdotool` are unavailable; no Xvfb smoke is claimed. `git diff --check` passed after E143. Exact-head CI has not started because there is no evidence PR for this head; PR #73's prior-head checks passed in run `41514939406` (E141). |
+| UI validation | Build 73 used an isolated HOME/config/cache, fake CLI, matching temporary `.desktop` entry, and the systemd app-ID scope required by the installed xdg-desktop-portal 1.18.4. The named consent capture shows pointer+keyboard only; no ScreenCast or clipboard was requested. `Start` returned `Response=0 devices=3 clipboard_enabled=false` for `types=3`, `persist_mode=0`. One relative motion targeted `(1212,523)`, but subsequent cursor/focus state changed and did not establish Settings as topmost. No button/key event followed. `refreshAllProvidersOnMenuOpen` remained `false`; Python remains default and UG remains **NOT PASSED** (E143). |
 
 **First commands for a new model/session:**
 
@@ -667,3 +667,38 @@ untouched. PR #41 is open and linked to the orchestration thread. Its initial
 required checks were in progress on the recorded head (E052); wait for fresh-
 head results. Merge only after verifying main, exact head, reviews, mergeability
 and normal GitHub merge conditions.
+
+### U05-UG6 handoff — build 73 synthetic Wayland pointer and preference action
+
+Owner: current U05 session; branch
+`orchestrated/luna-u05-wayland-pointer-build73`, provisional build
+`0.82.0 (73)`, based on observed live `origin/main` at U05 PR #73 merge
+`cbdcc129ab4ac3ec5d6f3a8ef805567f96d354ff` (E141). **Status: blocked/partial.**
+A synthetic HOME/config/cache and fake CLI were used; the unrelated
+`codexbar-linux --usage` process and other desktop apps were left untouched.
+The installed xdg-desktop-portal is 1.18.4 and lacks the host app registry, so
+an initial bare helper produced an “unidentifiable application” prompt; it was
+closed without approval/input. A corrected helper ran in a matching systemd
+app-ID scope and produced the named consent prompt. `Start` returned
+`Response=0 devices=3 clipboard_enabled=false` for pointer+keyboard only
+(`types=3`, `persist_mode=0`, no ScreenCast or clipboard). One relative motion
+was sent toward `(1212,523)`, but cursor/focus samples changed and Settings was
+later inactive. No click or key event was sent; the isolated
+`refreshAllProvidersOnMenuOpen` value remained `false`.
+
+The named consent capture is
+[`u05-build73-remote-desktop-consent-wayland.png`](screenshots/u05-build73-remote-desktop-consent-wayland.png),
+and the General baseline is
+[`u05-build73-settings-general-before-wayland.png`](screenshots/u05-build73-settings-general-before-wayland.png).
+The approved portal session was closed, Gio Quit returned 0, the synthetic app
+and tray owners were released, and the temporary desktop entry was removed.
+The build-73 slot is released (E143).
+
+Next exact step: obtain a fresh sole-owner Wayland slot, recheck D-Bus/process
+ownership, and keep the pointer idle. Use a matching app-ID scope for this
+portal version. Capture and visually verify the named consent prompt; after
+`Start` success, move only to the synthetic switch and click only if immediate
+compositor hit-testing confirms Settings is topmost and pointer state is
+stable. Compare the isolated JSON value and capture the post-action state;
+release without input if any check is ambiguous. UG remains **NOT PASSED**,
+Python remains default, and exact-head CI is pending for this evidence PR.

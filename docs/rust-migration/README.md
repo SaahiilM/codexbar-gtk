@@ -56,6 +56,13 @@ run `41345048163` (E119). All U01–U08 implementation PRs are merged. UG remain
 [UG_GATE.md](UG_GATE.md) and E120. Python remains the default until UG passes.
 Some Python edge-input behavior remains available only through the default
 Python path as described below.
+U04's build-68 panel parity PR #69 then merged normally at
+`ba0338091f28c458432a469d8fe1b973facf1b4e`; exact head
+`ef5f8ebd96ceb716ea8529f85f81d119d41e24fc` passed `test` and `tray-dbus` in
+run `41373288090` (E132). U05 build 69 records a fresh synthetic Wayland
+Settings General capture, but the attempted AT-SPI and KWin fake-input routes
+did not verify a visible control action. UG remains **NOT PASSED**, Python is
+still the default, and the live session slot has been released (E133).
 The native binary embeds provider icon bytes, so install location does not affect
 asset lookup. GDK still needs its SVG image loader at runtime; Debian/Ubuntu
 packages must include `librsvg2-common` rather than relying on recommended

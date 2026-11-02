@@ -9,16 +9,16 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Field | Current checkpoint |
 | --- | --- |
 | Goal | Fully native Rust GTK4/libadwaita app; backend first, UI second |
-| Current phase | BG passed; U01–U08 implementation PRs are merged. U05-UG1 PR #68 merged at `233ce8fc5a7a616983d066a5d18184e5236d7fac`; UG remains **NOT PASSED**. The serialized U04-UG2 panel parity/evidence slice is active on build 68. |
-| Last merged implementation | U05-UG1 Settings interaction closeout PR #68 merged normally at `233ce8fc5a7a616983d066a5d18184e5236d7fac`; build `0.82.0 (67)`. Exact head `34367d63033ae951c29f0b7abe9fe1525855e82a` passed `test` and `tray-dbus` in run `41368907372` (E129). |
+| Current phase | BG passed; U01–U08 implementation PRs are merged. U04-UG2 PR #69 merged normally at `ba0338091f28c458432a469d8fe1b973facf1b4e` (E132); UG remains **NOT PASSED**. U05-UG2 build-69 live Wayland evidence is locally complete; focused PR/checks/merge are pending. |
+| Last merged implementation | U04-UG2 SNI panel parity PR #69 merged normally at `ba0338091f28c458432a469d8fe1b973facf1b4e`; build `0.82.0 (68)`. Exact head `ef5f8ebd96ceb716ea8529f85f81d119d41e24fc` passed `test` and `tray-dbus` in run `41373288090` (E132). |
 | Planning change | [PR #18](https://github.com/SaahiilM/codexbar-gtk/pull/18), merged at `69c5496`, build `0.81.0 (17)` |
 | Backend tasks completed after that baseline | B00–B15 and BG are accepted and merged. B11's Actions startup failures remain documented as failures; see E086. |
-| Active implementation task / owner | U04-UG2 SNI panel parity and X11/Wayland evidence on `orchestrated/luna-u04-panel-parity-build68`, build `0.82.0 (68)`, based on live main/U05 PR #68 merge `233ce8fc5a7a616983d066a5d18184e5236d7fac`. Preserve U03 central actions and activation anchoring; U05 owns Settings writes. Keep Python as the default. |
-| Latest gate result | **BG passed** (E085/E086). **UG NOT PASSED**: build-68 panel SNI semantics, X11 placement/focus and live Wayland SNI/capture evidence passed locally (E130). Wayland pointer/keyboard interactions and several page/action cases remain open. See [UG_GATE.md](UG_GATE.md), E120–E130. |
-| Next domain slice | Complete the serialized U04-UG2 PR and normal merge, then coordinate the remaining Wayland page/action evidence. Preserve the Python launcher; C01 remains blocked until UG passes. |
-| Open external blockers | This host's Wayland compositor rejects `wtype` virtual-keyboard input and forced `GDK_SCALE=2` yields a black capture; build-68 direct SNI D-Bus calls and synthetic panel capture passed, but pointer/keyboard parity remains open. Earlier build-66 local Xvfb panel failures remain historical; build-68 focus/SNI smokes passed (E120, E130). B11 zero-job Actions startup failures remain documented in E086. |
-| Latest checks | U05 PR #68 exact head `34367d63033ae951c29f0b7abe9fe1525855e82a` passed `test` and `tray-dbus` in run `41368907372`, then merged normally at `233ce8fc5a7a616983d066a5d18184e5236d7fac` (E129). Build-68 local Rust/Python, strict Clippy, GTK smoke, Xvfb SNI matrix, and synthetic Wayland SNI capture passed (E130). U04 PR #69 `tray-dbus` passed, but `test` failed twice in Settings chooser automation on `aecf96b` and `ca737bc`; E131 records both causes and fixes. The updated keyboard-accept harness passed locally; exact-head CI rerun pending. |
-| UI validation | Prior U02–U08 captures remain in E090–E116. Build-66 Xvfb Settings/Spend states and build-67 Settings action evidence remain catalogued in [UG_GATE.md](UG_GATE.md). Build-68 Xvfb Activate/ContextMenu screenshots and actual Wayland SNI panel capture are recorded in E130; Wayland pointer/keyboard actions remain constrained by the reported `wtype` limitation. |
+| Active implementation task / owner | U05-UG2 native Wayland page/action evidence on `orchestrated/luna-u05-ug-evidence-build69`, build `0.82.0 (69)`, based on live main/U04 PR #69 merge `ba0338091f28c458432a469d8fe1b973facf1b4e`. Build-69 used isolated HOME/config/cache and synthetic CLI data. It captured Settings General but no Wayland UI action was verified; see E133. The fixture and capture session is cleaned up and released. |
+| Latest gate result | **BG passed** (E085/E086). **UG NOT PASSED**: build-68 panel SNI semantics, X11 placement/focus and live Wayland SNI evidence passed locally (E130); build-69 captured Settings General but could not verify pointer/keyboard actions. Hooks, provider controls, Display and Usage & Spend interactions remain open on Wayland. See [UG_GATE.md](UG_GATE.md), E120–E133. |
+| Next domain slice | Submit the focused build-69 evidence PR after local checks. Ask the coordinator to assign the next safe interaction method/slot for remaining Wayland actions. Do not mark UG passed unless all gate criteria are met; preserve the Python launcher and keep C01 blocked until then. |
+| Open external blockers | This compositor does not expose the virtual-keyboard protocol expected by `wtype`; KWin fake-input and private AT-SPI actions produced no verified visible action/result. The default-scale General capture is valid but does not prove action parity. Forced `GDK_SCALE=2` remains a black capture. B11 zero-job Actions startup failures remain documented in E086. |
+| Latest checks | U04 PR #69 exact head `ef5f8ebd96ceb716ea8529f85f81d119d41e24fc` passed `test` and `tray-dbus` in exact-head run `41373288090`, then merged normally at `ba0338091f28c458432a469d8fe1b973facf1b4e` (E132). Build-69 local verification passed formatting, core/backend/GTK tests, Xvfb display tests, strict Clippy, native builds, Python default and opt-in suites, tray signals, and relevant GTK smokes including Usage/Sessions and Settings (E134). Build-69 PR exact-head CI is pending. |
+| UI validation | Prior U02–U08, U05 build-67 action and U04 build-68 captures remain in E090–E132. Build-69 adds [`u05-build69-settings-general-wayland.png`](screenshots/u05-build69-settings-general-wayland.png), a synthetic actual-session General capture. Xvfb Settings actions including selected-path chooser export/import/reset and synthetic login/update results passed locally; no Wayland action is counted from screenshots, AT-SPI state, or the no-op fake-input attempt (E133–E134). |
 
 **First commands for a new model/session:**
 
@@ -378,23 +378,46 @@ actions, U05 settings ownership and Python as the default. UG remains **NOT
 PASSED**; do not claim Wayland pointer/keyboard interaction without direct
 evidence.
 
-Implementation and local verification are complete. PR #69 is open. Its first
-exact-head run `41371521591` and follow-up run `41372418162` each had
+Implementation and local verification were complete before PR creation. PR #69
+then had initial exact-head runs `41371521591` and `41372418162`, which each had
 `tray-dbus` pass and `test` fail in Settings chooser automation on heads
 `aecf96b` and `ca737bc`; E131 records the two harness issues and corrections.
 Starting xfwm4 first fixed chooser mapping; replacing hard-coded accept-button
 coordinates with the focused chooser's Return action now passes the complete
-local Settings smoke. Observe exact-head required checks/review before merge.
-The real Xvfb matrix passed
-both preference values and all six hidden/visible method cases; the broader GTK
-Gio, Dashboard, Usage/Sessions and Settings smokes passed. Rust and Python
-tests, strict Clippy, extension build and display-dependent GTK accessibility
-tests passed. Three synthetic panel captures were visually inspected; the live
-Wayland run delivered SNI events and captured a panel with compositor-owned
-placement. `wtype` remains unsupported, so Wayland pointer/keyboard actions are
-unverified. See audits E130–E131 and [UG_GATE.md](UG_GATE.md). Next exact
-step: push the CI harness correction, observe exact-head checks/review, then
-merge normally only after they pass.
+local Settings smoke. The final exact head
+`ef5f8ebd96ceb716ea8529f85f81d119d41e24fc` passed `test` and `tray-dbus` in
+run `41373288090`, had no reviews or inline review threads, and merged normally
+at `ba0338091f28c458432a469d8fe1b973facf1b4e` (E132). The real Xvfb matrix
+passed both preference values and all six hidden/visible method cases; the
+broader GTK Gio, Dashboard, Usage/Sessions and Settings smokes passed. Rust and
+Python tests, strict Clippy, extension build and display-dependent GTK
+accessibility tests passed. Three synthetic panel captures were visually
+inspected; the live Wayland run delivered SNI events and captured a panel with
+compositor-owned placement. `wtype` remains unsupported. This is a completed
+U04 handoff and does not close the remaining Wayland UI action matrix.
+See E130–E132 and [UG_GATE.md](UG_GATE.md).
+
+### U05-UG2 handoff — build 69 Wayland interaction evidence
+
+Owner: current U05 session; branch `orchestrated/luna-u05-ug-evidence-build69`.
+Status: live-session evidence and local checks complete; focused PR, exact-head
+checks and merge pending. Based on live main/U04 PR #69 merge
+`ba0338091f28c458432a469d8fe1b973facf1b4e`; build `0.82.0 (69)`. The exact
+head `ef5f8ebd96ceb716ea8529f85f81d119d41e24fc` passed `test` and `tray-dbus`
+in run `41373288090`; no reviews or inline review threads were present (E132).
+
+Scope: assess remaining UG Wayland page/action parity with synthetic fixtures,
+including Settings/Hooks and Usage & Spend interactions, central route/navigation,
+and any product defects found. Build 69 captured Settings General; neither the
+private AT-SPI action attempts nor a one-shot KWin fake-input click produced a
+verified visible action/result. This is an environment/input-path evidence gap,
+not a product pass or confirmed product failure. The application and Spectacle
+ownership were checked; isolated HOME/config/cache were used; unrelated session
+apps were untouched; the fixture, private AT-SPI bus, and capture processes were
+cleaned up and the live slot released. The local Rust/Python and Xvfb check set
+passed, including a selected-path Settings chooser smoke (E134). See E133 for
+Wayland input limitations. Keep Python as the default;
+UG remains **NOT PASSED** until every acceptance criterion is evidenced.
 
 ### U07 handoff — 2026-11-01
 

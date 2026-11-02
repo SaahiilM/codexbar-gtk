@@ -4176,3 +4176,107 @@ future models must verify the linked PR's status rather than trusting a stale
 - **Status:** the keyboard-accept correction is local; it must be pushed to
   PR #69 and pass exact-head CI. No merge claim is made. Python remains
   default; UG remains **NOT PASSED**.
+
+### E132 — 2026-11-02: U04 PR #69 merged and exact-head checks passed
+
+- **Observed GitHub state:** PR #69 is `MERGED` to `main` at
+  `ba0338091f28c458432a469d8fe1b973facf1b4e`, merged at
+  `2026-11-02T01:43:34Z`. The merge commit's first parent (PR base) is
+  `233ce8fc5a7a616983d066a5d18184e5236d7fac`; its second parent/final PR head
+  is `ef5f8ebd96ceb716ea8529f85f81d119d41e24fc`.
+- **Exact-head checks:** Actions run `41373288090` completed successfully on
+  `ef5f8ebd96ceb716ea8529f85f81d119d41e24fc`. Both required jobs, `test` and
+  `tray-dbus`, passed. The `test` job included formatting, Rust core/backend/
+  bootstrap tests, provider artwork/accessibility, Python default and Rust
+  suites, Clippy, native build, Gio/panel/dashboard/Spend/Sessions/Settings
+  smokes. `tray-dbus` passed its private-bus signal test.
+- **Review state:** GitHub returned no submitted reviews and no inline review
+  threads. The live main checkout is the merge commit above. E131 retains the
+  earlier Settings chooser failures and corrections; this final exact-head
+  result supersedes the pending-status wording there without erasing history.
+- **Handoff:** U05 build 69 is released from the verified live main base for
+  the sequential Wayland interaction/evidence follow-up. PR #69 itself remains
+  U04 build 68 and does not pass UG.
+
+### E133 — 2026-11-02: U05 build-69 live Wayland Settings evidence and limits
+
+- **Scope and isolation:** from
+  `orchestrated/luna-u05-ug-evidence-build69`, based on verified `origin/main`
+  `ba0338091f28c458432a469d8fe1b973facf1b4e`, the native Settings app was
+  launched in the active KDE Wayland session with an isolated HOME, config,
+  cache and a synthetic CLI fixture. The fixture used only synthetic provider
+  values (including `example.invalid`); no API key, login or real account was
+  exercised or captured. The app runtime loaded GTK 4.14.5 and libadwaita 1.5.0
+  (`/proc/<pid>/maps` and the existing GTK SDK `pkg-config` values agreed).
+- **Ownership and cleanup:** before launch, the session bus showed
+  `com.steipete.CodexBarGTK` unowned; `org.kde.spectacle` was unowned and no
+  Spectacle process existed. During the run the app name resolved to the
+  synthetic fixture PID. Each Spectacle invocation was a one-shot active-window
+  capture after checking that KWin's target window was the synthetic Settings
+  app. The unrelated pre-existing `codexbar-linux --usage` app was not touched.
+  The native app quit through its normal Gio action; the private AT-SPI session
+  ended; temp HOME/runtime and test helper were removed. After cleanup the app
+  and Spectacle names were unowned and no fixture process remained. The sole
+  Wayland slot is released.
+- **Accepted capture:**
+  [`u05-build69-settings-general-wayland.png`](screenshots/u05-build69-settings-general-wayland.png)
+  is a visually inspected default-scale capture of the synthetic Settings
+  General page. It is capture evidence only; it does not close any interaction
+  row.
+- **AT-SPI attempt:** GTK ran with `GTK_A11Y=atspi` and a private
+  `AT_SPI_BUS_ADDRESS`, leaving the user's global accessibility status
+  unchanged. The Hooks tab's `click` action returned true and changed the
+  accessible selected-tab/tree state, while the actual captured Wayland window
+  remained visually on General. The Hooks and General switches exposed `toggle`
+  actions that returned true but did not change their checked state, write the
+  isolated preferences file or cause a synthetic CLI mutation. These results
+  are internally inconsistent and are not counted as UI actions.
+- **Compositor input attempt:** `wayland-info` advertised
+  `org_kde_kwin_fake_input` v6 but no `zwp_virtual_keyboard` or
+  `zwlr_virtual_pointer` global. `wtype`, `ydotool`, `dotool`, `wlrctl` and
+  `xdotool` were unavailable in the current PATH; E120 records an earlier
+  `wtype` protocol rejection. A temporary client bound KWin fake-input v6,
+  authenticated with a test-only reason and sent one pointer click at the
+  Hooks tab using the verified target window geometry. The request returned,
+  but the selected tab and CLI log did not change. The local protocol describes
+  fake input as a privileged test facility and says a compositor may ignore
+  requests; this no-op is therefore an unsupported/inconclusive input path, not
+  proof of a product defect or a product pass.
+- **Evidence boundary:** the build-67 Xvfb Settings smoke (E123) and PR #69's
+  exact-head Settings step passed real X11 clicks and synthetic persistence,
+  but neither establishes live Wayland pointer/keyboard behavior. No Wayland
+  provider, Hooks, plugin, import/export/reset, update-check, Display, General
+  mutation, Usage & Spend range, or page-navigation action is accepted from
+  this run. UG remains **NOT PASSED** and Python remains the default.
+- **Next step:** keep those Wayland actions open. The coordinator should assign
+  an approved compositor input method or another serialized evidence plan; do
+  not infer action parity from screenshots, AT-SPI's selected bit or D-Bus/Gio
+  route calls alone.
+
+### E134 — 2026-11-02: U05 build-69 local verification
+
+- **Repository checks:** formatting passed for the four Rust crates; Rust core
+  tests passed (85), backend tests and BG end-to-end passed (85 + 1), and GTK
+  tests passed (37 library + 1 binary; one display-dependent test is ignored
+  in the headless run). The two ignored GTK display checks passed under Xvfb.
+  Strict Clippy passed for all four crates, and
+  `scripts/build-rust-core.sh` plus the native GTK binary build passed.
+- **Parity and application smokes:** Python default tests passed (214, with 21
+  expected Rust-opt-in skips); the Rust-opt-in Python suite passed (214), and
+  tray signal tests passed (3). Native CLI/cancellation, Gio routing and
+  in-flight shutdown, panel parity in both refresh modes, Dashboard at 1× and
+  2×, Usage/Sessions synthetic refresh/error/navigation, and the full Settings
+  synthetic interaction smoke all passed. Settings assertions included CLI
+  reconfiguration, Hooks enable/disable and launch-at-login persistence,
+  synthetic login completion, provider and preference actions, all panes,
+  visible export/import chooser path selection and file results, reset, central
+  About, update-result delivery, and GTK shutdown. The chooser was visibly
+  driven through its selected path; presentation alone was not treated as
+  completion.
+- **Environment:** commands used the existing ignored U04 GTK SDK (GTK 4.14.5,
+  libadwaita 1.5.0) and GUI tool bundle. Xvfb D-Bus sessions emitted portal
+  fallback/FUSE and PipeWire warnings, but the relevant smoke commands exited
+  successfully. `git diff --check` passed.
+- **Status:** these are local checks on build-69 source, before PR exact-head CI.
+  The actual Wayland session is cleaned up and released; E133's input-path gap
+  remains open. Python remains the default and UG remains **NOT PASSED**.

@@ -510,7 +510,7 @@ select_chooser_path() {
         # The visible Save chooser starts in the isolated HOME and already has
         # preferences-export.json selected in its Name field.
         chooser=$(wait_for_window "^${title}$")
-        xdotool mousemove --window "$chooser" 770 389 click 1
+        xdotool key Return
         sleep 0.25
         if [[ -n "${NATIVE_SETTINGS_CHOOSER_AFTER_SCREENSHOT:-}" ]]; then
             capture_root_debug "$NATIVE_SETTINGS_CHOOSER_AFTER_SCREENSHOT"
@@ -564,7 +564,9 @@ select_chooser_path() {
             capture_native_size "$chooser" "${NATIVE_SETTINGS_EMPTY_IMPORT_SELECTED_SCREENSHOT:-}"
         fi
         chooser=$(wait_for_window "^${title}$")
-        xdotool mousemove --window "$chooser" 762 355 click 1
+        # The file is selected in the list. Use the chooser's default accept
+        # response rather than a theme- and size-dependent button coordinate.
+        xdotool key Return
         local close_deadline=$((SECONDS + 5))
         while xwininfo -id "$chooser" 2>/dev/null | grep -Fq 'Map State: IsViewable' \
             && (( SECONDS < close_deadline )); do sleep 0.05; done

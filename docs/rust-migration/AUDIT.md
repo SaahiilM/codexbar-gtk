@@ -4144,26 +4144,35 @@ future models must verify the linked PR's status rather than trusting a stale
 
 ### E131 — 2026-11-02: U04 PR #69 Settings-smoke failure and correction
 
-- **Observed exact-head result:** PR #69 head `aecf96b397b786b3ebc4956fff3414f9424b22bb`
-  had `tray-dbus` pass and `test` fail in Actions run `41371521591`.
+- **First observed exact-head result:** PR #69 head
+  `aecf96b397b786b3ebc4956fff3414f9424b22bb` had `tray-dbus` pass and `test`
+  fail in Actions run `41371521591`.
   Formatting, Rust/core/backend/Python tests, GTK tests, clippy, native GTK
   build, tray routing, SNI parity, Dashboard 1×/2×, and Usage/Sessions steps
   had passed before the Settings smoke failed.
-- **Failure:** `scripts/smoke-native-settings.sh` reported
+- **First failure:** `scripts/smoke-native-settings.sh` reported
   `native settings window not found: ^Import preferences$` while opening the
   first Import chooser after the synthetic Export flow. The diagnostic X11
   tree showed the Settings parent still mapped but no Import chooser.
-- **Correction:** the smoke previously clicked the Settings action row before
-  starting its test window manager. The helper now starts and verifies xfwm4
-  first, then clicks the requested Save/Open row and waits for the chooser.
-  All Export and Import chooser actions use this ordering. No Settings product
-  code, preferences, or autostart behavior changed.
-- **Local retest:** `PATH="$PWD/.deps/gui-tools/usr/bin:$PATH"
+- **First correction and second observed result:** the smoke previously clicked
+  the Settings action row before starting its test window manager. Starting and
+  verifying xfwm4 before opening the row allowed the chooser to map. PR head
+  `ca737bcbb65f85667d49d331cb2c8128f00161e1` then had `tray-dbus` pass and
+  `test` fail in run `41372418162`: the Import chooser remained open after the
+  scripted click at `(762,355)`. Thus WM startup addressed the unmapped-dialog
+  failure, while fixed accept-button coordinates remained unreliable in CI.
+- **Correction:** the helper now starts/verifies xfwm4 before activating each
+  Save/Open row, selects the synthetic import file, and sends Return to invoke
+  the focused chooser's default accept response. Export uses the same default
+  response. No Settings product code, preferences, or autostart behavior
+  changed.
+- **Local retest:** after each harness correction,
+  `PATH="$PWD/.deps/gui-tools/usr/bin:$PATH"
   LD_LIBRARY_PATH="$PWD/.deps/gui-tools/usr/lib/x86_64-linux-gnu${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
   ./scripts/smoke-native-settings.sh` passed through synthetic CLI operations,
   preferences persistence, chooser export/import, all Settings panes, central
   About routing, and GTK lifecycle. XDG portal emitted fallback/PipeWire
   warnings; the test exited successfully.
-- **Status:** the fix is local and will be pushed to PR #69; CI on its updated
-  exact head remains pending. No merge claim is made. Python remains default;
-  UG remains **NOT PASSED**.
+- **Status:** the keyboard-accept correction is local; it must be pushed to
+  PR #69 and pass exact-head CI. No merge claim is made. Python remains
+  default; UG remains **NOT PASSED**.

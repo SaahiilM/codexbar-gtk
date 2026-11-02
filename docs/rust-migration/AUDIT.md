@@ -4367,3 +4367,72 @@ future models must verify the linked PR's status rather than trusting a stale
 - **Status:** live portal input remains unverified. No portal input session was
   approved and no action parity is claimed. Exact-head CI and normal merge for
   this build-70 evidence PR are pending.
+
+### E137 — 2026-11-02: U05 PR #71 merged and exact-head checks passed
+
+- **Observed GitHub state:** PR #71 merged normally into `main` at
+  `2d3901067b0a6e15217fa0ca63cd712527363b4e` on 2026-11-02 03:16:11Z. Its
+  merge base was `6fc6833059cf4ac1808f7f51fe16bcff66eb7867`; exact head was
+  `7bfeb868bdb7ed3be75a25ed5364efbfa90756f0`.
+- **Exact-head checks:** Actions run `41381485242` completed successfully on
+  the exact head. Both required jobs, `test` and `tray-dbus`, passed; the test
+  job exercised the synthetic native Settings Xvfb smoke and configured UI
+  smokes. Live `origin/main` was fetched and matched the merge commit.
+- **Review state:** GitHub showed no submitted reviews or inline review
+  threads. The ordinary merge completed with the expected head pinned.
+- **Handoff:** the serial U05 build-71 portal retry starts from this merge.
+  The previous build-70 consent was nonpersistent and has expired. A fresh
+  request must be visibly tied to the synthetic app and must report approval
+  before any keyboard or pointer event is sent. Build 70 remains capture-only;
+  Python remains the default and UG remains **NOT PASSED**.
+
+### E138 — 2026-11-02: U05 build-71 portal approved; target exited before input
+
+- **Scope and baseline:** continued U05 UG evidence on
+  `orchestrated/luna-u05-wayland-portal-build71`, build `0.82.0 (71)`, based on
+  the live U05 PR #71 merge `2d3901067b0a6e15217fa0ca63cd712527363b4e` (E137).
+  This attempt changed no native Rust source; it records live synthetic
+  Wayland evidence and its limit.
+- **Fixture and consent:** the native Settings target ran in the identified
+  systemd app scope with a temporary HOME/config/cache, fake CLI, and matching
+  temporary desktop entry. The app loaded system GTK 4.14.5
+  (`libgtk-4.so.1.1400.5`) and libadwaita 1.5.0. The KDE RemoteDesktop v2
+  dialog identified “CodexBar GTK build 71 synthetic interaction test.” The
+  user clicked Allow and the live `Start` returned `Response=0 devices=3`;
+  only keyboard and pointer had been selected (`types=3`, `persist_mode=0`).
+  No ScreenCast or clipboard request was made.
+- **Action result:** before any keyboard or pointer event was issued, the
+  native Settings child PID `2302004` was no longer running (it appeared as a
+  zombie when checked). The app log contained only libEGL DRI permission
+  warnings; `coredumpctl` reported no core. A Gio Settings action then returned
+  `ServiceUnknown`, consistent with the app D-Bus owner already being gone.
+  The exit cause remains unknown. No portal `NotifyKeyboard*` or
+  `NotifyPointer*` call was made, no preference/CLI side effect was asserted,
+  and no Wayland action parity is claimed. A diagnostic active-window capture
+  selected the KDE Notifications surface instead of Settings and was discarded;
+  no input was sent to it.
+- **Ownership and cleanup:** during the approved request, the CodexBar app and
+  SNI names belonged to the synthetic PID; Spectacle was unowned. The owned
+  portal session and driver were closed, the fixture HOME and temporary desktop
+  entry were removed, and the app/SNI/Spectacle names were all unowned after
+  cleanup. The pre-existing `codexbar-linux --usage` PID `253671` and Chromium
+  global-shortcuts portal session
+  `/org/freedesktop/portal/desktop/session/1_227/chromium_global_shortcuts`
+  remained untouched. The sole live desktop slot is released. The helper
+  scripts and temporary captures were removed; only the reviewed synthetic
+  repository captures remain.
+- **Evidence:** the Settings General and named consent screenshots are
+  [`u05-build71-settings-general-wayland.png`](screenshots/u05-build71-settings-general-wayland.png)
+  and
+  [`u05-build71-remote-desktop-consent-prompt-wayland.png`](screenshots/u05-build71-remote-desktop-consent-prompt-wayland.png).
+  They are CAPTURE evidence only and are force-added because `.gitignore`
+  ignores `*.png`.
+- **Checks and status:** the native GTK binary build and targeted
+  `version_metadata_tracks_the_root_version_file` test passed earlier in this
+  build with the existing U04 GTK SDK; `git diff --check` passed after the
+  ledger edits. No full test suite, strict Clippy, or exact-head CI is claimed
+  for build 71. Python remains the default and UG remains **NOT PASSED**.
+- **Next step:** diagnose why the synthetic child exited without starting
+  another desktop app, then coordinate a fresh sole-owner slot and obtain a
+  fresh nonpersistent portal approval before retrying. Approval alone is not
+  action evidence.

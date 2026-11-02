@@ -731,7 +731,12 @@ fn handle_sni_method(
         "Activate" | "SecondaryActivate" | "ContextMenu" => {
             let (x, y) = parameters.get::<(i32, i32)>().unwrap_or_default();
             let point = (x, y).to_variant();
-            application.activate_action("panel-at", Some(&point));
+            let action = if method == "Activate" {
+                "panel-at"
+            } else {
+                "panel-open-at"
+            };
+            application.activate_action(action, Some(&point));
             invocation.return_value(Some(&().to_variant()));
         }
         // The SNI protocol specifies Scroll(i, s). The Python reference has
@@ -1125,6 +1130,18 @@ mod tests {
                 .push(("panel-at".to_owned(), Some(point)));
         });
         application.add_action(&panel_at);
+        let panel_open_at =
+            gio::SimpleAction::new("panel-open-at", Some(glib::VariantTy::new("(ii)").unwrap()));
+        let panel_open_hits = action_hits.clone();
+        panel_open_at.connect_activate(move |_, parameter| {
+            let point = parameter
+                .and_then(|value| value.get::<(i32, i32)>())
+                .unwrap();
+            panel_open_hits
+                .borrow_mut()
+                .push(("panel-open-at".to_owned(), Some(point)));
+        });
+        application.add_action(&panel_open_at);
 
         let mut tray = NativeTray::start(&application).unwrap();
         wait_until(|| registrations.borrow().len() == 2 && tray.is_registered());
@@ -1386,9 +1403,14 @@ mod tests {
             Some(&(31i32, 47i32).to_variant()),
         )
         .unwrap();
-        assert!(action_hits
-            .borrow()
-            .contains(&("panel-at".to_owned(), Some((31, 47)))));
+        assert_eq!(
+            action_hits
+                .borrow()
+                .iter()
+                .filter(|hit| *hit == &("panel-at".to_owned(), Some((31, 47))))
+                .count(),
+            1
+        );
         for method in ["SecondaryActivate", "ContextMenu"] {
             call(
                 &caller,
@@ -1400,7 +1422,15 @@ mod tests {
             )
             .unwrap();
         }
-        assert!(action_hits
+        assert_eq!(
+            action_hits
+                .borrow()
+                .iter()
+                .filter(|hit| *hit == &("panel-open-at".to_owned(), Some((53, 61))))
+                .count(),
+            2
+        );
+        assert!(!action_hits
             .borrow()
             .contains(&("panel-at".to_owned(), Some((53, 61)))));
         call(

@@ -720,11 +720,31 @@ impl NativeApp {
         }
     }
 
-    fn toggle_panel(&mut self, anchor: Option<PanelAnchor>) {
+    fn panel_is_open_or_pending(&self) -> bool {
+        self.pending_panel
+            || self
+                .panel_window
+                .as_ref()
+                .is_some_and(|window| window.is_visible())
+    }
+
+    fn open_panel(&mut self, anchor: Option<PanelAnchor>) {
+        if self.panel_is_open_or_pending() {
+            return;
+        }
         *self.panel_anchor.borrow_mut() = anchor;
+        if self.backend_has_completed_initial_refresh() || self.backend_start_failed {
+            self.pending_panel = false;
+            self.show_route(LaunchRoute::Panel);
+        } else {
+            self.pending_panel = true;
+        }
+    }
+
+    fn toggle_panel(&mut self, anchor: Option<PanelAnchor>) -> bool {
         if self.pending_panel {
             self.pending_panel = false;
-            return;
+            return false;
         }
         if self
             .panel_window
@@ -733,14 +753,16 @@ impl NativeApp {
         {
             self.hide_panel();
             self.pending_panel = false;
-            return;
+            return false;
         }
+        *self.panel_anchor.borrow_mut() = anchor;
         if self.backend_has_completed_initial_refresh() || self.backend_start_failed {
             self.pending_panel = false;
             self.show_route(LaunchRoute::Panel);
         } else {
             self.pending_panel = true;
         }
+        true
     }
 
     fn render_panel_state(&mut self, state: &BackendState<ControllerSnapshot>) {
@@ -1191,12 +1213,31 @@ impl NativeApp {
     }
 
     fn request_panel_toggle(&mut self) {
-        self.toggle_panel(None);
+        let _ = self.toggle_panel(None);
     }
 
     fn request_panel_toggle_at(&mut self, x: i32, y: i32) {
         let anchor = codexbar_gtk_native::x11_placement::activation_anchor(x, y);
-        self.toggle_panel(anchor);
+        let opened = self.toggle_panel(anchor);
+        if opened && self.refresh_all_providers_on_menu_open() {
+            self.request_refresh();
+        }
+    }
+
+    fn request_panel_open_at(&mut self, x: i32, y: i32) {
+        let anchor = codexbar_gtk_native::x11_placement::activation_anchor(x, y);
+        self.open_panel(anchor);
+        if self.refresh_all_providers_on_menu_open() {
+            self.request_refresh();
+        }
+    }
+
+    fn refresh_all_providers_on_menu_open(&self) -> bool {
+        self.bridge
+            .as_ref()
+            .and_then(|bridge| bridge.preferences.get("refreshAllProvidersOnMenuOpen"))
+            .and_then(|value| value.as_bool())
+            .unwrap_or(true)
     }
 
     fn request_page(&mut self, name: &str) {
@@ -1465,6 +1506,18 @@ fn main() {
         }
     });
     application.add_action(&panel_at);
+
+    let panel_open_at = gio::SimpleAction::new(
+        "panel-open-at",
+        Some(glib::VariantTy::new("(ii)").expect("panel activation uses an integer point")),
+    );
+    let panel_open_at_state = state.clone();
+    panel_open_at.connect_activate(move |_, parameter| {
+        if let Some((x, y)) = parameter.and_then(|value| value.get::<(i32, i32)>()) {
+            panel_open_at_state.borrow_mut().request_panel_open_at(x, y);
+        }
+    });
+    application.add_action(&panel_open_at);
 
     let check_updates = gio::SimpleAction::new("check-updates", None);
     let update_state = state.clone();

@@ -254,7 +254,17 @@ import sys
 
 class QuietHandler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
-        body = b"MARKETING_VERSION=0.82.0\nCURRENT_PROJECT_VERSION=68\n"
+        version = {}
+        with open(sys.argv[3], encoding="utf-8") as version_file:
+            for line in version_file:
+                key, separator, value = line.strip().partition("=")
+                if separator:
+                    version[key] = value
+        latest_build = int(version["CURRENT_PROJECT_VERSION"]) + 1
+        body = (
+            f"MARKETING_VERSION={version['MARKETING_VERSION']}\n"
+            f"CURRENT_PROJECT_VERSION={latest_build}\n"
+        ).encode("ascii")
         if self.path != "/VERSION":
             self.send_error(404)
             return
@@ -320,7 +330,7 @@ gdbus call --session --dest org.freedesktop.Notifications \
     exit 1
 }
 
-python3 "$scratch/update_server.py" "$scratch/update-port" "$update_request_file" >"$scratch/update-server.log" 2>&1 &
+python3 "$scratch/update_server.py" "$scratch/update-port" "$update_request_file" "$repo_root/VERSION" >"$scratch/update-server.log" 2>&1 &
 update_server_pid=$!
 wait_for_file "$scratch/update-port" "loopback update fixture server port"
 update_port=$(cat "$scratch/update-port")

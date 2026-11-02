@@ -54,7 +54,7 @@ surface to accept; it does not treat source or backend tests as runtime proof.
 | Surface and actions | X11/Xvfb | Actual KDE Wayland | Private D-Bus / result |
 | --- | --- | --- | --- |
 | Dashboard/provider cards: startup, synthetic usage, refresh, central routes, responsive layout | **PASS.** U08 1× and 2× dashboard smokes passed in exact-head CI and locally; build-66 page/routing smokes also passed. At 560 logical pixels the secondary subtitle ellipsizes, while source label, actions, values and cards remain readable/reflowed (E116). Existing captures: [`u08-native-dashboard-iconpercent-xvfb.png`](screenshots/u08-native-dashboard-iconpercent-xvfb.png), [`u08-native-dashboard-2x-xvfb.png`](screenshots/u08-native-dashboard-2x-xvfb.png). | **PASS at session default scale.** U08 fixture smoke completed refresh, registered SNI, routed to Dashboard, captured and quit cleanly: [`u08-native-dashboard-wayland.png`](screenshots/u08-native-dashboard-wayland.png). No CI Wayland run. | **PASS in #66 test job** for native lifecycle; SNI release observed in the Wayland smoke. |
-| Compact panel: show/hide, focus, keyboard dismissal, anchor/placement, menu actions | **PARTIAL.** Exact-head #66 CI native GTK smoke passed. Local evidence is not repeatably green: unmodified panel wait timed out at `/tmp/tmp.RU7wtzLQMQ`; the instrumented focus workaround reached the panel after Escape but timed out waiting for Settings at `/tmp/tmp.ymZauUWFLQ`; a local `X_SetInputFocus BadMatch` was also observed. A separate acceptance-worktree run passed once; preserve it alongside these failures. | **OPEN.** SNI registration and app lifecycle passed, but no valid panel placement/dismissal/action capture was demonstrated here. | **PASS in #66 test job** for registration, actions and teardown; this does not erase the local timeouts. |
+| Compact panel: SNI toggle/open, focus, keyboard dismissal, anchor/placement | **PASS for the build-68 matrix.** The Xvfb/private-bus smoke covers hidden/visible × `Activate`/`SecondaryActivate`/`ContextMenu` × preference off/on with synthetic CLI counts. It asserts X11 bottom-right placement and focus before sending Escape. The broader native Gio/lifecycle smoke also passes. Build-66 timeouts and `X_SetInputFocus BadMatch` remain historical E120 evidence; build 68 passed with the updated focus check. See [`u04-panel-activate-open-native-xvfb.png`](screenshots/u04-panel-activate-open-native-xvfb.png) and [`u04-panel-context-open-native-xvfb.png`](screenshots/u04-panel-context-open-native-xvfb.png). | **CAPTURE/PARTIAL.** Live session-bus calls exercised all three SNI methods with fixture CLI counts. A synthetic panel capture after activation/context events is valid; Wayland placement remains compositor-owned. No pointer/keyboard action is claimed because this compositor rejects `wtype` input. See [`u04-panel-activate-open-wayland.png`](screenshots/u04-panel-activate-open-wayland.png). | **PASS locally** for native private-bus routing/coordinate dispatch and the Xvfb actual-method refresh matrix. CI remains to be observed for build 68. |
 | Usage/dashboard route and provider detail interactions | **PARTIAL.** Central route and refresh smoke passed; dashboard fixture screenshots exist. Not every provider card detail/hover/action is independently asserted in the UG matrix. | **CAPTURE/PARTIAL.** Dashboard capture and route smoke passed at default scale. No full Wayland pointer/keyboard action matrix. | **PASS for app/SNI lifecycle**; per-provider UI action coverage remains open. |
 | Sessions: loading, success, empty, first-scan failure, refresh, navigation | **PASS for synthetic states and refresh/navigation** in `smoke-native-usage-pages.sh` and U04 evidence. | **CAPTURE/PARTIAL.** Fresh `--page sessions` captures show loading, running-session success, empty and first-scan failure. Synthetic refresh action and tray release were exercised in the fixture run, but stale retained-error frames were excluded; no Wayland pointer/keyboard action pass. | **PASS for startup/quit and SNI release** in the Wayland fixture smoke; exact-head CI private-bus lifecycle also passed. |
 | Usage & Spend: loading/success/partial/empty/errors, four spend ranges, three heatmap modes, tooltip and refresh | **PASS for current synthetic matrix.** The build-66 script passed with visible pointer clicks on 7/30/90 days and All, Daily/Weekly/Cumulative, keyboard focus/range check, tooltip, refresh, empty and retained-error states. The four range and three mode screenshots are in `screenshots/ug-build66/`. | **CAPTURE/PARTIAL.** Valid startup captures show success, refreshing, empty and first-scan failure; fixture refresh was invoked. Wayland range/mode/tooltip interactions are **OPEN** because controlled pointer/keyboard input was not available. | **PASS for app/SNI lifecycle** in the fixture run; no claim that D-Bus unit coverage substitutes for UI actions. |
@@ -136,6 +136,15 @@ image was recaptured after the GTK handler-level success assertion. These are
 Xvfb captures, not Wayland interaction evidence. `.gitignore` ignores `*.png`,
 so the PR stages the intended files explicitly with `git add -f`.
 
+Build-68 panel captures are synthetic and were made with the native build from
+this branch. The Xvfb Activate-open and ContextMenu-open frames are from the
+two-preference/three-method interaction matrix; the live KDE Wayland capture
+shows the focused panel after SNI activation/context events. The Wayland fixture
+checked synthetic usage-call increments for each opening/context event and no
+increment when `Activate` closed the visible panel. Pointer/keyboard delivery
+remains open because `wtype` is unsupported by the current compositor; these
+images do not claim pointer/keyboard parity.
+
 ## Wayland limits and live-session ownership
 
 - Before each Wayland capture run, D-Bus ownership checks showed
@@ -171,12 +180,11 @@ so the PR stages the intended files explicitly with `git add -f`.
   to `LD_LIBRARY_PATH` without changing that worktree.
   The Spend smoke clicked and captured all four ranges and three heatmap modes,
   tooltip, loading/success/partial/empty/error and navigation states.
-- The native GTK panel smoke is **not repeatably green locally**. Preserve the
-  unmodified SNI panel timeout (`/tmp/tmp.RU7wtzLQMQ`), the instrumented
-  focus/Escape then Settings timeout (`/tmp/tmp.ymZauUWFLQ`), and the observed
-  local `X_SetInputFocus BadMatch`. A separate acceptance-worktree owner reported
-  one local `smoke-native-gtk.sh` pass. Exact-head #66 CI passed independently;
-  neither result cancels the local failures.
+- The build-66 panel timeout (`/tmp/tmp.RU7wtzLQMQ`), focus/Escape then Settings
+  timeout (`/tmp/tmp.ymZauUWFLQ`), and `X_SetInputFocus BadMatch` remain
+  historical failures. Build 68's method matrix and updated broad native GTK
+  smoke both passed locally, including focus verification before Escape; this
+  later result does not rewrite the earlier observations.
 - Xvfb emitted DRI3 and portal/FUSE warnings; the successful smoke exit status
   is recorded separately from those environment warnings.
 - Build-67's smoke uses GTK 4.14.5 and libadwaita 1.5.0; `ldd` resolves the
@@ -185,32 +193,31 @@ so the PR stages the intended files explicitly with `git add -f`.
   “no portals” behavior is claimed. The harness creates its private synthetic
   `XDG_RUNTIME_DIR` before `dbus-run-session`; visible selected-path chooser
   completion and exported JSON are asserted independently of portal warnings.
-- Build-67 local checks passed: Rust core/backend/GTK tests, ignored GTK artwork
-  and accessibility asset tests on Xvfb, Python default and Rust-backend suites
-  (214 tests each; default skips 21), strict Clippy for core/Python/backend/GTK,
-  Gio GTK smoke, dashboard GTK smoke at 1× and 2×, Usage & Spend GTK smoke, and
-  the complete Settings interaction smoke. The Settings smoke also verifies
-  the GTK login handler's “Sign-in completed.” result before its capture. Exact-
-  head GitHub checks and review for the focused follow-up PR remain pending.
+- Build-68 local checks passed: Rust core (85), backend (85 plus one end-to-end),
+  PyO3 and GTK unit suites; ignored GTK artwork/accessibility tests under Xvfb;
+  Python default and Rust-backend suites (214 each; default skips 21); strict
+  Clippy for all four Rust crates; build-rust-core; the native SNI matrix and
+  broader Gio smokes; dashboard at 1×/2×; Usage & Spend/Sessions; and Settings.
+  The build-68 Settings run initially exposed a stale update fixture fixed to
+  derive the next build from `VERSION`; the rerun passed. Exact-head GitHub
+  checks/review for build 68 are not yet recorded here.
 - The broader exact-head #66 Rust, Python, Clippy, build, native GTK and tray
   results belong to U08 E116–E119, not to this documentation-only gate review.
 
 ## Remaining blockers and next step
 
-Build-67 has closed the Settings action/state gaps listed in items 1, 3, 4 and
-5 on Xvfb, and supplied the read-only Plugins states in item 2. These results
-do not substitute for the remaining acceptance work:
+Build-67 closed the listed Settings Xvfb action/state gaps. Build 68 closes the
+native panel SNI method matrix and X11 placement/focus checks. These results do
+not substitute for the remaining acceptance work:
 
-1. Wayland interactions for Settings (including Hooks), cross-page navigation,
-   Usage & Spend range/mode/tooltip actions and panel placement/dismissal are
-   still open. The current compositor rejects `wtype` virtual-keyboard input;
-   no new live Wayland interaction was attempted for build 67.
-2. A reproducible resolution or accepted disposition for local panel Xvfb
-   focus/SNI timeouts is still needed, while retaining the passing exact-head
-   CI evidence.
-3. A complete Wayland page/action pass, or an explicitly justified per-case
-   unsupported environment record, remains necessary. Startup/state captures
-   and D-Bus lifecycle do not prove pointer/keyboard parity.
+1. Wayland pointer/keyboard interactions for Settings (including Hooks),
+   cross-page navigation, and Usage & Spend range/mode/tooltip actions remain
+   open. The current compositor rejects `wtype`; build 68 exercised native SNI
+   methods over D-Bus and captured the synthetic panel, but did not deliver
+   pointer/keyboard input.
+2. A complete Wayland page/action pass, or an explicitly justified per-case
+   unsupported environment record, remains necessary. SNI D-Bus calls and a
+   panel capture do not establish pointer/keyboard parity.
 
 Only after those items are verified should UG be reconsidered. C01 upgrade and
 rollback in an isolated prefix/home, C02 no-Python/PyGObject/PyO3 verification,

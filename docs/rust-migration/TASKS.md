@@ -17,7 +17,7 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Latest gate result | **BG passed** (E085/E086). **UG NOT PASSED**: build-68 panel SNI semantics, X11 placement/focus and live Wayland SNI/capture evidence passed locally (E130). Wayland pointer/keyboard interactions and several page/action cases remain open. See [UG_GATE.md](UG_GATE.md), E120–E130. |
 | Next domain slice | Complete the serialized U04-UG2 PR and normal merge, then coordinate the remaining Wayland page/action evidence. Preserve the Python launcher; C01 remains blocked until UG passes. |
 | Open external blockers | This host's Wayland compositor rejects `wtype` virtual-keyboard input and forced `GDK_SCALE=2` yields a black capture; build-68 direct SNI D-Bus calls and synthetic panel capture passed, but pointer/keyboard parity remains open. Earlier build-66 local Xvfb panel failures remain historical; build-68 focus/SNI smokes passed (E120, E130). B11 zero-job Actions startup failures remain documented in E086. |
-| Latest checks | U05 PR #68 exact head `34367d63033ae951c29f0b7abe9fe1525855e82a` passed `test` and `tray-dbus` in run `41368907372`, then merged normally at `233ce8fc5a7a616983d066a5d18184e5236d7fac` (E129). Build-68 local Rust/Python, strict Clippy, GTK smoke, Xvfb SNI matrix, and synthetic Wayland SNI capture passed (E130); exact-head CI for U04 is pending. |
+| Latest checks | U05 PR #68 exact head `34367d63033ae951c29f0b7abe9fe1525855e82a` passed `test` and `tray-dbus` in run `41368907372`, then merged normally at `233ce8fc5a7a616983d066a5d18184e5236d7fac` (E129). Build-68 local Rust/Python, strict Clippy, GTK smoke, Xvfb SNI matrix, and synthetic Wayland SNI capture passed (E130). U04 PR #69 `test` failed at `aecf96b` in Settings chooser automation, `tray-dbus` passed; the harness fix passed the complete local Settings smoke, and exact-head rerun is pending (E131). |
 | UI validation | Prior U02–U08 captures remain in E090–E116. Build-66 Xvfb Settings/Spend states and build-67 Settings action evidence remain catalogued in [UG_GATE.md](UG_GATE.md). Build-68 Xvfb Activate/ContextMenu screenshots and actual Wayland SNI panel capture are recorded in E130; Wayland pointer/keyboard actions remain constrained by the reported `wtype` limitation. |
 
 **First commands for a new model/session:**
@@ -378,10 +378,12 @@ actions, U05 settings ownership and Python as the default. UG remains **NOT
 PASSED**; do not claim Wayland pointer/keyboard interaction without direct
 evidence.
 
-Implementation and local verification are complete. PR #69 is open. Right
-after creation, `test` and `tray-dbus` were running in Actions run
-`41371456205`; this audit follow-up changes the PR head, so observe the new
-exact-head run before merge. No review decision was recorded at creation.
+Implementation and local verification are complete. PR #69 is open. Its
+first exact-head run `41371521591` had `tray-dbus` pass and `test` fail at the
+Settings Import chooser on head `aecf96b`; E131 records the cause and
+correction. The corrected harness passes locally; observe the post-fix exact-
+head required checks/review before merge. No review decision was recorded at
+creation.
 The real Xvfb matrix passed
 both preference values and all six hidden/visible method cases; the broader GTK
 Gio, Dashboard, Usage/Sessions and Settings smokes passed. Rust and Python
@@ -389,9 +391,9 @@ tests, strict Clippy, extension build and display-dependent GTK accessibility
 tests passed. Three synthetic panel captures were visually inspected; the live
 Wayland run delivered SNI events and captured a panel with compositor-owned
 placement. `wtype` remains unsupported, so Wayland pointer/keyboard actions are
-unverified. See audit E130 and [UG_GATE.md](UG_GATE.md). Next exact step:
-observe the exact-head required checks/review, then merge normally only after
-they pass.
+unverified. See audits E130–E131 and [UG_GATE.md](UG_GATE.md). Next exact
+step: push the CI harness correction, observe exact-head checks/review, then
+merge normally only after they pass.
 
 ### U07 handoff — 2026-11-01
 

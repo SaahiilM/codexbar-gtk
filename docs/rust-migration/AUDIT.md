@@ -4137,8 +4137,33 @@ future models must verify the linked PR's status rather than trusting a stale
   `233ce8fc5a7a616983d066a5d18184e5236d7fac`. PR #69 is open at
   `https://github.com/SaahiilM/codexbar-gtk/pull/69`. Immediately after PR
   creation, `test` and `tray-dbus` were running in Actions run `41371456205`,
-  with no review decision recorded. This documentation follow-up advances the
-  PR head; its exact-head checks and normal merge remain pending. UG is **NOT
-  PASSED** because Wayland
+  with no review decision recorded. The subsequent exact-head test failure
+  and harness correction are recorded in E131. UG is **NOT PASSED** because Wayland
   pointer/keyboard and other page action evidence remains incomplete; keep
   Python as the default and C01 blocked until the gate passes.
+
+### E131 — 2026-11-02: U04 PR #69 Settings-smoke failure and correction
+
+- **Observed exact-head result:** PR #69 head `aecf96b397b786b3ebc4956fff3414f9424b22bb`
+  had `tray-dbus` pass and `test` fail in Actions run `41371521591`.
+  Formatting, Rust/core/backend/Python tests, GTK tests, clippy, native GTK
+  build, tray routing, SNI parity, Dashboard 1×/2×, and Usage/Sessions steps
+  had passed before the Settings smoke failed.
+- **Failure:** `scripts/smoke-native-settings.sh` reported
+  `native settings window not found: ^Import preferences$` while opening the
+  first Import chooser after the synthetic Export flow. The diagnostic X11
+  tree showed the Settings parent still mapped but no Import chooser.
+- **Correction:** the smoke previously clicked the Settings action row before
+  starting its test window manager. The helper now starts and verifies xfwm4
+  first, then clicks the requested Save/Open row and waits for the chooser.
+  All Export and Import chooser actions use this ordering. No Settings product
+  code, preferences, or autostart behavior changed.
+- **Local retest:** `PATH="$PWD/.deps/gui-tools/usr/bin:$PATH"
+  LD_LIBRARY_PATH="$PWD/.deps/gui-tools/usr/lib/x86_64-linux-gnu${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+  ./scripts/smoke-native-settings.sh` passed through synthetic CLI operations,
+  preferences persistence, chooser export/import, all Settings panes, central
+  About routing, and GTK lifecycle. XDG portal emitted fallback/PipeWire
+  warnings; the test exited successfully.
+- **Status:** the fix is local and will be pushed to PR #69; CI on its updated
+  exact head remains pending. No merge claim is made. Python remains default;
+  UG remains **NOT PASSED**.

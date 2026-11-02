@@ -457,8 +457,12 @@ stop_test_window_manager() {
 }
 
 select_chooser_path() {
-    local title=$1 path=$2 chooser=""
+    local title=$1 path=$2 button_x=$3 button_y=$4 chooser=""
+    # Start the test WM before activating the row. A native chooser opened
+    # before xfwm4 claims the root can intermittently leave the parent
+    # Settings window active without mapping the dialog on CI.
     start_test_window_manager
+    xdotool mousemove --window "$settings_window" "$button_x" "$button_y" click 1
     chooser=$(wait_for_window "^${title}$")
     [[ "$(xdotool getwindowname "$chooser")" == "$title" ]] || {
         echo "native file chooser title did not match the requested action: $title" >&2
@@ -917,8 +921,7 @@ xdotool mousemove --window "$settings_window" 856 800 click 1
 sleep 0.25
 
 # Export through the native Save chooser and verify the resulting portable JSON.
-xdotool mousemove --window "$settings_window" 790 333 click 1
-select_chooser_path "Export preferences" "$export_file"
+select_chooser_path "Export preferences" "$export_file" 790 333
 wait_for_file "$export_file" "selected preferences export"
 python3 - "$export_file" "$api_key_sentinel" <<'PY'
 import json
@@ -935,8 +938,7 @@ capture "$settings_window" "${NATIVE_SETTINGS_ADVANCED_EXPORT_SCREENSHOT:-}"
 
 # Import overlays known keys onto the latest map, preserves the unrelated
 # Display preference, ignores the unknown key, and leaves autostart untouched.
-xdotool mousemove --window "$settings_window" 790 388 click 1
-select_chooser_path "Import preferences" "$import_file"
+select_chooser_path "Import preferences" "$import_file" 790 388
 wait_for_preference refreshFrequency 2m
 wait_for_preference preferredCurrencyCode EUR
 wait_for_preference launchAtLogin False
@@ -966,8 +968,7 @@ printf '%s\n' 'empty' > "$hooks_mode_file"
 printf '%s\n' 'empty' > "$plugins_mode_file"
 rm -f "$hooks_served_file" "$plugin_loaded_file"
 plugins_before=$(cat "$plugins_request_count_file")
-xdotool mousemove --window "$settings_window" 790 388 click 1
-select_chooser_path "Import preferences" "$empty_import_file"
+select_chooser_path "Import preferences" "$empty_import_file" 790 388
 wait_for_plugins_loaded "$plugins_before"
 hook_mode_deadline=$((SECONDS + 8))
 while [[ "$(cat "$hooks_served_file" 2>/dev/null || true)" != "empty" ]] && (( SECONDS < hook_mode_deadline )); do sleep 0.05; done
@@ -988,8 +989,7 @@ rm -f "$plugin_loaded_file"
 plugins_before=$(cat "$plugins_request_count_file")
 xdotool mousemove --window "$settings_window" 856 800 click 1
 sleep 0.25
-xdotool mousemove --window "$settings_window" 790 388 click 1
-select_chooser_path "Import preferences" "$empty_import_file"
+select_chooser_path "Import preferences" "$empty_import_file" 790 388
 wait_for_plugins_loaded "$plugins_before"
 sleep 0.35
 xdotool mousemove --window "$settings_window" 758 800 click 1

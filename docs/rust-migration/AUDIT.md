@@ -4033,3 +4033,146 @@ future models must verify the linked PR's status rather than trusting a stale
 - **Handoff:** PR #68 remains open and unreviewed. Push this hardening and
   require fresh exact-head `test` and `tray-dbus` success before merge or U04
   slot release. UG remains **NOT PASSED**; Python remains the default.
+
+### E129 — 2026-11-02: U05 PR #68 merged; U04 build-68 panel slice claimed
+
+- **Observed merge and exact-head checks:** live GitHub reports PR #68 merged
+  normally at `2026-11-02T00:51:53Z` with merge commit
+  `233ce8fc5a7a616983d066a5d18184e5236d7fac`, now live `origin/main`. Exact
+  head `34367d63033ae951c29f0b7abe9fe1525855e82a` completed Actions run
+  `41368907372` successfully: `test` and `tray-dbus` both passed. Earlier
+  failures, including E128's Settings chooser `BadWindow`, occurred on
+  superseded heads and remain historical; E128 is not overwritten.
+- **Task claim/base:** the coordinator released serialized U04-UG2 panel
+  parity as build `0.82.0 (68)`. The existing isolated U04 worktree was clean
+  at the completed build-61 branch, had no competing open PR, fetched live
+  `main`, and created `orchestrated/luna-u04-panel-parity-build68` at the
+  observed merge commit above. The claim changes only `TASKS.md` and this audit
+  entry so far; implementation is not yet recorded as complete.
+- **Acceptance contract:** characterize Python `Activate` as a toggle and
+  refresh only after opening when `refreshAllProvidersOnMenuOpen` is enabled.
+  Python `SecondaryActivate` and `ContextMenu` ensure visible idempotently and
+  refresh on each event when enabled. Native behavior must retain X11
+  activation-coordinate anchoring and compositor placement on Wayland. Cover
+  hidden/visible × three SNI methods × preference on/off with synthetic CLI
+  refresh counts, real D-Bus routing, placement and focus-before-Escape.
+  Preserve central Gio actions, U05's Settings ownership and the Python default.
+- **Claim-time checks/runtime evidence:** no implementation, tests, build,
+  screenshots or local runtime checks have been performed on build 68 yet. The
+  worktree tool probe found no system `xvfb-run`, `Xvfb` or `xdotool`; ignored
+  `.deps/gui-tools` exists and will be checked before selecting the local X11
+  smoke path. The active session advertises Wayland and X11 displays; any
+  Wayland input limits will be reported as evidence gaps, not inferred parity.
+- **Next exact step:** inspect the ignored GUI tool bundle and the current-main
+  tray/preferences code, implement distinct toggle/open dispatch plus
+  preference-gated refresh, and extend the native synthetic D-Bus/GTK matrix.
+  Then run the migration-guide checks, X11 runtime smoke and screenshot path,
+  and attempt only safe synthetic Wayland evidence before updating the audit
+  with actual outcomes. UG remains **NOT PASSED**; Python stays the default.
+
+### E130 — 2026-11-02: U04 build-68 SNI panel parity and evidence
+
+- **Python behavior characterized:** `codexbar_gtk/ui/app.py` implements
+  `_toggle_popup` as a toggle and calls `_refresh_now` only when the popup is
+  visible and `refreshAllProvidersOnMenuOpen` is true. Its
+  `_show_tray_context_menu` opens only if hidden, then refreshes for each event
+  while the preference is true. `codexbar_gtk/ui/tray.py` routes `Activate` to
+  the toggle callback and `SecondaryActivate`/`ContextMenu` to the context
+  callback.
+- **Native implementation:** `rust-gtk/src/tray.rs` dispatches `Activate` to
+  the central `panel-at` Gio action and the other SNI methods to a new
+  `panel-open-at` action, retaining both coordinate pairs. In
+  `rust-gtk/src/main.rs`, toggle returns whether the panel was opened; context
+  dispatch ensures the window/pending request is open idempotently. Both
+  preference-gated refresh paths use the read-only `PreferencesStore` value and
+  default to true. Coordinates are captured only when opening a hidden panel,
+  so an already-open panel keeps its X11 monitor anchor. Wayland stays
+  compositor-positioned. `app.panel` and central page/settings routes remain
+  unchanged; U04 performs no Settings/autostart writes. Python remains the
+  default and no cutover was attempted.
+- **Routing and X11 checks:** the tray private-bus unit test
+  `tray::tests::private_bus_exports_protocol_dispatches_actions_recovers_and_releases`
+  passed and asserts `Activate` maps to exactly one `panel-at(31,47)`, while
+  `SecondaryActivate` and `ContextMenu` each map to `panel-open-at(53,61)`.
+  The new `scripts/smoke-native-panel-parity.sh` exercised the actual SNI methods
+  over private D-Bus and native GTK for hidden/visible × all three methods ×
+  preference off/on. Synthetic CLI usage-call counts matched the contract in
+  every case. Xvfb verified bottom-right placement and verified the panel held
+  focus before Escape closed it. The existing `smoke-native-gtk.sh` now asserts
+  focus before Escape too, and its version-probe expectation includes the
+  additional SNI-open refresh; that full smoke passed. CI now runs the focused
+  parity smoke in `.github/workflows/rust-core.yml`.
+- **Wayland evidence and limit:** after confirming the app, SNI and Spectacle
+  D-Bus names were free, `scripts/capture-native-panel-wayland.sh` ran the
+  native build in the current KDE Wayland session with an isolated home and
+  synthetic provider fixtures. It sent live SNI `Activate`,
+  `SecondaryActivate`, `ContextMenu`, then `Activate` while visible. CLI counts
+  increased for the open/context events and did not increase for close; the
+  focused synthetic panel capture was inspected at
+  [`screenshots/u04-panel-activate-open-wayland.png`](screenshots/u04-panel-activate-open-wayland.png).
+  The compositor owns Wayland placement. The host's existing E120 `wtype`
+  rejection remains; this run did not attempt pointer or keyboard injection,
+  and makes no Wayland Escape claim. Both Xvfb screenshots were inspected:
+  [`u04-panel-activate-open-native-xvfb.png`](screenshots/u04-panel-activate-open-native-xvfb.png)
+  and [`u04-panel-context-open-native-xvfb.png`](screenshots/u04-panel-context-open-native-xvfb.png).
+- **Checks:** formatting and shell syntax passed. `cargo test` passed for
+  rust-core (85), rust-backend (85 plus its end-to-end test), rust-python (no
+  crate unit tests), and rust-gtk (37 library tests plus the main test; one
+  display-dependent library test was run separately). The ignored GTK artwork
+  test and `tests/a11y_assets.rs` display test both passed under Xvfb/private
+  D-Bus. Strict Clippy passed for all four crates. `scripts/build-rust-core.sh`
+  passed. Python default suite: 214 passed with 21 Rust-opt-in tests skipped;
+  Rust-opt-in suite: 214 passed; explicit `test_tray_signals.py`: 3 passed.
+  Native GTK command/Gio, panel parity, Dashboard 1×/2×, Usage & Spend/Sessions,
+  and Settings synthetic Xvfb smokes all passed. `git diff --check` passed.
+- **Harness corrections and warnings:** the first broad GTK smoke observed the
+  expected extra version probe from SNI opening; its count assertion now
+  includes that refresh, and the rerun passed. The first two Settings runs
+  advertised build 68 as an available update after build 68 became current;
+  the fixture now derives its advertised build from `VERSION` + 1, and the
+  complete Settings rerun passed. Xvfb emitted DRI3 and portal/FUSE warnings;
+  they did not change the successful test exit statuses.
+- **Handoff:** implementation and local verification are complete on
+  `orchestrated/luna-u04-panel-parity-build68`, based on live main
+  `233ce8fc5a7a616983d066a5d18184e5236d7fac`. PR #69 is open at
+  `https://github.com/SaahiilM/codexbar-gtk/pull/69`. Immediately after PR
+  creation, `test` and `tray-dbus` were running in Actions run `41371456205`,
+  with no review decision recorded. The subsequent exact-head test failure
+  and harness correction are recorded in E131. UG is **NOT PASSED** because Wayland
+  pointer/keyboard and other page action evidence remains incomplete; keep
+  Python as the default and C01 blocked until the gate passes.
+
+### E131 — 2026-11-02: U04 PR #69 Settings-smoke failure and correction
+
+- **First observed exact-head result:** PR #69 head
+  `aecf96b397b786b3ebc4956fff3414f9424b22bb` had `tray-dbus` pass and `test`
+  fail in Actions run `41371521591`.
+  Formatting, Rust/core/backend/Python tests, GTK tests, clippy, native GTK
+  build, tray routing, SNI parity, Dashboard 1×/2×, and Usage/Sessions steps
+  had passed before the Settings smoke failed.
+- **First failure:** `scripts/smoke-native-settings.sh` reported
+  `native settings window not found: ^Import preferences$` while opening the
+  first Import chooser after the synthetic Export flow. The diagnostic X11
+  tree showed the Settings parent still mapped but no Import chooser.
+- **First correction and second observed result:** the smoke previously clicked
+  the Settings action row before starting its test window manager. Starting and
+  verifying xfwm4 before opening the row allowed the chooser to map. PR head
+  `ca737bcbb65f85667d49d331cb2c8128f00161e1` then had `tray-dbus` pass and
+  `test` fail in run `41372418162`: the Import chooser remained open after the
+  scripted click at `(762,355)`. Thus WM startup addressed the unmapped-dialog
+  failure, while fixed accept-button coordinates remained unreliable in CI.
+- **Correction:** the helper now starts/verifies xfwm4 before activating each
+  Save/Open row, selects the synthetic import file, and sends Return to invoke
+  the focused chooser's default accept response. Export uses the same default
+  response. No Settings product code, preferences, or autostart behavior
+  changed.
+- **Local retest:** after each harness correction,
+  `PATH="$PWD/.deps/gui-tools/usr/bin:$PATH"
+  LD_LIBRARY_PATH="$PWD/.deps/gui-tools/usr/lib/x86_64-linux-gnu${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+  ./scripts/smoke-native-settings.sh` passed through synthetic CLI operations,
+  preferences persistence, chooser export/import, all Settings panes, central
+  About routing, and GTK lifecycle. XDG portal emitted fallback/PipeWire
+  warnings; the test exited successfully.
+- **Status:** the keyboard-accept correction is local; it must be pushed to
+  PR #69 and pass exact-head CI. No merge claim is made. Python remains
+  default; UG remains **NOT PASSED**.

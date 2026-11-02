@@ -4,6 +4,28 @@ Client-side changelog for the CodexBar GTK front-end. Each entry keys a build
 number (`CURRENT_PROJECT_VERSION`) to the upstream macOS CodexBar release its
 short version tracks, so "which version has what" maps cleanly onto both trees.
 
+## 0.82.0 (68) — 2026-11-02
+
+Tracks upstream CodexBar 0.82.0.
+
+### Changed
+
+- Match the Python SNI panel contract: `Activate` toggles and refreshes only
+  when opening; `SecondaryActivate` and `ContextMenu` ensure the panel stays
+  open and refresh on every event when the menu-open refresh preference is on.
+- Preserve activation coordinates for X11 monitor anchoring and use the
+  compositor's placement on Wayland.
+
+### Validation
+
+- Build-68 Xvfb/private-D-Bus interaction matrix, exact refresh-call counts,
+  panel placement and focus-before-Escape evidence are recorded in migration
+  audit E130. Synthetic panel captures are in
+  `docs/rust-migration/screenshots/`. Wayland SNI events were sent over the
+  desktop session bus and captured with fixture data; keyboard/pointer input
+  remains unverified because the compositor rejects the available virtual
+  keyboard input method. Python remains the default; UG remains **NOT PASSED**.
+
 ## 0.82.0 (67) — 2026-11-01
 
 Tracks upstream CodexBar 0.82.0.

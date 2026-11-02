@@ -85,6 +85,8 @@ jobs:
         run: cargo build --manifest-path rust-gtk/Cargo.toml --locked --bin codexbar-gtk-native
       - name: Exercise Gio routing and async in-flight shutdown
         run: ./scripts/smoke-native-gtk.sh
+      - name: Exercise SNI panel toggle/open semantics and refresh preference
+        run: ./scripts/smoke-native-panel-parity.sh
       - name: Exercise the native dashboard with synthetic provider data
         run: ./scripts/smoke-native-dashboard.sh
       - name: Exercise native dashboard keyboard navigation at 2x display scale

@@ -279,8 +279,13 @@ assert_title_contains 'CodexBar GTK.*Panel' "Panel"
 panel_window=$(xdotool search --onlyvisible --name 'CodexBar GTK.*Panel' | head -n 1)
 assert_panel_bottom_right "$panel_window"
 capture_window "$panel_window" "${NATIVE_GTK_TRAY_PANEL_SCREENSHOT:-}"
-xdotool windowfocus "$panel_window"
-xdotool key --window "$panel_window" Escape
+xdotool windowfocus --sync "$panel_window"
+focused_window=$(xdotool getwindowfocus)
+[[ "$focused_window" == "$panel_window" ]] || {
+    echo "native panel did not receive focus before Escape: focused $focused_window, expected $panel_window" >&2
+    exit 1
+}
+xdotool key Escape
 deadline=$((SECONDS + 5))
 while xdotool search --onlyvisible --name 'CodexBar GTK.*Panel' >/dev/null 2>&1 && (( SECONDS < deadline )); do sleep 0.05; done
 if xdotool search --onlyvisible --name 'CodexBar GTK.*Panel' >/dev/null 2>&1; then
@@ -340,8 +345,8 @@ assert_title_contains 'CodexBar GTK.*Panel' "Panel"
 
 sleep 0.3
 version_calls=$(grep -c '^--version$' "$NATIVE_CLI_LOG" || true)
-[[ "$version_calls" == "3" ]] || {
-    echo "expected one controller and two tray/secondary Settings CLI-version queries; saw $version_calls version calls" >&2
+[[ "$version_calls" == "4" ]] || {
+    echo "expected four CLI-version probes including the SNI Activate menu-open refresh; saw $version_calls version calls" >&2
     exit 1
 }
 tray_menu_event 10
@@ -440,8 +445,13 @@ assert_title_contains 'CodexBar GTK.*Panel' "Panel"
 panel_window=$(xdotool search --onlyvisible --name 'CodexBar GTK.*Panel' | head -n 1)
 [[ -n "$panel_window" ]] || { echo "native panel window was not visible" >&2; exit 1; }
 assert_panel_bottom_right "$panel_window"
-xdotool windowfocus "$panel_window"
-xdotool key --window "$panel_window" Escape
+xdotool windowfocus --sync "$panel_window"
+focused_window=$(xdotool getwindowfocus)
+[[ "$focused_window" == "$panel_window" ]] || {
+    echo "native panel did not receive focus before Escape: focused $focused_window, expected $panel_window" >&2
+    exit 1
+}
+xdotool key Escape
 deadline=$((SECONDS + 5))
 while xdotool search --onlyvisible --name 'CodexBar GTK.*Panel' >/dev/null 2>&1 && (( SECONDS < deadline )); do sleep 0.05; done
 if xdotool search --onlyvisible --name 'CodexBar GTK.*Panel' >/dev/null 2>&1; then

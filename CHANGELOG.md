@@ -4,6 +4,17 @@ Client-side changelog for the CodexBar GTK front-end. Each entry keys a build
 number (`CURRENT_PROJECT_VERSION`) to the upstream macOS CodexBar release its
 short version tracks, so "which version has what" maps cleanly onto both trees.
 
+## 0.82.0 (70) — 2026-11-02
+
+Tracks upstream CodexBar 0.82.0.
+
+### Changed
+
+- Continue UG's serialized Wayland interaction evidence using KDE's
+  consent-based RemoteDesktop portal where available. A named one-time
+  pointer/keyboard request timed out without user approval, so no input was
+  sent. Preserve Python as default and UG as **NOT PASSED**.
+
 ## 0.82.0 (69) — 2026-11-02
 
 Tracks upstream CodexBar 0.82.0.

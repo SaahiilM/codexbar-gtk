@@ -9,16 +9,16 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Field | Current checkpoint |
 | --- | --- |
 | Goal | Fully native Rust GTK4/libadwaita app; backend first, UI second |
-| Current phase | BG passed; U01–U08 implementation PRs are merged. U04-UG2 PR #69 merged normally at `ba0338091f28c458432a469d8fe1b973facf1b4e` (E132); UG remains **NOT PASSED**. U05-UG2 build-69 live Wayland evidence is locally complete; focused PR/checks/merge are pending. |
-| Last merged implementation | U04-UG2 SNI panel parity PR #69 merged normally at `ba0338091f28c458432a469d8fe1b973facf1b4e`; build `0.82.0 (68)`. Exact head `ef5f8ebd96ceb716ea8529f85f81d119d41e24fc` passed `test` and `tray-dbus` in run `41373288090` (E132). |
+| Current phase | BG passed; U01–U08 implementation PRs are merged. U05-UG2 PR #70 merged normally at `6fc6833059cf4ac1808f7f51fe16bcff66eb7867` (E135); UG remains **NOT PASSED**. U05 build-70 RemoteDesktop consent evidence is locally complete; focused PR and exact-head checks are pending. |
+| Last merged implementation | U05-UG2 Wayland evidence PR #70 merged normally at `6fc6833059cf4ac1808f7f51fe16bcff66eb7867`; build `0.82.0 (69)`. Exact head `800dc57915216f90bfec18178ef26c7261299045` passed `test` and `tray-dbus` in run `41377674020`; no reviews/comments (E135). |
 | Planning change | [PR #18](https://github.com/SaahiilM/codexbar-gtk/pull/18), merged at `69c5496`, build `0.81.0 (17)` |
 | Backend tasks completed after that baseline | B00–B15 and BG are accepted and merged. B11's Actions startup failures remain documented as failures; see E086. |
-| Active implementation task / owner | U05-UG2 native Wayland page/action evidence on `orchestrated/luna-u05-ug-evidence-build69`, build `0.82.0 (69)`, based on live main/U04 PR #69 merge `ba0338091f28c458432a469d8fe1b973facf1b4e`. Build-69 used isolated HOME/config/cache and synthetic CLI data. It captured Settings General but no Wayland UI action was verified; see E133. The fixture and capture session is cleaned up and released. |
-| Latest gate result | **BG passed** (E085/E086). **UG NOT PASSED**: build-68 panel SNI semantics, X11 placement/focus and live Wayland SNI evidence passed locally (E130); build-69 captured Settings General but could not verify pointer/keyboard actions. Hooks, provider controls, Display and Usage & Spend interactions remain open on Wayland. See [UG_GATE.md](UG_GATE.md), E120–E133. |
-| Next domain slice | Submit the focused build-69 evidence PR after local checks. Ask the coordinator to assign the next safe interaction method/slot for remaining Wayland actions. Do not mark UG passed unless all gate criteria are met; preserve the Python launcher and keep C01 blocked until then. |
-| Open external blockers | This compositor does not expose the virtual-keyboard protocol expected by `wtype`; KWin fake-input and private AT-SPI actions produced no verified visible action/result. The default-scale General capture is valid but does not prove action parity. Forced `GDK_SCALE=2` remains a black capture. B11 zero-job Actions startup failures remain documented in E086. |
-| Latest checks | U04 PR #69 exact head `ef5f8ebd96ceb716ea8529f85f81d119d41e24fc` passed `test` and `tray-dbus` in exact-head run `41373288090`, then merged normally at `ba0338091f28c458432a469d8fe1b973facf1b4e` (E132). Build-69 local verification passed formatting, core/backend/GTK tests, Xvfb display tests, strict Clippy, native builds, Python default and opt-in suites, tray signals, and relevant GTK smokes including Usage/Sessions and Settings (E134). Build-69 PR exact-head CI is pending. |
-| UI validation | Prior U02–U08, U05 build-67 action and U04 build-68 captures remain in E090–E132. Build-69 adds [`u05-build69-settings-general-wayland.png`](screenshots/u05-build69-settings-general-wayland.png), a synthetic actual-session General capture. Xvfb Settings actions including selected-path chooser export/import/reset and synthetic login/update results passed locally; no Wayland action is counted from screenshots, AT-SPI state, or the no-op fake-input attempt (E133–E134). |
+| Active implementation task / owner | U05-UG3 portal evidence on `orchestrated/luna-u05-wayland-portal-build70`, build `0.82.0 (70)`, based on live main/U05 PR #70 merge `6fc6833059cf4ac1808f7f51fe16bcff66eb7867`. The installed RemoteDesktop portal reached a correctly named consent prompt, but it timed out after 360 seconds without approval; no keyboard/pointer event was sent (E136). |
+| Latest gate result | **BG passed** (E085/E086). **UG NOT PASSED**: build-68 panel SNI semantics, X11 placement/focus and live Wayland SNI evidence passed locally (E130); build-69 captured Settings General but could not verify pointer/keyboard actions (E133). Build 70 captured the synthetic Settings window and the named portal consent prompt only. Wayland actions remain open until an accepted session produces a visible result and fixture-side effect. |
+| Next domain slice | Wait for the coordinator's next serialized assignment. If live Wayland input is retried, obtain fresh user approval in the explicitly named RemoteDesktop prompt before sending events; request only keyboard+pointer, non-persistent, without ScreenCast or clipboard. Preserve Python as default and keep C01 blocked until UG passes. |
+| Open external blockers | `wtype` is unavailable/rejected; AT-SPI and KWin fake-input attempts produced no verified state change (E133). The installed KDE portal supports RemoteDesktop v2 and a named-app path via systemd app scope, but the user consent prompt received no approval during its 360-second request window. No pointer/keyboard action was sent; the Wayland action matrix remains open. Forced `GDK_SCALE=2` remains a black capture. B11 zero-job Actions startup failures remain documented in E086. |
+| Latest checks | U05 PR #70 exact head `800dc57915216f90bfec18178ef26c7261299045` passed `test` and `tray-dbus` in run `41377674020`, then merged normally at `6fc6833059cf4ac1808f7f51fe16bcff66eb7867` (E135). Build-69 local verification passed formatting, core/backend/GTK tests, Xvfb display tests, strict Clippy, native builds, Python default and opt-in suites, tray signals, and Usage/Sessions/Settings smokes (E134). Build-70 `cargo test` passed for core (85), backend (85 plus 1 integration), and GTK (37 plus 1 main; 1 display test ignored); Python default passed 214 with 21 skipped; strict Clippy passed for all four Rust crates. The local Settings Xvfb script could not start because `xvfb-run` is missing; exact-head CI remains pending. See E136. |
+| UI validation | Prior U02–U08, U05 build-67 action, U04 build-68, and build-69 capture remain in E090–E134. Build 70 adds a live synthetic Settings General capture and a named RemoteDesktop consent prompt capture. They prove the window and consent prompt were shown; no action is claimed. Both are documented in E136. |
 
 **First commands for a new model/session:**
 
@@ -418,6 +418,32 @@ cleaned up and the live slot released. The local Rust/Python and Xvfb check set
 passed, including a selected-path Settings chooser smoke (E134). See E133 for
 Wayland input limitations. Keep Python as the default;
 UG remains **NOT PASSED** until every acceptance criterion is evidenced.
+
+### U05-UG3 handoff — build 70 RemoteDesktop portal interaction evidence
+
+Owner: current U05 session; branch `orchestrated/luna-u05-wayland-portal-build70`.
+Status: local evidence complete; focused PR/checks remain pending. Base is live
+main at U05 PR #70 merge
+`6fc6833059cf4ac1808f7f51fe16bcff66eb7867`; build `0.82.0 (70)`. PR #70 exact
+head `800dc57915216f90bfec18178ef26c7261299045` passed both required checks in
+run `41377674020` and merged normally (E135).
+
+The current KDE session exposes `org.freedesktop.portal.RemoteDesktop` v2 with
+keyboard/pointer available (`AvailableDeviceTypes=7`); KDE's portal backend is
+installed and active. Direct launch produced an unidentifiable consent prompt,
+which was closed without approval. The test then used systemd's documented
+`app[-launcher]-<ApplicationID>-<random>.scope` naming convention and a
+temporary, `NoDisplay=true` desktop entry for the exact native binary. This
+produced a prompt identifying “CodexBar GTK build 70 synthetic interaction
+test.” It requested only keyboard+pointer, with `persist_mode=0` and no
+ScreenCast/clipboard. No approval arrived during the portal's 360-second
+request window; `Start` timed out, the request session closed, and no input
+event was sent. The temporary desktop entry and fixture HOME were removed.
+Captures prove Settings startup and consent-prompt presentation only. A future
+retry requires fresh explicit approval; after approval, keep the synthetic
+Settings window as the verified target, send bounded input, verify visible GTK
+state plus fixture CLI/preferences effect, then close the session and confirm
+cleanup. Python remains default; UG is **NOT PASSED**.
 
 ### U07 handoff — 2026-11-01
 

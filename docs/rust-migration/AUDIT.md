@@ -4134,7 +4134,11 @@ future models must verify the linked PR's status rather than trusting a stale
   they did not change the successful test exit statuses.
 - **Handoff:** implementation and local verification are complete on
   `orchestrated/luna-u04-panel-parity-build68`, based on live main
-  `233ce8fc5a7a616983d066a5d18184e5236d7fac`. Focused PR creation, exact-head
-  CI/review and normal merge remain. UG is **NOT PASSED** because Wayland
+  `233ce8fc5a7a616983d066a5d18184e5236d7fac`. PR #69 is open at
+  `https://github.com/SaahiilM/codexbar-gtk/pull/69`. Immediately after PR
+  creation, `test` and `tray-dbus` were running in Actions run `41371456205`,
+  with no review decision recorded. This documentation follow-up advances the
+  PR head; its exact-head checks and normal merge remain pending. UG is **NOT
+  PASSED** because Wayland
   pointer/keyboard and other page action evidence remains incomplete; keep
   Python as the default and C01 blocked until the gate passes.

@@ -378,17 +378,20 @@ actions, U05 settings ownership and Python as the default. UG remains **NOT
 PASSED**; do not claim Wayland pointer/keyboard interaction without direct
 evidence.
 
-Implementation and local verification are complete; focused PR, exact-head
-checks/review and ordinary merge remain pending. The real Xvfb matrix passed
+Implementation and local verification are complete. PR #69 is open. Right
+after creation, `test` and `tray-dbus` were running in Actions run
+`41371456205`; this audit follow-up changes the PR head, so observe the new
+exact-head run before merge. No review decision was recorded at creation.
+The real Xvfb matrix passed
 both preference values and all six hidden/visible method cases; the broader GTK
 Gio, Dashboard, Usage/Sessions and Settings smokes passed. Rust and Python
 tests, strict Clippy, extension build and display-dependent GTK accessibility
 tests passed. Three synthetic panel captures were visually inspected; the live
 Wayland run delivered SNI events and captured a panel with compositor-owned
 placement. `wtype` remains unsupported, so Wayland pointer/keyboard actions are
-unverified. See audit E130 and [UG_GATE.md](UG_GATE.md). Next exact step: stage
-the intended screenshots, commit/push this branch, open the focused PR, observe
-required checks/review, and merge normally only after the exact head passes.
+unverified. See audit E130 and [UG_GATE.md](UG_GATE.md). Next exact step:
+observe the exact-head required checks/review, then merge normally only after
+they pass.
 
 ### U07 handoff — 2026-11-01
 

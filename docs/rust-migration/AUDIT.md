@@ -3977,3 +3977,32 @@ future models must verify the linked PR's status rather than trusting a stale
   and `tray-dbus` checks after pushing this correction; do not merge or release
   U04's queued slot until both pass and review state is clear. UG remains
   **NOT PASSED**, and Python remains the default.
+
+### E127 — 2026-11-02: PR #68 Gio About action/window correction
+
+- **Observed CI failure:** PR #68 exact head
+  `6e6f6c7c0661a28be660eed6e2474e9c7c1592b6` failed the `Exercise Gio routing
+  and async in-flight shutdown` step in Actions run
+  [41366925370](https://github.com/SaahiilM/codexbar-gtk/actions/runs/41366925370).
+  The `tray-dbus` job passed. The GTK smoke timed out waiting for
+  `^About CodexBar GTK` after dispatching the central About action from the
+  panel. DRI3/libEGL warnings preceded it; they did not identify the window
+  timeout as a rendering-library failure.
+- **Code finding and correction:** `NativeApp::show_about` created an
+  `AdwAboutWindow` without setting its GTK application property, unlike the
+  application-owned main, panel and Settings windows. The About window is now
+  built with `.application(&self.application)`, keeping central Gio action
+  presentation within the same application/window registry. The GTK smoke's
+  window timeout now prints visible X11 window titles and the primary app log
+  to make future mapping failures diagnosable.
+- **Local verification:** `cargo fmt --all -- --check`, native GTK build,
+  `dbus-run-session -- cargo test --manifest-path rust-gtk/Cargo.toml --locked`
+  (37 passed, one display-only ignored; main binary test 1 passed), strict GTK
+  Clippy (`--all-targets -- -D warnings`), and the full
+  `scripts/smoke-native-gtk.sh` passed. That smoke includes the failing panel
+  then About Gio action sequence. A prior unmodified local run also passed, so
+  the CI-only timing failure was not independently reproduced before the
+  ownership fix; fresh exact-head Actions results remain required.
+- **Handoff:** PR #68 remains open and unreviewed; do not merge or release
+  U04's queued slot until new exact-head `test` and `tray-dbus` checks pass.
+  UG remains **NOT PASSED**, and Python remains the default.

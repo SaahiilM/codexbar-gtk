@@ -182,6 +182,14 @@ window_title() {
         sleep 0.1
     done
     echo "timed out waiting for native window matching: $pattern" >&2
+    echo "visible X11 windows:" >&2
+    while IFS= read -r window; do
+        printf '  %s: %s\n' "$window" "$(xdotool getwindowname "$window" 2>/dev/null || true)" >&2
+    done < <(xdotool search --onlyvisible --name '.*' 2>/dev/null || true)
+    if [[ -f "$scratch/primary.log" ]]; then
+        echo "primary native app log:" >&2
+        cat "$scratch/primary.log" >&2
+    fi
     return 1
 }
 

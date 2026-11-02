@@ -791,6 +791,7 @@ impl NativeApp {
 
     fn show_about(&self) {
         let about = adw::AboutWindow::builder()
+            .application(&self.application)
             .application_name(APP_NAME)
             .version(self.metadata.display())
             .developer_name("CodexBar GTK contributors")

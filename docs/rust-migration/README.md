@@ -85,7 +85,18 @@ fresh attempt for the named nonpersistent pointer/keyboard portal request. The
 user approved it and the live request returned `Response=0 devices=3`, but the
 synthetic Settings child exited before input; the session was closed without
 any input event or action claim (E138). UG remains **NOT PASSED** and Python
-remains the default.
+remains the default. PR #72 records this outcome and merged normally at
+`4b2d25ed8e566efb27d335ce903ec29e2b32a333`; exact head
+`713736e90bd1abaabea4819418d49bb87b7cd423` passed `test` and `tray-dbus` in
+run `41506793899` after an initial `test` attempt failed to map the Import
+chooser. There were no reviews or comments (E139). Build 72 begins with a
+bounded synthetic process lifecycle, where the Settings child stayed alive for
+360 seconds. A first portal driver then exited through its own stdin-EOF
+cleanup after approval; that explains that build-72 runner closeout but does not
+explain the earlier build-71 exit. A corrected socket-controlled run received a
+fresh one-time keyboard/pointer approval and `Ctrl+R` reached the synthetic
+usage, cost, sessions and version commands. It did not exercise a Settings
+preference or pointer event. See E140; UG remains **NOT PASSED**.
 
 The file inventory and named functions below were inspected, not just inferred
 from filenames. Test results and limitations are recorded separately in AUDIT.

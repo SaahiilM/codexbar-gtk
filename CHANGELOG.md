@@ -4,6 +4,17 @@ Client-side changelog for the CodexBar GTK front-end. Each entry keys a build
 number (`CURRENT_PROJECT_VERSION`) to the upstream macOS CodexBar release its
 short version tracks, so "which version has what" maps cleanly onto both trees.
 
+## 0.82.0 (72) — 2026-11-02
+
+Tracks upstream CodexBar 0.82.0.
+
+### Changed
+
+- Record the build-71 merge and build-72 synthetic Wayland lifecycle/portal
+  evidence. A bounded process check found no spontaneous Settings exit; a
+  fresh, user-approved keyboard refresh reached the synthetic CLI. Python
+  remains the default and UG remains **NOT PASSED**.
+
 ## 0.82.0 (71) — 2026-11-02
 
 Tracks upstream CodexBar 0.82.0.

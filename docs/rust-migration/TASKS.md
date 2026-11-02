@@ -9,16 +9,16 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Field | Current checkpoint |
 | --- | --- |
 | Goal | Fully native Rust GTK4/libadwaita app; backend first, UI second |
-| Current phase | BG passed; U01–U08 implementation PRs are merged. U05 PR #71 merged normally at `2d3901067b0a6e15217fa0ca63cd712527363b4e` (E137); UG remains **NOT PASSED**. Build-71 RemoteDesktop consent succeeded, but the synthetic Settings child exited before input; the session was cleaned up and the slot released (E138). |
-| Last merged implementation | U05-UG3 portal evidence PR #71 merged normally at `2d3901067b0a6e15217fa0ca63cd712527363b4e`; build `0.82.0 (70)`. Exact head `7bfeb868bdb7ed3be75a25ed5364efbfa90756f0` passed `test` and `tray-dbus` in run `41381485242`; no reviews/inline threads (E137). |
+| Current phase | BG passed; U01–U08 implementation PRs are merged. U05 PR #72 merged normally at `4b2d25ed8e566efb27d335ce903ec29e2b32a333` (E139); UG remains **NOT PASSED**. Build 72 recorded a stable 360-second Settings lifecycle and one user-approved keyboard refresh action with a synthetic CLI side effect (E140). |
+| Last merged implementation | U05-UG4 portal evidence PR #72 merged normally at `4b2d25ed8e566efb27d335ce903ec29e2b32a333`; build `0.82.0 (71)`. Exact head `713736e90bd1abaabea4819418d49bb87b7cd423` has `test` and `tray-dbus` SUCCESS in run `41506793899`; the first `test` attempt failed at the Import chooser and the same-head rerun passed. No reviews/comments (E139). |
 | Planning change | [PR #18](https://github.com/SaahiilM/codexbar-gtk/pull/18), merged at `69c5496`, build `0.81.0 (17)` |
 | Backend tasks completed after that baseline | B00–B15 and BG are accepted and merged. B11's Actions startup failures remain documented as failures; see E086. |
-| Active implementation task / owner | U05-UG4 portal evidence on `orchestrated/luna-u05-wayland-portal-build71`, provisional build `0.82.0 (71)`, based on live main/U05 PR #71 merge `2d3901067b0a6e15217fa0ca63cd712527363b4e`. This attempt is blocked after the approved portal session returned `Response=0 devices=3` but the synthetic Settings child exited before input; owned session/processes were cleaned and the sole slot released (E138). |
-| Latest gate result | **BG passed** (E085/E086). **UG NOT PASSED**: build-68 panel SNI semantics, X11 placement/focus and live Wayland SNI evidence passed locally (E130); build-69 captured Settings General but could not verify pointer/keyboard actions (E133); build 70 consent timed out (E136); build 71 consent succeeded but no input was sent because its app exited before interaction (E138). No Wayland action parity is claimed. |
-| Next domain slice | Diagnose why the build-71 synthetic Settings child exited before any portal input; use logs/source without starting another desktop app. Coordinate a fresh sole-owner slot and new one-time approval before retrying. Preserve Python as default and keep C01 blocked until UG passes. |
-| Open external blockers | `wtype` is unavailable/rejected; AT-SPI and KWin fake-input attempts produced no verified state change (E133). KDE RemoteDesktop v2 can present a named request and returned approval, but this run's target exited before input; retry needs a fresh portal request after diagnosis. Forced `GDK_SCALE=2` remains a black capture. B11 zero-job Actions startup failures remain documented in E086. |
-| Latest checks | U05 PR #71 exact head `7bfeb868bdb7ed3be75a25ed5364efbfa90756f0` passed `test` and `tray-dbus` in run `41381485242`, then merged normally at `2d3901067b0a6e15217fa0ca63cd712527363b4e` (E137). Build-69 local verification passed formatting, core/backend/GTK tests, Xvfb display tests, strict Clippy, native builds, Python default and opt-in suites, tray signals, and Usage/Sessions/Settings smokes (E134). Build-70 Rust/Python/Clippy checks are documented in E136. Build-71 native binary build and targeted version-metadata test passed with the U04 GTK SDK; no full suite, Clippy, or exact-head CI has run for build 71. |
-| UI validation | Prior U02–U08, U05 build-67 action, U04 build-68, and build-69 capture remain in E090–E134. Build-70 and build-71 captures show only synthetic Settings startup and named consent prompts, not action parity (E136, E138). Build-71's fresh consent succeeded, but its child exited before input; the portal session is closed and slot released. |
+| Active implementation task / owner | U05-UG5 evidence on `orchestrated/luna-u05-wayland-portal-build72`, provisional build `0.82.0 (72)`, based on live main/U05 PR #72 merge `4b2d25ed8e566efb27d335ce903ec29e2b32a333`. Local verification and synthetic Wayland evidence are recorded in E140; focused PR and exact-head checks remain pending. |
+| Latest gate result | **BG passed** (E085/E086). **UG NOT PASSED**: build 72 verified one consented keyboard shortcut and its synthetic CLI refresh result, but did not test pointer delivery or change a Settings preference. The earlier build-71 child exit remains unexplained (E138); no Wayland preference-action parity is claimed. |
+| Next domain slice | Finish the build-72 evidence PR with the audit, handoff, version/changelog and force-added synthetic screenshots; obtain exact-head `test` and `tray-dbus` results and merge normally. Keep remaining Wayland preference/provider/import/reset actions open for the next serialized slice. Preserve Python as default and C01 blocked until UG passes. |
+| Open external blockers | Build 71's child exit remains undiagnosed. Build-72 local Xvfb display-only tests/smokes were not run because `xvfb-run` is unavailable; exact-head CI must cover them. Only keyboard `Ctrl+R` was exercised on Wayland; pointer, Settings preference changes and remaining pages/actions are open. `wtype` remains unavailable/rejected; earlier AT-SPI/KWin attempts remain unverified (E133). Forced `GDK_SCALE=2` remains a black capture. B11 zero-job Actions startup failures remain documented in E086. |
+| Latest checks | Build 72 formatting, Rust core/backend/GTK tests, strict Clippy for four crates, native GTK build, Python default/opt-in suites and private-bus tray-signal tests passed. Two display-only Rust tests were ignored by default; local `xvfb-run` and Xvfb smokes were unavailable. Exact-head CI is pending. PR #72's merge and exact-head checks remain recorded in E139. |
+| UI validation | Build 72's named one-time RemoteDesktop request was approved (`Start Response=0`, `devices=3`, no clipboard). One `Ctrl+R` event to the visible synthetic Settings window increased fake CLI calls from 8 to 12 (`usage`, `cost`, `sessions`, `--version`). The consent and Settings captures are synthetic. This action is not evidence for the Settings preference controls; build 71's process exit cause remains unknown. |
 
 **First commands for a new model/session:**
 
@@ -466,6 +466,42 @@ remain untouched. The slot is released. The captures are capture-only and do
 not pass UG. Next step: diagnose the child exit, coordinate a fresh sole-owner
 slot, and obtain fresh one-time portal consent before retrying. Python remains
 default; UG stays **NOT PASSED** until the full acceptance matrix is evidenced.
+
+### U05-UG5 handoff — build 72 bounded lifecycle diagnosis and portal retry
+
+Owner: current U05 session; branch `orchestrated/luna-u05-wayland-portal-build72`.
+Build `0.82.0 (72)`, based on live main/U05 PR #72 merge
+`4b2d25ed8e566efb27d335ce903ec29e2b32a333`. E139 records #72's exact-head
+checks and preserves its initial chooser failure plus successful same-head
+rerun.
+
+The bounded pre-consent fixture ran with synthetic HOME/config/cache and fake
+CLI. Its Settings PID and application/SNI D-Bus owner matched; it stayed alive
+for the full 360-second bound and exited `rc=0` only after the driver's
+controlled Gio Quit. The app log contained only two libEGL render-device
+warnings. This does not explain the earlier build-71 child exit.
+
+The first build-72 portal runner's stdin was already EOF after `Start` returned
+`Response=0 devices=3`; it closed the portal session and intentionally quit the
+app without sending input. A second run exposed a desktop-entry ID mismatch in
+the prompt identity and was cancelled by stopping only that owned scope. The
+corrected temporary desktop entry matched the systemd app ID. The fresh visible
+KDE dialog named “CodexBar GTK build 72 synthetic interaction test” and
+requested only pointer+keyboard (`types=3`, `persist_mode=0`); it requested no
+ScreenCast or clipboard. After the user approved, portal `Start` returned
+`Response=0 devices=3`. The socket-controlled driver sent one keyboard
+`Ctrl+R` to the active Settings window. The synthetic CLI fixture recorded four
+new calls: `usage`, `cost`, `sessions`, and `--version` (8 before, 12 after).
+No pointer event or Settings preference mutation was tested.
+
+The Settings screenshot is a crop of the active synthetic window from a
+compositor capture; Spectacle's active-window mode returned a black image after
+the action, so that frame was excluded. The screenshot does not itself prove
+the action; the portal event and fixture CLI delta do. The owned portal session
+was closed, app quit with `rc=0`, and app/SNI/Spectacle names were unowned after
+cleanup. The unrelated `codexbar-linux --usage` process and Chromium portal
+session were left untouched. UG remains **NOT PASSED**, Python remains default,
+and C01 remains blocked.
 
 ### U07 handoff — 2026-11-01
 

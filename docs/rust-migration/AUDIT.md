@@ -3954,3 +3954,26 @@ future models must verify the linked PR's status rather than trusting a stale
 - **Handoff:** PR #68 remains open and unmerged. Push the correction and verify
   both `test` and `tray-dbus` on the resulting exact head before normal merge.
   Keep PR #68 watched; U04's panel acceptance remains queued behind this merge.
+
+### E126 — 2026-11-02: PR #68 removes unreliable Xdotool preflight
+
+- **Observed CI failure:** exact head
+  `6d0e8fb211b32dab97e85b1e6817af1a5e320cf8` failed the Settings smoke step in
+  Actions run
+  [41366305357](https://github.com/SaahiilM/codexbar-gtk/actions/runs/41366305357).
+  `tray-dbus` passed. The step exited at `xdotool help` before Xvfb started.
+  The preceding Spend/Sessions workflow step had already used Xdotool
+  successfully on the same runner, so this failure did not establish a missing
+  runtime library. E125's switch from `version` to `help` was also an invalid
+  gate: both probes returned nonzero in CI before the real smoke could run.
+- **Correction and local result:** removed the `version`/`help` preflight from
+  `scripts/smoke-native-settings.sh`; the existing command-availability loop
+  remains, and Xdotool is now exercised by actual window discovery, focus,
+  keyboard and pointer operations inside the Xvfb smoke. With the ignored U04
+  GUI-tools bundle and its `libxdo` on the local runtime path, the full Settings
+  Xvfb/private-D-Bus smoke passed, including visible chooser selection and the
+  synthetic Settings action/persistence assertions. `bash -n` passed.
+- **Handoff:** PR #68 remains open and unmerged. Run fresh exact-head `test`
+  and `tray-dbus` checks after pushing this correction; do not merge or release
+  U04's queued slot until both pass and review state is clear. UG remains
+  **NOT PASSED**, and Python remains the default.

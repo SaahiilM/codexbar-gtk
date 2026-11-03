@@ -444,6 +444,26 @@ window_manager_has_claimed_root() {
     [[ "${self_check,,}" == "${check_window,,}" ]]
 }
 
+assert_pointer_within_window_tree() {
+    local target_window=$1 description=$2 pointer_state pointer_window pointer_hex
+    pointer_state=$(xdotool getmouselocation --shell 2>/dev/null || true)
+    pointer_window=$(sed -n 's/^WINDOW=//p' <<<"$pointer_state")
+    if [[ "$pointer_window" =~ ^0[xX][[:xdigit:]]+$ ]]; then
+        pointer_hex=${pointer_window,,}
+    elif [[ "$pointer_window" =~ ^[0-9]+$ ]]; then
+        pointer_hex=$(printf '0x%x' "$pointer_window")
+    else
+        pointer_hex=
+    fi
+    if [[ -z "$pointer_hex" ]] || ! xwininfo -id "$target_window" -tree 2>/dev/null \
+        | awk -v wanted="${pointer_hex,,}" '{ for (i = 1; i <= NF; i++) { gsub(/[()]/, "", $i); if (tolower($i) == wanted) found = 1 } } END { exit !found }'; then
+        echo "native click target is outside the intended window: $description" >&2
+        printf '%s\n' "$pointer_state" >&2
+        xwininfo -id "$target_window" -tree >&2 || true
+        return 1
+    fi
+}
+
 start_test_window_manager() {
     if [[ -n "$window_manager_pid" ]] && kill -0 "$window_manager_pid" 2>/dev/null; then
         local existing_deadline=$((SECONDS + 5))
@@ -488,23 +508,7 @@ select_chooser_path() {
         exit 1
     }
     xdotool mousemove --window "$settings_window" "$button_x" "$button_y"
-    local pointer_state pointer_window pointer_hex
-    pointer_state=$(xdotool getmouselocation --shell 2>/dev/null || true)
-    pointer_window=$(sed -n 's/^WINDOW=//p' <<<"$pointer_state")
-    if [[ "$pointer_window" =~ ^0[xX][[:xdigit:]]+$ ]]; then
-        pointer_hex=${pointer_window,,}
-    elif [[ "$pointer_window" =~ ^[0-9]+$ ]]; then
-        pointer_hex=$(printf '0x%x' "$pointer_window")
-    else
-        pointer_hex=
-    fi
-    if [[ -z "$pointer_hex" ]] || ! xwininfo -id "$settings_window" -tree 2>/dev/null \
-        | awk -v wanted="${pointer_hex,,}" '{ for (i = 1; i <= NF; i++) { gsub(/[()]/, "", $i); if (tolower($i) == wanted) found = 1 } } END { exit !found }'; then
-        echo "native chooser click target is outside the focused Settings window: $title" >&2
-        printf '%s\n' "$pointer_state" >&2
-        xwininfo -id "$settings_window" -tree >&2 || true
-        exit 1
-    fi
+    assert_pointer_within_window_tree "$settings_window" "focused Settings row for $title"
     xdotool click 1
     chooser=$(wait_for_window "^${title}$")
     [[ "$(xdotool getwindowname "$chooser")" == "$title" ]] || {
@@ -599,16 +603,31 @@ select_chooser_path() {
         }
         row_y=$((95 + row_index * 36))
         chooser=$(wait_for_window "^${title}$")
-        xdotool mousemove --window "$chooser" 300 "$row_y" click 1
-        sleep 0.2
+        xdotool mousemove --window "$chooser" 300 "$row_y"
+        assert_pointer_within_window_tree "$chooser" "synthetic import file row $target_name"
+        xdotool click 1
+        sleep 0.35
         if [[ "$target_name" == "preferences-import.json" ]]; then
             capture_native_size "$chooser" "${NATIVE_SETTINGS_IMPORT_SELECTED_SCREENSHOT:-}"
         else
             capture_native_size "$chooser" "${NATIVE_SETTINGS_EMPTY_IMPORT_SELECTED_SCREENSHOT:-}"
         fi
         chooser=$(wait_for_window "^${title}$")
-        # The file is selected in the list. Use the chooser's default accept
-        # response rather than a theme- and size-dependent button coordinate.
+        # Re-establish exact chooser focus after list selection, then use its
+        # default accept response rather than a theme-dependent button point.
+        local import_focus
+        import_focus=$(xdotool getwindowfocus 2>/dev/null || true)
+        if [[ "$import_focus" != "$chooser" ]]; then
+            xdotool windowactivate --sync "$chooser"
+            import_focus=$(xdotool getwindowfocus 2>/dev/null || true)
+        fi
+        [[ "$import_focus" == "$chooser" ]] || {
+            echo "native Import chooser lost focus after selecting $target_name" >&2
+            printf 'focused window: %s; chooser: %s (%s)\n' \
+                "$import_focus" "$chooser" "$(xdotool getwindowname "$chooser" 2>/dev/null || true)" >&2
+            xwininfo -id "$chooser" >&2 || true
+            exit 1
+        }
         xdotool key Return
         local close_deadline=$((SECONDS + 5))
         while xwininfo -id "$chooser" 2>/dev/null | grep -Fq 'Map State: IsViewable' \
@@ -617,6 +636,9 @@ select_chooser_path() {
             if [[ -n "${NATIVE_SETTINGS_IMPORT_AFTER_SCREENSHOT:-}" ]]; then
                 capture_native_size "$chooser" "$NATIVE_SETTINGS_IMPORT_AFTER_SCREENSHOT"
             fi
+            import_focus=$(xdotool getwindowfocus 2>/dev/null || true)
+            echo "native Import chooser remained mapped after accept (focus=$import_focus, chooser=$chooser)" >&2
+            xwininfo -id "$chooser" >&2 || true
             echo "native Import chooser did not close after selecting $target_name" >&2
             exit 1
         fi

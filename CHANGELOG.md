@@ -4,6 +4,19 @@ Client-side changelog for the CodexBar GTK front-end. Each entry keys a build
 number (`CURRENT_PROJECT_VERSION`) to the upstream macOS CodexBar release its
 short version tracks, so "which version has what" maps cleanly onto both trees.
 
+## 0.82.0 (75) — 2026-11-03
+
+Tracks upstream CodexBar 0.82.0.
+
+### Changed
+
+- Add a guarded, synthetic Wayland Settings preference runner that keeps portal
+  setup and input on the same D-Bus connection, checks fresh KWin focus and hit
+  state, and verifies the isolated preference JSON. One user-approved live
+  General preference action passed; broader UG remains **NOT PASSED** and
+  Python remains the default.
+- Add unit coverage for stale, foreign, unstable and non-topmost guard states.
+
 ## 0.82.0 (73) — 2026-11-02
 
 Tracks upstream CodexBar 0.82.0.

@@ -101,6 +101,18 @@ preference or pointer event. See E140; UG remains **NOT PASSED**.
 The file inventory and named functions below were inspected, not just inferred
 from filenames. Test results and limitations are recorded separately in AUDIT.
 
+Build 75 adds an automated fail-closed Wayland Settings runner and guard tests
+(E150). A user-approved live KDE portal run passed one General preference
+action and verified the isolated JSON (E151). The unit tests do not exercise
+GTK or Wayland input, and one action does not complete UG. CI's Xvfb GTK smokes
+include Settings but are X11-only. Weston is not system-installed; apt offers
+it, and a rootless extraction rendered a private compositor/socket, but its
+screenshot client was unauthorized. A private Weston widget smoke would cover
+GTK rendering/actions, not KDE shell or portal parity. Python remains the
+default and UG remains **NOT PASSED**. The build-75 local Rust/Python checks and
+all workflow Xvfb GTK smokes passed with the existing U04 SDK/tool bundle
+(E152); this remains separate from the single actual Wayland click.
+
 ## Architecture and dependency direction
 
 ```text

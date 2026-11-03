@@ -41,6 +41,11 @@ WAYLAND_SWITCH_ACTIONS = {
         "y_offset": 440,
         "requires_autostart_entry": True,
     },
+    "hide-personal-info": {
+        "preference": "hidePersonalInfo",
+        "label": "Hide personal info",
+        "y_offset": 575,
+    },
 }
 PORTAL_DESKTOP_ENTRY = (
     "[Desktop Entry]\nType=Application\n"

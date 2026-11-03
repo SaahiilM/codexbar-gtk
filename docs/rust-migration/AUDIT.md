@@ -5380,3 +5380,75 @@ future models must verify the linked PR's status rather than trusting a stale
   require only `launchAtLogin` changed to true and the autostart entry
   present in the isolated home. Exact-head CI (`test`, `tray-dbus`) must
   be re-read after this push before any merge.
+
+### E164 — 2026-11-03: auto-verifiable vs manual UG remainder (manual-test data)
+
+- **Classification rule used below.** A row is *auto-verifiable* when it
+  can be asserted by a unit test, a smoke script on Xvfb/private D-Bus,
+  or a CI job without a human present. A row is *manual* when it needs a
+  KDE RemoteDesktop consent dialog a human must read and approve, a real
+  OAuth/login/installer/sudo flow, a system xdg-desktop-portal-kde +
+  Spectacle + fake-input limitation, an exact foreign PID, or visual
+  placement only a compositor can produce. Manual rows are listed with
+  the exact step the user must perform; no claim is made of a pass until
+  that step runs.
+- **Auto-verifiable (verified, no human needed):**
+  - Unit parity: 23 Python test files, incl. the 10 Wayland guard tests;
+    full suite 224 tests / 70 expected opt-in skips (E164 run).
+  - Xvfb/private-D-Bus smokes: Dashboard 1×/2×, panel parity matrix,
+    Usage/Spend matrix, Settings (local-only — flaky chooser steps
+    omitted from CI per E162), GTK routing — see CI `test` job.
+  - SNI D-Bus lifecycle (`tray-dbus` job) and exact-head CI for PRs.
+- **Manual (user must do, nothing synthesized):**
+  1. **Portal consent for any new Wayland action** (General switches,
+     Providers, Display, Notifications, Usage & Spend Settings, Hooks
+     switch, cross-page Wayland navigation, Spend ranges/modes/tooltip
+     on Wayland). Step: launch the runner in the KDE session; read the
+     named `gtk-synthetic-wayland` prompt (requests pointer+keyboard
+     only, nonpersistent); type the operator approval token only after
+     visually confirming the prompt and the baseline screenshot.
+     Existing runner: `scripts/test-native-settings-wayland.py`.
+  2. **Real provider login / browser OAuth** ("Sign in with CLI" against
+     actual CLI credentials, browser round-trip). Never run with real
+     codes anywhere in tests; do the real sign-in in the user's own
+     terminal per the UI copy.
+  3. **Composer confirmation of real desktop shell behavior** (Wayland
+     panel placement, tray-click popup, system notification delivery
+     outside the synthetic service). These are recorded as
+     CAPTURE/PARTIAL from fixture runs; only a manual look at a real
+     session confirms them.
+  4. **Plugins list observation on Wayland** (populated/empty/loading/
+     error). Read-only; user glances at the Plugins pane in a live
+     Settings window and confirms the rows render. Xvfb already proves
+     the states render.
+  5. **Update-check real network / install flow**, if ever claimed
+     beyond the loopback synthetic server: user runs the update check
+     against the real upstream and confirms the visible result. The
+     automated path intentionally uses a loopback-only server.
+  6. **Panel SNI/focus smoke disposition** — the recurring local Xvfb
+     panel flakiness (E120/BadMatch) is a manual call: user runs
+     `scripts/smoke-native-panel-parity.sh` on an Xvfb display and
+     judges whether the focus/placement result is acceptable; until
+     then it stays CAPTURE/PARTIAL, not PASS.
+  7. **C01 upgrade/rollback & C02 no-Python proof** — installer/uninstaller,
+     install/upgrade/rollback in an isolated prefix + home, and
+     launching the app with Python/PyGObject/PyO3 unavailable. These
+     need an isolated environment the user provisions; they are Phase C
+     work after UG.
+- **New runner action added with this data:** `hide-personal-info`
+  (`hidePersonalInfo`) in `scripts/test-native-settings-wayland.py`,
+  575 px window-relative row offset, false-start precondition like the
+  other General switches. Fixture already seeds `hidePersonalInfo` via
+  the single-preference JSON; no new fixture code needed. Live evidence
+  pending a fresh named KDE grant.
+- **Verification in this PR:** `py_compile` passed; 10 guard tests
+  passed; full Python suite 224/70-skips OK; `git diff --check` clean.
+  Native build and Xvfb smokes not run (GTK4 pkg-config and `xvfb-run`
+  absent in this shell). Synthetic fixtures only.
+- **Gate/limits:** NO live action-pass claimed. E151 remains the only
+  verified portal-driven action; E160 the manual show-on-start click;
+  PR #77's start-at-login and this PR's hide-personal-info await live
+  grants. Python stays default; UG stays **NOT PASSED**.
+- **Next step:** user performs manual steps 1–6 above where wanted; the
+  agent then records exact PASS/CAPTURE/PARTIAL/OPEN per row with
+  screenshots/JSON evidence and never before observing them.

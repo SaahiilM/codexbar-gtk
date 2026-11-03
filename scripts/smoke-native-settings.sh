@@ -462,6 +462,14 @@ select_chooser_path() {
     # before xfwm4 claims the root can intermittently leave the parent
     # Settings window active without mapping the dialog on CI.
     start_test_window_manager
+    settings_window=$(wait_for_window '^CodexBar Settings$')
+    xdotool windowactivate --sync "$settings_window"
+    local focused_settings
+    focused_settings=$(xdotool getwindowfocus 2>/dev/null || true)
+    [[ "$focused_settings" == "$settings_window" ]] || {
+        echo "native Settings window did not receive focus before opening chooser: $title" >&2
+        exit 1
+    }
     xdotool mousemove --window "$settings_window" "$button_x" "$button_y" click 1
     chooser=$(wait_for_window "^${title}$")
     [[ "$(xdotool getwindowname "$chooser")" == "$title" ]] || {

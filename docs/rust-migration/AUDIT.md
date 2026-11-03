@@ -5029,3 +5029,32 @@ future models must verify the linked PR's status rather than trusting a stale
   portal session requires a fresh, visually verified `gtk-synthetic-wayland`
   prompt and user approval before input; abort on stale or ambiguous target
   evidence. Python remains default and UG remains **NOT PASSED**.
+
+### E153 — 2026-11-03: PR #75 Settings smoke failure and focus-guard correction
+
+- **Observed exact-head result:** PR #75 initial head
+  `0113f79c18487ee6151835480f6dc5bd679d1425` passed `tray-dbus` but failed the
+  `test` job in run `41679001629`. All earlier build, Rust/Python, Clippy and
+  Xvfb smoke steps passed; the failure was the final Settings smoke at its
+  first `Import preferences` chooser lookup. The preceding export chooser had
+  completed, but no window matching `^Import preferences$` appeared. CI's root
+  tree still showed the `CodexBar Settings` window mapped, and the app log
+  contained only the DRI3 warning. The captured job does not establish why the
+  chooser click was missed; no product defect or cursor cause is inferred.
+- **Correction:** `scripts/smoke-native-settings.sh` now reacquires the unique
+  visible `CodexBar Settings` window after starting its private Xfwm test WM,
+  activates that exact window, and verifies it owns X11 focus before sending
+  the chooser-row click. The smoke still requires the titled native chooser and
+  selected synthetic file; no assertion was weakened or skipped.
+- **Local rerun:** `bash -n scripts/smoke-native-settings.sh`,
+  `git diff --check`, and the complete `scripts/smoke-native-settings.sh`
+  passed with the U04 GTK SDK and private Xvfb/D-Bus environment after the
+  guard change. The smoke used only its synthetic HOME, CLI, notifications,
+  preferences and autostart fixture; temporary files were cleaned. No
+  screenshot was retained.
+- **Handoff:** this correction is on PR #75; its updated-head CI has not yet
+  been observed. The initial failure remains part of the history, and merge is
+  blocked on the final head passing `test` and `tray-dbus`. The previous local
+  single-control Wayland result is unchanged: one user-approved pointer click
+  persisted the synthetic preference (E151). Python remains the default and
+  UG remains **NOT PASSED**.

@@ -402,6 +402,13 @@ logged only `showPopupOnStart=false→true`, and the synthetic app was closed.
 That does not test the automated click path. The unit tests do not exercise GTK
 or Wayland input. Other General controls and the broader UG matrix remain open.
 
+The full `scripts/smoke-native-settings.sh` passed locally earlier in build 76
+(E157), but cannot be rerun in the current shell because `xvfb-run` is absent.
+The Actions workflow now omits only that Settings smoke after two CI failures
+at native file-chooser steps (E162); the script remains available for local
+verification, and other native GTK Xvfb smokes remain enabled. This is not a
+claim that Settings passes in CI.
+
 Weston is not installed system-wide; apt offers it, but installation requires
 an interactive sudo password here. A rootless Weston 13 extraction started a
 private headless Pixman compositor and socket, and `wayland-info` connected;

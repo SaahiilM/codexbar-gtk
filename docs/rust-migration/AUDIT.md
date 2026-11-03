@@ -5310,3 +5310,34 @@ future models must verify the linked PR's status rather than trusting a stale
   continue to the next General control with the guarded harness; any new
   automated live session needs a fresh named KDE consent. Python remains
   default and UG remains **NOT PASSED**.
+
+### E162 — 2026-11-03: repeated CI Settings chooser failures and smoke scope
+
+- **First failure:** PR #76 head `129fee63e8926476c827d0c1692499944d6f69c5`
+  failed `test` in run `41692934828`, job `126115902407`. The native Settings
+  smoke waited for the “Import preferences” chooser after its fixed-coordinate
+  action; the timeout dump showed the Settings window still mapped and no
+  chooser. Earlier steps in `test` and `tray-dbus` passed.
+- **Same-head rerun:** job `126121236165` in the same run again failed in the
+  Settings smoke, later in the sequence. The “Import preferences” chooser was
+  mapped and focused after selecting `empty-preferences-import.json`, but it
+  remained mapped after Return. The failures occurred at different chooser
+  stages; no single cause is inferred. The PR #76 diff does not change this
+  pre-existing smoke script or the native Rust Settings code.
+- **Local/CI decision:** the full Settings Xvfb smoke passed locally earlier
+  on build 76 (E157). `xvfb-run` is absent from the current shell, so it could
+  not be rerun during this failure investigation. At the user's request, the
+  workflow now omits only `scripts/smoke-native-settings.sh`; the script stays
+  available for local verification and the other native GTK Xvfb smokes remain
+  in Actions. This explicitly removes the unreliable Settings step from CI;
+  no CI Settings-smoke pass is claimed.
+- **Local validation:** `git diff --check`, `bash -n
+  scripts/smoke-native-settings.sh`, workflow YAML parsing, and all 10
+  Wayland guard tests passed. The full default Python suite's latest result
+  remains 224 passed with 21 expected skips; the workflow edit does not change
+  application or Python code. The local Settings smoke remains unavailable in
+  this shell because `xvfb-run` is absent.
+- **Next step:** push the workflow/handoff update, then re-read `test` and
+  `tray-dbus` for the updated exact PR #76 head. Do not merge until both pass.
+  The broader Settings/UG gate remains open, Python remains default, and
+  E147–E149 and the E150 Weston capture limitation remain preserved.

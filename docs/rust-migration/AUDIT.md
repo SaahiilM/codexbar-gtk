@@ -5058,3 +5058,39 @@ future models must verify the linked PR's status rather than trusting a stale
   single-control Wayland result is unchanged: one user-approved pointer click
   persisted the synthetic preference (E151). Python remains the default and
   UG remains **NOT PASSED**.
+
+### E154 — 2026-11-03: PR #75 repeated Settings chooser miss and guarded target check
+
+- **Observed exact-head result:** PR #75 head
+  `46b4ed5f9b1c55f5db74139e77c69d156f69a448` passed `tray-dbus` and failed the
+  `test` job in run `41680590328`. The Settings smoke again did not observe the
+  titled `Import preferences` chooser after the Export flow. CI showed the
+  `CodexBar Settings` X11 window mapped and the process failed at the chooser
+  lookup; the prior focus guard had passed. The job output does not establish
+  why the chooser click was missed, so this entry makes no causal claim about
+  GTK, Xfwm, or pointer delivery.
+- **Harness correction:** the Settings smoke retains one Xfwm instance for all
+  chooser actions instead of stopping it between Export and Import. Startup
+  now waits for `_NET_SUPPORTING_WM_CHECK` to self-reference, confirming the
+  manager has claimed the X root. Before each chooser-row click, it rechecks
+  exact Settings focus and verifies that the pointer's X11 hit window belongs
+  to the Settings window tree. If that target is missing or ambiguous, the
+  smoke records synthetic X diagnostics and exits before sending the click.
+  The native chooser title and selected-file assertions remain required.
+- **Local reruns:** `bash -n scripts/smoke-native-settings.sh`,
+  `git diff --check`, all 7 `tests.test_wayland_smoke_guard` tests, and two
+  complete `scripts/smoke-native-settings.sh` runs passed with the U04 GTK SDK
+  and isolated Xvfb/private D-Bus sessions. Both runs used synthetic HOME,
+  CLI, preferences and import/export fixtures. The retained pre-fix synthetic
+  scratch and diagnostic screenshot were removed after inspection. These X11
+  checks do not add Wayland input evidence.
+- **Handoff:** the result on `46b4ed5` remains a failed exact-head CI run; the
+  correction above requires a new head and fresh `test` plus `tray-dbus`
+  results before merge. E151 remains the only verified live Wayland action:
+  one named-consent pointer click on General “Refresh when the panel opens”
+  persisted `refreshAllProvidersOnMenuOpen=true`. Rootless Weston 13 remains
+  limited to a private headless Pixman compositor and `wayland-info`; its
+  `weston-screenshooter` request was unauthorized, so no visible GTK render or
+  widget action was verified there. Those results do not establish Weston
+  input support or KDE shell/portal parity. E147–E149 are preserved; Python
+  remains default and UG remains **NOT PASSED**.

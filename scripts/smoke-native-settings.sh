@@ -434,16 +434,34 @@ wait_for_plugins_loaded() {
     exit 1
 }
 
+window_manager_has_claimed_root() {
+    local check_window self_check
+    check_window=$(xprop -root _NET_SUPPORTING_WM_CHECK 2>/dev/null \
+        | sed -n 's/.*window id # \(0x[[:xdigit:]]\+\).*/\1/p')
+    [[ -n "$check_window" ]] || return 1
+    self_check=$(xprop -id "$check_window" _NET_SUPPORTING_WM_CHECK 2>/dev/null \
+        | sed -n 's/.*window id # \(0x[[:xdigit:]]\+\).*/\1/p')
+    [[ "${self_check,,}" == "${check_window,,}" ]]
+}
+
 start_test_window_manager() {
-    [[ -n "$window_manager_pid" ]] && kill -0 "$window_manager_pid" 2>/dev/null && return 0
+    if [[ -n "$window_manager_pid" ]] && kill -0 "$window_manager_pid" 2>/dev/null; then
+        local existing_deadline=$((SECONDS + 5))
+        while ! window_manager_has_claimed_root && (( SECONDS < existing_deadline )); do sleep 0.05; done
+        window_manager_has_claimed_root || {
+            cat "$scratch/xfwm.log" >&2
+            echo "Xvfb window manager process is alive but has not claimed the root window" >&2
+            exit 1
+        }
+        return 0
+    fi
     xfwm4 --replace --compositor=off >"$scratch/xfwm.log" 2>&1 &
     window_manager_pid=$!
     local deadline=$((SECONDS + 5))
-    while ! xprop -root _NET_SUPPORTING_WM_CHECK 2>/dev/null | grep -q 'window id' \
-        && (( SECONDS < deadline )); do sleep 0.05; done
-    xprop -root _NET_SUPPORTING_WM_CHECK 2>/dev/null | grep -q 'window id' || {
+    while ! window_manager_has_claimed_root && (( SECONDS < deadline )); do sleep 0.05; done
+    window_manager_has_claimed_root || {
         cat "$scratch/xfwm.log" >&2
-        echo "Xvfb window manager did not start for the native file chooser" >&2
+        echo "Xvfb window manager did not finish claiming the root for the native file chooser" >&2
         exit 1
     }
 }
@@ -458,9 +476,8 @@ stop_test_window_manager() {
 
 select_chooser_path() {
     local title=$1 path=$2 button_x=$3 button_y=$4 chooser=""
-    # Start the test WM before activating the row. A native chooser opened
-    # before xfwm4 claims the root can intermittently leave the parent
-    # Settings window active without mapping the dialog on CI.
+    # Reuse one fully initialized test WM for all chooser actions so they all
+    # run under the same verified X root owner.
     start_test_window_manager
     settings_window=$(wait_for_window '^CodexBar Settings$')
     xdotool windowactivate --sync "$settings_window"
@@ -470,7 +487,25 @@ select_chooser_path() {
         echo "native Settings window did not receive focus before opening chooser: $title" >&2
         exit 1
     }
-    xdotool mousemove --window "$settings_window" "$button_x" "$button_y" click 1
+    xdotool mousemove --window "$settings_window" "$button_x" "$button_y"
+    local pointer_state pointer_window pointer_hex
+    pointer_state=$(xdotool getmouselocation --shell 2>/dev/null || true)
+    pointer_window=$(sed -n 's/^WINDOW=//p' <<<"$pointer_state")
+    if [[ "$pointer_window" =~ ^0[xX][[:xdigit:]]+$ ]]; then
+        pointer_hex=${pointer_window,,}
+    elif [[ "$pointer_window" =~ ^[0-9]+$ ]]; then
+        pointer_hex=$(printf '0x%x' "$pointer_window")
+    else
+        pointer_hex=
+    fi
+    if [[ -z "$pointer_hex" ]] || ! xwininfo -id "$settings_window" -tree 2>/dev/null \
+        | awk -v wanted="${pointer_hex,,}" '{ for (i = 1; i <= NF; i++) { gsub(/[()]/, "", $i); if (tolower($i) == wanted) found = 1 } } END { exit !found }'; then
+        echo "native chooser click target is outside the focused Settings window: $title" >&2
+        printf '%s\n' "$pointer_state" >&2
+        xwininfo -id "$settings_window" -tree >&2 || true
+        exit 1
+    fi
+    xdotool click 1
     chooser=$(wait_for_window "^${title}$")
     [[ "$(xdotool getwindowname "$chooser")" == "$title" ]] || {
         echo "native file chooser title did not match the requested action: $title" >&2
@@ -587,7 +622,6 @@ select_chooser_path() {
         fi
     fi
     sleep 0.2
-    stop_test_window_manager
 }
 
 wait_for_nonempty_preference() {

@@ -24,7 +24,18 @@ PORTAL_PATH = "/org/freedesktop/portal/desktop"
 REMOTE = "org.freedesktop.portal.RemoteDesktop"
 SESSION_IFACE = "org.freedesktop.portal.Session"
 APP_ID = "codexbar-gtk-synthetic-wayland-test"
-PREFERENCE = "refreshAllProvidersOnMenuOpen"
+WAYLAND_SWITCH_ACTIONS = {
+    "refresh-when-panel-opens": {
+        "preference": "refreshAllProvidersOnMenuOpen",
+        "label": "Refresh when the panel opens",
+        "y_fraction": 0.40,
+    },
+    "show-panel-on-start": {
+        "preference": "showPopupOnStart",
+        "label": "Show the panel on start",
+        "y_offset": 488,
+    },
+}
 PORTAL_DESKTOP_ENTRY = (
     "[Desktop Entry]\nType=Application\n"
     "Name=CodexBar GTK synthetic Wayland test\n"
@@ -45,6 +56,11 @@ def guard_target(state, expected_pid, x, y, now=None):
     )
 
 
+def active_target(state, expected_pid):
+    """Require exact synthetic app focus for a read-only baseline capture."""
+    return state.get("pid") == expected_pid and state.get("active") is True
+
+
 def target_window_contains(state, x, y):
     """Check requested target lies inside the synthetic window's geometry."""
     geometry = state.get("target_geometry")
@@ -54,14 +70,27 @@ def target_window_contains(state, x, y):
     return width > 0 and height > 0 and gx <= x < gx + width and gy <= y < gy + height
 
 
-def switch_point_from_geometry(geometry):
-    """Choose the center of the first General refresh row in the Settings window."""
+def changed_preferences(before, after):
+    """Return preference keys whose persisted values changed."""
+    return sorted(key for key in set(before) | set(after) if before.get(key) != after.get(key))
+
+
+def switch_point_from_geometry(geometry, y_fraction=0.40, y_offset=None):
+    """Choose a measured General switch row from its window-relative Y point."""
     if not isinstance(geometry, list) or len(geometry) != 4:
         raise ValueError("Settings window geometry is unavailable")
     gx, gy, width, height = geometry
     if width <= 0 or height <= 0:
         raise ValueError("Settings window geometry is invalid")
-    return gx + round(width * 0.50), gy + round(height * 0.40)
+    if y_offset is None:
+        if not 0.0 < y_fraction < 1.0:
+            raise ValueError("General switch row fraction is invalid")
+        local_y = round(height * y_fraction)
+    else:
+        if not isinstance(y_offset, int) or not 0 <= y_offset < height:
+            raise ValueError("General switch row offset is outside the Settings window")
+        local_y = y_offset
+    return round(gx + width * 0.50), round(gy + local_y)
 
 
 def activation_script(expected_pid):
@@ -194,11 +223,18 @@ class PortalDriver:
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--binary", type=pathlib.Path, required=True)
+    parser.add_argument("--action", choices=tuple(WAYLAND_SWITCH_ACTIONS),
+                        default="refresh-when-panel-opens",
+                        help="allowlisted General switch action to exercise")
+    parser.add_argument("--inspect-only", action="store_true",
+                        help="capture the synthetic Settings window and exit without requesting portal access")
     parser.add_argument("--switch-x", type=int, help="override the geometry-derived KWin X coordinate")
     parser.add_argument("--switch-y", type=int, help="override the geometry-derived KWin Y coordinate")
     args = parser.parse_args()
     if (args.switch_x is None) != (args.switch_y is None):
         parser.error("--switch-x and --switch-y must be supplied together")
+    action = WAYLAND_SWITCH_ACTIONS[args.action]
+    preference_key = action["preference"]
     if not os.environ.get("WAYLAND_DISPLAY") or not os.environ.get("XDG_RUNTIME_DIR"):
         parser.error("run inside the intended Wayland session")
     if os.environ.get("XDG_SESSION_TYPE") not in (None, "wayland"):
@@ -232,7 +268,7 @@ def main():
         home = scratch / "home"
         (home / ".config" / "codexbar-gtk").mkdir(parents=True, mode=0o700)
         preferences = home / ".config" / "codexbar-gtk" / "settings.json"
-        preferences.write_text('{"refreshAllProvidersOnMenuOpen":false}\n')
+        preferences.write_text(json.dumps({preference_key: False}) + "\n")
         fake = scratch / "codexbar"
         fake.write_text("#!/bin/sh\ncase \"${1-}\" in --version) echo 'CodexBar synthetic fixture 0.82.0';; *) echo '[]';; esac\n")
         fake.chmod(0o700)
@@ -273,6 +309,7 @@ def main():
         state_path = scratch / "kwin-state.json"
         observer_ready = scratch / "observer-ready"
         consent_capture = scratch / "portal-consent.png"
+        settings_capture = scratch / "settings-before.png"
         capture_status = scratch / "portal-capture.json"
         observer_py = scratch / "observer.py"
         observer_py.write_text(OBSERVER_PY)
@@ -308,6 +345,24 @@ def main():
             raise RuntimeError("KWin observer did not see the synthetic Settings window")
         # A script loaded into the host compositor is observational only: it does
         # not synthesize input, move the cursor, or change compositor settings.
+        baseline_deadline = time.monotonic() + 5
+        settings_state = json.loads(state_path.read_text())
+        while time.monotonic() < baseline_deadline and not active_target(settings_state, app.pid):
+            time.sleep(.02)
+            if state_path.exists():
+                settings_state = json.loads(state_path.read_text())
+        if not active_target(settings_state, app.pid):
+            raise RuntimeError("synthetic Settings was not active for baseline capture; no portal request sent")
+        baseline_capture = subprocess.run(
+            ["spectacle", "--background", "--activewindow", "--nonotify", "--output", str(settings_capture)],
+            capture_output=True, text=True, timeout=8,
+        )
+        if baseline_capture.returncode != 0 or not settings_capture.is_file():
+            raise RuntimeError("synthetic Settings baseline capture failed; no portal request sent")
+        print(f"Synthetic Settings baseline captured at {settings_capture}; verify the requested row.", flush=True)
+        if args.inspect_only:
+            print("Inspection-only mode; no portal request or input sent.", flush=True)
+            return 0
         print(f"Synthetic fixture and consent capture path: {scratch}", flush=True)
         print("Waiting for KDE RemoteDesktop consent prompt. Verify its synthetic test name visually; click Allow only then.", flush=True)
         portal = PortalDriver(bus)
@@ -358,14 +413,25 @@ def main():
             time.sleep(.02)
         if baseline is None:
             raise RuntimeError("Settings did not regain stable focus after portal consent; no input sent")
-        switch_x, switch_y = (
-            (args.switch_x, args.switch_y)
-            if args.switch_x is not None
-            else switch_point_from_geometry(baseline.get("target_geometry"))
-        )
+        if args.switch_x is not None:
+            switch_x, switch_y = args.switch_x, args.switch_y
+        else:
+            point_options = (
+                {"y_offset": action["y_offset"]}
+                if "y_offset" in action
+                else {"y_fraction": action["y_fraction"]}
+            )
+            switch_x, switch_y = switch_point_from_geometry(
+                baseline.get("target_geometry"), **point_options
+            )
         if not target_window_contains(baseline, switch_x, switch_y):
-            raise RuntimeError("switch coordinates are outside the synthetic Settings window; no input sent")
-        print(f"Guarded Settings switch point: ({switch_x},{switch_y})", flush=True)
+            raise RuntimeError("action coordinates are outside the synthetic Settings window; no input sent")
+        print(f"Guarded Settings action '{args.action}' switch point: ({switch_x},{switch_y})", flush=True)
+        baseline_preferences = json.loads(preferences.read_text())
+        if baseline_preferences.get(preference_key) is not False:
+            raise RuntimeError(
+                f"selected preference {preference_key} did not start false; no click sent"
+            )
         dx, dy = switch_x - baseline["cursor"][0], switch_y - baseline["cursor"][1]
         if abs(dx) > 1600 or abs(dy) > 1200:
             raise RuntimeError("requested pointer delta exceeds safety bound; no input sent")
@@ -385,13 +451,24 @@ def main():
         deadline = time.monotonic() + 8
         while time.monotonic() < deadline:
             try:
-                if json.loads(preferences.read_text()).get(PREFERENCE) is True:
-                    print("PASS: synthetic Settings preference persisted true", flush=True)
+                after_preferences = json.loads(preferences.read_text())
+                if after_preferences.get(preference_key) is True:
+                    changed = changed_preferences(baseline_preferences, after_preferences)
+                    if changed != [preference_key]:
+                        raise RuntimeError(
+                            f"unexpected preferences changed during {args.action}: {changed}"
+                        )
+                    print(f"PASS: synthetic Settings preference {preference_key}=true persisted", flush=True)
                     return 0
             except (FileNotFoundError, json.JSONDecodeError):
                 pass
             time.sleep(.05)
-        raise RuntimeError("preference did not persist true in isolated settings.json")
+        after_preferences = json.loads(preferences.read_text())
+        changed = changed_preferences(baseline_preferences, after_preferences)
+        raise RuntimeError(
+            f"preference {preference_key} did not persist true; observed "
+            f"{after_preferences.get(preference_key)!r}; changed keys={changed}"
+        )
     finally:
         if portal:
             portal.close()

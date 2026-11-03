@@ -63,7 +63,7 @@ class WaylandGuardTests(unittest.TestCase):
         actions = MODULE.WAYLAND_SWITCH_ACTIONS
         self.assertEqual(
             set(actions),
-            {"refresh-when-panel-opens", "show-panel-on-start"},
+            {"refresh-when-panel-opens", "show-panel-on-start", "start-at-login"},
         )
         self.assertEqual(
             actions["show-panel-on-start"]["preference"],

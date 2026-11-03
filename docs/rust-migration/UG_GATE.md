@@ -380,8 +380,9 @@ screenshot API crashed before it could capture consent.
 The build-76 runner in `scripts/test-native-settings-wayland.py` keeps portal
 setup and input on one D-Bus connection, requests only nonpersistent pointer
 and keyboard access, and waits for the human-approved named prompt. Its
-allowlisted actions currently cover the refresh-on-panel-open switch and the
-show-panel-on-start switch. `--inspect-only` captures the active synthetic
+allowlisted actions currently cover the refresh-on-panel-open switch, the
+show-panel-on-start switch, and the start-at-login switch (live evidence
+pending; see E163). `--inspect-only` captures the active synthetic
 Settings window and exits before any portal request/input. On a live run, the
 operator inspects that baseline and the named prompt before approving; after
 approval the runner activates only the window matching the synthetic app PID

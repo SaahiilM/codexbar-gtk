@@ -4,6 +4,17 @@ Client-side changelog for the CodexBar GTK front-end. Each entry keys a build
 number (`CURRENT_PROJECT_VERSION`) to the upstream macOS CodexBar release its
 short version tracks, so "which version has what" maps cleanly onto both trees.
 
+## 0.82.0 (76) — 2026-11-03
+
+Tracks upstream CodexBar 0.82.0.
+
+### Changed
+
+- Extend the guarded synthetic Wayland Settings runner with an allowlisted
+  General action mapping for “Show the panel on start”; live Wayland evidence
+  includes one manual user click that persisted the selected preference. The
+  runner's automated click path remains unverified and UG remains **NOT PASSED**.
+
 ## 0.82.0 (75) — 2026-11-03
 
 Tracks upstream CodexBar 0.82.0.

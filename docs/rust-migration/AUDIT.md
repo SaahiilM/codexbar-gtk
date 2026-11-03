@@ -5127,3 +5127,160 @@ future models must verify the linked PR's status rather than trusting a stale
   widget action was verified there. Those results do not establish Weston
   input support or KDE shell/portal parity. E147–E149 are preserved; Python
   remains default and UG remains **NOT PASSED**.
+
+### E156 — 2026-11-03: U05-UG7 build-76 action mapping and runner merge
+
+- **Runner PR closeout:** PR #75 exact head
+  `8a8a2ca3a5c7ff77269bd2b36bd040b63c007081` passed both required checks,
+  `test` and `tray-dbus`, in run `41685025347`, with no submitted reviews; it
+  merged normally at `2501f7a2ce3da3819e52eee04e987740ba54448f`. The merge
+  preserves the build-75 action runner and its E153–E155 Settings Xvfb
+  corrections.
+- **Scope/base:** U05-UG7 build `0.82.0 (76)` on
+  `orchestrated/luna-u05-wayland-general-build75`, based on the observed PR #75
+  merge above. The guarded runner now has an explicit action allowlist for
+  `refreshAllProvidersOnMenuOpen` and `showPopupOnStart`; each invocation
+  initializes only its selected synthetic preference to `false`, derives a
+  switch-row point from the Settings geometry, performs one pointer click, and
+  checks the matching persisted value. Existing action behavior remains the
+  default. No Rust application behavior changed.
+- **Local verification:** the new action mapping/geometry test and all 7 prior
+  Wayland guard tests passed (8 total). Full default Python tests passed (222,
+  with 21 expected Rust-opt-in skips), the native GTK binary built, and the
+  complete Settings Xvfb/private-D-Bus smoke passed with build 76. The
+  synthetic General screenshot showed the “Show the panel on start” row at the
+  action's measured Y fraction. This is X11/widget evidence only.
+- **Live session pending:** a fresh portal request opened a visible KDE
+  “Remote Control Requested” prompt naming `gtk-synthetic-wayland` and
+  requesting pointer plus keyboard only. ScreenCast and clipboard were not
+  requested. The runner is waiting for the user's explicit Allow confirmation;
+  no portal input has been sent and no `showPopupOnStart` mutation is claimed
+  yet. The next step is to continue only after that confirmation, then record
+  the active/top-hit/cursor guard and isolated JSON result or close the session
+  without input if consent is declined or the target becomes ambiguous.
+- **Gate/limits:** E151 remains exactly one verified Wayland click, the
+  “Refresh when the panel opens” pointer action that persisted
+  `refreshAllProvidersOnMenuOpen=true`. The rootless Weston limitation remains
+  E150: private Pixman compositor and `wayland-info` worked, but the
+  `weston-screenshooter` request was unauthorized, so no visible GTK render or
+  widget action was verified. E147–E149 remain intact. Python stays default
+  and UG remains **NOT PASSED**.
+
+### E157 — 2026-11-03: build-76 Show-on-start target miss and preflight correction
+
+- **Observed live attempt:** the fresh KDE prompt named `gtk-synthetic-wayland`
+  and requested pointer plus keyboard only; the user clicked Allow. The runner
+  sent one pointer click after its active-window, top-hit, cursor-stability,
+  and geometry checks, at `(864,589)`. The isolated JSON still had
+  `showPopupOnStart=false`; `launchAtLogin` changed to `true` and the
+  synthetic autostart entry existed. This fails the requested action. The
+  observer identifies the containing window, not the GTK widget, so the
+  specific row receiving the event was not directly recorded.
+- **Target analysis/correction:** the failed runner used `0.595 * 740 = 440`
+  window-relative Y for the observed `[364,149,1000,740]` KWin geometry. A
+  subsequent screenshot of the live synthetic Settings window visibly placed
+  “Start at login” at that row and centered “Show the panel on start” about
+  497 px below the window top. `show-panel-on-start` now uses an explicit
+  488 px window-
+  relative row offset, bounds-checked against live geometry. The runner also
+  captures an active/top-hit synthetic Settings baseline before opening the
+  portal, offers a no-consent `--inspect-only` preflight, and reports any
+  preference keys changed besides the selected action.
+- **Verification after correction:** all 9 Wayland guard tests and the full
+  default Python suite passed (223 tests, 21 expected opt-in skips). The new
+  live baseline screenshot was captured and visually inspected; inspect-only
+  exited without opening the portal or sending input. Earlier in this slice,
+  the build-76 native GTK binary and Settings Xvfb/private-D-Bus smoke passed;
+  those X11 results do not verify the Wayland action.
+- **Next step/limits:** request a fresh, visually verified named KDE grant for
+  a new live run of `show-panel-on-start`; before approval inspect both the
+  Settings baseline and consent prompt. Then require the expected preference
+  to persist and no unrelated preference keys to change. The failed attempt
+  adds no action to UG. E151 remains the only verified live Wayland click;
+  E147–E149 and the E150 Weston capture limitation remain intact. Python
+  remains default and UG remains **NOT PASSED**.
+
+### E158 — 2026-11-03: build-76 fractional KWin point abort and integer-pixel fix
+
+- **Observed live attempt:** a fresh, user-approved KDE prompt again named
+  `gtk-synthetic-wayland` and requested pointer plus keyboard only. The
+  baseline screenshot visibly showed the target switch. After approval, the
+  runner's point calculation produced `(932,663.625)` from KWin geometry
+  `[432,175.625,1000,740]`; KWin reported its cursor at integer pixel
+  `(932,664)`. The strict target guard therefore aborted before the button
+  event. `showPopupOnStart` remained false and the synthetic autostart entry
+  remained absent. No click was sent.
+- **Correction/verification:** `switch_point_from_geometry` now rounds the
+  final global X/Y point after adding the KWin window origin. A regression
+  test covers the fractional geometry and expects `(932,664)`. `py_compile`,
+  all 9 Wayland guard tests, and the full default Python suite (223 tests,
+  21 expected Rust-opt-in skips) passed.
+- **Next step/limits:** this run adds no action to UG. Request a fresh named
+  grant before another live attempt; require the integer point to pass fresh
+  focus/top-hit/cursor checks, then assert only `showPopupOnStart` changed to
+  true. E151 remains the only verified live Wayland click. E147–E149 and E150's
+  Weston capture limitation remain preserved. Python stays default and UG
+  remains **NOT PASSED**.
+
+### E159 — 2026-11-03: build-76 read-only baseline focus rule and manual test setup
+
+- **Observed pre-consent abort:** the latest automated runner preflight saw
+  the exact synthetic Settings PID active and present with geometry
+  `[364,149,1000,740]`, but `top_hit=false` and cursor `[1727,2]`. It stopped
+  before requesting the portal, showing a prompt, or sending input. The
+  baseline capture is read-only, so its guard now requires only the exact
+  active PID; the post-consent action guard still requires exact active PID,
+  top-hit, fresh cursor agreement, and in-window geometry.
+- **Local checks:** `py_compile` passed; all 10 Wayland guard tests passed; the
+  full default Python suite passed 224 tests with 21 expected Rust-opt-in
+  skips. `scripts/smoke-native-settings.sh` could not be rerun in this shell
+  because `xvfb-run` is missing; the earlier build-76 binary and Settings
+  Xvfb smoke remain recorded in E157. Inspection of
+  `.github/workflows/rust-core.yml` confirms CI does run Xvfb native GTK
+  smokes, including `smoke-native-settings.sh`; the claim that CI has no GTK
+  smoke is incorrect. Xvfb results remain separate from Wayland input.
+- **Manual live setup:** at the user's request, the native Settings GUI was
+  opened on the current KDE Wayland session with a private temporary home and
+  fake CLI. An initial manual run produced multiple persisted
+  `showPopupOnStart` transitions and ended false; the log does not identify
+  physical click counts, so no action is credited from that run. No other
+  preference changed during those later transitions and `launchAtLogin`
+  remained false. The app was closed. A second session was opened from a full
+  synthetic default settings file with `showPopupOnStart=false`; its active
+  window screenshot visibly shows “Show the panel on start” OFF. It remains
+  open awaiting the user's requested single manual click. No portal was
+  requested and no automated input was sent in either manual session.
+- **Gate/limits:** no new Wayland action has passed yet. E151 remains exactly
+  one verified portal-driven Wayland pointer click on “Refresh when the panel
+  opens”, persisting `refreshAllProvidersOnMenuOpen=true`. E147–E149 remain
+  unchanged; rootless Weston still has only the E150 private Pixman/socket and
+  `wayland-info` evidence, with screenshot capture unauthorized. Python remains
+  default and UG remains **NOT PASSED**.
+
+### E160 — 2026-11-03: manual Wayland show-on-start preference action
+
+- **Setup:** following the user's request to drive the synthetic GUI manually,
+  a fresh native Settings process ran on the existing KDE Wayland session with
+  a private temporary home, full synthetic default preferences, and a fake
+  CLI. No portal was requested and the runner sent no input. Spectacle captured
+  the active synthetic Settings window before the action; “Show the panel on
+  start” was visibly OFF. The user was asked to click that switch once and
+  confirmed completion.
+- **Observed result:** the isolated preference monitor recorded exactly one
+  transition at 13:13:47 local time: `showPopupOnStart` changed from `false`
+  to `true`. Its `changed` list contained only `showPopupOnStart`;
+  `launchAtLogin` remained `false`. The app was then terminated and the
+  synthetic home remained isolated. This is one manual user-driven Wayland
+  GUI action with a persisted result, not a portal-driven or automated runner
+  click.
+- **Prior ambiguous manual run:** the earlier manual session's log contained
+  several `showPopupOnStart` transitions and ended `false`. The event log does
+  not map those state transitions to physical click counts, so that run is not
+  counted and no cursor-event explanation is inferred.
+- **Gate/limits:** E151 remains the one verified automated, portal-approved
+  Wayland pointer click on “Refresh when the panel opens”; E160 is a separate
+  manual click on “Show the panel on start”. The build-76 runner's automated
+  show-on-start click path is still unverified. These two controls do not
+  complete the General or UG matrix. E147–E149 are preserved; E150's rootless
+  Weston capture limitation remains unchanged. Python stays default and UG
+  remains **NOT PASSED**.

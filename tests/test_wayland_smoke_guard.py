@@ -25,6 +25,12 @@ class WaylandGuardTests(unittest.TestCase):
     def test_accepts_fresh_stable_target(self):
         self.assertTrue(MODULE.guard_target(self.snapshot(), 4242, 810, 315, now=100.2))
 
+    def test_read_only_baseline_requires_exact_active_target_but_not_pointer_hit(self):
+        state = self.snapshot(top_hit=False, cursor=[1727, 2])
+        self.assertTrue(MODULE.active_target(state, 4242))
+        self.assertFalse(MODULE.active_target(state, 7))
+        self.assertFalse(MODULE.active_target({**state, "active": False}, 4242))
+
     def test_rejects_stale_foreign_or_non_topmost_target(self):
         for changes in (
             {"received": 99.0},
@@ -52,6 +58,44 @@ class WaylandGuardTests(unittest.TestCase):
         ))
         with self.assertRaises(ValueError):
             MODULE.switch_point_from_geometry(None)
+
+    def test_general_switch_actions_are_allowlisted_and_geometry_derived(self):
+        actions = MODULE.WAYLAND_SWITCH_ACTIONS
+        self.assertEqual(
+            set(actions),
+            {"refresh-when-panel-opens", "show-panel-on-start"},
+        )
+        self.assertEqual(
+            actions["show-panel-on-start"]["preference"],
+            "showPopupOnStart",
+        )
+        point = MODULE.switch_point_from_geometry(
+            [364, 149, 1000, 740], y_offset=actions["show-panel-on-start"]["y_offset"]
+        )
+        self.assertEqual(point, (864, 637))
+        self.assertTrue(
+            MODULE.target_window_contains(
+                self.snapshot(target_geometry=[364, 149, 1000, 740]), *point
+            )
+        )
+        with self.assertRaises(ValueError):
+            MODULE.switch_point_from_geometry([364, 149, 1000, 740], y_offset=740)
+        fractional_point = MODULE.switch_point_from_geometry(
+            [432, 175.625, 1000, 740], y_offset=488
+        )
+        self.assertEqual(fractional_point, (932, 664))
+        self.assertTrue(all(isinstance(value, int) for value in fractional_point))
+
+    def test_action_result_reports_only_the_selected_preference_change(self):
+        before = {"showPopupOnStart": False, "launchAtLogin": False}
+        after = {"showPopupOnStart": False, "launchAtLogin": True}
+        self.assertEqual(MODULE.changed_preferences(before, after), ["launchAtLogin"])
+        self.assertEqual(
+            MODULE.changed_preferences(
+                before, {"showPopupOnStart": True, "launchAtLogin": False}
+            ),
+            ["showPopupOnStart"],
+        )
 
     def test_focus_recovery_targets_only_the_synthetic_settings_window(self):
         script = MODULE.activation_script(4242)

@@ -5341,3 +5341,42 @@ future models must verify the linked PR's status rather than trusting a stale
   `tray-dbus` for the updated exact PR #76 head. Do not merge until both pass.
   The broader Settings/UG gate remains open, Python remains default, and
   E147–E149 and the E150 Weston capture limitation remain preserved.
+
+### E163 — 2026-11-03: build-77 start-at-login allowlisted action (partial)
+
+- **Scope:** one additional General control — "Start at login"
+  (`launchAtLogin`) — added to the guarded Wayland runner in
+  `scripts/test-native-settings-wayland.py` following the build-75/76
+  pattern. The `start-at-login` action uses the E157-measured 440 px
+  window-relative row offset, and adds an isolated autostart-entry
+  check (`~/.config/autostart/codexbar-gtk.desktop`) that must exist
+  alongside the persisted preference; the E157 run proves the click at
+  that row toggles exactly this setting.
+- **Guards:** unchanged post-consent focus/top-hit/cursor guard, baseline
+  capture under exact active PID, fresh named KDE consent, start-baseline-
+  false precondition, single-preference-change assertion. The native Rust
+  `launch_at_login` setter (`rust-backend/src/settings.rs`) writes the
+  `launchAtLogin` preference only after the autostart entry is written, so
+  the runner's combined check matches the real side effect.
+- **Paths:** `scripts/test-native-settings-wayland.py` (allowlist entry +
+  autostart check), `tests/test_wayland_smoke_guard.py` (updated allowlist
+  set), `VERSION`/`codexbar_gtk/version.py` build 77, `CHANGELOG.md`,
+  `README.md` displayed build already covered by the 0.82.0 (77) entry in
+  the README regeneration below (see TASKS U05-UG8 handoff).
+- **Local verification:** added the failing allowlist assertion first and
+  observed it fail; `py_compile` passed; all 10 Wayland guard tests
+  passed; full default Python suite ran 224 tests with 70 expected skips,
+  no failures. The native binary could not be built in this shell (GTK4
+  pkg-config/`.deps` absent — no `.deps` directory in the fresh worktree),
+  and `xvfb-run` is absent, so no Xvfb Settings smoke was rerun and no
+  live Wayland run was performed. Synthetic fixtures only; no real
+  accounts, keys, or credential output used.
+- **Gate/limits:** NO live Wayland evidence claimed for `start-at-login`
+  in this slice; E151 remains the only verified portal-driven action and
+  E160 the manual show-on-start click. Python remains default and UG
+  remains **NOT PASSED**.
+- **Next step:** request a fresh visually named KDE grant for
+  `--action start-at-login`; inspect the baseline screenshot first, then
+  require only `launchAtLogin` changed to true and the autostart entry
+  present in the isolated home. Exact-head CI (`test`, `tray-dbus`) must
+  be re-read after this push before any merge.

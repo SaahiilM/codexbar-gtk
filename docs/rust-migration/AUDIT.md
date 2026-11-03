@@ -5284,3 +5284,29 @@ future models must verify the linked PR's status rather than trusting a stale
   complete the General or UG matrix. E147–E149 are preserved; E150's rootless
   Weston capture limitation remains unchanged. Python stays default and UG
   remains **NOT PASSED**.
+
+### E161 — 2026-11-03: build-76 PR handoff and exact-head checks pending
+
+- **PR:** focused build-76 PR #76 is open at
+  `https://github.com/SaahiilM/codexbar-gtk/pull/76`, head
+  `72aa7ab2b0b72985ce7a543e6aa9b7fbfd57f548`, based on the merged PR #75
+  implementation. It carries the allowlisted `showPopupOnStart` action,
+  strict post-consent guard, read-only baseline focus rule, guard tests, and
+  this handoff/audit update. E147–E149 remain unchanged.
+- **Observed exact-head status:** required `test` and `tray-dbus` checks are
+  both in progress in Actions run `41692507333`; there are no reviews or
+  comments at this observation. This is pending status, not a CI pass or merge.
+  The current handoff update changes the branch head, so this original run is
+  not a merge gate; re-read exact-head status after pushing this audit update.
+- **Local verification:** `py_compile`, all 10 Wayland guard tests, and the
+  default Python suite (224 passed, 21 expected Rust-opt-in skips) passed.
+  The current shell could not rerun the Settings Xvfb smoke because
+  `xvfb-run` is absent; the workflow does include native GTK Xvfb smokes, and
+  the earlier build-76 local native build/Settings smoke is recorded in E157.
+  E160 records one manual Wayland preference click, while automated
+  `showPopupOnStart` runner input remains unverified.
+- **Next step:** wait for exact-head checks on PR #76, address any failures,
+  and do not merge unless both required jobs pass for the current head. Then
+  continue to the next General control with the guarded harness; any new
+  automated live session needs a fresh named KDE consent. Python remains
+  default and UG remains **NOT PASSED**.

@@ -9,16 +9,16 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Field | Current checkpoint |
 | --- | --- |
 | Goal | Fully native Rust GTK4/libadwaita app; backend first, UI second |
-| Current phase | BG passed; U01–U08 implementation PRs are merged. U05 evidence PR #73 merged normally at `cbdcc129ab4ac3ec5d6f3a8ef805567f96d354ff` (E141); UG remains **NOT PASSED**. Build 72 recorded a stable Settings lifecycle and keyboard refresh action. Build 73 captured a named nonpersistent portal request and one pointer motion, but cursor/focus checks changed and no Settings click or preference mutation is claimed (E143). |
+| Current phase | BG passed; U01–U08 implementation PRs are merged. U05 evidence PR #74 merged at `87467ce5eec475f153466c6f87866d22c723a09a` (E145); UG remains **NOT PASSED**. Build 75 adds a fail-closed runner; one fresh, named portal grant and one General preference action passed with isolated JSON persistence (E151). |
 | Last merged implementation | U05-UG5 evidence PR #73 merged normally at `cbdcc129ab4ac3ec5d6f3a8ef805567f96d354ff`; build `0.82.0 (72)`. Exact head `06dabbe1b0d24f79a8e9fa5eaa78575038a1450c` passed `test` and `tray-dbus` in run `41514939406`; no reviews/comments (E141). |
 | Planning change | [PR #18](https://github.com/SaahiilM/codexbar-gtk/pull/18), merged at `69c5496`, build `0.81.0 (17)` |
 | Backend tasks completed after that baseline | B00–B15 and BG are accepted and merged. B11's Actions startup failures remain documented as failures; see E086. |
-| Active implementation task / owner | U05-UG6 synthetic Wayland pointer and preference evidence on `orchestrated/luna-u05-wayland-pointer-build73`, provisional build `0.82.0 (73)`, based on live main at U05 PR #73 merge `cbdcc129ab4ac3ec5d6f3a8ef805567f96d354ff`. Current attempt is **blocked/partial**: a named consent prompt and successful pointer+keyboard `Start` were captured, then the cursor/focus checks changed. No click was sent and the fixture value stayed `false` (E143). |
-| Latest gate result | **BG passed** (E085/E086). **UG NOT PASSED**: build 72 verified one portal keyboard refresh action (E140). Build 73's named RemoteDesktop prompt was captured and `Start` returned `Response=0 devices=3 clipboard_enabled=false`. One relative motion was sent toward the General switch; later cursor/focus samples changed, so no top-hit target or preference action is claimed (E143). |
-| Next domain slice | For the next sole-owner Wayland slot, keep the pointer idle through the target check. Use the app-ID systemd scope required by this host's portal version, capture the named consent prompt, and wait for a successful `Start`. The corrected stack hit-test must show the synthetic Settings window topmost and the pointer stable before any click. Compare the isolated `settings.json` and capture the visible result; release immediately if state becomes ambiguous. Run exact-head `test`/`tray-dbus`; keep UG open and Python as default. |
-| Open external blockers | Build 71's child exit remains undiagnosed. Build 73's approved portal session sent one relative motion, after which cursor samples varied and Settings later became inactive; cause is unknown. The compositor top-hit check remained inconclusive and the isolated fixture stayed unchanged. A first helper prompt was unidentifiable and was not approved; the corrected app-ID scope produced the named prompt (E143). Other Wayland provider/import/reset/page actions remain open. Build-73 local Xvfb smoke is unavailable; exact-head CI must cover it. B11 zero-job Actions startup failures remain documented in E086. |
-| Latest checks | All four Rust crates pass formatting and strict Clippy. Core 85/85; backend 85/85 plus its end-to-end test (after one transient timeout on the first run); GTK 37 library + 1 binary passed, with one display-only library test and the display-only a11y test ignored. PyO3 extension build and native GTK binary build passed with the U04 SDK. Python default 214 (21 skipped), Rust opt-in 214, and private tray D-Bus 3 passed. Local `xvfb-run`, `Xvfb`, and `xdotool` are unavailable; no Xvfb smoke is claimed. PR #74 head `2b6d252f55f64aaad87dbf0bad66b79361210e8c` passed `test` and `tray-dbus` in run `41524238686`, with no submitted reviews or inline threads (E144). This handoff/audit update changes the PR head; fresh exact-head checks must pass before merge. |
-| UI validation | Build 73 used an isolated HOME/config/cache, fake CLI, matching temporary `.desktop` entry, and the systemd app-ID scope required by the installed xdg-desktop-portal 1.18.4. The named consent capture shows pointer+keyboard only; no ScreenCast or clipboard was requested. `Start` returned `Response=0 devices=3 clipboard_enabled=false` for `types=3`, `persist_mode=0`. One relative motion targeted `(1212,523)`, but subsequent cursor/focus state changed and did not establish Settings as topmost. No button/key event followed. `refreshAllProvidersOnMenuOpen` remained `false`; Python remains default and UG remains **NOT PASSED** (E143). |
+| Active implementation task / owner | U05-UG6 reusable Wayland Settings interaction runner on `orchestrated/luna-u05-wayland-pointer-build74`, build `0.82.0 (75)`, based on observed main at PR #74 merge `87467ce5eec475f153466c6f87866d22c723a09a`. Local verification is complete; exact-head CI and review remain required before merge. The consent-gated runner passed one General toggle using actual KDE RemoteDesktop pointer input and verified isolated preference persistence. The broader UG matrix remains open (E151–E152). |
+| Latest gate result | **BG passed** (E085/E086). **UG NOT PASSED**: one build-75 General preference action now passes after a fresh named, nonpersistent grant; no other Wayland Settings controls or app surfaces are covered (E151). |
+| Next domain slice | After this focused PR passes exact-head checks and merges, start the next serialized U05 build and use `scripts/test-native-settings-wayland.py` for remaining General controls. Every new live session requires a fresh, visibly named KDE grant. Continue to require target PID/title, geometry, fresh focus/top-hit/cursor checks, and the isolated persisted result; preserve Python default and keep UG open. |
+| Open external blockers | Build 71's child exit remains undiagnosed. E147–E149 retain earlier unexplained cursor activity and headless capture limitations. Weston is absent system-wide; rootless Weston 13 connected a private Wayland client but could not capture a visible GTK window. CI includes Xvfb native GTK smokes, including Settings, but these are X11 and do not establish Wayland input or desktop shell parity. Other Wayland provider/import/reset/page actions remain open. B11 zero-job Actions startup failures remain documented in E086. |
+| Latest checks | The local Rust/Python matrix and all workflow Xvfb smokes passed (E152). PR #75 head `979302620a536bc0afb7be4768050e25cd77d397` passed `tray-dbus` but failed `test` run `41682950340`: the Import chooser appeared and the script attempted to select the synthetic file, but the chooser did not close after Return; CI did not capture or verify the selected row. The cause is not established. The smoke now checks the chooser-row hit window and revalidates exact chooser focus immediately before acceptance (E155). Shell syntax, diff check, all 7 Wayland guard tests, and two full local Settings Xvfb runs passed. Exact-head CI for the correction is pending; do not merge until both `test` and `tray-dbus` pass. Weston remains a separate limitation (E150–E151). |
+| UI validation | Builds 73–74 retain the portal/focus evidence in E143 and E146–E149. Build 75 adds `scripts/test-native-settings-wayland.py`; local unit/Xvfb tests exercise guard policy and GTK widgets on X11, while E151 records exactly one actual Wayland pointer action with JSON persistence. This does not establish keyboard, desktop-shell, other-control, or full UG parity. A Weston renderer/widget test would be separate GTK evidence, not portal consent or real desktop input. |
 
 **First commands for a new model/session:**
 
@@ -668,40 +668,81 @@ required checks were in progress on the recorded head (E052); wait for fresh-
 head results. Merge only after verifying main, exact head, reviews, mergeability
 and normal GitHub merge conditions.
 
-### U05-UG6 handoff — build 73 synthetic Wayland pointer and preference action
+### U05-UG6 handoff — build 74 synthetic Wayland pointer and preference action
 
 Owner: current U05 session; branch
-`orchestrated/luna-u05-wayland-pointer-build73`, provisional build
-`0.82.0 (73)`, based on observed live `origin/main` at U05 PR #73 merge
-`cbdcc129ab4ac3ec5d6f3a8ef805567f96d354ff` (E141). **Status: blocked/partial.**
-A synthetic HOME/config/cache and fake CLI were used; the unrelated
-`codexbar-linux --usage` process and other desktop apps were left untouched.
-The installed xdg-desktop-portal is 1.18.4 and lacks the host app registry, so
-an initial bare helper produced an “unidentifiable application” prompt; it was
-closed without approval/input. A corrected helper ran in a matching systemd
-app-ID scope and produced the named consent prompt. `Start` returned
-`Response=0 devices=3 clipboard_enabled=false` for pointer+keyboard only
-(`types=3`, `persist_mode=0`, no ScreenCast or clipboard). One relative motion
-was sent toward `(1212,523)`, but cursor/focus samples changed and Settings was
-later inactive. No click or key event was sent; the isolated
-`refreshAllProvidersOnMenuOpen` value remained `false`.
+`orchestrated/luna-u05-wayland-pointer-build74`, provisional build `0.82.0
+(74)`, based on observed live `origin/main` at U05 PR #74 merge
+`87467ce5eec475f153466c6f87866d22c723a09a` (E145). **Status:
+blocked/partial.** PR #74 exact head `5c50b403bb0b90e83e48e15b99262242a0fc1682`
+was based on `cbdcc129ab4ac3ec5d6f3a8ef805567f96d354ff`; Actions run
+`41525444941` passed `test` and `tray-dbus`, with no submitted reviews or
+inline review threads. The merge commit was fetched and observed on `origin/main`.
 
-The named consent capture is
-[`u05-build73-remote-desktop-consent-wayland.png`](screenshots/u05-build73-remote-desktop-consent-wayland.png),
-and the General baseline is
-[`u05-build73-settings-general-before-wayland.png`](screenshots/u05-build73-settings-general-before-wayland.png).
-The approved portal session was closed, Gio Quit returned 0, the synthetic app
-and tray owners were released, and the temporary desktop entry was removed.
-The build-73 slot is released (E143).
+The synthetic build-74 app used an isolated HOME/config/cache, a fake CLI with
+empty synthetic provider/history data, and a temporary desktop entry named
+“CodexBar GTK build 74 synthetic pointer test.” Before input, the Settings app
+and tray names were unowned; after launch they resolved to the fixture PID.
+The unrelated desktop apps were left untouched. The isolated
+`refreshAllProvidersOnMenuOpen` value started and ended `false`.
 
-Next exact step: obtain a fresh sole-owner Wayland slot, recheck D-Bus/process
-ownership, and keep the pointer idle. Use a matching app-ID scope for this
-portal version. Capture and visually verify the named consent prompt; after
-`Start` success, move only to the synthetic switch and click only if immediate
-compositor hit-testing confirms Settings is topmost and pointer state is
-stable. Compare the isolated JSON value and capture the post-action state;
-release without input if any check is ambiguous. PR #74's then-current head
-`2b6d252f55f64aaad87dbf0bad66b79361210e8c` passed both required checks in run
-`41524238686` with no reviews/threads (E144). This handoff update changes the
-head, so fresh exact-head checks are required before merge. UG remains **NOT
-PASSED** and Python remains default.
+The host portal is xdg-desktop-portal 1.18.4 with KDE backend 6.8.1. The
+[RemoteDesktop interface](https://github.com/flatpak/xdg-desktop-portal/blob/main/data/org.freedesktop.portal.RemoteDesktop.xml)
+uses relative `dx,dy` for `NotifyPointerMotion`; absolute motion requires a
+PipeWire stream node and stream-space coordinates, so it is unavailable without
+ScreenCast. E146 verified relative movement to `(1211,527)` while Settings was
+active and topmost, but a later uncommanded cursor change invalidated the hit
+test before a click.
+
+E147's retry captured the synthetic General baseline before starting the portal
+request. The Spectacle active-window capture produced no KWin cursor or focus
+events in the observer interval. KWin then observed the KDE portal backend
+window activate during `Start`, followed by Settings reactivation when it
+closed. The observer did not capture a caption matching the friendly fixture
+name, and no prompt screenshot was taken, so the named-dialog requirement is
+still unverified even though `Start` returned response 0 for pointer+keyboard
+only (`types=3`, `persist_mode=0`, no ScreenCast or clipboard). KWin recorded
+1,864 cursor-change events during the retry while the portal action log
+contained only `Start` and `Close`; it also recorded a brief focus switch away
+from Settings and back. These events did not come from helper motion commands,
+but their source is unknown. No pointer or keyboard action was sent, and the
+isolated preference stayed `false`.
+
+Cleanup closed the portal session, stopped the fixture app and observer,
+unloaded the KWin script, and left app/SNI/Spectacle names unowned. The unrelated
+`codexbar-linux` process remained running. The temporary HOME and screenshots
+were removed; the build-74 slot is released (E147). The baseline capture was
+visually inspected but is not retained as action evidence. Native GTK
+`cargo build --locked --bin codexbar-gtk-native` passed with the existing U04
+GTK SDK, and the temporary Python helpers passed `py_compile`. No full suite,
+Xvfb smoke, or exact-head CI is claimed. No PR is appropriate because no
+preference or navigation action completed; UG remains **NOT PASSED** and Python
+remains default.
+
+Latest retry/route assessment (E148–E149): the live retry was aborted before a
+RemoteDesktop request after KWin observed 101 unexplained cursor changes and a
+window-added event while no portal process was active; final hit-testing no
+longer targeted Settings. No consent or input occurred, and the preference
+remained false. The observer, app and owned KWin script were cleaned up; the
+cursor log and baseline remain in the local `/tmp/codexbar-u05-build74-final-_d1ayeqm/`
+evidence directory. Do not retry live input while this activity is unexplained.
+
+A private KWin 6.8.1 virtual backend successfully created its own Wayland
+socket and D-Bus owner and exposed `org_kde_kwin_fake_input`; the installed KDE
+portal descriptor advertises RemoteDesktop. Its `ScreenShot2.CaptureActiveScreen`
+method crashed that isolated KWin process in `RenderDevice::eglContext()`, so
+there is no safe visual prompt capture for the required caller-name check.
+No portal session or consent was started. The local headless assessment and
+short crash summary are in `/tmp/codexbar-u05-build74-headless-sk_sxk_s/`.
+
+**Concrete handoff:** keep this build partial. The next candidate environment
+must be disposable and provide both KDE RemoteDesktop and reliable capture of
+the isolated compositor (for example, provision Xvfb and run nested KWin on its
+private X display, or verify a KWin virtual-backend capture fix). Reconfirm
+private D-Bus/XDG paths, fixture identity and capture before requesting
+one-time approval. After approval and `Start` response 0, use bounded portal
+motion and final focus/top-hit checks with no capture between the final guard
+and click; assert the visible switch and isolated JSON value. If that setup is
+unavailable, hand off the exact blocker rather than resuming live input. No
+PR is appropriate without an observed preference/navigation action. UG remains
+**NOT PASSED** and Python remains the default.

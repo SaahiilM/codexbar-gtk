@@ -59,11 +59,11 @@ surface to accept; it does not treat source or backend tests as runtime proof.
 | --- | --- | --- | --- |
 | Dashboard/provider cards: startup, synthetic usage, refresh, central routes, responsive layout | **PASS.** U08 1× and 2× dashboard smokes passed in exact-head CI and locally; build-66 page/routing smokes also passed. At 560 logical pixels the secondary subtitle ellipsizes, while source label, actions, values and cards remain readable/reflowed (E116). Existing captures: [`u08-native-dashboard-iconpercent-xvfb.png`](screenshots/u08-native-dashboard-iconpercent-xvfb.png), [`u08-native-dashboard-2x-xvfb.png`](screenshots/u08-native-dashboard-2x-xvfb.png). | **PASS at session default scale.** U08 fixture smoke completed refresh, registered SNI, routed to Dashboard, captured and quit cleanly: [`u08-native-dashboard-wayland.png`](screenshots/u08-native-dashboard-wayland.png). No CI Wayland run. | **PASS in #66 test job** for native lifecycle; SNI release observed in the Wayland smoke. |
 | Compact panel: SNI toggle/open, focus, keyboard dismissal, anchor/placement | **PASS for the build-68 matrix.** The Xvfb/private-bus smoke covers hidden/visible × `Activate`/`SecondaryActivate`/`ContextMenu` × preference off/on with synthetic CLI counts. It asserts X11 bottom-right placement and focus before sending Escape. The broader native Gio/lifecycle smoke also passes. Build-66 timeouts and `X_SetInputFocus BadMatch` remain historical E120 evidence; build 68 passed with the updated focus check. See [`u04-panel-activate-open-native-xvfb.png`](screenshots/u04-panel-activate-open-native-xvfb.png) and [`u04-panel-context-open-native-xvfb.png`](screenshots/u04-panel-context-open-native-xvfb.png). | **CAPTURE/PARTIAL.** Live session-bus calls exercised all three SNI methods with fixture CLI counts. A synthetic panel capture after activation/context events is valid; Wayland placement remains compositor-owned. No pointer/keyboard action is claimed because this compositor rejects `wtype` input. See [`u04-panel-activate-open-wayland.png`](screenshots/u04-panel-activate-open-wayland.png). | **PASS** in exact-head Actions run `41373288090` for `test` and `tray-dbus`, plus local private-bus routing/coordinate dispatch and Xvfb refresh matrix. |
-| KDE RemoteDesktop portal input path | **AVAILABLE.** Session D-Bus reports RemoteDesktop v2 and `AvailableDeviceTypes=7`; installed backend is `xdg-desktop-portal-kde` 6.8.1. | **PARTIAL.** Build 72's nonpersistent keyboard+pointer request sent `Ctrl+R` to Settings and reached four synthetic CLI calls (E140). On build 73, the initial bare helper produced an “unidentifiable application” prompt and was closed without approval/input. A corrected app-ID systemd scope produced the named prompt, captured at [`u05-build73-remote-desktop-consent-wayland.png`](screenshots/u05-build73-remote-desktop-consent-wayland.png); it requested pointer+keyboard only. `Start` returned `Response=0 devices=3 clipboard_enabled=false`. One relative motion targeted `(1212,523)`, but later cursor/focus and top-hit checks remained inconclusive; no click/key followed. | **PARTIAL.** Keyboard refresh side effect is verified from build 72. Build 73 does not establish pointer-button delivery or a Settings preference action; the fixture remained unchanged (E140, E143). |
+| KDE RemoteDesktop portal input path | **AVAILABLE.** Session D-Bus reports RemoteDesktop v2 and `AvailableDeviceTypes=7`; installed backend is `xdg-desktop-portal-kde` 6.8.1. | **PARTIAL/PASS FOR ONE CONTROL.** Build 72's nonpersistent keyboard+pointer request sent `Ctrl+R` to Settings and reached four synthetic CLI calls (E140). Build 75 visually verified the named `gtk-synthetic-wayland` KDE prompt; after user approval, its nonpersistent pointer+keyboard (`types=3`, no ScreenCast/clipboard) grant sent relative motion and a primary-button press/release to the geometry-derived General switch point `(864,445)`. Fresh KWin state confirmed the synthetic Settings PID was active and topmost; the isolated `refreshAllProvidersOnMenuOpen` value persisted from `false` to `true` (E151). No keyboard event was sent. | **PARTIAL.** This proves one portal pointer click and one isolated Settings action. It does not establish keyboard input, other controls, desktop-shell parity, or the full UG matrix (E151). |
 | Usage/dashboard route and provider detail interactions | **PARTIAL.** Central route and refresh smoke passed; dashboard fixture screenshots exist. Not every provider card detail/hover/action is independently asserted in the UG matrix. | **CAPTURE/PARTIAL.** Dashboard capture and route smoke passed at default scale. No full Wayland pointer/keyboard action matrix. | **PASS for app/SNI lifecycle**; per-provider UI action coverage remains open. |
 | Sessions: loading, success, empty, first-scan failure, refresh, navigation | **PASS for synthetic states and refresh/navigation** in `smoke-native-usage-pages.sh` and U04 evidence. | **CAPTURE/PARTIAL.** Fresh `--page sessions` captures show loading, running-session success, empty and first-scan failure. Synthetic refresh action and tray release were exercised in the fixture run, but stale retained-error frames were excluded; no Wayland pointer/keyboard action pass. | **PASS for startup/quit and SNI release** in the Wayland fixture smoke; exact-head CI private-bus lifecycle also passed. |
 | Usage & Spend: loading/success/partial/empty/errors, four spend ranges, three heatmap modes, tooltip and refresh | **PASS for current synthetic matrix.** The build-66 script passed with visible pointer clicks on 7/30/90 days and All, Daily/Weekly/Cumulative, keyboard focus/range check, tooltip, refresh, empty and retained-error states. The four range and three mode screenshots are in `screenshots/ug-build66/`. | **CAPTURE/PARTIAL.** Valid startup captures show success, refreshing, empty and first-scan failure; fixture refresh was invoked. Wayland range/mode/tooltip interactions are **OPEN** because controlled pointer/keyboard input was not available. | **PASS for app/SNI lifecycle** in the fixture run; no claim that D-Bus unit coverage substitutes for UI actions. |
-| Settings — General: refresh-on-panel-open, startup, currency, refresh interval, show panel on start | **PASS on Xvfb.** Build-66 smoke persisted refresh-on-panel-open, USD and launch-at-login create/remove. Build-67 smoke clicked and persisted refresh interval `5m` and show-on-start on/off; the launch entry remains isolated to a temporary home. See [`u05-build67-general-actions-xvfb.png`](screenshots/u05-build67-general-actions-xvfb.png). | **CAPTURE/PARTIAL.** Builds 69–73 captured General at default Wayland scale. Build 73 confirms the initial synthetic preference was `false`; one motion followed the named consent, but cursor/focus checks changed and no click was sent. The baseline capture is [`u05-build73-settings-general-before-wayland.png`](screenshots/u05-build73-settings-general-before-wayland.png). | **PASS for isolated Settings actor writes on Xvfb**; build 73 made no preference mutation. |
+| Settings — General: refresh-on-panel-open, startup, currency, refresh interval, show panel on start | **PASS on Xvfb.** Build-66 smoke persisted refresh-on-panel-open, USD and launch-at-login create/remove. Build-67 smoke clicked and persisted refresh interval `5m` and show-on-start on/off; the launch entry remains isolated to a temporary home. See [`u05-build67-general-actions-xvfb.png`](screenshots/u05-build67-general-actions-xvfb.png). | **PARTIAL.** Builds 69–73 captured General without a verified preference action. Build 75 passed one fresh, user-approved portal pointer click on “Refresh when the panel opens”; the synthetic JSON changed `refreshAllProvidersOnMenuOpen` from `false` to `true` (E151). Other General controls remain open. | **PASS for isolated Settings actor writes on Xvfb** and one actual Wayland UI action; not a full General/UG pass. |
 | Settings — Providers: enable/disable, source selection, API-key entry/visibility, provider login | **PASS on Xvfb with synthetic fixtures.** The provider switch and source selector reached the fixture CLI; API-key Apply reached the CLI using a randomized synthetic value that was checked absent from preferences and logs. A synthetic PTY sign-in completed and the GTK status handler reported “Sign-in completed.” before capture. No real credentials or auth output were used. See [`u05-build67-provider-actions-xvfb.png`](screenshots/u05-build67-provider-actions-xvfb.png), [`u05-build67-login-complete-xvfb.png`](screenshots/u05-build67-login-complete-xvfb.png). | **OPEN.** No Wayland provider-action evidence. | Fixture CLI calls, secret redaction and handler-level login result were asserted by the Settings smoke. |
 | Settings — Menu Bar: icon style/source, provider row style, tray visibility | **PASS.** Four visible controls were clicked and the isolated preference JSON verified: `iconPercent`, `automatic`, `details`, and `showTray=false`. See [`settings-menu-bar-actions-xvfb.png`](screenshots/ug-build66/settings-menu-bar-actions-xvfb.png). | **OPEN for actions.** No Wayland menu-bar control interaction. | Preference writes passed through the native Settings actor in an isolated home. |
 | Settings — Display: usage bar, reset-time format, workday tick style, quota burndown | **PASS on Xvfb.** Build-66 covered the original four controls; build 67 also changed workday-count, pace visibility, hide-account and both numeric quota thresholds, then verified isolated preference writes. See [`u05-build67-display-actions-xvfb.png`](screenshots/u05-build67-display-actions-xvfb.png). | **OPEN for actions.** | Settings actor persistence passed for the tested values. |
@@ -254,9 +254,10 @@ Wayland preference action.
   actions returned success without a visible switch/result change, and one
   KWin fake-input click sent to the synthetic window produced no observable
   action. The compositor advertises KWin fake-input v6, whose protocol permits
-  the compositor to ignore untrusted requests. Wayland pointer/keyboard action
-  evidence remains **OPEN/UNSUPPORTED HERE**; the no-op attempts are not proof
-  of either product failure or UI parity.
+  the compositor to ignore untrusted requests. E151 later passed one
+  user-approved KDE RemoteDesktop pointer click and persisted a synthetic
+  preference. The broader Wayland pointer/keyboard matrix remains **OPEN**;
+  earlier no-op attempts are not proof of product failure or full UI parity.
 - Build-70 preflight found xdg-desktop-portal 1.18.4 and KDE backend 6.8.1;
   RemoteDesktop v2 reported `AvailableDeviceTypes=7`. Direct launch showed an
   unidentifiable-app warning and was closed before approval. A second launch
@@ -270,6 +271,44 @@ Wayland preference action.
   interface](https://github.com/flatpak/xdg-desktop-portal/blob/main/data/org.freedesktop.portal.RemoteDesktop.xml),
   [host app registry release note](https://github.com/flatpak/xdg-desktop-portal/blob/main/NEWS.md#changes-in-1194),
   and [systemd desktop app-scope convention](https://systemd.io/DESKTOP_ENVIRONMENTS/).
+- Build 74 received a fresh nonpersistent pointer+keyboard RemoteDesktop
+  grant (`Start` response 0, `types=3`, `persist_mode=0`, no ScreenCast or
+  clipboard) using a matching temporary desktop entry. The prompt's displayed
+  caller name was not captured or visually verified. KWin observed bounded
+  `NotifyPointerMotion` relative deltas move
+  the pointer to the synthetic Settings switch while that window was active and
+  topmost. Absolute motion takes a PipeWire stream node ID and coordinates in
+  the stream's logical space, so it is unavailable in this pointer-only request
+  ([RemoteDesktop interface](https://github.com/flatpak/xdg-desktop-portal/blob/main/data/org.freedesktop.portal.RemoteDesktop.xml)).
+  After a pre-click screenshot, KWin logged cursor movement to `(1871,1182)`
+  without a matching portal action; the app stayed active but no longer owned
+  the pointer hit-test. The guarded helper sent no click or key event, and the
+  isolated setting remained false. Cause is unknown; this establishes relative
+  motion delivery but not a preference action, UI parity, or a product defect.
+  See E146. Retain the row as **OPEN**.
+- Build-74 retry E147 captured the baseline before the portal request, and that
+  Spectacle capture produced no KWin cursor/focus events. KWin then observed
+  the portal backend window activate and later close; the friendly fixture name
+  was not captured in a prompt screenshot. The observer logged 1,864 cursor
+  changes and a brief focus switch while the portal action log contained only
+  `Start` and `Close`. No pointer or keyboard action was sent, the preference
+  stayed false, and the cause of cursor activity remains unknown. The session
+  closed cleanly and the slot was released. This keeps the row **OPEN**; see
+  E147.
+- Build-74 retry E148 was aborted before a portal request: KWin logged 101
+  cursor changes and a window-added event while the portal process was
+  inactive; the final pointer hit-test was outside the synthetic Settings
+  window. No consent or input occurred, and the preference remained false.
+  The baseline and sanitized event log remain in the local temporary evidence
+  directory; this does not indicate a product failure. The live interaction
+  slot was released (E148).
+- E149 assessed a private KWin 6.8.1 virtual backend with its own D-Bus and
+  Wayland socket. It exposed KWin fake-input and KDE screencast protocols, and
+  the installed KDE portal descriptor advertises RemoteDesktop, but a
+  read-only `ScreenShot2.CaptureActiveScreen` call crashed that isolated KWin
+  in `RenderDevice::eglContext()`. No portal request or input was sent. This
+  route cannot meet the required visual consent-name check until a working
+  capture path is available (E149).
 - CI currently has Xvfb native smokes only; it cannot close any Wayland row.
 
 ## Local checks and failures retained
@@ -330,22 +369,67 @@ Wayland preference action.
 ## Remaining blockers and next step
 
 Build-67 closed the listed Settings Xvfb action/state gaps. Build 68 closes the
-native panel SNI method matrix and X11 placement/focus checks. Builds 69–73
-include live synthetic Settings captures but no verified Wayland preference
-action. Build 73 captured the named one-time prompt and received a successful
-keyboard/pointer grant, but cursor/focus state was not stable enough to click
-safely. These results do not substitute for the remaining acceptance work:
+native panel SNI method matrix and X11 placement/focus checks. Builds 69–74
+include live synthetic Settings captures; E151 adds one verified Wayland
+General preference action. E146 verified bounded relative portal motion; E147
+observed unexplained cursor/focus activity during a portal request without
+helper motion; E148 observed cursor changes before any portal request and
+aborted. E149's private KWin virtual backend exposed input protocols, but its
+screenshot API crashed before it could capture consent.
+
+The build-75 runner in `scripts/test-native-settings-wayland.py` keeps portal
+setup and input on one D-Bus connection, requests only nonpersistent pointer
+and keyboard access, and waits for the human-approved named prompt. After the
+operator confirms, it uses KWin to activate only the window matching the
+synthetic app PID and “CodexBar Settings” title, reports fresh state, derives a
+point inside the General refresh row from live window geometry, bounds the
+relative move, and requires fresh focus/top-hit/cursor evidence before the
+button event. One such click changed the isolated preference from `false` to
+`true` (E151). Unit tests and one separate focus probe pass; the unit tests do
+not exercise GTK or Wayland input. Other General controls and the broader UG
+matrix remain open.
+
+Weston is not installed system-wide; apt offers it, but installation requires
+an interactive sudo password here. A rootless Weston 13 extraction started a
+private headless Pixman compositor and socket, and `wayland-info` connected;
+`weston-screenshooter` returned unauthorized, so no visible GTK/widget action
+was verified. A Weston renderer/widget test would not establish KDE portal
+consent, real desktop pointer delivery, or shell parity.
+
+On the intended KDE session, build the native binary and invoke the guarded
+runner in its matching app scope, replacing the two coordinates with the
+switch's measured global compositor coordinates:
+
+```sh
+systemd-run --user --scope \
+  --unit=app-codexbar-gtk-synthetic-wayland-test.scope \
+  python3 scripts/test-native-settings-wayland.py \
+  --binary "$PWD/rust-gtk/target/debug/codexbar-gtk-native"
+```
+
+The consent prompt must be visually confirmed as `gtk-synthetic-wayland` before
+asking the user to click Allow. The runner derives a point from the live window
+geometry; optional `--switch-x`/`--switch-y` overrides must be supplied as a
+pair. It aborts without a click unless the synthetic Settings PID/title,
+active focus, cursor and top-hit all pass fresh checks. Its one-control pass is
+not a full UG pass.
+
+CI does have native GTK smoke coverage on Xvfb: routing, panel parity,
+dashboard (including 2x scale), Usage & Spend, and Settings, as configured in
+`.github/workflows/rust-core.yml`. These are X11 smoke tests and do not close
+Wayland rows. The build-75 unit tests check safety policy; the one live pointer
+action covers only one General control. Those results do not substitute for
+the remaining acceptance work:
 
 1. Wayland pointer/keyboard interactions for Settings (including Hooks),
    provider controls, cross-page navigation, and Usage & Spend range/mode/tooltip
    actions remain open. The current compositor does not accept the available
    `wtype` route; build-69 AT-SPI and KWin fake-input attempts had no verified
-   visible state/result. Build 73 received a successful RemoteDesktop `Start`
-   response and sent one pointer motion, but did not verify a button action or
-   preference mutation. A fresh slot must keep the cursor stable and confirm the
-   compositor top-hit target before any click. Build 68 exercised native SNI
-   methods over D-Bus and captured the synthetic panel, but did not deliver UI
-   pointer/keyboard input.
+   visible state/result. Build 75 establishes one portal pointer action only;
+   additional Settings controls and other surfaces still need their own
+   verified interactions. Stop without input if cursor/focus state is
+   ambiguous. Build 68 exercised native SNI methods over D-Bus and captured
+   the synthetic panel, but did not deliver UI pointer/keyboard input.
 2. A complete Wayland page/action pass, or an explicitly justified per-case
    unsupported environment record, remains necessary. SNI D-Bus calls and a
    panel capture do not establish pointer/keyboard parity.

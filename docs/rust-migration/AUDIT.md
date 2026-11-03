@@ -4669,3 +4669,461 @@ future models must verify the linked PR's status rather than trusting a stale
 - **PR/base/head:** PR #74 targets `main` at `cbdcc129ab4ac3ec5d6f3a8ef805567f96d354ff`; at observation it was open, mergeable, and based on build-73 evidence commit `2b6d252f55f64aaad87dbf0bad66b79361210e8c`.
 - **Exact-head checks/review:** Actions run `41524238686` passed both required jobs, `test` and `tray-dbus`, on that exact head. GitHub showed no submitted reviews or inline review threads. This is the observed state before this audit/handoff update; do not treat it as a check on the new commit that appends E144.
 - **Next step:** push the E144 handoff update, wait for fresh exact-head `test` and `tray-dbus` results, and merge normally only if both pass and the PR remains mergeable with no blocking review. UG remains **NOT PASSED**, Python remains the default, and the Wayland preference-action row remains open.
+
+### E145 — 2026-11-02: U05 PR #74 merge observed; build 74 released
+
+- **Observed merge:** PR #74 merged normally at
+  `87467ce5eec475f153466c6f87866d22c723a09a`. Its base was `main` at
+  `cbdcc129ab4ac3ec5d6f3a8ef805567f96d354ff`; exact head was
+  `5c50b403bb0b90e83e48e15b99262242a0fc1682`. A fetch in this worktree
+  confirmed live `origin/main` at the merge commit.
+- **Exact-head checks/review:** Actions run `41525444941` passed both required
+  jobs, `test` and `tray-dbus`, on the exact head. No submitted reviews or
+  inline review threads were present. This reconciles the E144 pre-merge
+  observation; it does not claim that E144's earlier head was the merged head.
+- **Next slice:** the sequential U05 Wayland follow-up was released as
+  provisional build 74 on branch
+  `orchestrated/luna-u05-wayland-pointer-build74`. UG remains **NOT PASSED**;
+  Python remains the default.
+
+### E146 — 2026-11-02: U05 build-74 RemoteDesktop motion verified; preference action blocked
+
+- **Scope/base:** U05-UG6, provisional build 74, based on observed live main at
+  `87467ce5eec475f153466c6f87866d22c723a09a` (E145). No Rust or Python source
+  changed. The fixture used an isolated HOME/config/cache, a fake CLI with
+  synthetic empty provider/history data, and a temporary matching app-ID
+  desktop entry. The initial isolated setting
+  `refreshAllProvidersOnMenuOpen` was `false`.
+- **Portal/coordinates:** the host xdg-desktop-portal was 1.18.4 and the KDE
+  backend was 6.8.1. The fixture ran with a temporary matching desktop entry,
+  but the prompt's displayed caller name was not captured or visually verified.
+  RemoteDesktop `Start` returned response 0 for pointer and keyboard only
+  (`types=3`, `persist_mode=0`, `devices=3`, no ScreenCast or clipboard). The
+  official [RemoteDesktop interface](https://github.com/flatpak/xdg-desktop-portal/blob/main/data/org.freedesktop.portal.RemoteDesktop.xml)
+  defines relative pointer motion using `dx,dy`; absolute motion requires a
+  PipeWire stream node and coordinates in that stream's space. Because no ScreenCast stream was requested, the helper used relative deltas
+  for pointer movement. KWin observer samples
+  verified that bounded portal movements changed the actual cursor from
+  `(1201,671)` to `(1215,647)`, then to `(1211,527)` while the synthetic
+  Settings window was active and topmost.
+- **Action/blocker:** the pre-click screenshot visibly showed the General
+  “Refresh when the panel opens” switch off. After the capture KWin observed
+  cursor movement to `(1871,1182)` with no corresponding portal-action log;
+  the synthetic app remained active but was not topmost under the cursor. The
+  cause is unknown. The guarded helper did not send a button or key event, and
+  the isolated preference remained `false`. This verifies that portal-relative
+  motion can be observed in KWin, but it does **not** verify Settings action
+  parity or prove an application defect. The temporary screenshot was visually
+  inspected and removed with the fixture; it is not retained as action proof.
+- **Cleanup/checks:** app and observer processes were terminated only after
+  matching their fixture command lines; the KWin observer script was unloaded,
+  and the tray SNI name was released. The portal session object was already
+  absent when the helper attempted `Close`; the helper exited and its transient
+  scope was no longer loaded. The unrelated desktop applications were left
+  untouched. The native GTK `cargo build --locked --bin codexbar-gtk-native`
+  passed using the existing U04 GTK SDK. No full suite, Xvfb smoke, or exact-head
+  CI is claimed; no PR was opened because no preference or navigation action
+  completed. `git diff --check` passed after this audit update.
+- **Gate/next step:** the Wayland preference-action row stays open and UG stays
+  **NOT PASSED**. On the next sole-owner slot, capture baseline before pointer
+  movement, then avoid desktop-facing capture tools between final KWin hit-test
+  and guarded click. Assert both visible switch state and isolated JSON change;
+  stop without input if any unexpected cursor motion occurs. Python remains the
+  default.
+
+### E147 — 2026-11-03: build-74 retry isolated cursor activity to portal window interval; no input sent
+
+- **Scope/base:** U05-UG6, provisional build 74 on
+  `orchestrated/luna-u05-wayland-pointer-build74`, based on live main at
+  `87467ce5eec475f153466c6f87866d22c723a09a` (E145). No Rust or UI behavior
+  source changed; only provisional build-74 metadata and local handoff docs are
+  modified. The isolated HOME/config/cache used the existing synthetic
+  fake CLI and started with `refreshAllProvidersOnMenuOpen=false`.
+- **Preflight/baseline:** immediately before launch, D-Bus owner checks showed
+  `com.steipete.CodexBarGTK`, `org.kde.StatusNotifierItem-codexbar-gtk`, and
+  `org.kde.spectacle` unowned. The unrelated `codexbar-linux` PID 253671 was
+  left running. The Settings window became active; its baseline screenshot was
+  captured with Spectacle 6.8.1 in `--background --activewindow` mode before
+  portal setup or pointer motion. KWin recorded zero cursor/focus events during
+  that capture interval. The image was visually inspected and removed with the
+  fixture.
+- **Portal/consent:** the helper ran in a matching app-ID scope with the
+  temporary desktop entry named “CodexBar GTK build 74 synthetic pointer test.”
+  RemoteDesktop `Start` returned response 0 with pointer+keyboard only
+  (`types=3`, `persist_mode=0`, `devices=3`, no ScreenCast or clipboard). KWin
+  observed the KDE portal backend window being added and activated, then
+  Settings became active again when that window closed. The observer did not
+  record a caption matching the fixture label and no consent screenshot was
+  captured, so the displayed caller name is not verified. No pointer or
+  keyboard input was sent.
+- **Cursor/focus diagnosis:** across 1,874 KWin observer records, 1,864 were
+  cursor changes, while the portal action log contained only `Start` and
+  `Close`—no `NotifyPointerMotion` or button events. KWin recorded 77 samples
+  while the portal backend window was active and a brief later focus change
+  away from Settings and back. The baseline capture generated no observed
+  cursor/focus event; the later cursor activity occurred during/after the
+  portal request without helper motion. Its source is unknown and is not
+  attributed to the user, Spectacle, portal, or application. The setting stayed
+  `false`; no preference/navigation parity or product failure is claimed.
+- **Cleanup/checks:** the portal Session `Close` returned successfully. The
+  fixture app and observer stopped, the KWin script was unloaded, and app/SNI/
+  Spectacle names were unowned afterward. The unrelated CodexBar process was
+  untouched; the fixture HOME/captures were removed and the build-74 slot was
+  released. The native GTK binary build passed with the existing U04 SDK;
+  temporary helper scripts passed `py_compile`; `git diff --check` passed after
+  this entry. No full suite, Xvfb smoke, exact-head CI, or PR is claimed because
+  no UI action completed.
+- **Gate/next step:** keep the Wayland Settings row open and UG
+  **NOT PASSED**. The next sole-owner slot should automatically capture the
+  portal window at activation, verify the visible caller name, and ask for
+  approval only then. After `Start` response 0, use timestamped relative-motion
+  checks; do not capture between final target verification and guarded click.
+  Assert the visible switch and isolated JSON value; stop if any uncommanded
+  cursor/focus event appears. Python remains the default.
+
+### E148 — 2026-11-03: build-74 live retry aborted before portal request
+
+- **Scope/base:** U05-UG6, provisional build 74 on
+  `orchestrated/luna-u05-wayland-pointer-build74`, based on live main at
+  `87467ce5eec475f153466c6f87866d22c723a09a`. No Rust source changed. The
+  isolated synthetic Settings app started with
+  `refreshAllProvidersOnMenuOpen=false`; the General-page baseline is retained
+  at `/tmp/codexbar-u05-build74-final-_d1ayeqm/settings-baseline.png`.
+- **Unexpected desktop activity:** before any portal helper/request was
+  launched, KWin logged 101 cursor-change events plus one window-added event.
+  All cursor samples reported the synthetic Settings window active, while the
+  final pointer position `(1332,1036)` was outside its hit-test. The observer
+  reported no active KDE portal process for these events. Their source is
+  unknown; they are not attributed to the user, the application, or a test
+  input source. The relevant cursor log and summary remain under
+  `/tmp/codexbar-u05-build74-final-_d1ayeqm/`.
+- **Abort/result:** the desktop state was ambiguous, so no RemoteDesktop
+  request was started, no consent was requested, and no pointer or keyboard
+  input was sent. The isolated preference remained `false`. This provides no
+  Settings action or Wayland parity evidence and does not indicate a product
+  failure.
+- **Cleanup:** the build-74 native app and observer were stopped, the owned
+  KWin observer script was unloaded, and the isolated desktop entry was
+  removed. App/SNI/Spectacle names were unowned afterward. Synthetic API-key,
+  login-code and environment dump files were removed; the baseline and
+  sanitized cursor log were preserved. The unrelated `codexbar-linux`
+  process was left untouched. The live interaction slot was released.
+- **Next step:** do not repeat live input while unexplained cursor/focus
+  movement persists. Assess a separate compositor and capture path first;
+  preserve the same named-prompt check, explicit approval, hit-test guard and
+  isolated JSON assertion. UG remains **NOT PASSED** and Python remains the
+  default.
+
+### E149 — 2026-11-03: isolated KWin virtual backend supports Wayland input surface; screenshot capture crashed
+
+- **Scope/isolation:** a separate `kwin_wayland --virtual` 6.8.1 instance was
+  started with a unique Wayland socket, private `dbus-run-session`, and
+  temporary `XDG_RUNTIME_DIR`, config, data, cache and state paths. `DISPLAY`
+  and the host `WAYLAND_DISPLAY` were unset. No host compositor or existing
+  KWin process was signaled or reconfigured. `wayland-info` connected and
+  listed `wl_seat`, `wl_output`, `org_kde_kwin_fake_input` v6 and
+  `zkde_screencast_unstable_v1` v6; the private bus owned `org.kde.KWin`.
+- **Portal availability:** installed `xdg-desktop-portal` 1.18.4 and KDE
+  backend 6.8.1 are present. The installed `kde.portal` descriptor advertises
+  `org.freedesktop.impl.portal.RemoteDesktop` and the KDE Wayland protocols.
+  No portal request, consent dialog, ScreenCast request, or input event was
+  started. This verifies the compositor/backend prerequisites only; it does
+  not verify the portal session or a Settings action. Weston, Mutter, Cage,
+  Sway, Wayfire, Xvfb, `xdg-desktop-portal-wlr` and the GNOME portal backend
+  are not installed in this environment. Upstream `xdg-desktop-portal-wlr`
+  currently implements Screenshot and ScreenCast, not RemoteDesktop.
+- **Capture limitation:** KWin exposed its `org.kde.KWin.ScreenShot2` object,
+  but a read-only `CaptureActiveScreen` request returned D-Bus `NoReply` and
+  the isolated KWin process crashed with SIGSEGV in
+  `KWin::RenderDevice::eglContext()` from `screenshot.so`. The empty output
+  was discarded; `/tmp/codexbar-u05-build74-headless-sk_sxk_s/kwin-crash-summary.txt`
+  preserves the short stack summary. KCrash started a DrKonqi process for this
+  test PID; that process was terminated and its matching cache metadata was
+  removed. The corresponding systemd-coredump entry remains stored; the local
+  `coredumpctl` command provides no delete operation. No crash dialog was
+  clicked.
+- **Gate/next step:** the virtual backend is a promising isolated input target,
+  but this host's virtual framebuffer did not provide a safe visual capture
+  path for verifying the portal caller before approval. Do not send a portal
+  request or input there until an independent working capture path is
+  established. The concrete handoff is a disposable KWin/Wayland environment
+  with both KDE RemoteDesktop support and reliable prompt/surface capture
+  (for example, a separately provisioned Xvfb plus nested KWin backend, or a
+  verified KWin virtual-backend capture fix). Then capture the actual named
+  consent prompt before requesting approval, and require the persisted
+  synthetic preference result. No UG row is closed; Python remains default.
+
+### E150 — 2026-11-03: build-75 guarded Wayland test runner added; live action pending
+
+- **Scope/base:** U05-UG6 continuation on
+  `orchestrated/luna-u05-wayland-pointer-build74`, provisional build 75, based
+  on observed PR #74 merge `87467ce5eec475f153466c6f87866d22c723a09a`. Existing
+  E147–E149 build-74 notes and uncommitted documentation were retained. No
+  product source/runtime behavior changed; Python remains default.
+- **Implementation:** added `scripts/test-native-settings-wayland.py`. It uses
+  a synthetic temporary HOME, empty fake CLI, a matching temporary app desktop
+  entry and the active Wayland socket/session bus. It requires the matching
+  transient systemd app scope, refuses an already-owned native app ID, and
+  keeps one Gio D-Bus connection for portal CreateSession/SelectDevices/Start
+  and later relative motion/button calls. It asks only for nonpersistent
+  pointer+keyboard (`types=3`), never ScreenCast or clipboard. Its observational
+  KWin script reports target PID, active focus, global geometry, cursor and
+  top-hit state over a temporary D-Bus service. The runner checks that target
+  coordinates lie inside the synthetic window, bounds the relative delta,
+  waits for fresh stable focus/top hit, rechecks immediately before the button
+  event, and requires the isolated preference value to persist as true. It
+  closes the portal session and removes its app, observer, KWin script,
+  temporary desktop entry and synthetic home on exit.
+- **Tests/checks:** added `tests/test_wayland_smoke_guard.py` for accepted fresh
+  state, stale state, wrong PID, inactive focus, non-target top hit, cursor
+  drift, a too-recent compositor event and geometry boundaries. `py_compile`, all 4 harness safety
+  unit tests and `git diff --check` passed. Script `--help` and native binary
+  availability were checked. Two live runner starts inside the matching app
+  scope failed before portal setup because KWin did not report the synthetic
+  Settings window. No portal consent or input event followed. The app, observer,
+  KWin script, temporary desktop entry and diagnostic directories were cleaned;
+  the native application bus name was unowned afterward. Guard unit tests do
+  not exercise GTK or Wayland.
+- **Weston/CI:** `weston` is absent from the system; apt offers 13.0.0-4build3.
+  A rootless download/extraction into `/tmp` let Weston 13 start with a private
+  runtime directory, headless Pixman output and Wayland socket; `wayland-info`
+  connected and listed `wl_output`. A synthetic native app process owned its
+  application name on a separate `dbus-run-session`, but `weston-screenshooter`
+  returned `unauthorized`; no screenshot or visible GTK/action result was
+  obtained. This proves compositor/client startup only. The private bus also
+  activated desktop portal services whose document-portal mount failed against
+  the temporary runtime; the run was stopped and its owned test processes and
+  temporary files were cleaned. Noninteractive system installation remains
+  blocked because this account requires an interactive sudo password. Workflow
+  `.github/workflows/rust-core.yml` does include Xvfb native GTK smokes for
+  routing, panel, dashboard, Usage & Spend and Settings. They verify X11 smoke
+  paths, not Wayland input or desktop shell parity. Private Weston rendering
+  and widget actions, if later available, must be recorded separately from
+  portal consent and real-session input.
+- **Gate/next step:** UG stays **NOT PASSED**, Python stays default. First
+  diagnose why the native Settings window is not observed in the host KWin
+  stack despite the application D-Bus name being acquired. Do not request
+  portal consent until KWin confirms the synthetic window. On a later attempt,
+  show and visually verify the named prompt before asking the user to approve.
+  Then require successful `Start`, stable Settings focus/top hit,
+  isolated persisted JSON and clean process/artifact teardown. Abort on any
+  stale or ambiguous compositor state; do not treat guard tests as a live UI
+  pass.
+
+### E151 — 2026-11-03: build-75 guarded Wayland runner passed one General preference action
+
+- **Scope/base:** continued U05-UG6 on
+  `orchestrated/luna-u05-wayland-pointer-build74`, provisional build 75, over
+  observed PR #74 merge `87467ce5eec475f153466c6f87866d22c723a09a`. The
+  uncommitted E147–E150 documentation was retained. No product runtime or
+  Python-default behavior changed; this adds only the reusable runner, guard
+  tests, release metadata and migration handoff.
+- **Runner refinements:** `scripts/test-native-settings-wayland.py` now
+  reactivates only the unique KWin window whose PID is the synthetic native
+  process and whose caption is `CodexBar Settings`, after the operator
+  confirms the portal prompt. That KWin script reports a fresh state sample
+  immediately after activation; the runner still waits for fresh focus and
+  requires exact PID, active focus, top hit and cursor coordinates immediately
+  before the click. The default point is derived from the observed Settings
+  window geometry at `(50%, 40%)`, within the first General refresh row;
+  optional coordinate overrides must be provided as a pair. Pointer
+  movement stays relative and bounded. The portal remains on one Gio bus
+  connection for `CreateSession`, `SelectDevices`, `Start`, motion, button
+  press/release and `Close`.
+- **Live result:** a fresh KDE prompt was captured and visually inspected as
+  `Remote Control Requested` for `gtk-synthetic-wayland`, requesting pointer
+  and keyboard only. After the user clicked Allow and confirmed, portal
+  `Start` granted nonpersistent `types=3` access (`persist_mode=0`); no
+  ScreenCast or clipboard was requested. KWin confirmed the exact Settings
+  PID active and topmost at cursor `(864,445)` within geometry
+  `[364,149,1000,740]`. The runner sent one relative pointer move and one
+  primary-button press/release; it sent no keyboard event. The synthetic
+  preference began `false`, and the runner exited 0 after asserting
+  `refreshAllProvidersOnMenuOpen=true` in the isolated settings JSON. A prior
+  guarded click at the old hardcoded `(1211,527)` point reached KWin but left
+  the value false; it is excluded as a pass. Several intervening focus
+  attempts stopped before input because snapshots were stale or Settings had
+  not regained stable focus. Two guided manual fixtures timed out unchanged; they are not
+  counted as UI actions.
+- **Cleanup:** after the passing run, the CodexBar app, Spectacle and observer
+  D-Bus names were unowned, the app scope was inactive, the owned temporary
+  desktop entry was removed, and the synthetic HOME, fake CLI, prompt capture
+  and diagnostic directories were deleted. The separate focus-helper probe
+  also passed with no portal grant and no input. No real account, provider
+  output, credential, clipboard or screenshot was retained.
+- **Checks:** `python3 -m py_compile scripts/test-native-settings-wayland.py
+  tests/test_wayland_smoke_guard.py` passed; all 7 tests in
+  `python3 -m unittest tests.test_wayland_smoke_guard -v` passed; runner
+  `--help`, the version metadata check and `git diff --check` passed. The
+  native GTK binary had been built successfully with the existing U04 GTK SDK
+  earlier in this task; this follow-up changed only test harness/docs. The
+  7 guard tests cover policy and generated focus/coordinate behavior, not GTK
+  or Wayland input. No full Python suite, local Xvfb smoke, exact-head CI run,
+  PR, merge or complete UG pass is claimed.
+- **Evidence limits:** this is one actual user-approved pointer action through
+  KDE RemoteDesktop in the active KDE Wayland desktop. It verifies one
+  synthetic General control and its persisted JSON value. It does not establish
+  keyboard input, other Settings controls, app-wide Wayland parity, KDE shell
+  parity beyond this session, or the full UG matrix. Workflow
+  `.github/workflows/rust-core.yml` includes several Xvfb native GTK smokes,
+  including Settings; those are X11 checks. The private Weston 13 run in E150
+  established a headless compositor/socket and `wayland-info` connectivity,
+  but no visible GTK screenshot or action because `weston-screenshooter`
+  returned `unauthorized`.
+- **Gate/next step:** mark only the General refresh-on-panel-open Wayland
+  action **PASS** in the evidence matrix. UG remains **NOT PASSED**, Python
+  remains the default, and other Wayland Settings/page actions remain open.
+  Preserve the runner for repeated consent-gated use; keep the named prompt
+  screenshot review, fresh target guards, persisted preference assertion and
+  owned-process cleanup as mandatory conditions.
+
+### E152 — 2026-11-03: build-75 complete local verification for guarded runner
+
+- **Scope/base:** U05-UG6 build 75 on
+  `orchestrated/luna-u05-wayland-pointer-build74`, based on observed PR #74
+  merge `87467ce5eec475f153466c6f87866d22c723a09a`. This is the focused runner
+  and migration handoff slice; no Rust application source or default Python
+  runtime behavior changed. E147–E149 remain intact and append-only. UG stays
+  **NOT PASSED** and Python remains the default.
+- **Rust verification:** `cargo fmt -- --check` passed for all four manifests
+  (`rust-core`, `rust-python`, `rust-backend`, `rust-gtk`). Tests passed for
+  core (85), backend (85 plus its end-to-end test), and GTK (37 library tests,
+  one binary test). The GTK library artwork display test and `a11y_assets`
+  display integration test were ignored in the ordinary run, then each passed
+  when explicitly run with `xvfb-run -a dbus-run-session`. Strict Clippy passed
+  for all four crates with the repository's `-D warnings` settings.
+- **Build/Python verification:** `scripts/build-rust-core.sh` built the
+  optional extension with atomic replacement; `fuser` showed no process mapping
+  the old extension before replacement. The `codexbar-gtk-native` binary build
+  passed. Full Python default and `CODEXBAR_RUST_CORE=1` suites each passed
+  221 tests; the default run had 21 expected opt-in skips and the Rust run had
+  no skips. The private-session-bus tray suite passed 3 tests. `py_compile`,
+  runner `--help`, all 7 Wayland guard tests, the version metadata assertion
+  and `git diff --check` passed.
+- **Native Xvfb smokes:** with the existing U04 GTK 4.14.5/libadwaita 1.5.0
+  SDK and its GUI tool bundle, all workflow GTK smokes passed on private Xvfb
+  and D-Bus sessions: native routing/shutdown, panel semantics with both
+  refresh preference values, dashboard at 1× and 2×, Usage & Spend/Sessions,
+  and Settings. The first routing-smoke attempt could not load the bundle's
+  `libxdo.so.3` because its library directory was missing from
+  `LD_LIBRARY_PATH`; after adding the bundle library directory, the rerun
+  passed. The portal/document helper emitted a private-session warning because
+  it could not mount `/run/user/1000/doc`; it did not affect these X11 smokes.
+  They exercise widget/window actions on X11 and are not Wayland input evidence.
+- **Artifacts/limits:** smoke homes, fixture CLIs, private runtime directories
+  and generated diagnostic files were temporary and removed. No screenshot or
+  real account/provider output was retained or staged. This local verification
+  does not add to E151's single named-consent Wayland pointer click; that one
+  action alone persists `refreshAllProvidersOnMenuOpen=true`. The prior Weston
+  assessment remains E150: system Weston is absent; rootless Weston 13 started
+  a headless Pixman compositor and accepted `wayland-info`, but
+  `weston-screenshooter` returned `unauthorized`, so no visible GTK screenshot
+  or widget action was verified. Weston GTK rendering/widget signals, if later
+  made available, remain separate from RemoteDesktop pointer/keyboard input,
+  KDE portal consent and desktop-shell parity.
+- **PR/next step:** local verification is complete for the reusable runner;
+  this entry does not claim any build-75 exact-head CI result or merge. Open a
+  focused runner PR and observe its exact final head checks/review before
+  merging. Then start the next serialized U05 slice for remaining General
+  controls with a reusable action/expected-preference mapping. Any new live
+  portal session requires a fresh, visually verified `gtk-synthetic-wayland`
+  prompt and user approval before input; abort on stale or ambiguous target
+  evidence. Python remains default and UG remains **NOT PASSED**.
+
+### E153 — 2026-11-03: PR #75 Settings smoke failure and focus-guard correction
+
+- **Observed exact-head result:** PR #75 initial head
+  `0113f79c18487ee6151835480f6dc5bd679d1425` passed `tray-dbus` but failed the
+  `test` job in run `41679001629`. All earlier build, Rust/Python, Clippy and
+  Xvfb smoke steps passed; the failure was the final Settings smoke at its
+  first `Import preferences` chooser lookup. The preceding export chooser had
+  completed, but no window matching `^Import preferences$` appeared. CI's root
+  tree still showed the `CodexBar Settings` window mapped, and the app log
+  contained only the DRI3 warning. The captured job does not establish why the
+  chooser click was missed; no product defect or cursor cause is inferred.
+- **Correction:** `scripts/smoke-native-settings.sh` now reacquires the unique
+  visible `CodexBar Settings` window after starting its private Xfwm test WM,
+  activates that exact window, and verifies it owns X11 focus before sending
+  the chooser-row click. The smoke still requires the titled native chooser and
+  selected synthetic file; no assertion was weakened or skipped.
+- **Local rerun:** `bash -n scripts/smoke-native-settings.sh`,
+  `git diff --check`, and the complete `scripts/smoke-native-settings.sh`
+  passed with the U04 GTK SDK and private Xvfb/D-Bus environment after the
+  guard change. The smoke used only its synthetic HOME, CLI, notifications,
+  preferences and autostart fixture; temporary files were cleaned. No
+  screenshot was retained.
+- **Handoff:** this correction is on PR #75; its updated-head CI has not yet
+  been observed. The initial failure remains part of the history, and merge is
+  blocked on the final head passing `test` and `tray-dbus`. The previous local
+  single-control Wayland result is unchanged: one user-approved pointer click
+  persisted the synthetic preference (E151). Python remains the default and
+  UG remains **NOT PASSED**.
+
+### E154 — 2026-11-03: PR #75 repeated Settings chooser miss and guarded target check
+
+- **Observed exact-head result:** PR #75 head
+  `46b4ed5f9b1c55f5db74139e77c69d156f69a448` passed `tray-dbus` and failed the
+  `test` job in run `41680590328`. The Settings smoke again did not observe the
+  titled `Import preferences` chooser after the Export flow. CI showed the
+  `CodexBar Settings` X11 window mapped and the process failed at the chooser
+  lookup; the prior focus guard had passed. The job output does not establish
+  why the chooser click was missed, so this entry makes no causal claim about
+  GTK, Xfwm, or pointer delivery.
+- **Harness correction:** the Settings smoke retains one Xfwm instance for all
+  chooser actions instead of stopping it between Export and Import. Startup
+  now waits for `_NET_SUPPORTING_WM_CHECK` to self-reference, confirming the
+  manager has claimed the X root. Before each chooser-row click, it rechecks
+  exact Settings focus and verifies that the pointer's X11 hit window belongs
+  to the Settings window tree. If that target is missing or ambiguous, the
+  smoke records synthetic X diagnostics and exits before sending the click.
+  The native chooser title and selected-file assertions remain required.
+- **Local reruns:** `bash -n scripts/smoke-native-settings.sh`,
+  `git diff --check`, all 7 `tests.test_wayland_smoke_guard` tests, and two
+  complete `scripts/smoke-native-settings.sh` runs passed with the U04 GTK SDK
+  and isolated Xvfb/private D-Bus sessions. Both runs used synthetic HOME,
+  CLI, preferences and import/export fixtures. The retained pre-fix synthetic
+  scratch and diagnostic screenshot were removed after inspection. These X11
+  checks do not add Wayland input evidence.
+- **Handoff:** the result on `46b4ed5` remains a failed exact-head CI run; the
+  correction above requires a new head and fresh `test` plus `tray-dbus`
+  results before merge. E151 remains the only verified live Wayland action:
+  one named-consent pointer click on General “Refresh when the panel opens”
+  persisted `refreshAllProvidersOnMenuOpen=true`. Rootless Weston 13 remains
+  limited to a private headless Pixman compositor and `wayland-info`; its
+  `weston-screenshooter` request was unauthorized, so no visible GTK render or
+  widget action was verified there. Those results do not establish Weston
+  input support or KDE shell/portal parity. E147–E149 are preserved; Python
+  remains default and UG remains **NOT PASSED**.
+
+### E155 — 2026-11-03: PR #75 Import chooser acceptance failure
+
+- **Observed exact-head result:** PR #75 head
+  `979302620a536bc0afb7be4768050e25cd77d397` passed `tray-dbus` and failed the
+  `test` job in run `41682950340`. The Settings smoke found the Import chooser,
+  attempted to select `preferences-import.json`, and reported that the chooser
+  stayed mapped after Return. CI did not capture the chooser or confirm the
+  selected row; the log does not report chooser focus after the attempted
+  selection or establish why the accept key did not close it. No cause is
+  inferred.
+- **Harness correction:** `scripts/smoke-native-settings.sh` now checks the
+  pointer hit window is within the titled chooser's X11 window tree before
+  selecting the synthetic row, waits briefly for selection, then reacquires
+  and verifies exact chooser focus before sending Return. If the chooser
+  remains mapped, the smoke reports focus and window geometry. The click and
+  accept remain confined to the synthetic chooser in isolated Xvfb.
+- **Local reruns:** shell syntax, `git diff --check`, all 7
+  `tests.test_wayland_smoke_guard` tests, and two complete Settings smoke runs
+  passed with the U04 GTK SDK and isolated Xvfb/private D-Bus sessions. The
+  selected synthetic import row was captured and visually checked on one run;
+  all retained synthetic scratch files and screenshots were then removed.
+  These X11 checks do not add Wayland input evidence.
+- **Handoff:** the `9793026` exact-head CI result remains failed; this
+  correction requires a new head and fresh `test` plus `tray-dbus` results
+  before merge. E151 remains the only verified live Wayland action: one
+  named-consent pointer click on General “Refresh when the panel opens”
+  persisted `refreshAllProvidersOnMenuOpen=true`. Rootless Weston 13 remains
+  limited to a private headless Pixman compositor and `wayland-info`; its
+  `weston-screenshooter` request was unauthorized, so no visible GTK render or
+  widget action was verified there. Those results do not establish Weston
+  input support or KDE shell/portal parity. E147–E149 are preserved; Python
+  remains default and UG remains **NOT PASSED**.

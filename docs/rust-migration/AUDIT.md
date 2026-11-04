@@ -5552,3 +5552,11 @@ future models must verify the linked PR's status rather than trusting a stale
 - **Measurement:** the kept baseline capture (`/tmp/codexbar-display-baseline.png`, 1122×862) shows the tab bar at the **bottom** of the Settings window; the Display tab's center is at ~34% across and ~94% down. The runner's tab point was updated from `(0.05, 0.42)` (left margin) to `(0.34, 0.94)`.
 - **Verification:** `py_compile` passed; 10 guard tests passed; full Python suite 224 tests / 70 skips OK. No live click claimed from this change.
 - **Limits / next step:** live verification still needs a fresh named KDE grant; the tab's hit point is now measured rather than approximated. Python stays default; UG stays **NOT PASSED**.
+
+
+### E181 — 2026-11-04: hide-personal-info PASS on live Wayland
+
+- **Run:** the user ran the guarded runner with `--action hide-personal-info`, approved the `gtk-synthetic-wayland` KDE prompt, and the automated pointer workflow executed (switch point `(864,469)`).
+- **Result:** `PASS: synthetic Settings preference hidePersonalInfo=true persisted` — the first Display-page action pass via the automated portal path. The tab click at `(704,845)` selected Display, then `(864,469)` toggled Hide account details.
+- **Limits:** `hide-personal-info` now has both the materialized-JSON evidence and the runner's persisted-preference PASS. UG stays **NOT PASSED** until the full matrix is evidenced.
+- **Next step:** the user approves merging PR #78; then the next UG slice.

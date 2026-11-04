@@ -5502,3 +5502,15 @@ future models must verify the linked PR's status rather than trusting a stale
 - **Observation:** after E171 simplified the runner, the re-run still reported the same 42-key drift message (`unexpected preferences changed during start-at-login: [...]`). E171 had removed the baseline-materialization wait but left the `changed != [preference_key]` strict-drift check; the app legitimately materializes full defaults regardless of the toggle, so the check still tripped. **Fix:** removed that check entirely. The runner now verifies only that the target preference starts `False` (seeded) and persists `true` after the click — the feature's real behavior.
 - **Verification:** `py_compile` passed; 10 guard tests passed; full Python suite 224 tests / 70 skips OK. No live click claimed from this change.
 - **Next step:** re-run `start-at-login` with a fresh named KDE grant; the automated path should PASS. Python stays default; UG stays **NOT PASSED**.
+### E173 — 2026-11-04: automated start-at-login PASS on live Wayland
+
+- **Run:** the user ran the guarded runner with `--action start-at-login`, approved the named `gtk-synthetic-wayland` KDE prompt, and the automated pointer workflow executed.
+- **Result:** `PASS: synthetic Settings preference launchAtLogin=true persisted`. The runner's automated click toggled Start at login and the isolated `settings.json` persisted `launchAtLogin: true`. Switch point `(944,733)`; the runner's post-run cleanup removed the scratch dir before independent re-read, so the PASS line is the recorded evidence (runner's own persistence check passed).
+- **Limits:** this is the first PASS from the runner's automated pointer path; E165 (manual) and E173 (automated) are the two recorded start-at-login passes. `hide-personal-info` remains pending Display-page navigation. Python stays default; UG stays **NOT PASSED**.
+- **Next step:** the user approves merging PR #77; then the next UG slice (Display-page navigation for `hide-personal-info`, or the next General toggle).
+### E173 — 2026-11-04: automated start-at-login PASS on live Wayland
+
+- **Run:** the user ran the guarded runner with `--action start-at-login`, approved the named `gtk-synthetic-wayland` KDE prompt, and the automated pointer workflow executed.
+- **Result:** `PASS: synthetic Settings preference launchAtLogin=true persisted`. The runner's automated click toggled Start at login and the isolated `settings.json` persisted `launchAtLogin: true`. Switch point `(944,733)`; the runner's post-run cleanup removed the scratch dir before independent re-read, so the PASS line is the recorded evidence (runner's own persistence check passed).
+- **Limits:** this is the first PASS from the runner's automated pointer path; E165 (manual) and E173 (automated) are the two recorded start-at-login passes. `hide-personal-info` remains pending Display-page navigation. Python stays default; UG stays **NOT PASSED**.
+- **Next step:** the user approves merging PR #77; then the next UG slice.

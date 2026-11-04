@@ -443,14 +443,22 @@ def main():
                 "switch pages first; no input sent"
             )
         print(f"Guarded Settings action '{args.action}' switch point: ({switch_x},{switch_y})", flush=True)
-        deadline = time.monotonic() + 8
-        baseline_preferences = json.loads(preferences.read_text())
-        while time.monotonic() < deadline:
-            materialized = json.loads(preferences.read_text())
+        baseline_preferences = None
+        baseline_deadline = time.monotonic() + 8
+        while time.monotonic() < baseline_deadline:
+            try:
+                materialized = json.loads(preferences.read_text())
+            except (FileNotFoundError, json.JSONDecodeError):
+                time.sleep(.05)
+                continue
             if len(materialized) > 5:
                 baseline_preferences = materialized
                 break
             time.sleep(.05)
+        if baseline_preferences is None:
+            raise RuntimeError(
+                "settings did not materialize full defaults; no click sent"
+            )
         if baseline_preferences.get(preference_key) is not False:
             raise RuntimeError(
                 f"selected preference {preference_key} did not start false; no click sent"

@@ -446,8 +446,8 @@ def main():
             raise RuntimeError("Settings did not regain stable focus after portal consent; no input sent")
         if "page" in action:
             gx, gy, width, height = baseline.get("target_geometry")
-            tab_x = round(gx + width * 0.05)
-            tab_y = round(gy + height * 0.42)
+            tab_x = round(gx + width * 0.34)
+            tab_y = round(gy + height * 0.94)
             guarded_click(portal, app.pid, latest, tab_x, tab_y)
             deadline = time.monotonic() + 2
             while time.monotonic() < deadline:

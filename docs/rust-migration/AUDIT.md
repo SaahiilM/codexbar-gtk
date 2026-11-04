@@ -5547,3 +5547,8 @@ future models must verify the linked PR's status rather than trusting a stale
 - **Run result:** the run reached the switch point `(864,469)` and the final click landed on the **General page** (the tab click never moved pages), so `hidePersonalInfo` stayed `False` — the 41-key list is again the app-materialized defaults drift. No state change.
 - **Limits:** no live action-pass claimed. Scratch kept for this run (`/tmp/codexbar-wayland-settings-n175dhvn`).
 - **Next step:** update the runner's tab point to the measured Display tab center, then re-run with a fresh named KDE grant. Python stays default; UG stays **NOT PASSED**.
+### E180 — 2026-11-04: tab point measured from baseline image
+
+- **Measurement:** the kept baseline capture (`/tmp/codexbar-display-baseline.png`, 1122×862) shows the tab bar at the **bottom** of the Settings window; the Display tab's center is at ~34% across and ~94% down. The runner's tab point was updated from `(0.05, 0.42)` (left margin) to `(0.34, 0.94)`.
+- **Verification:** `py_compile` passed; 10 guard tests passed; full Python suite 224 tests / 70 skips OK. No live click claimed from this change.
+- **Limits / next step:** live verification still needs a fresh named KDE grant; the tab's hit point is now measured rather than approximated. Python stays default; UG stays **NOT PASSED**.

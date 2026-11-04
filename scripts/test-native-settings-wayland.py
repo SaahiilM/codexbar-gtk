@@ -43,8 +43,8 @@ WAYLAND_SWITCH_ACTIONS = {
     },
     "hide-personal-info": {
         "preference": "hidePersonalInfo",
-        "label": "Hide personal info",
-        "y_offset": 575,
+        "label": "Hide account details",
+        "page": "Display",
     },
 }
 PORTAL_DESKTOP_ENTRY = (
@@ -437,8 +437,20 @@ def main():
             )
         if not target_window_contains(baseline, switch_x, switch_y):
             raise RuntimeError("action coordinates are outside the synthetic Settings window; no input sent")
+        if "page" in action:
+            raise RuntimeError(
+                f"action '{args.action}' is on the '{action['page']}' page, not General; "
+                "switch pages first; no input sent"
+            )
         print(f"Guarded Settings action '{args.action}' switch point: ({switch_x},{switch_y})", flush=True)
+        deadline = time.monotonic() + 8
         baseline_preferences = json.loads(preferences.read_text())
+        while time.monotonic() < deadline:
+            materialized = json.loads(preferences.read_text())
+            if len(materialized) > 5:
+                baseline_preferences = materialized
+                break
+            time.sleep(.05)
         if baseline_preferences.get(preference_key) is not False:
             raise RuntimeError(
                 f"selected preference {preference_key} did not start false; no click sent"

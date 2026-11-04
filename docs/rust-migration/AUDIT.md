@@ -5541,3 +5541,9 @@ future models must verify the linked PR's status rather than trusting a stale
 - **Observation:** the user's `--inspect-only` run printed the baseline path, then the runner's `finally` block removed the scratch dir (home, captures, state) before the capture could be read back — same as E177's run. The cleanup is unconditional.
 - **Limits:** no live action-pass claimed; the Display tab pixel center remains unmeasured.
 - **Next step:** either the user copies `settings-before.png` out before exit, or the runner is changed to preserve the capture on inspect-only. Python stays default; UG stays **NOT PASSED**.
+### E179 — 2026-11-04: baseline image read; tab click still didn't navigate
+
+- **Baseline image read:** the kept capture (`/tmp/codexbar-display-baseline.png`) shows the Settings window is **1000×740 at origin (364,149)**, General page selected, and the **bottom tab bar** (not a left sidebar): tabs are General / Providers / Menu Bar / **Display** / Notifications / Usage & Spend / Hooks / Plugins / Advanced / Acknowledgements / About, with Display at ~34% across and ~94% down. The runner's tab point (`5%/42%`) lands in the left-margin — wrong region, so the click didn't navigate.
+- **Run result:** the run reached the switch point `(864,469)` and the final click landed on the **General page** (the tab click never moved pages), so `hidePersonalInfo` stayed `False` — the 41-key list is again the app-materialized defaults drift. No state change.
+- **Limits:** no live action-pass claimed. Scratch kept for this run (`/tmp/codexbar-wayland-settings-n175dhvn`).
+- **Next step:** update the runner's tab point to the measured Display tab center, then re-run with a fresh named KDE grant. Python stays default; UG stays **NOT PASSED**.

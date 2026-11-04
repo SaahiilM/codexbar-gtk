@@ -5514,3 +5514,9 @@ future models must verify the linked PR's status rather than trusting a stale
 - **Result:** `PASS: synthetic Settings preference launchAtLogin=true persisted`. The runner's automated click toggled Start at login and the isolated `settings.json` persisted `launchAtLogin: true`. Switch point `(944,733)`; the runner's post-run cleanup removed the scratch dir before independent re-read, so the PASS line is the recorded evidence (runner's own persistence check passed).
 - **Limits:** this is the first PASS from the runner's automated pointer path; E165 (manual) and E173 (automated) are the two recorded start-at-login passes. `hide-personal-info` remains pending Display-page navigation. Python stays default; UG stays **NOT PASSED**.
 - **Next step:** the user approves merging PR #77; then the next UG slice.
+### E174 — 2026-11-04: Display-page navigation for hide-personal-info (build 79)
+
+- **Next UG slice:** `hide-personal-info` ("Hide account details") lives on the **Display** page, not General. This change adds a guarded Display-tab click to the Wayland runner (sidebar tab at the left of the Settings window, measured via live geometry), followed by a re-state of the baseline before the toggle click. The tab click uses the same portal motion/click + guard-target discipline as the toggle.
+- **Changes:** `scripts/test-native-settings-wayland.py` — `hide-personal-info` now carries a page target; after consent the runner clicks the Display tab (guarded), re-captures focus, then clicks the switch. Build bumped 78 → 79.
+- **Verification:** `py_compile` passed; 10 guard tests passed; full Python suite 224 tests / 70 skips OK. No live click claimed from this change. Synthetic fixtures only.
+- **Limits / next step:** live verification still needs a fresh named KDE grant; the tab's hit point is geometry-derived (left sidebar, 42% down) and should be confirmed against a live baseline capture. Python stays default; UG stays **NOT PASSED**.

@@ -45,6 +45,7 @@ WAYLAND_SWITCH_ACTIONS = {
         "preference": "hidePersonalInfo",
         "label": "Hide account details",
         "page": "Display",
+        "y_offset": 320,
     },
 }
 PORTAL_DESKTOP_ENTRY = (
@@ -229,6 +230,25 @@ class PortalDriver:
                                    None, Gio.DBusCallFlags.NONE, 5000, None)
             except Exception:
                 pass
+
+def guarded_click(portal, app_pid, latest, x, y):
+    """Move to (x, y) and click only after the compositor state passes guard."""
+    state = latest()
+    dx, dy = x - state["cursor"][0], y - state["cursor"][1]
+    if abs(dx) > 1600 or abs(dy) > 1200:
+        raise RuntimeError("requested pointer delta exceeds safety bound; no input sent")
+    portal.move(dx, dy)
+    deadline = time.monotonic() + 2
+    while time.monotonic() < deadline:
+        if guard_target(latest(), app_pid, x, y):
+            break
+        time.sleep(.01)
+    else:
+        raise RuntimeError("target/focus hit-test unstable after motion; no click sent")
+    if not guard_target(latest(), app_pid, x, y):
+        raise RuntimeError("final target/focus guard failed; no click sent")
+    portal.click()
+
 
 
 def main():
@@ -424,6 +444,35 @@ def main():
             time.sleep(.02)
         if baseline is None:
             raise RuntimeError("Settings did not regain stable focus after portal consent; no input sent")
+        if "page" in action:
+            gx, gy, width, height = baseline.get("target_geometry")
+            tab_x = round(gx + width * 0.05)
+            tab_y = round(gy + height * 0.42)
+            guarded_click(portal, app.pid, latest, tab_x, tab_y)
+            deadline = time.monotonic() + 2
+            while time.monotonic() < deadline:
+                if guard_target(latest(), app.pid, tab_x, tab_y):
+                    break
+                time.sleep(.01)
+            else:
+                raise RuntimeError("page-tab hit-test unstable after motion; no click sent")
+            if not guard_target(latest(), app.pid, tab_x, tab_y):
+                raise RuntimeError("final page-tab guard failed; no click sent")
+            time.sleep(0.6)
+            baseline = None
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline:
+                state = latest()
+                age = time.monotonic() - state.get("received", 0)
+                if (state.get("pid") == app.pid and state.get("active")
+                        and 0.15 <= age <= 0.35):
+                    baseline = state
+                    break
+                time.sleep(.02)
+            if baseline is None:
+                raise RuntimeError(
+                    "Settings did not regain focus after page switch; no input sent"
+                )
         if args.switch_x is not None:
             switch_x, switch_y = args.switch_x, args.switch_y
         else:
@@ -437,11 +486,7 @@ def main():
             )
         if not target_window_contains(baseline, switch_x, switch_y):
             raise RuntimeError("action coordinates are outside the synthetic Settings window; no input sent")
-        if "page" in action:
-            raise RuntimeError(
-                f"action '{args.action}' is on the '{action['page']}' page, not General; "
-                "switch pages first; no input sent"
-            )
+        # page already selected above via the guarded tab click
         print(f"Guarded Settings action '{args.action}' switch point: ({switch_x},{switch_y})", flush=True)
         baseline_preferences = json.loads(preferences.read_text())
         if baseline_preferences.get(preference_key) is not False:

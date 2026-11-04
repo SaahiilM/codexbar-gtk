@@ -46,6 +46,7 @@ WAYLAND_SWITCH_ACTIONS = {
         "label": "Hide account details",
         "page": "Display",
         "y_offset": 320,
+        "switch_x_fraction": 0.90,
     },
 }
 PORTAL_DESKTOP_ENTRY = (
@@ -87,7 +88,7 @@ def changed_preferences(before, after):
     return sorted(key for key in set(before) | set(after) if before.get(key) != after.get(key))
 
 
-def switch_point_from_geometry(geometry, y_fraction=0.40, y_offset=None):
+def switch_point_from_geometry(geometry, y_fraction=0.40, y_offset=None, x_fraction=0.50):
     """Choose a measured General switch row from its window-relative Y point."""
     if not isinstance(geometry, list) or len(geometry) != 4:
         raise ValueError("Settings window geometry is unavailable")
@@ -102,7 +103,7 @@ def switch_point_from_geometry(geometry, y_fraction=0.40, y_offset=None):
         if not isinstance(y_offset, int) or not 0 <= y_offset < height:
             raise ValueError("General switch row offset is outside the Settings window")
         local_y = y_offset
-    return round(gx + width * 0.50), round(gy + local_y)
+    return round(gx + width * x_fraction), round(gy + local_y)
 
 
 def activation_script(expected_pid):
@@ -477,7 +478,8 @@ def main():
             switch_x, switch_y = args.switch_x, args.switch_y
         else:
             point_options = (
-                {"y_offset": action["y_offset"]}
+                {"y_offset": action["y_offset"],
+                 "x_fraction": action.get("switch_x_fraction", 0.50)}
                 if "y_offset" in action
                 else {"y_fraction": action["y_fraction"]}
             )

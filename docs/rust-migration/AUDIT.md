@@ -5525,3 +5525,9 @@ future models must verify the linked PR's status rather than trusting a stale
 - **Observation:** PR #78 exact-head CI `test` job failed `tests::version_metadata_tracks_the_root_version_file` (`assertion failed: readme.contains(...)`). I bumped `VERSION`/`version.py` from 78 → 79 but not the README's displayed build string. **Fix:** update README `"0.82.0 (78)"` → `"0.82.0 (79)"` in the same PR.
 - **Verification:** `py_compile` passed; 10 guard tests passed; full Python suite 224 tests / 70 skips OK. CI re-run pending. Synthetic fixtures only.
 - **Next step:** re-read exact-head `test`/`tray-dbus` for the updated head. Python stays default; UG stays **NOT PASSED**.
+### E176 — 2026-11-04: hide-personal-info drawn as coarse sidebar approximation
+
+- **Observation:** a `hide-personal-info` run reported `FAIL CLOSED: target/focus hit-test unstable after motion; no click sent`. The tab click point was a coarse approximation (`width*0.05, height*0.42`), so the compositor's hit-test evidence never confirmed the target, and the guard correctly aborted without clicking anything. No state was changed.
+- **Limits:** no live action-pass claimed. The scratch dir was already cleaned up when the evidence was read back, so the exact compositor state at failure could not be re-inspected.
+- **Decision:** the tab point must be measured from a live baseline capture (the sidebar icons/row centers), not approximated. The `--inspect-only` baseline capture shows exactly where the Display tab is; the runner should use measured coordinates (or `--switch-x/--switch-y` overrides) on the next run.
+- **Next step:** run `--inspect-only` first, read the Display tab's pixel center from the capture, then run the action with `--switch-x/--switch-y` overrides for both the tab and the switch (or fix the runner to measure the tab from the capture). Python stays default; UG stays **NOT PASSED**.

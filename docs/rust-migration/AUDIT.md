@@ -5536,3 +5536,8 @@ future models must verify the linked PR's status rather than trusting a stale
 - **Run:** the user ran the runner with `--inspect-only`; it printed `Inspection-only mode; no portal request or input sent.` with the baseline at `/tmp/codexbar-wayland-settings-o3c41ivd/settings-before.png`, then its post-run cleanup removed the scratch dir before the capture could be read back.
 - **Limits:** no live action-pass claimed; the Display tab's pixel center still needs measuring (the capture must survive cleanup, or be read in-session).
 - **Next step:** the user sends the baseline image or its path; the runner is then updated with the measured tab point (or the real run uses `--switch-x/--switch-y` overrides). Python stays default; UG stays **NOT PASSED**.
+### E178 — 2026-11-04: baseline capture cleanup prevents measurement
+
+- **Observation:** the user's `--inspect-only` run printed the baseline path, then the runner's `finally` block removed the scratch dir (home, captures, state) before the capture could be read back — same as E177's run. The cleanup is unconditional.
+- **Limits:** no live action-pass claimed; the Display tab pixel center remains unmeasured.
+- **Next step:** either the user copies `settings-before.png` out before exit, or the runner is changed to preserve the capture on inspect-only. Python stays default; UG stays **NOT PASSED**.

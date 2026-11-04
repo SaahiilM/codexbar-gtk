@@ -594,6 +594,13 @@ def main():
             except OSError:
                 pass
         if os.environ.get("KEEP_WAYLAND_TEST_TMP") == "1":
+            if settings_capture.is_file():
+                kept = pathlib.Path("/tmp/codexbar-display-baseline.png")
+                try:
+                    kept.write_bytes(settings_capture.read_bytes())
+                    print(f"Baseline capture kept at {kept}", file=sys.stderr, flush=True)
+                except OSError:
+                    pass
             print(f"Synthetic test diagnostics kept at {scratch}", file=sys.stderr, flush=True)
         else:
             shutil.rmtree(scratch, ignore_errors=True)

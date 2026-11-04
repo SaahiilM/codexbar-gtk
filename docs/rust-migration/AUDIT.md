@@ -5520,3 +5520,8 @@ future models must verify the linked PR's status rather than trusting a stale
 - **Changes:** `scripts/test-native-settings-wayland.py` — `hide-personal-info` now carries a page target; after consent the runner clicks the Display tab (guarded), re-captures focus, then clicks the switch. Build bumped 78 → 79.
 - **Verification:** `py_compile` passed; 10 guard tests passed; full Python suite 224 tests / 70 skips OK. No live click claimed from this change. Synthetic fixtures only.
 - **Limits / next step:** live verification still needs a fresh named KDE grant; the tab's hit point is geometry-derived (left sidebar, 42% down) and should be confirmed against a live baseline capture. Python stays default; UG stays **NOT PASSED**.
+### E175 — 2026-11-04: CI failure on README build drift (build 79)
+
+- **Observation:** PR #78 exact-head CI `test` job failed `tests::version_metadata_tracks_the_root_version_file` (`assertion failed: readme.contains(...)`). I bumped `VERSION`/`version.py` from 78 → 79 but not the README's displayed build string. **Fix:** update README `"0.82.0 (78)"` → `"0.82.0 (79)"` in the same PR.
+- **Verification:** `py_compile` passed; 10 guard tests passed; full Python suite 224 tests / 70 skips OK. CI re-run pending. Synthetic fixtures only.
+- **Next step:** re-read exact-head `test`/`tray-dbus` for the updated head. Python stays default; UG stays **NOT PASSED**.

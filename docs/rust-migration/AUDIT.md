@@ -5452,3 +5452,10 @@ future models must verify the linked PR's status rather than trusting a stale
 - **Next step:** user performs manual steps 1–6 above where wanted; the
   agent then records exact PASS/CAPTURE/PARTIAL/OPEN per row with
   screenshots/JSON evidence and never before observing them.
+### E165 — 2026-11-04: live Wayland start-at-login pass (user-observed runner run)
+
+- **Run:** the user ran `systemd-run --user --scope --unit=app-codexbar-gtk-synthetic-wayland-test.scope python3 scripts/test-native-settings-wayland.py --binary <rust-gtk-target/release/codexbar-gtk-native> --action start-at-login`, approved the `gtk-synthetic-wayland` KDE RemoteDesktop prompt (pointer/keyboard only, nonpersistent), and performed the **Start at login** toggle. The user supplied a window capture showing the Settings General pane with **Start at login ON** (blue) — the only Startup switch on — while **Show the panel on start** stayed OFF.
+- **Isolated evidence read back from the runner scratch home:** `kwin-state.json` shows the synthetic app was active, top-hit, with cursor `[1026, 145]` inside the Settings window geometry `[364, 149, 1000, 740]` (runner's click point, inside the Start-at-login row region). The isolated `settings.json` persisted `launchAtLogin: true` (started `false` from the runner's seed), `showPopupOnStart` unchanged at `false` — the exact E157 mis-target did not recur.
+- **Autostart entry:** isolated `home/.config/autostart/codexbar-gtk.desktop` was created with the native binary as `Exec=` and `X-GNOME-Autostart-enabled=true`, matching the runner's `requires_autostart_entry` verification for the `start-at-login` action.
+- **Limits:** user-performed click on a live session, not the runner's automated pointer path; portal consent was granted for this run only. E151 and E160 remain the only prior portal/manual per-action evidence.
+- **Next step:** record; `hide-personal-info` still awaits a fresh named KDE grant.

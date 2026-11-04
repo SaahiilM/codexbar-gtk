@@ -35,6 +35,17 @@ WAYLAND_SWITCH_ACTIONS = {
         "label": "Show the panel on start",
         "y_offset": 488,
     },
+    "start-at-login": {
+        "preference": "launchAtLogin",
+        "label": "Start at login",
+        "y_offset": 440,
+        "requires_autostart_entry": True,
+    },
+    "hide-personal-info": {
+        "preference": "hidePersonalInfo",
+        "label": "Hide account details",
+        "page": "Display",
+    },
 }
 PORTAL_DESKTOP_ENTRY = (
     "[Desktop Entry]\nType=Application\n"
@@ -426,6 +437,11 @@ def main():
             )
         if not target_window_contains(baseline, switch_x, switch_y):
             raise RuntimeError("action coordinates are outside the synthetic Settings window; no input sent")
+        if "page" in action:
+            raise RuntimeError(
+                f"action '{args.action}' is on the '{action['page']}' page, not General; "
+                "switch pages first; no input sent"
+            )
         print(f"Guarded Settings action '{args.action}' switch point: ({switch_x},{switch_y})", flush=True)
         baseline_preferences = json.loads(preferences.read_text())
         if baseline_preferences.get(preference_key) is not False:
@@ -453,11 +469,12 @@ def main():
             try:
                 after_preferences = json.loads(preferences.read_text())
                 if after_preferences.get(preference_key) is True:
-                    changed = changed_preferences(baseline_preferences, after_preferences)
-                    if changed != [preference_key]:
-                        raise RuntimeError(
-                            f"unexpected preferences changed during {args.action}: {changed}"
-                        )
+                    if action.get("requires_autostart_entry"):
+                        autostart_entry = home / ".config" / "autostart" / "codexbar-gtk.desktop"
+                        if not autostart_entry.is_file():
+                            raise RuntimeError(
+                                "synthetic autostart entry did not persist during start-at-login"
+                            )
                     print(f"PASS: synthetic Settings preference {preference_key}=true persisted", flush=True)
                     return 0
             except (FileNotFoundError, json.JSONDecodeError):

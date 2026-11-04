@@ -4,6 +4,30 @@ Client-side changelog for the CodexBar GTK front-end. Each entry keys a build
 number (`CURRENT_PROJECT_VERSION`) to the upstream macOS CodexBar release its
 short version tracks, so "which version has what" maps cleanly onto both trees.
 
+## 0.82.0 (78) — 2026-11-03
+
+Tracks upstream CodexBar 0.82.0.
+
+### Changed
+
+- Extend the guarded synthetic Wayland Settings runner with a manual-test
+  checklist doc and an allowlisted General action for “Hide personal
+  info”. Live Wayland evidence for the latter is pending a fresh named
+  KDE grant; broader UG remains **NOT PASSED** and Python remains the
+  default.
+
+## 0.82.0 (77) — 2026-11-03
+
+Tracks upstream CodexBar 0.82.0.
+
+### Changed
+
+- Extend the guarded synthetic Wayland Settings runner with an allowlisted
+  General action for “Start at login”, which persists the selected
+  preference and requires the isolated autostart entry alongside it. Live
+  Wayland evidence for this action is pending a fresh named KDE grant;
+  broader UG remains **NOT PASSED** and Python remains the default.
+
 ## 0.82.0 (76) — 2026-11-03
 
 Tracks upstream CodexBar 0.82.0.

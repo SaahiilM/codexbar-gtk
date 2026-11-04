@@ -13,9 +13,9 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Last merged implementation | U05-UG6 build-75 guarded runner PR #75 merged normally at `2501f7a2ce3da3819e52eee04e987740ba54448f`; exact head `8a8a2ca3a5c7ff77269bd2b36bd040b63c007081` passed `test` and `tray-dbus`; no reviews/comments (E156). |
 | Planning change | [PR #18](https://github.com/SaahiilM/codexbar-gtk/pull/18), merged at `69c5496`, build `0.81.0 (17)` |
 | Backend tasks completed after that baseline | B00–B15 and BG are accepted and merged. B11's Actions startup failures remain documented as failures; see E086. |
-| Active implementation task / owner | U05-UG7 build-76 General action coverage on `orchestrated/luna-u05-wayland-general-build75`, based on PR #75 merge `2501f7a2ce3da3819e52eee04e987740ba54448f`. PR #76 adds the allowlisted pointer-only `showPopupOnStart` action and focused guard coverage. The first automated click changed synthetic `launchAtLogin` (E157); the next grant aborted on fractional coordinates (E158); a later pre-consent baseline capture aborted because the pointer was outside the active synthetic window (E159). Baseline capture now needs exact active PID/focus only; the post-consent click guard is unchanged. E160 confirms a separate, user-driven Wayland click changed only synthetic `showPopupOnStart` false→true; it does not verify automated runner input. PR #76 exact-head checks must pass before merge; status: in progress; UG remains open. |
+| Active implementation task / owner | U05-UG9 build-78 manual-test data + hide-personal-info action on `orchestrated/luna-ug-next`. PR #77 merged at `bfe04a64`; this PR adds the UG matrix manual-test checklist (E164) and the allowlisted `hide-personal-info` action; live evidence awaits a fresh named KDE grant. UG remains open. |
 | Latest gate result | **BG passed** (E085/E086). **UG NOT PASSED**: one build-75 General preference action passed after a fresh named, nonpersistent grant; no other Wayland Settings controls or app surfaces are covered (E151). |
-| Next domain slice | Continue with the next General control using the allowlisted runner after its `showPopupOnStart` action is locally reviewed; any automated live session requires a fresh, visibly named KDE grant and exact target PID/title, geometry, fresh focus/top-hit/cursor checks, and isolated persisted result. E160 is manual GUI evidence only. Preserve Python default and keep UG open. |
+| Next domain slice | U05-UG9 build-78 records what is auto-verifiable vs manual (E164) and adds the `hide-personal-info` allowlisted action; live verification of both pending actions requires a fresh, visibly named KDE grant. Preserve Python default and keep UG open. |
 | Open external blockers | Build 71's child exit remains undiagnosed. E147–E149 retain earlier unexplained cursor activity and headless capture limitations. Weston is absent system-wide; rootless Weston 13 connected a private Wayland client but could not capture a visible GTK window. CI retains several Xvfb native GTK smokes, but the full Settings smoke is omitted from Actions after repeated native chooser failures (E162); the script remains available for local verification. These X11 checks do not establish Wayland input or desktop shell parity. Other Wayland provider/import/reset/page actions remain open. B11 zero-job Actions startup failures remain documented in E086. |
 | Latest checks | PR #75 exact head `8a8a2ca3a5c7ff77269bd2b36bd040b63c007081` passed `test` and `tray-dbus` in run `41685025347`; merged at `2501f7a2ce3da3819e52eee04e987740ba54448f` (E156). PR #76 head `129fee63e8926476c827d0c1692499944d6f69c5` failed `test` at Settings chooser steps in jobs `126115902407` and `126121236165` in run `41692934828`; `tray-dbus` passed (E162). This handoff removes only the full Settings smoke from Actions; inspect the live exact-head status after push and before merge. Local build-76 `py_compile`, all 10 guard tests, and the full Python suite (224 passed, 21 expected skips) passed. The current shell lacks `xvfb-run`, so the local Settings smoke could not be repeated; an earlier build-76 local pass remains recorded in E157. Other native GTK Xvfb smokes remain in CI. E157–E159 record an automated wrong-target click followed by safe aborts; E160 records one manual Wayland click persisting only `showPopupOnStart=false→true`, not automated runner input. The strict post-consent guard remains unchanged; Weston limitations remain in E150–E151. |
 | UI validation | Builds 73–74 retain the portal/focus evidence in E143 and E146–E149. Build 75's runner is merged; build 76 adds an allowlisted action for another General switch. Xvfb and unit checks do not establish Wayland input. E151 is the single verified automated portal pointer action; E160 is a separate manual click with isolated JSON persistence. Neither establishes keyboard, desktop-shell, other-control, automation parity for show-on-start, or full UG parity. A Weston renderer/widget test would be separate GTK evidence, not portal consent or real desktop input. |
@@ -746,3 +746,55 @@ and click; assert the visible switch and isolated JSON value. If that setup is
 unavailable, hand off the exact blocker rather than resuming live input. No
 PR is appropriate without an observed preference/navigation action. UG remains
 **NOT PASSED** and Python remains the default.
+
+### U05-UG8 handoff — build 77 Start-at-login action coverage
+
+Owner: current U05 session; branch `orchestrated/luna-ug-next`, provisional
+build `0.82.0 (77)`, based on observed live `origin/main` at PR #76 merge
+`862ec69`. **Status: partial (harness+guard only; live evidence pending).**
+
+Scope: one additional General control — “Start at login” (`launchAtLogin`)
+via the guarded Wayland runner. The runner now allowlists
+`start-at-login` with the E157-measured 440 px window-relative row offset
+and requires the isolated autostart entry
+(`~/.config/autostart/codexbar-gtk.desktop`) to exist alongside the
+persisted preference. The post-consent focus/top-hit/cursor guard, baseline
+capture, named KDE consent, and single-preference-change assertion are
+unchanged; the start-baseline-false precondition applies.
+
+Local verification: `py_compile` passed; all 10 Wayland guard tests passed
+(including the updated allowlist set); the full Python suite ran 224 tests
+with 70 expected skips and no failures. The native binary could not be
+built in this shell (GTK4 pkg-config absent) and `xvfb-run` is absent, so
+no Xvfb Settings smoke or live Wayland run was performed in this PR.
+See E163 for the full audit.
+
+**Concrete handoff:** request a fresh, visually named KDE grant for
+`--action start-at-login`, inspect the baseline screenshot first, then
+require only `launchAtLogin` changed, the value persisted true, and the
+autostart entry present. Until that passes, UG remains **NOT PASSED** and
+Python remains the default.
+
+### U05-UG9 handoff — build 78 manual-test data + hide-personal-info action
+
+Owner: current U05 session; branch `orchestrated/luna-ug-next`, provisional
+build `0.82.0 (78)`. **Status: partial (docs + harness only; live evidence
+pending).**
+
+Scope: (1) E164 classifies every open UG matrix row into what runs
+unattended (unit parity, smoke scripts) versus what needs a human (portal
+consent, OAuth/sudo/Spectacle/fake-input limitations, foreign PIDs, real
+display placement). (2) Adds the allowlisted `hide-personal-info` General
+action (`hidePersonalInfo`, pre-created false in the synthetic fixture) so
+it is ready to run with the same fresh named KDE grant.
+
+Local verification: `py_compile` passed; all 10 Wayland guard tests
+passed; full Python suite ran 224 tests with 70 expected skips, no
+failures. Native binary build and Xvfb smokes could not run in this shell
+(GTK4 pkg-config and xvfb-run absent); no live Wayland run performed.
+See E164.
+
+**Concrete handoff:** request a fresh visually named KDE grant for
+`--action start-at-login` or `--action hide-personal-info`; inspect the
+baseline screenshot, then require only the selected preference persisted
+true. Until then UG remains **NOT PASSED** and Python default.

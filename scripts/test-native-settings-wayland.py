@@ -460,6 +460,25 @@ def main():
             if not guard_target(latest(), app.pid, tab_x, tab_y):
                 raise RuntimeError("final page-tab guard failed; no click sent")
             time.sleep(0.6)
+            # Capture the window after the tab click so the Display page is
+            # visible in the evidence before any toggle is attempted. This
+            # copy survives the finally-block cleanup (unlike the scratch-dir
+            # captures), so the user can verify page navigation took effect.
+            page_check = scratch / "display-page-check.png"
+            page_capture = subprocess.run(
+                ["spectacle", "--background", "--activewindow", "--nonotify",
+                 "--output", str(page_check)],
+                capture_output=True, text=True, timeout=8,
+            )
+            page_kept = pathlib.Path("/tmp/codexbar-display-page-check.png")
+            if page_capture.returncode == 0 and page_check.is_file():
+                try:
+                    page_kept.write_bytes(page_check.read_bytes())
+                    print(f"Display page check kept at {page_kept}; verify the Display page is visible before the toggle.", flush=True)
+                except OSError:
+                    print(f"Display page check captured at {page_check}; verify the Display page before the toggle.", flush=True)
+            else:
+                print("Display page check capture failed; continuing with guarded evidence only.", flush=True)
             baseline = None
             deadline = time.monotonic() + 5
             while time.monotonic() < deadline:

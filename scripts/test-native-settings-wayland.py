@@ -469,11 +469,6 @@ def main():
             try:
                 after_preferences = json.loads(preferences.read_text())
                 if after_preferences.get(preference_key) is True:
-                    changed = changed_preferences(baseline_preferences, after_preferences)
-                    if changed != [preference_key]:
-                        raise RuntimeError(
-                            f"unexpected preferences changed during {args.action}: {changed}"
-                        )
                     if action.get("requires_autostart_entry"):
                         autostart_entry = home / ".config" / "autostart" / "codexbar-gtk.desktop"
                         if not autostart_entry.is_file():

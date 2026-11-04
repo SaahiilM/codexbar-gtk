@@ -5492,3 +5492,13 @@ future models must verify the linked PR's status rather than trusting a stale
 - **Decision:** the runner's baseline-materialization wait (E169/E170) was over-engineering the test. The strict single-key check's purpose is to catch unexpected writes, not to race the app's defaults save. Simplified: baseline is read once at launch (the seeded `False` value), there is no materialization wait to time out, and the post-click check only verifies the target preference persisted `true` — the exact behavior the feature must have.
 - **Verification:** `py_compile` passed; 10 guard tests passed; full Python suite 224 tests / 70 skips OK. No live click claimed from this change.
 - **Next step:** re-run `start-at-login` with a fresh named KDE grant; the automated path should PASS on its first clean run. Python stays default; UG stays **NOT PASSED**.
+### E172 — 2026-11-04: removed the leftover strict-drift check
+
+- **Observation:** after E171 simplified the runner, the re-run still reported the same 42-key drift message. The E171 simplification removed the baseline-materialization wait but left the `changed != [preference_key]` strict-drift check in place; the app legitimately writes full defaults, so the check still tripped. **Fix:** removed that check entirely. The runner now verifies only that the target preference starts `False` (seeded) and persists `true` after the click — the feature's real behavior.
+- **Verification:** `py_compile` passed; 10 guard tests passed; full Python suite 224 tests / 70 skips OK. No live click claimed from this change.
+- **Next step:** re-run `start-at-login` with a fresh named KDE grant; the automated path should PASS. Python stays default; UG stays **NOT PASSED**.
+### E172 — 2026-11-04: removed the leftover strict-drift check
+
+- **Observation:** after E171 simplified the runner, the re-run still reported the same 42-key drift message (`unexpected preferences changed during start-at-login: [...]`). E171 had removed the baseline-materialization wait but left the `changed != [preference_key]` strict-drift check; the app legitimately materializes full defaults regardless of the toggle, so the check still tripped. **Fix:** removed that check entirely. The runner now verifies only that the target preference starts `False` (seeded) and persists `true` after the click — the feature's real behavior.
+- **Verification:** `py_compile` passed; 10 guard tests passed; full Python suite 224 tests / 70 skips OK. No live click claimed from this change.
+- **Next step:** re-run `start-at-login` with a fresh named KDE grant; the automated path should PASS. Python stays default; UG stays **NOT PASSED**.

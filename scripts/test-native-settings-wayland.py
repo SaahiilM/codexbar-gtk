@@ -459,7 +459,22 @@ def main():
                 raise RuntimeError("page-tab hit-test unstable after motion; no click sent")
             if not guard_target(latest(), app.pid, tab_x, tab_y):
                 raise RuntimeError("final page-tab guard failed; no click sent")
-            time.sleep(0.6)
+            # Reactivate the synthetic Settings window again after the tab
+            # click: Spectacle's --activewindow capture takes focus to its
+            # own window and KWin reports the target inactive until
+            # reactivated, even though the tab click already navigated.
+            focus_js_path.write_text(activation_script(app.pid))
+            subprocess.run(["qdbus6", "org.kde.KWin", "/Scripting",
+                            "org.kde.kwin.Scripting.loadScript", str(focus_js_path), focus_plugin],
+                           check=True, capture_output=True, text=True)
+            loaded = subprocess.run(["qdbus6", "org.kde.KWin", "/Scripting",
+                             "org.kde.kwin.Scripting.isScriptLoaded", focus_plugin],
+                            check=True, capture_output=True, text=True).stdout.strip()
+            if loaded != "true":
+                raise RuntimeError("KWin did not load the synthetic Settings focus helper; no input sent")
+            subprocess.run(["qdbus6", "org.kde.KWin", "/Scripting",
+                          "org.kde.kwin.Scripting.start"], check=True, capture_output=True)
+            time.sleep(0.5)
             # Capture the window after the tab click so the Display page is
             # visible in the evidence before any toggle is attempted. This
             # copy survives the finally-block cleanup (unlike the scratch-dir

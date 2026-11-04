@@ -5531,3 +5531,8 @@ future models must verify the linked PR's status rather than trusting a stale
 - **Limits:** no live action-pass claimed. The scratch dir was already cleaned up when the evidence was read back, so the exact compositor state at failure could not be re-inspected.
 - **Decision:** the tab point must be measured from a live baseline capture (the sidebar icons/row centers), not approximated. The `--inspect-only` baseline capture shows exactly where the Display tab is; the runner should use measured coordinates (or `--switch-x/--switch-y` overrides) on the next run.
 - **Next step:** run `--inspect-only` first, read the Display tab's pixel center from the capture, then run the action with `--switch-x/--switch-y` overrides for both the tab and the switch (or fix the runner to measure the tab from the capture). Python stays default; UG stays **NOT PASSED**.
+### E177 — 2026-11-04: inspect-only baseline confirmed; tab point still to be measured
+
+- **Run:** the user ran the runner with `--inspect-only`; it printed `Inspection-only mode; no portal request or input sent.` with the baseline at `/tmp/codexbar-wayland-settings-o3c41ivd/settings-before.png`, then its post-run cleanup removed the scratch dir before the capture could be read back.
+- **Limits:** no live action-pass claimed; the Display tab's pixel center still needs measuring (the capture must survive cleanup, or be read in-session).
+- **Next step:** the user sends the baseline image or its path; the runner is then updated with the measured tab point (or the real run uses `--switch-x/--switch-y` overrides). Python stays default; UG stays **NOT PASSED**.

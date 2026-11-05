@@ -4,6 +4,24 @@ Client-side changelog for the CodexBar GTK front-end. Each entry keys a build
 number (`CURRENT_PROJECT_VERSION`) to the upstream macOS CodexBar release its
 short version tracks, so "which version has what" maps cleanly onto both trees.
 
+## 0.82.0 (85) — 2026-11-05
+
+Tracks upstream CodexBar 0.82.0.
+
+### Changed
+
+- Add the Wayland update-check evidence harness (E185): a guarded
+  `scripts/test-native-update-check-wayland.py` that starts a
+  loopback-only synthetic VERSION server, drives the native Gio
+  `check-updates` action in a debug native binary on Wayland, asserts
+  the synthetic request arrived, and verifies the visible "Update
+  available" state via KWin caption plus a Spectacle capture kept at
+  `/tmp/codexbar-wayland-update-result.png`. It needs no RemoteDesktop
+  portal consent and never contacts a public URL. No live Wayland PASS
+  is claimed yet — the gate row stays OPEN until the harness runs on
+  the intended KDE session. UG remains **NOT PASSED**; Python remains
+  the default.
+
 ## 0.82.0 (81) — 2026-11-05
 
 Tracks upstream CodexBar 0.82.0.

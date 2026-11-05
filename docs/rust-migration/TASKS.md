@@ -9,13 +9,13 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Field | Current checkpoint |
 | --- | --- |
 | Goal | Fully native Rust GTK4/libadwaita app; backend first, UI second |
-| Current phase | BG passed; U01–U08 implementation PRs are merged. U05 evidence PR #74 merged at `87467ce5eec475f153466c6f87866d22c723a09a` (E145). Build-75 guarded runner PR #75 merged at `2501f7a2ce3da3819e52eee04e987740ba54448f`; its exact head passed both required checks (E156). Build-76 action PR #76 merged at `862ec69`. PR #77 (start-at-login guard, build 78) merged at `a40b143`; PR #78 (Display-page navigation, build 79) merged at `bd4146f` with both checks green (run 41887138543). Post-merge follow-ups on `orchestrated/luna-ug-postmerge` (build 80): page-check capture + reactivation + E181 retraction + E183 manual-navigation PASS. UG remains **NOT PASSED**: E151 is one verified portal-driven control; E160 adds one user-driven Wayland General control; E173/E183 add automated-start-at-login and manual-navigation hide-personal-info passes. |
-| Last merged implementation | U05-UG9 Display-navigation PR #78 merged at `bd4146f84331d8100b6469e2756` (build 79); exact head `b403670` passed `test` and `tray-dbus` in run `41887138543` (E175). |
+| Current phase | BG passed; U01–U08 implementation PRs are merged. U05 evidence PR #74 merged at `87467ce5eec475f153466c6f87866d22c723a09a` (E145). Build-75 guarded runner PR #75 merged at `2501f7a2ce3da3819e52eee04e987740ba54448f`; its exact head passed both required checks (E156). Build-76 action PR #76 merged at `862ec69`. PR #77 (start-at-login guard, build 78) merged at `a40b143`; PR #78 (Display-page navigation, build 79) merged at `bd4146f` with both checks green (run 41887138543). Post-merge follow-ups on `orchestrated/luna-ug-postmerge` (build 80): page-check capture + reactivation + E181 retraction + E183 manual-navigation PASS. Build-81 automated Display-tab fix (E184) on `orchestrated/luna-ug-auto-tab` (PR #80, merged). Build-85 Wayland update-check harness (E185) on `orchestrated/luna-ug-update-check` (this PR; live Wayland PASS still pending). UG remains **NOT PASSED**: E151 is one verified portal-driven control; E160 adds one user-driven Wayland General control; E173/E183 add automated-start-at-login and manual-navigation hide-personal-info passes. |
+| Last merged implementation | U05-UG10 automated Display-tab fix PR #80 merged at `7df9845effe59a3d5cf2b883986346cb4992893f` (build 81); see E184. |
 | Planning change | [PR #18](https://github.com/SaahiilM/codexbar-gtk/pull/18), merged at `69c5496`, build `0.81.0 (17)` |
 | Backend tasks completed after that baseline | B00–B15 and BG are accepted and merged. B11's Actions startup failures remain documented as failures; see E086. |
-| Active implementation task / owner | U05-UG-postmerge build-80 on `orchestrated/luna-ug-postmerge`: E182 page-check/reactivation + E181 retraction + E183 verified `hide-personal-info` PASS (manual Display navigation). Next UG slice: automated tab navigation fix or the next Wayland-open row (Providers / Menu Bar / Notifications). UG remains open. |
-| Latest gate result | **BG passed** (E085/E086). **UG NOT PASSED**: build-75 General, start-at-login (E173) and hide-personal-info (E183) verified; remaining Wayland rows (Providers, Menu Bar, Display remaining, Notifications, Usage & Spend, Hooks, Plugins, Advanced, About, update-check, cross-surface actions) OPEN per UG_GATE. |
-| Next domain slice | U05-UG-next: either (a) fix automated Display-tab navigation so `hide-personal-info` is fully automated, or (b) next open Wayland row. Preserve Python default and keep UG open. |
+| Active implementation task / owner | U05-UG update-check build-85 on `orchestrated/luna-ug-update-check` (this PR): E185 harness + tests + version/docs. Live Wayland PASS pending. Sibling slices #81/#82/#83 (Menu Bar/Notifications/Spend) are independent and untouched. UG remains NOT PASSED. |
+| Latest gate result | **BG passed** (E085/E086). **UG NOT PASSED**: build-75 General, start-at-login (E173) and hide-personal-info (E183) verified; remaining Wayland rows (Providers, Menu Bar, Display remaining, Notifications, Usage & Spend, Hooks, Plugins, Advanced, About, update-check, cross-surface actions) OPEN per UG_GATE. Update-check: harness built (E185); row stays OPEN until live Wayland evidence. |
+| Next domain slice | Live-run the build-85 update-check harness on the intended KDE session (`--binary` = debug native build from this head); require `PASS: update-check action reached loopback server…` + `/tmp/codexbar-wayland-update-result.png` before claiming the row PASS. Automated Display-tab verification (E184) also still pending a fresh named KDE grant. Preserve Python default and keep UG open. |
 | Open external blockers | Build 71's child exit remains undiagnosed. E147–E149 retain earlier unexplained cursor activity and headless capture limitations. Weston is absent system-wide; rootless Weston 13 connected a private Wayland client but could not capture a visible GTK window. CI retains several Xvfb native GTK smokes, but the full Settings smoke is omitted from Actions after repeated native chooser failures (E162); the script remains available for local verification. These X11 checks do not establish Wayland input or desktop shell parity. Other Wayland provider/import/reset/page actions remain open. B11 zero-job Actions startup failures remain documented in E086. |
 | Latest checks | PR #75 exact head `8a8a2ca3a5c7ff77269bd2b36bd040b63c007081` passed `test` and `tray-dbus` in run `41685025347`; merged at `2501f7a2ce3da3819e52eee04e987740ba54448f` (E156). PR #76 head `129fee63e8926476c827d0c1692499944d6f69c5` failed `test` at Settings chooser steps in jobs `126115902407` and `126121236165` in run `41692934828`; `tray-dbus` passed (E162). This handoff removes only the full Settings smoke from Actions; inspect the live exact-head status after push and before merge. Local build-76 `py_compile`, all 10 guard tests, and the full Python suite (224 passed, 21 expected skips) passed. The current shell lacks `xvfb-run`, so the local Settings smoke could not be repeated; an earlier build-76 local pass remains recorded in E157. Other native GTK Xvfb smokes remain in CI. E157–E159 record an automated wrong-target click followed by safe aborts; E160 records one manual Wayland click persisting only `showPopupOnStart=false→true`, not automated runner input. The strict post-consent guard remains unchanged; Weston limitations remain in E150–E151. |
 | UI validation | Builds 73–74 retain the portal/focus evidence in E143 and E146–E149. Build 75's runner is merged; build 76 adds an allowlisted action for another General switch. Xvfb and unit checks do not establish Wayland input. E151 is the single verified automated portal pointer action; E160 is a separate manual click with isolated JSON persistence. Neither establishes keyboard, desktop-shell, other-control, automation parity for show-on-start, or full UG parity. A Weston renderer/widget test would be separate GTK evidence, not portal consent or real desktop input. |
@@ -832,4 +832,55 @@ terminal `PASS … hidePersonalInfo=true persisted` + persisted
 `/tmp/codexbar-display-page-check.png` before claiming automated navigation
 works. If the corrected click still does not navigate, capture the page-check
 PNG + KWin state and reopen (b)/(d) with evidence. Until then UG remains
+**NOT PASSED** and Python default. PR #80 merged at `7df9845`.
+
+### U05-UG11 handoff — build 85 update-check Wayland harness (E185)
+
+Owner: current U05 session; branch `orchestrated/luna-ug-update-check`,
+build `0.82.0 (85)`, based on `origin/main` at `7df9845` (PR #80 merge).
+**Status: partial (harness + unit tests + version/docs only; live
+Wayland evidence pending).**
+
+Scope: the update-check row of UG_GATE. The Xvfb path (build-67
+`smoke-native-settings.sh` update section) fires the Gio
+`check-updates` action against a `127.0.0.1` synthetic VERSION server
+whose marker is repo build + 1, asserts the request file, and checks
+the visible "Update available" dialog via xdotool. This slice ports
+that pattern to Wayland: `scripts/test-native-update-check-wayland.py`
+starts an in-process loopback-only `ThreadingHTTPServer` (127.0.0.1,
+ephemeral port, synthetic VERSION body = repo `VERSION` with build
++ 1), launches the native debug binary with isolated
+HOME/config/cache and a fake CLI plus
+`CODEXBAR_NATIVE_TEST_UPDATE_URL=http://127.0.0.1:PORT/VERSION`
+(the override is debug-only in `rust-gtk/src/main.rs` behind
+`is_loopback_update_url`), fires
+`gapplication action com.steipete.CodexBarGTK check-updates`,
+asserts `GET /VERSION` reached the server, asserts KWin reports the
+exact-PID window caption "Update available", and captures it via
+Spectacle to `/tmp/codexbar-wayland-update-result.png`. It needs no
+RemoteDesktop portal consent, so the legacy
+`app-codexbar-gtk-synthetic-wayland-test.scope` (which the T3
+orchestration cgroup never has) does not apply; the harness refuses
+the portal scope and the T3 agents scope. No pointer/keyboard input
+is sent. No public network request is possible: the server binds
+127.0.0.1 and the URL predicate is unit-tested against the native
+one. Sibling slices (tab navigation, Notifications, Menu Bar, Spend)
+are untouched.
+
+Local verification: `py_compile` OK; new harness guard tests 7/7;
+existing Wayland guard tests 12/12; full Python suite 233 tests /
+70 skipped (226/70 pre-change → +7 new tests). No Rust source changed,
+so no cargo build was needed for this slice; no live Wayland run was
+performed (this session is not inside an interactive desktop session
+with the app id free and a debug binary — a live run needs an operator
+on the intended KDE session). See E185.
+
+**Concrete handoff:** on the intended KDE session rebuild the debug
+native binary from this head, then run
+`python3 scripts/test-native-update-check-wayland.py --binary "$PWD/rust-gtk/target/debug/codexbar-gtk-native"`
+and require terminal
+`PASS: update-check action reached loopback server; visible Update available state verified`
+plus the kept `/tmp/codexbar-wayland-update-result.png` showing the
+"Update available" dialog plus an unowned app id after quit, before
+claiming the UG update-check row PASS. Until then UG remains
 **NOT PASSED** and Python default.

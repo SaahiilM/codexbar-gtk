@@ -49,6 +49,17 @@ WAYLAND_SWITCH_ACTIONS = {
         "switch_x_fraction": 0.90,
     },
 }
+PAGE_TAB_FRACTIONS = {"Display": (0.325, 0.968)}
+"""Window-relative bottom-tab-bar centers, pixel-measured from the kept
+baseline/page-check captures (window image offset (61,55) == target_geometry).
+
+The Display pill spans window px x 283..367, y 697..736 of a 1000x740
+window, so its center is (325, 717) = (0.325, 0.968). The earlier estimate
+(0.34, 0.94) landed 1 px above the pill top edge (window y 696 vs pill
+top 697) on the tab-bar container, which AdwTabBar ignores -- the
+hypothesis-(a)/(d) root cause (E184). Asserted by
+tests/test_wayland_smoke_guard.py::test_display_tab_point_hits_measured_pill.
+"""
 PORTAL_DESKTOP_ENTRY = (
     "[Desktop Entry]\nType=Application\n"
     "Name=CodexBar GTK synthetic Wayland test\n"
@@ -104,6 +115,218 @@ def switch_point_from_geometry(geometry, y_fraction=0.40, y_offset=None, x_fract
             raise ValueError("General switch row offset is outside the Settings window")
         local_y = y_offset
     return round(gx + width * x_fraction), round(gy + local_y)
+
+
+def page_tab_point_from_geometry(geometry, page):
+    """Choose a measured bottom-tab-bar point from window geometry.
+
+    Fail-closed: unknown pages, missing/invalid geometry raise instead
+    of clicking an estimated point (cf. E176's coarse sidebar point).
+    """
+    if page not in PAGE_TAB_FRACTIONS:
+        raise ValueError(f"page {page!r} has no measured tab point")
+    if not isinstance(geometry, list) or len(geometry) != 4:
+        raise ValueError("Settings window geometry is unavailable")
+    gx, gy, width, height = geometry
+    if width <= 0 or height <= 0:
+        raise ValueError("Settings window geometry is invalid")
+    x_fraction, y_fraction = PAGE_TAB_FRACTIONS[page]
+    return round(gx + width * x_fraction), round(gy + height * y_fraction)
+
+
+def page_verified_from_capture(image_path, geometry):
+    """Return True iff the captured PNG proves the Display page is shown.
+
+    Two probes, either suffices to say Display, and neither fires on the
+    General baseline (both verified against the two kept captures):
+
+    1. Pill: the Display tab pill is the selected (brighter, bg 57 vs bar
+       36) tab. Sampled at window-relative (0.305, 0.969) -- the pill's
+       left-of-icon background, away from the glyph -- vs the General
+       tab (0.099, 0.969). Display selected: 57 vs 36 (gap +21); General
+       selected: 36 vs 57 (gap -21). Single-pixel values are noise-free
+       here (solid fills), so no averaging window is applied.
+    2. Switch pair: on the Display page "Show pace indicators" is ON
+       (white thumb 255) while "Hide account details" is OFF (bar 36);
+       on General the same two thumb-column positions read OFF/ON. The
+       signed gap (pace - hide) is +219 on Display, -182 on General.
+
+    Undecodable, wrongly-sized or ambiguous images fail closed (False),
+    so a non-Display page never reaches the toggle click. Needs only the
+    PNG decoder below (stdlib fallback when PIL is absent).
+    """
+    try:
+        pixels, width, height = decode_png_rgb(image_path)
+    except (OSError, ValueError):
+        return False
+    window = locate_window(pixels, width, height)
+    if not window:
+        return False
+    gx, gy, geometry_w, geometry_h = window_geometry(
+        pixels, width, height, window
+    )
+    if geometry_w <= 0 or geometry_h <= 0:
+        return False
+
+    def pixel(rel_x, rel_y):
+        px = int(round(gx + geometry_w * rel_x))
+        py = int(round(gy + geometry_h * rel_y))
+        return pixels[py * width + px]
+
+    def luminance(rel_x, rel_y):
+        red, green, blue = pixel(rel_x, rel_y)
+        return (red + green + blue) // 3
+
+    pace = luminance(0.761, 0.195)
+    hide = luminance(0.761, 0.426)
+    display_pill = luminance(0.305, 0.969)
+    general_pill = luminance(0.099, 0.969)
+    _ = geometry
+    signed_gap = pace - hide
+    pill_gap = display_pill - general_pill
+    if signed_gap > 40:
+        return True
+    return pill_gap >= 15 and signed_gap > -40
+
+
+def decode_png_rgb(path):
+    """Decode a Spectacle PNG to (pixels, width, height) with PIL if
+    importable, else a minimal stdlib decoder. Raises on failure -- the
+    caller in page_verified_from_capture converts that to False.
+    """
+    try:
+        from PIL import Image
+
+        image = Image.open(path).convert("RGB")
+        return list(image.getdata()), image.width, image.height
+    except ImportError:
+        return decode_png_rgb_stdlib(path)
+
+
+def decode_png_rgb_stdlib(path):
+    """Minimal truecolor/RGBA PNG decoder (stdlib only, fail-closed).
+
+    Handles the 8-bit, non-interlaced PNGs Spectacle emits (color types
+    2/6, bit depth 8). Anything else raises -- page_verified_from_capture
+    treats that as unverified, so an exotic capture never clicks.
+    """
+    import struct
+    import zlib
+
+    data = pathlib.Path(path).read_bytes()
+    if data[:8] != b"\x89PNG\r\n\x1a\n":
+        raise ValueError("not a PNG")
+    offset = 8
+    idat = b""
+    width = height = bit_depth = color_type = None
+    while offset < len(data):
+        (length,) = struct.unpack(">I", data[offset:offset + 4])
+        chunk_type = data[offset + 4:offset + 8]
+        chunk = data[offset + 8:offset + 8 + length]
+        if chunk_type == b"IHDR":
+            width, height, bit_depth, color_type = struct.unpack(
+                ">IIBB", chunk[:10]
+            )
+        elif chunk_type == b"IDAT":
+            idat += chunk
+        elif chunk_type == b"IEND":
+            break
+        offset += 12 + length
+    if width is None or bit_depth != 8 or color_type not in (2, 6):
+        raise ValueError(f"unsupported PNG depth/type: {bit_depth}/{color_type}")
+    channels = 3 if color_type == 2 else 4
+    raw = zlib.decompress(idat)
+    stride = width * channels
+    pixels = []
+    previous = bytearray(stride)
+    position = 0
+    for _y in range(height):
+        filter_type = raw[position]
+        position += 1
+        line = bytearray(raw[position:position + stride])
+        position += stride
+        if filter_type == 1:
+            for i in range(channels, stride):
+                line[i] = (line[i] + line[i - channels]) & 0xFF
+        elif filter_type == 2:
+            for i in range(stride):
+                line[i] = (line[i] + previous[i]) & 0xFF
+        elif filter_type == 3:
+            for i in range(stride):
+                left = line[i - channels] if i >= channels else 0
+                line[i] = (line[i] + ((left + previous[i]) >> 1)) & 0xFF
+        elif filter_type == 4:
+            for i in range(stride):
+                a = line[i - channels] if i >= channels else 0
+                b = previous[i]
+                c = previous[i - channels] if i >= channels else 0
+                predictor = a + b - c
+                pa, pb, pc = abs(predictor - a), abs(predictor - b), abs(predictor - c)
+                best = a if pa <= pb and pa <= pc else (b if pb <= pc else c)
+                line[i] = (line[i] + best) & 0xFF
+        elif filter_type != 0:
+            raise ValueError(f"unsupported PNG filter {filter_type}")
+        for x in range(width):
+            base = x * channels
+            pixels.append((line[base], line[base + 1], line[base + 2]))
+        previous = line
+    return pixels, width, height
+
+
+def locate_window(pixels, width, height):
+    """Locate the Settings window's image-space top-left, or None.
+
+    Spectacle's --activewindow PNG is 1:1 with the KWin window plus a
+    small margin; the dark card edge is the outermost non-shadow block.
+    Returns the top-left of the brightest large block -- sufficient for
+    window-relative sampling because every probe below is relative to
+    this origin and window size is taken from the block extent.
+    """
+    brightness = [sum(p) // 3 for p in pixels]
+    threshold = 24
+    inside = [b > threshold for b in brightness]
+    top = left = None
+    for row in range(height):
+        if any(inside[row * width:(row + 1) * width]):
+            top = row
+            break
+    if top is None:
+        return None
+    for col in range(width):
+        if any(inside[row * width + col] for row in range(top, height)):
+            left = col
+            break
+    if left is None:
+        return None
+    bottom = max(
+        (row for row in range(top, height)
+         if any(inside[row * width:(row + 1) * width])),
+        default=top,
+    )
+    right = max(
+        (col for col in range(left, width)
+         if any(inside[row * width + col] for row in range(top, bottom + 1))),
+        default=left,
+    )
+    if right - left < 100 or bottom - top < 100:
+        return None
+    return left, top
+
+
+def window_geometry(pixels, width, height, window):
+    """Window-relative box: re-derive extents at the located origin."""
+    left, top = window
+    brightness = [sum(p) // 3 for p in pixels]
+    inside = [b > 24 for b in brightness]
+    bottom = top
+    for row in range(top, height):
+        if any(inside[row * width:(row + 1) * width]):
+            bottom = row
+    right = left
+    for col in range(left, width):
+        if any(inside[row * width + col] for row in range(top, bottom + 1)):
+            right = col
+    return left, top, right - left + 1, bottom - top + 1
 
 
 def activation_script(expected_pid):
@@ -446,9 +669,12 @@ def main():
         if baseline is None:
             raise RuntimeError("Settings did not regain stable focus after portal consent; no input sent")
         if "page" in action:
-            gx, gy, width, height = baseline.get("target_geometry")
-            tab_x = round(gx + width * 0.34)
-            tab_y = round(gy + height * 0.94)
+            geometry = baseline.get("target_geometry")
+            if not isinstance(geometry, list) or len(geometry) != 4:
+                raise RuntimeError("Settings window geometry unavailable for page navigation; no click sent")
+            tab_x, tab_y = page_tab_point_from_geometry(geometry, action["page"])
+            if not target_window_contains(baseline, tab_x, tab_y):
+                raise RuntimeError("page-tab point outside Settings window; no click sent")
             guarded_click(portal, app.pid, latest, tab_x, tab_y)
             deadline = time.monotonic() + 2
             while time.monotonic() < deadline:
@@ -494,6 +720,10 @@ def main():
                     print(f"Display page check captured at {page_check}; verify the Display page before the toggle.", flush=True)
             else:
                 print("Display page check capture failed; continuing with guarded evidence only.", flush=True)
+            if not page_verified_from_capture(page_check, baseline.get("target_geometry")):
+                raise RuntimeError(
+                    "Display page not verified by screenshot (OCR/filename-check); refusing toggle click"
+                )
             baseline = None
             deadline = time.monotonic() + 5
             while time.monotonic() < deadline:

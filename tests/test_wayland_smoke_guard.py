@@ -97,6 +97,33 @@ class WaylandGuardTests(unittest.TestCase):
             ["showPopupOnStart"],
         )
 
+    def test_display_tab_point_hits_measured_pill(self):
+        """E184: the old (0.34, 0.94) estimate landed 1 px above the pill."""
+        geometry = [364, 149, 1000, 740]
+        point = MODULE.page_tab_point_from_geometry(geometry, "Display")
+        # Display pill spans window px x 283..367, y 697..736; absolute
+        # rect x 647..731, y 846..885; centre (689, 866); old estimate
+        # (704, 845) is 1 px above the pill top edge 846.
+        self.assertEqual(point, (689, 865))
+        self.assertTrue(647 <= point[0] <= 731)
+        self.assertTrue(846 <= point[1] <= 885)
+        state = self.snapshot(target_geometry=geometry)
+        self.assertTrue(MODULE.target_window_contains(state, *point))
+        old_point = (704, 845)
+        self.assertFalse(846 <= old_point[1] <= 885)
+        with self.assertRaises(ValueError):
+            MODULE.page_tab_point_from_geometry(geometry, "Nope")
+        with self.assertRaises(ValueError):
+            MODULE.page_tab_point_from_geometry(None, "Display")
+
+    def test_page_verification_fails_closed_without_evidence(self):
+        self.assertFalse(
+            MODULE.page_verified_from_capture(
+                "/tmp/does-not-exist-wayland-evidence.png", [364, 149, 1000, 740]
+            )
+        )
+
+
     def test_focus_recovery_targets_only_the_synthetic_settings_window(self):
         script = MODULE.activation_script(4242)
         self.assertIn("TARGET_PID=4242", script)

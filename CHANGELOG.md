@@ -4,6 +4,21 @@ Client-side changelog for the CodexBar GTK front-end. Each entry keys a build
 number (`CURRENT_PROJECT_VERSION`) to the upstream macOS CodexBar release its
 short version tracks, so "which version has what" maps cleanly onto both trees.
 
+## 0.82.0 (80) — 2026-11-05
+
+Tracks upstream CodexBar 0.82.0.
+
+### Changed
+
+- Post-merge follow-ups from the Display-navigation slice (PR #78 merged at
+  build 79): the Wayland runner now reactivates the Settings window after the
+  post-tab-click page check (Spectacle's `--activewindow` capture steals focus,
+  E182/E183) and captures `/tmp/codexbar-display-page-check.png` to evidence
+  Display-page navigation. `hide-personal-info` now has a verified PASS
+  (E183, manual Display navigation + runner switch click; persisted
+  `hidePersonalInfo: true`) and the incorrect E181 PASS claim is retracted.
+  Broader UG remains **NOT PASSED** and Python remains the default.
+
 ## 0.82.0 (78) — 2026-11-03
 
 Tracks upstream CodexBar 0.82.0.

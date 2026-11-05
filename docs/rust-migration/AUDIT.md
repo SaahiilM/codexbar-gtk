@@ -5605,3 +5605,33 @@ future models must verify the linked PR's status rather than trusting a stale
 - **Verification:** `python3 -m py_compile scripts/test-native-settings-wayland.py` passed; `python3 -m unittest discover -s tests` → 227 ran, OK (skipped=70; +3 new guard tests over the 224-test baseline). No Rust changed, so no `cargo build` was run. No live Wayland run was performed in this worktree.
 - **UG status:** Notifications row updated in `UG_GATE.md` to "harness built (NOT PASSED — live evidence pending)". Python remains the default; UG stays **NOT PASSED**.
 - **Next step:** run the guarded runner on the intended KDE Wayland host — first `--inspect-only` to calibrate row/tab coordinates, then a fresh named grant per action (switches persist false→true; test-notification delivers to the synthetic service).
+
+### E184-menubar — 2026-11-05: Menu Bar show-tray-icon harness (build 83) [rebase of PR #81 onto build 85; disambiguated from E184-auto-tab/E184-notifications]
+
+- **Source map (settings_window.rs, Menu Bar page, group "Tray icon"):** the four
+  Xvfb-verified controls map to `menuBarIconStyle` (combo: meter / iconPercent),
+  `unifiedIconSource` (combo: automatic / highest / first), `switcherRowsOption`
+  (combo: progress / details), and `showTray` (switch "Show the tray icon").
+  Only `showTray` is a safe guarded click; the three combos need dropdown
+  selection and remain manual — documented in the runner, not faked.
+- **Changes:** `scripts/test-native-settings-wayland.py` allowlists
+  `show-tray-icon` (`showTray`, Menu Bar page, y_offset 320 estimated from the
+  Xvfb Menu Bar capture, switch-x fraction 0.90). The runner seeds `false` and
+  clicks to `true` like every other action (`showTray` defaults `true` in
+  `prefs.py`, so without the seed the toggle direction would be ambiguous).
+  The runner's automated bottom-tab click applies via the action's
+  per-action tab estimate (build-82 pattern; Display keeps its measured
+  PAGE_TAB_FRACTIONS point and fail-closed screenshot gate). The
+  post-click page-check capture is the page evidence. The
+  y_offset must be live-measured via `--inspect-only`; use
+  `--switch-x/--switch-y` overrides if the estimate is off. Guard tests extended
+  (allowlist set + Menu Bar mapping + coords-inside-window). Rebased onto main build 85 (PR #81's build-83 entry kept;
+  version metadata stays at build 85). `UG_GATE.md` Menu Bar row updated: harness-built, NOT PASSED until live
+  evidence. No tab-navigation, Notifications, or other-page code touched.
+- **Verification:** `py_compile` passed; 11 Wayland guard tests passed; full
+  Python suite 225 tests / 70 skips OK. No live click claimed from this change.
+  Synthetic fixtures only.
+- **Limits / next step:** live evidence needs a fresh named KDE grant for
+  `--action show-tray-icon` (manually select Menu Bar first, inspect the
+  baseline, require only `showTray` persisted true). Python stays default; UG
+  stays **NOT PASSED**.

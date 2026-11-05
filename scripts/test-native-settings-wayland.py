@@ -98,6 +98,30 @@ WAYLAND_SWITCH_ACTIONS = {
         "kind": "button",
         "requires_notification_delivery": True,
     },
+    # Menu Bar page (settings_window.rs: Menu Bar group "Tray icon"):
+    #   Icon style        -> combo menuBarIconStyle   (meter / iconPercent)
+    #   Icon shows        -> combo unifiedIconSource  (automatic / highest / first)
+    #   Provider rows     -> combo switcherRowsOption (progress / details)
+    #   Show the tray icon -> switch showTray
+    # Only the switch is a safe guarded click; combos need dropdown selection
+    # and remain manual. showTray defaults to true in prefs.py, so the runner
+    # seeds false and clicks to true (same direction as every other action).
+    # NOTE: Menu Bar has no pixel-measured tab point yet, so (build-82
+    # pattern) the action carries a per-action tab estimate below and the
+    # runner's automated bottom-tab click applies; the post-click
+    # page-check capture is the page evidence. The y_offset (4th row of
+    # the Tray icon group, estimated from the Xvfb Menu Bar capture)
+    # must be live-measured via --inspect-only; use --switch-x/--switch-y
+    # overrides if the estimate is off.
+    "show-tray-icon": {
+        "preference": "showTray",
+        "label": "Show the tray icon",
+        "page": "Menu Bar",
+        "page_check": "/tmp/codexbar-menu-bar-page-check.png",
+        "tab_x_fraction": 0.29,
+        "y_offset": 320,
+        "switch_x_fraction": 0.90,
+    },
 }
 PAGE_TAB_FRACTIONS = {"Display": (0.325, 0.968)}
 """Window-relative bottom-tab-bar centers, pixel-measured from the kept
@@ -574,7 +598,10 @@ def main():
     parser.add_argument("--binary", type=pathlib.Path, required=True)
     parser.add_argument("--action", choices=tuple(WAYLAND_SWITCH_ACTIONS),
                         default="refresh-when-panel-opens",
-                        help="allowlisted General switch action to exercise")
+                        help="allowlisted switch action to exercise; hide-personal-info "
+                             "and show-tray-icon live on Display/Menu Bar pages "
+                             "(select the tab manually before approving; only "
+                             "Display tab navigation is automated)")
     parser.add_argument("--inspect-only", action="store_true",
                         help="capture the synthetic Settings window and exit without requesting portal access")
     parser.add_argument("--switch-x", type=int, help="override the geometry-derived KWin X coordinate")

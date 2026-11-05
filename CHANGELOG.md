@@ -57,6 +57,22 @@ Tracks upstream CodexBar 0.82.0.
   awaiting a fresh named KDE grant. Broader UG remains **NOT PASSED** and
   Python remains the default.
 
+## 0.82.0 (83) — 2026-11-05
+
+Tracks upstream CodexBar 0.82.0.
+
+### Changed
+
+- Extend the guarded synthetic Wayland Settings runner with an allowlisted
+  Menu Bar switch action for “Show the tray icon” (`showTray`). The Menu Bar
+  page's other three controls are combos (`menuBarIconStyle`,
+  `unifiedIconSource`, `switcherRowsOption`) documented as manual-only —
+  dropdown selection has no safe synthetic path and is not faked. The action
+  uses the same fail-closed guard + persisted-JSON check as the General/
+  Display switches; live Wayland evidence is pending a fresh named KDE
+  grant (manual Menu Bar tab selection before approval). Broader UG remains
+  **NOT PASSED** and Python remains the default.
+
 ## 0.82.0 (80) — 2026-11-05
 
 Tracks upstream CodexBar 0.82.0.

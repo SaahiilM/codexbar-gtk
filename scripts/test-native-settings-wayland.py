@@ -46,6 +46,7 @@ WAYLAND_SWITCH_ACTIONS = {
         "label": "Hide account details",
         "page": "Display",
         "y_offset": 320,
+        "switch_x_fraction": 0.90,
     },
 }
 PORTAL_DESKTOP_ENTRY = (
@@ -87,7 +88,7 @@ def changed_preferences(before, after):
     return sorted(key for key in set(before) | set(after) if before.get(key) != after.get(key))
 
 
-def switch_point_from_geometry(geometry, y_fraction=0.40, y_offset=None):
+def switch_point_from_geometry(geometry, y_fraction=0.40, y_offset=None, x_fraction=0.50):
     """Choose a measured General switch row from its window-relative Y point."""
     if not isinstance(geometry, list) or len(geometry) != 4:
         raise ValueError("Settings window geometry is unavailable")
@@ -102,7 +103,7 @@ def switch_point_from_geometry(geometry, y_fraction=0.40, y_offset=None):
         if not isinstance(y_offset, int) or not 0 <= y_offset < height:
             raise ValueError("General switch row offset is outside the Settings window")
         local_y = y_offset
-    return round(gx + width * 0.50), round(gy + local_y)
+    return round(gx + width * x_fraction), round(gy + local_y)
 
 
 def activation_script(expected_pid):
@@ -446,8 +447,8 @@ def main():
             raise RuntimeError("Settings did not regain stable focus after portal consent; no input sent")
         if "page" in action:
             gx, gy, width, height = baseline.get("target_geometry")
-            tab_x = round(gx + width * 0.05)
-            tab_y = round(gy + height * 0.42)
+            tab_x = round(gx + width * 0.34)
+            tab_y = round(gy + height * 0.94)
             guarded_click(portal, app.pid, latest, tab_x, tab_y)
             deadline = time.monotonic() + 2
             while time.monotonic() < deadline:
@@ -458,7 +459,41 @@ def main():
                 raise RuntimeError("page-tab hit-test unstable after motion; no click sent")
             if not guard_target(latest(), app.pid, tab_x, tab_y):
                 raise RuntimeError("final page-tab guard failed; no click sent")
-            time.sleep(0.6)
+            # Reactivate the synthetic Settings window again after the tab
+            # click: Spectacle's --activewindow capture takes focus to its
+            # own window and KWin reports the target inactive until
+            # reactivated, even though the tab click already navigated.
+            focus_js_path.write_text(activation_script(app.pid))
+            subprocess.run(["qdbus6", "org.kde.KWin", "/Scripting",
+                            "org.kde.kwin.Scripting.loadScript", str(focus_js_path), focus_plugin],
+                           check=True, capture_output=True, text=True)
+            loaded = subprocess.run(["qdbus6", "org.kde.KWin", "/Scripting",
+                             "org.kde.kwin.Scripting.isScriptLoaded", focus_plugin],
+                            check=True, capture_output=True, text=True).stdout.strip()
+            if loaded != "true":
+                raise RuntimeError("KWin did not load the synthetic Settings focus helper; no input sent")
+            subprocess.run(["qdbus6", "org.kde.KWin", "/Scripting",
+                          "org.kde.kwin.Scripting.start"], check=True, capture_output=True)
+            time.sleep(0.5)
+            # Capture the window after the tab click so the Display page is
+            # visible in the evidence before any toggle is attempted. This
+            # copy survives the finally-block cleanup (unlike the scratch-dir
+            # captures), so the user can verify page navigation took effect.
+            page_check = scratch / "display-page-check.png"
+            page_capture = subprocess.run(
+                ["spectacle", "--background", "--activewindow", "--nonotify",
+                 "--output", str(page_check)],
+                capture_output=True, text=True, timeout=8,
+            )
+            page_kept = pathlib.Path("/tmp/codexbar-display-page-check.png")
+            if page_capture.returncode == 0 and page_check.is_file():
+                try:
+                    page_kept.write_bytes(page_check.read_bytes())
+                    print(f"Display page check kept at {page_kept}; verify the Display page is visible before the toggle.", flush=True)
+                except OSError:
+                    print(f"Display page check captured at {page_check}; verify the Display page before the toggle.", flush=True)
+            else:
+                print("Display page check capture failed; continuing with guarded evidence only.", flush=True)
             baseline = None
             deadline = time.monotonic() + 5
             while time.monotonic() < deadline:
@@ -477,7 +512,8 @@ def main():
             switch_x, switch_y = args.switch_x, args.switch_y
         else:
             point_options = (
-                {"y_offset": action["y_offset"]}
+                {"y_offset": action["y_offset"],
+                 "x_fraction": action.get("switch_x_fraction", 0.50)}
                 if "y_offset" in action
                 else {"y_fraction": action["y_fraction"]}
             )
@@ -594,6 +630,13 @@ def main():
             except OSError:
                 pass
         if os.environ.get("KEEP_WAYLAND_TEST_TMP") == "1":
+            if settings_capture.is_file():
+                kept = pathlib.Path("/tmp/codexbar-display-baseline.png")
+                try:
+                    kept.write_bytes(settings_capture.read_bytes())
+                    print(f"Baseline capture kept at {kept}", file=sys.stderr, flush=True)
+                except OSError:
+                    pass
             print(f"Synthetic test diagnostics kept at {scratch}", file=sys.stderr, flush=True)
         else:
             shutil.rmtree(scratch, ignore_errors=True)

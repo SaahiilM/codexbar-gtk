@@ -4,6 +4,23 @@ Client-side changelog for the CodexBar GTK front-end. Each entry keys a build
 number (`CURRENT_PROJECT_VERSION`) to the upstream macOS CodexBar release its
 short version tracks, so "which version has what" maps cleanly onto both trees.
 
+## 0.82.0 (81) — 2026-11-05
+
+Tracks upstream CodexBar 0.82.0.
+
+### Changed
+
+- Diagnose and fix the Wayland runner's automated Display-tab navigation
+  (E184): the tab click previously landed 1 px above the `AdwTabBar` pill
+  (window y 696 vs pill top 697, from the old `(0.34, 0.94)` estimate), so
+  all automated runs stayed on General while the manual E183 run passed via
+  the user's own click. The runner now clicks the pixel-measured pill
+  centre `(0.325, 0.968)` and verifies the Display page from the page-check
+  screenshot (selected-pill + switch-pair evidence) before any toggle
+  click; it fails closed otherwise. No live automated PASS claimed yet —
+  awaiting a fresh named KDE grant. Broader UG remains **NOT PASSED** and
+  Python remains the default.
+
 ## 0.82.0 (80) — 2026-11-05
 
 Tracks upstream CodexBar 0.82.0.

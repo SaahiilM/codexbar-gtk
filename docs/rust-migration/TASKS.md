@@ -798,3 +798,38 @@ See E164.
 `--action start-at-login` or `--action hide-personal-info`; inspect the
 baseline screenshot, then require only the selected preference persisted
 true. Until then UG remains **NOT PASSED** and Python default.
+
+### U05-UG10 handoff — build 81 automated Display-tab fix (E184)
+
+Owner: current U05 session; branch `orchestrated/luna-ug-auto-tab`, provisional
+build `0.82.0 (81)`, based on PR #79 head `bacc374` (PR #79 OPEN, not yet
+merged to `origin/main` at `bd4146f`; see AUDIT E184). **Status: partial
+(fix verified by pixels + unit tests; live automated run pending).**
+
+Scope: diagnose and fix the Wayland runner's Display-tab click. E183's
+manual-navigation `hidePersonalInfo` PASS stands; the runner's own tab
+click never navigated. Root cause is the measured tab point: the old
+`(0.34, 0.94)` lands 1 px above the `AdwTabBar` pill (abs y 845 vs pill
+top 846, pill rect abs x 647..731, y 846..885 from the kept baseline /
+page-check captures). The runner now clicks the pixel-measured pill centre
+`(0.325, 0.968)` via `PAGE_TAB_FRACTIONS` and fails closed unless the
+post-click page-check screenshot proves the Display page (selected-pill +
+switch-pair luminance probes, PIL or stdlib PNG decoder). Timing /
+revert hypotheses (b)/(c) were ruled out with evidence in E184.
+
+Local verification: `py_compile` OK; guard tests 12/12; full Python suite
+226 tests / 70 skipped (pre-change 224/70, +2 new tests); probe table
+False/True/False on baseline/page-check/missing file under both decoders;
+`cargo build --bin codexbar-gtk-native --locked` exit 0. No live Wayland
+run performed (wrong systemd scope for the runner + human consent required),
+so no automated PASS is claimed. See E184 for the full audit.
+
+**Concrete handoff:** in the intended KDE session rebuild the native binary
+from this head, then run the guarded runner with a fresh named KDE grant —
+`--action hide-personal-info` — visually confirming the prompt and requiring
+terminal `PASS … hidePersonalInfo=true persisted` + persisted
+`settings.json` `hidePersonalInfo: true` + the Display-page screenshot in
+`/tmp/codexbar-display-page-check.png` before claiming automated navigation
+works. If the corrected click still does not navigate, capture the page-check
+PNG + KWin state and reopen (b)/(d) with evidence. Until then UG remains
+**NOT PASSED** and Python default.

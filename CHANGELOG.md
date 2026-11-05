@@ -22,6 +22,22 @@ Tracks upstream CodexBar 0.82.0.
   the intended KDE session. UG remains **NOT PASSED**; Python remains
   the default.
 
+## 0.82.0 (84) — 2026-11-05
+
+Tracks upstream CodexBar 0.82.0.
+
+### Changed
+
+- Add the guarded `scripts/test-native-spend-wayland.py` Wayland evidence
+  harness for Usage & Spend (build 84): one RemoteDesktop grant per run
+  exercises 4 ranges, 3 heatmap modes, tooltip hover, and Refresh, plus
+  fixture-only coverage of loading/success/partial/empty/retained-error
+  states. Screenshots and cost-fixture call assertions cover success/empty/
+  partial/loading/retained-error (live verified); range/mode/tooltip/
+  refresh pointer paths are harness-built and await a fresh named KDE
+  grant for live automated runs. Settings runner actions are untouched;
+  broader UG remains **NOT PASSED** and Python remains the default.
+
 ## 0.82.0 (82) — 2026-11-05
 
 Tracks upstream CodexBar 0.82.0.

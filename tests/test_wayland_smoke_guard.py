@@ -68,7 +68,7 @@ class WaylandGuardTests(unittest.TestCase):
                 "hide-personal-info",
                 "session-quota-notifications", "quota-warning-notifications",
                 "limit-reset-notifications", "predictive-pace-notifications",
-                "test-notification",
+                "test-notification", "show-tray-icon",
             },
         )
         self.assertEqual(
@@ -123,7 +123,8 @@ class WaylandGuardTests(unittest.TestCase):
             set(actions),
             {"refresh-when-panel-opens", "show-panel-on-start", "start-at-login", "hide-personal-info",
              "session-quota-notifications", "quota-warning-notifications",
-             "limit-reset-notifications", "predictive-pace-notifications", "test-notification"},
+             "limit-reset-notifications", "predictive-pace-notifications", "test-notification",
+             "show-tray-icon"},
         )
         self.assertEqual(
             actions["show-panel-on-start"]["preference"],
@@ -145,6 +146,28 @@ class WaylandGuardTests(unittest.TestCase):
         )
         self.assertEqual(fractional_point, (932, 664))
         self.assertTrue(all(isinstance(value, int) for value in fractional_point))
+
+    def test_menu_bar_switch_maps_to_show_tray_preference(self):
+        actions = MODULE.WAYLAND_SWITCH_ACTIONS
+        self.assertEqual(actions["show-tray-icon"]["preference"], "showTray")
+        self.assertEqual(actions["show-tray-icon"]["page"], "Menu Bar")
+        self.assertEqual(actions["show-tray-icon"]["label"], "Show the tray icon")
+        point = MODULE.switch_point_from_geometry(
+            [364, 149, 1000, 740],
+            y_offset=actions["show-tray-icon"]["y_offset"],
+            x_fraction=actions["show-tray-icon"]["switch_x_fraction"],
+        )
+        self.assertTrue(
+            MODULE.target_window_contains(
+                self.snapshot(target_geometry=[364, 149, 1000, 740]), *point
+            )
+        )
+        # The three Menu Bar combos (menuBarIconStyle, unifiedIconSource,
+        # switcherRowsOption) are intentionally NOT allowlisted: dropdown
+        # selection has no safe synthetic path here and stays manual.
+        self.assertNotIn("icon-style", actions)
+        self.assertNotIn("icon-shows", actions)
+        self.assertNotIn("provider-rows", actions)
 
     def test_action_result_reports_only_the_selected_preference_change(self):
         before = {"showPopupOnStart": False, "launchAtLogin": False}

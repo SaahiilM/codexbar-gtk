@@ -22,6 +22,24 @@ Tracks upstream CodexBar 0.82.0.
   the intended KDE session. UG remains **NOT PASSED**; Python remains
   the default.
 
+## 0.82.0 (82) — 2026-11-05
+
+Tracks upstream CodexBar 0.82.0.
+
+### Changed
+
+- Extend the guarded synthetic Wayland Settings runner with five allowlisted
+  Notifications actions (four preference switches plus the "Send a test
+  notification" button) using the same fail-closed guard as the
+  General/Display actions (synthetic fixture, named KDE consent, portal
+  motion+click, persisted-JSON check). The test-notification button verifies
+  delivery to a synthetic `org.freedesktop.Notifications` service via
+  `gdbus-monitor` (falling back to a fail-closed error if the monitor is
+  unavailable or observes no `Notify("CodexBar GTK test notification")`
+  delivery). Row/tab coordinates are estimated from the Xvfb smoke and need
+  live calibration before a guarded Wayland run. UG remains **NOT PASSED**
+  and Python remains the default.
+
 ## 0.82.0 (81) — 2026-11-05
 
 Tracks upstream CodexBar 0.82.0.

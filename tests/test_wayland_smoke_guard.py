@@ -59,11 +59,71 @@ class WaylandGuardTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             MODULE.switch_point_from_geometry(None)
 
+    def test_notification_actions_are_allowlisted_and_geometry_derived(self):
+        actions = MODULE.WAYLAND_SWITCH_ACTIONS
+        self.assertEqual(
+            set(actions),
+            {
+                "refresh-when-panel-opens", "show-panel-on-start", "start-at-login",
+                "hide-personal-info",
+                "session-quota-notifications", "quota-warning-notifications",
+                "limit-reset-notifications", "predictive-pace-notifications",
+                "test-notification",
+            },
+        )
+        self.assertEqual(
+            actions["session-quota-notifications"]["preference"],
+            "sessionQuotaNotificationsEnabled",
+        )
+        self.assertEqual(
+            actions["quota-warning-notifications"]["preference"],
+            "quotaWarningNotificationsEnabled",
+        )
+        self.assertEqual(
+            actions["limit-reset-notifications"]["preference"],
+            "limitResetNotificationsEnabled",
+        )
+        self.assertEqual(
+            actions["predictive-pace-notifications"]["preference"],
+            "predictivePaceNotificationsEnabled",
+        )
+        for name in (
+            "session-quota-notifications", "quota-warning-notifications",
+            "limit-reset-notifications", "predictive-pace-notifications",
+            "test-notification",
+        ):
+            self.assertEqual(actions[name]["page"], "Notifications")
+            self.assertIn("/tmp/codexbar-notifications-page-check.png",
+                          actions[name].get("page_check", ""))
+            point = MODULE.switch_point_from_geometry(
+                [364, 149, 1000, 740], y_offset=actions[name]["y_offset"]
+            )
+            self.assertTrue(MODULE.target_window_contains(
+                self.snapshot(target_geometry=[364, 149, 1000, 740]), *point))
+
+    def test_test_notification_button_requires_delivery_not_preference(self):
+        action = MODULE.WAYLAND_SWITCH_ACTIONS["test-notification"]
+        self.assertIsNone(action["preference"])
+        self.assertEqual(action.get("kind"), "button")
+        self.assertTrue(action.get("requires_notification_delivery"))
+
+    def test_notification_delivery_log_detection(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            log = pathlib.Path(temporary) / "notifications-monitor.log"
+            self.assertFalse(MODULE.notification_delivered(log))
+            log.write_text("Method call: Notify('CodexBar', 'CodexBar GTK test notification')\n")
+            self.assertTrue(MODULE.notification_delivered(log))
+            log.write_text("D-Bus connection established\n")
+            self.assertFalse(MODULE.notification_delivered(log))
+            self.assertFalse(MODULE.notification_delivered(pathlib.Path(temporary) / "missing.log"))
+
     def test_general_switch_actions_are_allowlisted_and_geometry_derived(self):
         actions = MODULE.WAYLAND_SWITCH_ACTIONS
         self.assertEqual(
             set(actions),
-            {"refresh-when-panel-opens", "show-panel-on-start", "start-at-login", "hide-personal-info"},
+            {"refresh-when-panel-opens", "show-panel-on-start", "start-at-login", "hide-personal-info",
+             "session-quota-notifications", "quota-warning-notifications",
+             "limit-reset-notifications", "predictive-pace-notifications", "test-notification"},
         )
         self.assertEqual(
             actions["show-panel-on-start"]["preference"],

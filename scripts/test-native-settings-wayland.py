@@ -48,6 +48,56 @@ WAYLAND_SWITCH_ACTIONS = {
         "y_offset": 320,
         "switch_x_fraction": 0.90,
     },
+    # Notifications page: four preference switches + "Send a test notification"
+    # button (rust-gtk/src/settings_window.rs; python parity
+    # codexbar_gtk/ui/settings.py::_notifications_page). Row offsets are
+    # estimates for the 1000x740 window (cf. Xvfb smoke coordinates
+    # 810,142/197/252/307 and button at 800,362); calibrate from the
+    # --inspect-only baseline before a guarded live run. Defaults are
+    # y_offset + x_fraction=0.810 (810/1000) for switches; the test button
+    # is a centred tail control, so its point is 0.800 with lower y.
+    "session-quota-notifications": {
+        "preference": "sessionQuotaNotificationsEnabled",
+        "label": "Session quota notifications",
+        "page": "Notifications",
+        "page_check": "/tmp/codexbar-notifications-page-check.png",
+        "tab_x_fraction": 0.46,
+        "y_offset": 142,
+    },
+    "quota-warning-notifications": {
+        "preference": "quotaWarningNotificationsEnabled",
+        "label": "Quota warning notifications",
+        "page": "Notifications",
+        "page_check": "/tmp/codexbar-notifications-page-check.png",
+        "tab_x_fraction": 0.46,
+        "y_offset": 197,
+    },
+    "limit-reset-notifications": {
+        "preference": "limitResetNotificationsEnabled",
+        "label": "Limit reset notifications",
+        "page": "Notifications",
+        "page_check": "/tmp/codexbar-notifications-page-check.png",
+        "tab_x_fraction": 0.46,
+        "y_offset": 252,
+    },
+    "predictive-pace-notifications": {
+        "preference": "predictivePaceNotificationsEnabled",
+        "label": "Pace warnings",
+        "page": "Notifications",
+        "page_check": "/tmp/codexbar-notifications-page-check.png",
+        "tab_x_fraction": 0.46,
+        "y_offset": 307,
+    },
+    "test-notification": {
+        "preference": None,
+        "label": "Send a test notification",
+        "page": "Notifications",
+        "page_check": "/tmp/codexbar-notifications-page-check.png",
+        "tab_x_fraction": 0.46,
+        "y_offset": 362,
+        "kind": "button",
+        "requires_notification_delivery": True,
+    },
 }
 PAGE_TAB_FRACTIONS = {"Display": (0.325, 0.968)}
 """Window-relative bottom-tab-bar centers, pixel-measured from the kept
@@ -59,6 +109,8 @@ window, so its center is (325, 717) = (0.325, 0.968). The earlier estimate
 top 697) on the tab-bar container, which AdwTabBar ignores -- the
 hypothesis-(a)/(d) root cause (E184). Asserted by
 tests/test_wayland_smoke_guard.py::test_display_tab_point_hits_measured_pill.
+Notifications has no pixel measurement yet; its actions keep the
+build-82 per-action estimate (tab_x_fraction 0.46) until live calibration.
 """
 PORTAL_DESKTOP_ENTRY = (
     "[Desktop Entry]\nType=Application\n"
@@ -92,6 +144,48 @@ def target_window_contains(state, x, y):
         return False
     gx, gy, width, height = geometry
     return width > 0 and height > 0 and gx <= x < gx + width and gy <= y < gy + height
+
+
+def start_notification_monitor(log_path):
+    """Watch a synthetic Notifications service for a Notify delivery.
+
+    Returns a process speaking to the session bus, or None if gdbus-monitor
+    is unavailable. The monitor output is inspected for the synthetic test
+    summary after the guarded button click; absence of that summary means
+    the delivery check fails closed.
+    """
+    log_path = pathlib.Path(log_path)
+    if shutil.which("gdbus-monitor") is None:
+        return None
+    log_file = log_path.open("ab", buffering=0)
+    process = subprocess.Popen(
+        ["gdbus-monitor", "--session", "--dest", "org.freedesktop.Notifications"],
+        stdout=log_file, stderr=subprocess.STDOUT,
+    )
+    return process
+
+
+def stop_notification_monitor(process):
+    """Stop the monitor started by start_notification_monitor."""
+    if process is None:
+        return
+    try:
+        process.terminate()
+        process.wait(timeout=3)
+    except (ProcessLookupError, subprocess.TimeoutExpired):
+        try:
+            process.kill()
+        except ProcessLookupError:
+            pass
+
+
+def notification_delivered(log_path, summary="CodexBar GTK test notification"):
+    """Whether the synthetic service log records the test notification Notify."""
+    try:
+        output = pathlib.Path(log_path).read_text(errors="replace")
+    except OSError:
+        return False
+    return "Notify(" in output and summary in output
 
 
 def changed_preferences(before, after):
@@ -489,7 +583,8 @@ def main():
     if (args.switch_x is None) != (args.switch_y is None):
         parser.error("--switch-x and --switch-y must be supplied together")
     action = WAYLAND_SWITCH_ACTIONS[args.action]
-    preference_key = action["preference"]
+    preference_key = action.get("preference")
+    is_button_action = action.get("kind") == "button" or preference_key is None
     if not os.environ.get("WAYLAND_DISPLAY") or not os.environ.get("XDG_RUNTIME_DIR"):
         parser.error("run inside the intended Wayland session")
     if os.environ.get("XDG_SESSION_TYPE") not in (None, "wayland"):
@@ -509,6 +604,7 @@ def main():
     scratch = pathlib.Path(tempfile.mkdtemp(prefix="codexbar-wayland-settings-"))
     scratch.chmod(0o700)
     app = observer = portal = None
+    notification_monitor = None
     bus = None
     capture_status = None
     kwin_plugin = "codexbar_u05_guard_" + uuid.uuid4().hex[:12]
@@ -523,7 +619,10 @@ def main():
         home = scratch / "home"
         (home / ".config" / "codexbar-gtk").mkdir(parents=True, mode=0o700)
         preferences = home / ".config" / "codexbar-gtk" / "settings.json"
-        preferences.write_text(json.dumps({preference_key: False}) + "\n")
+        # Buttons persist no preference; seed an empty store and rely on
+        # the synthetic Notifications monitor for their success check.
+        seed = {} if preference_key is None else {preference_key: False}
+        preferences.write_text(json.dumps(seed) + "\n")
         fake = scratch / "codexbar"
         fake.write_text("#!/bin/sh\ncase \"${1-}\" in --version) echo 'CodexBar synthetic fixture 0.82.0';; *) echo '[]';; esac\n")
         fake.chmod(0o700)
@@ -672,7 +771,12 @@ def main():
             geometry = baseline.get("target_geometry")
             if not isinstance(geometry, list) or len(geometry) != 4:
                 raise RuntimeError("Settings window geometry unavailable for page navigation; no click sent")
-            tab_x, tab_y = page_tab_point_from_geometry(geometry, action["page"])
+            if action["page"] in PAGE_TAB_FRACTIONS:
+                tab_x, tab_y = page_tab_point_from_geometry(geometry, action["page"])
+            else:
+                gx, gy, width, height = geometry
+                tab_x = round(gx + width * action["tab_x_fraction"])
+                tab_y = round(gy + height * 0.94)
             if not target_window_contains(baseline, tab_x, tab_y):
                 raise RuntimeError("page-tab point outside Settings window; no click sent")
             guarded_click(portal, app.pid, latest, tab_x, tab_y)
@@ -705,22 +809,25 @@ def main():
             # visible in the evidence before any toggle is attempted. This
             # copy survives the finally-block cleanup (unlike the scratch-dir
             # captures), so the user can verify page navigation took effect.
-            page_check = scratch / "display-page-check.png"
+            page_check = scratch / "page-check.png"
             page_capture = subprocess.run(
                 ["spectacle", "--background", "--activewindow", "--nonotify",
                  "--output", str(page_check)],
                 capture_output=True, text=True, timeout=8,
             )
-            page_kept = pathlib.Path("/tmp/codexbar-display-page-check.png")
+            page_kept = pathlib.Path(
+                action.get("page_check", "/tmp/codexbar-display-page-check.png")
+            )
+            page_label = action["page"]
             if page_capture.returncode == 0 and page_check.is_file():
                 try:
                     page_kept.write_bytes(page_check.read_bytes())
-                    print(f"Display page check kept at {page_kept}; verify the Display page is visible before the toggle.", flush=True)
+                    print(f"{page_label} page check kept at {page_kept}; verify the {page_label} page is visible before the toggle.", flush=True)
                 except OSError:
-                    print(f"Display page check captured at {page_check}; verify the Display page before the toggle.", flush=True)
+                    print(f"{page_label} page check captured at {page_check}; verify the {page_label} page before the toggle.", flush=True)
             else:
-                print("Display page check capture failed; continuing with guarded evidence only.", flush=True)
-            if not page_verified_from_capture(page_check, baseline.get("target_geometry")):
+                print(f"{page_label} page check capture failed; continuing with guarded evidence only.", flush=True)
+            if page_label == "Display" and not page_verified_from_capture(page_check, baseline.get("target_geometry")):
                 raise RuntimeError(
                     "Display page not verified by screenshot (OCR/filename-check); refusing toggle click"
                 )
@@ -755,10 +862,20 @@ def main():
         # page already selected above via the guarded tab click
         print(f"Guarded Settings action '{args.action}' switch point: ({switch_x},{switch_y})", flush=True)
         baseline_preferences = json.loads(preferences.read_text())
-        if baseline_preferences.get(preference_key) is not False:
+        if not is_button_action and baseline_preferences.get(preference_key) is not False:
             raise RuntimeError(
                 f"selected preference {preference_key} did not start false; no click sent"
             )
+        notification_monitor = None
+        notification_log = scratch / "notifications-monitor.log"
+        if action.get("requires_notification_delivery"):
+            notification_monitor = start_notification_monitor(notification_log)
+            if notification_monitor is None:
+                print("warning: gdbus-monitor unavailable; notification delivery check will be skipped", flush=True)
+            else:
+                # Give the synthetic host a beat to establish the monitor
+                # subscription before the guarded pointer click.
+                time.sleep(0.2)
         dx, dy = switch_x - baseline["cursor"][0], switch_y - baseline["cursor"][1]
         if abs(dx) > 1600 or abs(dy) > 1200:
             raise RuntimeError("requested pointer delta exceeds safety bound; no input sent")
@@ -775,6 +892,25 @@ def main():
         if not guard_target(latest(), app.pid, switch_x, switch_y):
             raise RuntimeError("final target/focus guard failed; no click sent")
         portal.click()
+        if is_button_action:
+            deadline = time.monotonic() + 8
+            delivered = False
+            while time.monotonic() < deadline:
+                if notification_monitor is not None and notification_delivered(notification_log):
+                    delivered = True
+                    break
+                time.sleep(.05)
+            stop_notification_monitor(notification_monitor)
+            notification_monitor = None
+            if delivered:
+                print("PASS: synthetic Notifications service received the test notification", flush=True)
+                return 0
+            # No monitor: fall back to the persisted-store check only if the
+            # monitor never ran; a running monitor that saw nothing is a
+            # genuine failed delivery and must fail closed.
+            raise RuntimeError(
+                "synthetic Notifications service did not observe a Notify('CodexBar GTK test notification') delivery after the guarded button click"
+            )
         deadline = time.monotonic() + 8
         while time.monotonic() < deadline:
             try:
@@ -798,6 +934,8 @@ def main():
             f"{after_preferences.get(preference_key)!r}; changed keys={changed}"
         )
     finally:
+        if notification_monitor is not None:
+            stop_notification_monitor(notification_monitor)
         if portal:
             portal.close()
         if app and app.poll() is None:

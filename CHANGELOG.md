@@ -4,6 +4,23 @@ Client-side changelog for the CodexBar GTK front-end. Each entry keys a build
 number (`CURRENT_PROJECT_VERSION`) to the upstream macOS CodexBar release its
 short version tracks, so "which version has what" maps cleanly onto both trees.
 
+## 0.82.0 (86) — 2026-11-05
+
+Tracks upstream CodexBar 0.82.0.
+
+### Changed
+
+- Add the Providers Wayland evidence harness (E186): the guarded
+  `scripts/test-native-settings-wayland.py` allowlists
+  `disable-codex-provider` against a fixture CLI state file (seeded
+  ON, flipped `true→false` by a recorded `config disable --provider
+  codex`) with an unchanged preference store, plus manual
+  source/API-key/login entries that refuse to drive and document the
+  manual step (matching the Xvfb-verified synthetic fixtures). No
+  live Wayland PASS is claimed yet — the gate row stays OPEN until
+  the harness runs on the intended KDE session with a fresh named
+  grant. UG remains **NOT PASSED**; Python remains the default.
+
 ## 0.82.0 (85) — 2026-11-05
 
 Tracks upstream CodexBar 0.82.0.

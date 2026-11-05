@@ -122,6 +122,85 @@ WAYLAND_SWITCH_ACTIONS = {
         "y_offset": 320,
         "switch_x_fraction": 0.90,
     },
+    # Providers page (rust-gtk/src/settings_window.rs::populate_providers;
+    # python parity codexbar_gtk/ui/settings.py::_providers_page /
+    # _toggle_provider/_set_provider_source/_set_api_key/_sign_in;
+    # backend rust-backend/src/settings.rs::provider_action/set_api_key
+    # via rust-backend/src/cli.rs: `config enable|disable --provider P`
+    # and `config set-source --provider P --source S`).
+    #
+    # Each provider is an AdwExpanderRow (display name + provider_id):
+    #   "Provider enabled" switch -> Enable/Disable
+    #   "Source" combo            -> SetSource {auto,web,cli,oauth,api}
+    #   "Sign in with provider CLI" button (claude/codex only)
+    #                             -> native LoginDialog (B11 PTY: `auth
+    #                                login --claudeai` / `login ...`; auth
+    #                                events stay in memory, never persisted)
+    #   "API key" PasswordEntryRow with Apply -> SetApiKey (secret is
+    #                                trimmed, entry cleared, never saved)
+    #
+    # Only the enable/disable switch is a safe guarded click, and even it
+    # persists NO preference JSON (the CLI owns provider state), so its
+    # success check is the fake CLI's state file (seeded ON -> the runner
+    # clicks to disable -> `config disable --provider codex` must land
+    # and flip the file true->false), like the autostart-entry check.
+    # The Providers page has no pixel-measured tab or row geometry yet,
+    # so the action carries a per-action tab estimate plus the switch
+    # row estimate from the Xvfb smoke (window 1120x820: tab x 166,
+    # switch at 810,234 -- i.e. x fraction 0.810 with y_offset 234);
+    # both must be live-measured via --inspect-only before trusting a
+    # guarded click (--switch-x/--switch-y overrides if the estimate is
+    # off). Rows are per-provider ExpanderRows whose height depends on
+    # the fixture's provider list, so the check verifies the CLI call +
+    # state file rather than trusting geometry alone.
+    "disable-codex-provider": {
+        "preference": None,
+        "label": "Codex provider enabled switch",
+        "page": "Providers",
+        "page_check": "/tmp/codexbar-providers-page-check.png",
+        "tab_x_fraction": 0.12,
+        "y_offset": 234,
+        "switch_x_fraction": 0.81,
+        "kind": "provider_switch",
+        "cli_action": "disable",
+        "provider_id": "codex",
+        "seed_provider_enabled": True,
+    },
+    # The remaining Providers controls are intentionally NOT allowlisted
+    # as automated clicks -- dropdown selection (Source combo), typed
+    # secret entry (API key Apply) and PTY login have no safe synthetic
+    # guarded path in this runner and stay manual. Documented here so
+    # they are not silently faked; the Xvfb smoke already exercises them
+    # (scripts/smoke-native-settings.sh: set-source --source api,
+    # set-api-key with a randomized synthetic value checked absent from
+    # preferences/logs, and the synthetic PTY sign-in).
+    "provider-source": {
+        "preference": None,
+        "label": "Provider source combo (manual: dropdown selection)",
+        "page": "Providers",
+        "page_check": "/tmp/codexbar-providers-page-check.png",
+        "kind": "manual",
+        "cli_action": "set-source",
+        "provider_id": "codex",
+    },
+    "provider-api-key": {
+        "preference": None,
+        "label": "Provider API key entry (manual: type synthetic key, click Apply)",
+        "page": "Providers",
+        "page_check": "/tmp/codexbar-providers-page-check.png",
+        "kind": "manual",
+        "cli_action": "set-api-key",
+        "provider_id": "codex",
+    },
+    "provider-login": {
+        "preference": None,
+        "label": "Provider sign-in (manual: PTY dialog, synthetic code)",
+        "page": "Providers",
+        "page_check": "/tmp/codexbar-providers-page-check.png",
+        "kind": "manual",
+        "cli_action": "login",
+        "provider_id": "codex",
+    },
 }
 PAGE_TAB_FRACTIONS = {"Display": (0.325, 0.968)}
 """Window-relative bottom-tab-bar centers, pixel-measured from the kept
@@ -215,6 +294,35 @@ def notification_delivered(log_path, summary="CodexBar GTK test notification"):
 def changed_preferences(before, after):
     """Return preference keys whose persisted values changed."""
     return sorted(key for key in set(before) | set(after) if before.get(key) != after.get(key))
+
+
+def provider_enabled_file_text(expected):
+    """State-file text the fake CLI's provider switch flips to."""
+    return "true\n" if expected else "false\n"
+
+
+def provider_cli_call(cli_action, provider_id, source=None):
+    """Exact fake-CLI call line a Providers control must produce."""
+    if cli_action == "set-source":
+        return f"config set-source --provider {provider_id} --source {source}"
+    return f"config {cli_action} --provider {provider_id}"
+
+
+def check_provider_state(calls_path, enabled_path, action, provider_id):
+    """Fail-closed check for a Providers switch action.
+
+    Returns True iff the fake CLI recorded the expected enable/disable
+    call and flipped its state file. Never logs secret values; provider
+    state is the fixture's own, not a user credential.
+    """
+    try:
+        calls = pathlib.Path(calls_path).read_text(errors="replace")
+        enabled_text = pathlib.Path(enabled_path).read_text()
+    except OSError:
+        return False
+    expected_call = provider_cli_call(action, provider_id)
+    expected_state = provider_enabled_file_text(action == "enable")
+    return expected_call + "\n" in calls and enabled_text == expected_state
 
 
 def switch_point_from_geometry(geometry, y_fraction=0.40, y_offset=None, x_fraction=0.50):
@@ -598,10 +706,11 @@ def main():
     parser.add_argument("--binary", type=pathlib.Path, required=True)
     parser.add_argument("--action", choices=tuple(WAYLAND_SWITCH_ACTIONS),
                         default="refresh-when-panel-opens",
-                        help="allowlisted switch action to exercise; hide-personal-info "
-                             "and show-tray-icon live on Display/Menu Bar pages "
-                             "(select the tab manually before approving; only "
-                             "Display tab navigation is automated)")
+                        help="allowlisted switch action to exercise; hide-personal-info, "
+                             "show-tray-icon and disable-codex-provider live on Display/Menu Bar/Providers "
+                             "pages (only Display tab navigation is automated; manual "
+                             "provider-source/provider-api-key/provider-login steps run "
+                             "with --inspect-only first)")
     parser.add_argument("--inspect-only", action="store_true",
                         help="capture the synthetic Settings window and exit without requesting portal access")
     parser.add_argument("--switch-x", type=int, help="override the geometry-derived KWin X coordinate")
@@ -611,7 +720,14 @@ def main():
         parser.error("--switch-x and --switch-y must be supplied together")
     action = WAYLAND_SWITCH_ACTIONS[args.action]
     preference_key = action.get("preference")
-    is_button_action = action.get("kind") == "button" or preference_key is None
+    if action.get("kind") == "manual":
+        parser.error(
+            f"action {args.action!r} is a manual Providers step; use --inspect-only "
+            "to calibrate the Providers page, then perform it by hand against the "
+            "synthetic fixture (see the runner comment). Refusing to drive it."
+        )
+    is_provider_action = action.get("kind") == "provider_switch"
+    is_button_action = action.get("kind") == "button" or (preference_key is None and not is_provider_action)
     if not os.environ.get("WAYLAND_DISPLAY") or not os.environ.get("XDG_RUNTIME_DIR"):
         parser.error("run inside the intended Wayland session")
     if os.environ.get("XDG_SESSION_TYPE") not in (None, "wayland"):
@@ -648,10 +764,40 @@ def main():
         preferences = home / ".config" / "codexbar-gtk" / "settings.json"
         # Buttons persist no preference; seed an empty store and rely on
         # the synthetic Notifications monitor for their success check.
+        # Provider actions also persist no preference: the fixture CLI
+        # owns provider state (seeded ON so the runner clicks to disable).
         seed = {} if preference_key is None else {preference_key: False}
         preferences.write_text(json.dumps(seed) + "\n")
+        cli_calls = scratch / "fixture-cli-calls.log"
+        provider_enabled = scratch / "provider-codex-enabled"
+        if is_provider_action:
+            provider_enabled.write_text(provider_enabled_file_text(True))
+            fake_source = '''#!/bin/sh
+set -eu
+case "${1-}/${2-}" in
+  --version/*) printf '%s\\n' 'CodexBar synthetic fixture 0.82.0' ;;
+  config/providers)
+    printf '%s\\n' "$*" >> "$FIXTURE_CLI_CALLS"
+    if [ "$(cat "$FIXTURE_PROVIDER_ENABLED")" = "true" ]; then
+      printf '%s\\n' 'codex: enabled (Codex)' 'claude: disabled (Claude)'
+    else
+      printf '%s\\n' 'codex: disabled (Codex)' 'claude: disabled (Claude)'
+    fi
+    ;;
+  config/enable|config/disable)
+    printf '%s\\n' "$*" >> "$FIXTURE_CLI_CALLS"
+    if [ "${4-}" = "codex" ]; then
+      printf '%s\\n' "$2" | sed 's/^enable$/true/;s/^disable$/false/' > "$FIXTURE_PROVIDER_ENABLED"
+    fi
+    printf '%s\\n' '{"ok":true}'
+    ;;
+  *) printf '%s\\n' "$*" >> "$FIXTURE_CLI_CALLS"; printf '%s\\n' '[]' ;;
+esac
+'''
+        else:
+            fake_source = "#!/bin/sh\ncase \"${1-}\" in --version) echo 'CodexBar synthetic fixture 0.82.0';; *) echo '[]';; esac\n"
         fake = scratch / "codexbar"
-        fake.write_text("#!/bin/sh\ncase \"${1-}\" in --version) echo 'CodexBar synthetic fixture 0.82.0';; *) echo '[]';; esac\n")
+        fake.write_text(fake_source)
         fake.chmod(0o700)
         # Portal identifies the requester through its app-scoped systemd unit and
         # this matching temporary desktop entry. Remove only the entry we create.
@@ -663,6 +809,8 @@ def main():
                    CODEXBAR_CLI=str(fake), GTK_A11Y="none", GTK_USE_PORTAL="0",
                    GDK_BACKEND="wayland", GSK_RENDERER="cairo")
         env.pop("CODEXBAR_RUST_CORE", None)
+        if is_provider_action:
+            env.update(FIXTURE_CLI_CALLS=str(cli_calls), FIXTURE_PROVIDER_ENABLED=str(provider_enabled))
         bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
         spectacle_owned = bus.call_sync(
             "org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus",
@@ -889,10 +1037,12 @@ def main():
         # page already selected above via the guarded tab click
         print(f"Guarded Settings action '{args.action}' switch point: ({switch_x},{switch_y})", flush=True)
         baseline_preferences = json.loads(preferences.read_text())
-        if not is_button_action and baseline_preferences.get(preference_key) is not False:
+        if not is_button_action and not is_provider_action and baseline_preferences.get(preference_key) is not False:
             raise RuntimeError(
                 f"selected preference {preference_key} did not start false; no click sent"
             )
+        if is_provider_action and provider_enabled.read_text() != provider_enabled_file_text(True):
+            raise RuntimeError("synthetic Codex provider did not start enabled; no click sent")
         notification_monitor = None
         notification_log = scratch / "notifications-monitor.log"
         if action.get("requires_notification_delivery"):
@@ -919,6 +1069,34 @@ def main():
         if not guard_target(latest(), app.pid, switch_x, switch_y):
             raise RuntimeError("final target/focus guard failed; no click sent")
         portal.click()
+        if is_provider_action:
+            deadline = time.monotonic() + 8
+            while time.monotonic() < deadline:
+                if check_provider_state(
+                    cli_calls, provider_enabled,
+                    action["cli_action"], action["provider_id"],
+                ):
+                    enabled_after = provider_enabled.read_text() == provider_enabled_file_text(False)
+                    after_preferences = json.loads(preferences.read_text())
+                    if after_preferences != baseline_preferences:
+                        raise RuntimeError(
+                            "provider switch click changed unrelated preferences; refusing pass"
+                        )
+                    if enabled_after:
+                        print(
+                            f"PASS: synthetic fixture CLI recorded "
+                            f"{provider_cli_call(action['cli_action'], action['provider_id'])} and the "
+                            f"Codex provider state flipped enabled true->false (no preference JSON changed)",
+                            flush=True,
+                        )
+                        return 0
+                time.sleep(.05)
+            calls_seen = cli_calls.read_text() if cli_calls.exists() else ""
+            raise RuntimeError(
+                "synthetic provider disable did not reach the fixture CLI; "
+                f"fixture calls were {calls_seen!r} and the provider state was "
+                f"{provider_enabled.read_text() if provider_enabled.exists() else 'missing'!r}"
+            )
         if is_button_action:
             deadline = time.monotonic() + 8
             delivered = False

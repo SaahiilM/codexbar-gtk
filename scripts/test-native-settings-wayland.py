@@ -28,10 +28,6 @@ PORTAL_PATH = "/org/freedesktop/portal/desktop"
 REMOTE = "org.freedesktop.portal.RemoteDesktop"
 SESSION_IFACE = "org.freedesktop.portal.Session"
 APP_ID = "codexbar-gtk-synthetic-wayland-test"
-# The GTK application id (codexbar_gtk.APP_ID); also the AT-SPI name the
-# linux-agent-access bridge resolves for its exact-match focus check.
-APP_ID_REAL = "com.steipete.CodexBarGTK"
-BRIDGE_APPLICATION = APP_ID_REAL
 BRIDGE_DEFAULT_COMMAND = "linux-agent-access"
 WAYLAND_SWITCH_ACTIONS = {
     "refresh-when-panel-opens": {
@@ -690,6 +686,102 @@ class PortalDriver:
             except Exception:
                 pass
 
+def fixture_env(use_bridge, runner_env=None):
+    """Fixture env for the synthetic app; bridge flow needs AT-SPI on."""
+    env = dict(runner_env if runner_env is not None else os.environ)
+    env.pop("GTK_A11Y", None)
+    # Portal flow keeps a11y off; bridge flow must enable it so the
+    # bridge's AT-SPI focus check can see the synthetic app.
+    if not use_bridge:
+        env["GTK_A11Y"] = "none"
+    return env
+
+
+def resolve_atspi_application(pid, runner=subprocess.run, timeout=15):
+    """Exact AT-SPI name for pid, fail-closed when identity is unverified."""
+    pid = int(pid)
+    # AT-SPI through Atspi.get_desktop needs Atspi.init() and the session
+    # a11y bus. The probe only reads names + PIDs — never window contents.
+    need_env = dict(os.environ)
+    if "DBUS_SESSION_BUS_ADDRESS" not in need_env:
+        need_env["DBUS_SESSION_BUS_ADDRESS"] = f"unix:path={os.environ.get('XDG_RUNTIME_DIR','/run/user/1000')}/bus"
+    probe = (
+        "import sys,gi,json;gi.require_version('Atspi','2.0');"
+        "from gi.repository import Atspi\n"
+        "def main():\n"
+        " Atspi.init()\n"
+        " d=Atspi.get_desktop(0)\n"
+        " want=int(sys.argv[1]);names=[]\n"
+        " for i in range(min(d.get_child_count(),100)):\n"
+        "  c=d.get_child_at_index(i)\n"
+        "  try:\n"
+        "   pid_c=int(c.get_process_id());nm=c.get_name()\n"
+        "   names.append({'pid':pid_c,'name':nm})\n"
+        "   if pid_c==want:\n"
+        "    print(json.dumps({'found':nm,'children':names}));return 0\n"
+        "  except Exception as e:\n"
+        "   names.append({'error':str(e)[:200]})\n"
+        " print(json.dumps({'found':None,'children':names}));return 10\n"
+        "import sys as _s\n"
+        "try:\n"
+        " _s.exit(main())\n"
+        "except SystemExit:\n"
+        " raise\n"
+        "except Exception as e:\n"
+        " print(json.dumps({'found':None,'children':[],'probe_error':str(e)[:400]}));_s.exit(3)"
+    )
+    last_err = "no AT-SPI response"
+    proc = None
+    for attempt in range(2):
+        try:
+            proc = runner(
+                [sys.executable, "-c", probe, str(pid)],
+                capture_output=True, text=True, timeout=timeout, env=need_env,
+            )
+        except Exception as error:
+            if attempt == 1:
+                raise RuntimeError(
+                    f"AT-SPI identity check failed for synthetic PID {pid}; no input sent"
+                ) from error
+            time.sleep(0.5)
+            continue
+        out = (proc.stdout or "").strip()
+        name = None
+        diag = ""
+        try:
+            data = json.loads(out) if out else {}
+            name = data.get("found")
+            kids = data.get("children", [])
+            diag = "; ".join(
+                f"{k.get('pid')}:{k.get('name')!r}" for k in kids if "pid" in k
+            )[:500]
+        except Exception:
+            pass
+        if proc.returncode not in (True, 0) and name is None:
+            returncode = getattr(proc, "returncode", 1)
+            err_full = (getattr(proc, "stderr", "") or "").strip()
+            # Last line of stderr usually carries the real error.
+            last_err = (err_full.splitlines()[-1] if err_full else diag) or last_err
+            if attempt == 0:
+                time.sleep(0.5)
+                continue
+            raise RuntimeError(
+                f"AT-SPI identity check failed for synthetic PID {pid}: "
+                f"{last_err or 'no AT-SPI name returned'}; "
+                f"observed child {diag!r}; no input sent"
+            )
+        if name:
+            return name
+        raise RuntimeError(
+            f"AT-SPI identity check failed for synthetic PID {pid}: "
+            f"{last_err or 'no AT-SPI name returned'}; "
+            f"observed child {diag!r}; no input sent"
+        )
+    raise RuntimeError(
+        f"AT-SPI identity check failed for synthetic PID {pid}: {last_err}; no input sent"
+    )
+
+
 def resolve_bridge_command(override, exists_fn=shutil.which, is_file=pathlib.Path.is_file):
     """Resolve the optional bridge entry point, fail-closed when absent.
 
@@ -721,8 +813,10 @@ class BridgeDriver:
     remains the fail-closed evidence source; bridge coordinates are
     absolute, so the caller keeps the cursor==target guard unchanged.
     """
-    def __init__(self, command, application=BRIDGE_APPLICATION,
+    def __init__(self, command, application,
                  runner=subprocess.run, timeout=60):
+        if not application:
+            raise ValueError("bridge application identity is required; no input sent")
         self.command = command
         self.application = application
         self.runner = runner
@@ -943,10 +1037,10 @@ esac
         # this matching temporary desktop entry. Remove only the entry we create.
         create_portal_desktop_entry(desktop_path)
         desktop_created = True
-        env = os.environ.copy()
+        env = fixture_env(use_bridge)
         env.update(HOME=str(home), XDG_CONFIG_HOME=str(home / ".config"),
                    XDG_DATA_HOME=str(home / ".local/share"), XDG_CACHE_HOME=str(home / ".cache"),
-                   CODEXBAR_CLI=str(fake), GTK_A11Y="none", GTK_USE_PORTAL="0",
+                   CODEXBAR_CLI=str(fake), GTK_USE_PORTAL="0",
                    GDK_BACKEND="wayland", GSK_RENDERER="cairo")
         env.pop("CODEXBAR_RUST_CORE", None)
         if is_provider_action:
@@ -1036,7 +1130,11 @@ esac
         if use_bridge:
             print("Bridge mode: the linux-agent-access bridge restores its "
                   "reusable KDE grant unattended; no consent prompt.", flush=True)
-            input_driver = BridgeDriver(bridge_command)
+            # Resolve the exact AT-SPI name for this synthetic PID; never
+            # guess it (the window title and APP_ID can differ).
+            bridge_application = resolve_atspi_application(app.pid)
+            print(f"Bridge target AT-SPI name: {bridge_application!r} (PID {app.pid})", flush=True)
+            input_driver = BridgeDriver(bridge_command, bridge_application)
             portal = input_driver
         else:
             print("Waiting for KDE RemoteDesktop consent prompt. Verify its synthetic test name visually; click Allow only then.", flush=True)

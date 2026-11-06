@@ -5732,3 +5732,92 @@ future models must verify the linked PR's status rather than trusting a stale
 - **Disposition:** The exact two-line fix from #88 is folded into this branch (build 89) without a cherry-pick, verbatim: `settings_capture = None` initialized alongside `capture_status = None`, and the cleanup reference guarded with `settings_capture is not None and ...`. Verified identical to #88's diff (script-only, +2/-1).
 - **Effect on #88:** #88 is then redundant for this behavior — its branch should be closed as superseded by this PR once build 89 merges, not merged separately. Its live-run history (observing the `UnboundLocalError` masking) is preserved here and in this entry.
 - **Verification:** `python3 -m py_compile scripts/test-native-settings-wayland.py` OK; full suite re-run below.
+
+### E190 — 2026-11-06: guarded Wayland runner gains a `--bridge` consent-free input route (build 89, rebased at build 90 — see E191)
+
+- **Branch:** `orchestrated/luna-ug-bridge-runner` from `origin/main` at
+  `e65be44` (build 88 after PR #89 merged); rebased onto merged PR #90
+  build 89 (`9f5497c`) as build 90 — see E191. **Status: harness-built; live
+  Wayland PASS pending operator re-run in the intended KDE session.** Python
+  stays default; UG stays **NOT PASSED**.
+- **Change (runner only; bridge untouched).** `scripts/test-native-settings-wayland.py`
+  gains a `--bridge` mode (plus `--portal` and `--bridge-cmd`): input is sent
+  via the agent-agnostic `linux-agent-access` bridge instead of the
+  `PortalDriver` `CreateSession/SelectDevices/Start` flow and its KDE consent
+  prompt + typed `APPROVE`. The bridge is flag-gated and optional — with
+  neither flag the runner uses the bridge when `linux-agent-access` is on
+  PATH and the portal flow otherwise; `--portal` forces the portal path
+  unchanged, and a requested-but-absent bridge fails closed (errors out)
+  rather than silently switching routes.
+- **Application identity.** The bridge resolves `--application` by exact
+  AT-SPI name match (`accessibility.py::app.get_name() != app_name` and
+  `portal_backend.py::target_is_active(application)` both compare against
+  `Atspi.Application.get_name()`), not desktop id. The native binary registers
+  `application_id=codexbar_gtk.APP_ID` (`com.steipete.CodexBarGTK`), which is
+  what the AT-SPI registry reports for the synthetic Settings window, so the
+  runner passes `--application com.steipete.CodexBarGTK` (`BRIDGE_APPLICATION`
+  / `APP_ID_REAL`). The temporary `codexbar-gtk-synthetic-wayland-test.desktop`
+  entry (`APP_ID`) is a portal-requester identity and is kept as before.
+- **Input flow (bridge).** Per action the runner invokes
+  `linux-agent-access action --application com.steipete.CodexBarGTK --json
+  '{"kind":"click","button":"left","x":<x>,"y":<y>}'` (and a `move` action
+  first). Invoke-scoped: the CLI reconnects and restores the reusable KDE
+  grant unattended (persist_mode=2 + saved restore token), takes a fresh
+  screenshot/observation id, and checks the named AT-SPI app is the active
+  window before sending one action — no bridge confirmation in unattended
+  mode, no per-run KDE prompt (the OS-level reusable grant is authorized
+  once, out of band, and is a KDE permission, not an agent/agent-specific
+  prompt). The bridge's own coordinator prompt is separate: client-level MCP
+  approval settings are the agent's own policy, not this runner's.
+- **Guard unchanged (fail closed).** The KWin observer still reports
+  `cursor/top_hit/active/pid/target_geometry` with the same 0.15–0.35s age
+  window; the switch point must lie inside the synthetic window
+  (`target_window_contains`); the click is sent only if the exact synthetic
+  PID is active/topmost **and** the cursor equals `[x, y]` after the bridge's
+  absolute motion — identical `guard_target` checks on both routes
+  (`guarded_click_bridge` delegates to the same `guard_target`). The bridge
+  cannot give the pointer-hittest evidence the portal path gave (a relative
+  move + NotifyPointerMotion/Absolute); nothing is faked or relaxed — if the
+  KWin state disagrees, the run fails closed with no click. Spectacle
+  baseline and page-check captures are taken exactly as before.
+- **Evidence kept.** Synthetic Settings baseline capture, page-check capture
+  (kept at the action's `page_check` path), persisted preference / autostart
+  entry / fixture-CLI state checks, notification delivery check, and the
+  consent capture are replaced by the bridge's own screenshot return path —
+  the portal's consent-window capture (`portal-consent.png`) is skipped in
+  bridge mode because there is no consent dialog to evidence.
+- **Verification (this slice).** `py_compile` clean; guard suite
+  `tests/test_wayland_smoke_guard.py` 23 tests (19 prior + 4 new: absolute
+  action payloads, fail-closed error/non-JSON handling, command resolution,
+  guarded bridge click requires the same KWin evidence); full Python suite
+  **257 ran, OK (skipped=70; baseline 253/70 + 4 new)**. No live Wayland run
+  in this worktree (T3 agent cgroup, not the intended KDE session).
+- **Gate.** UG portal-consent rows stay as recorded (portal PASS for one
+  control); the `--bridge` route is harness-built only, so no UG row is
+  claimed. Python remains the default; UG stays **NOT PASSED**.
+- **OS-level grant note.** The KDE RemoteDesktop grant remains an OS-level
+  desktop permission authorized once (token at
+  `~/.local/state/linux-agent-access/portal.json`, mode 0600, restored by
+  the bridge without human approval). `--bridge` removes the per-run KDE
+  consent prompt, not the OS grant itself; `linux-agent-access authorize`
+  remains the out-of-band way to (re)create it.
+- **Next step (operator, intended KDE session):** rebuild the native debug
+  binary from this head, then guarded run without any Allow/APPROVE step,
+  e.g.
+  `systemd-run --user --scope --unit=app-codexbar-gtk-synthetic-wayland-test.scope python3 scripts/test-native-settings-wayland.py --binary "$PWD/rust-gtk/target/debug/codexbar-gtk-native" --action hide-personal-info --bridge --inspect-only`
+  first for a baseline, then the same without `--inspect-only`; require
+  persisted `hidePersonalInfo false→true` before claiming the Display row.
+
+### E191 — 2026-11-06: `--bridge` route rebased onto merged PR #90 build 89 at build 90
+
+- **Branch:** `orchestrated/luna-ug-bridge-runner` rebased from `ebb1774` onto `origin/main` at `9f5497c` (PR #90 build 89 merged). **Status: harness-built; live re-verification open.** Python stays default; UG stays **NOT PASSED**.
+- **Observed merge evidence (root-verified):** Root reviewed exact PR #90 head `6d811e8c3df6802e06b1a8bc2fb05630c8f6dd54` and both required checks (`test` PASS 3m55s, `tray-dbus` PASS 17s, run 42267095225), then merged PR #90 normally at `9f5497c5fac1d6013b5102ccb1e0f6f472d63003`. Observed: `git fetch` confirms origin/main = `9f5497c`; PR #90 OPEN→MERGED; PR #88 closed as superseded (its `settings_capture` fix is in build 89 verbatim; this is historical and the PR is not rewritten). The current session did **not** re-derive these facts — they are recorded here as root-observed live state.
+- **Resolutions (no bridge/config change):**
+  - `scripts/test-native-settings-wayland.py` — conflict-free auto-merge: the build-89 `switch_x_fraction=0.75` (E189) and `settings_capture = None` + `settings_capture is not None` cleanup guard (PR #88 fold-in) are retained; the bridge `BridgeDriver`/`guarded_click_bridge`/`--bridge`/`--portal`/`--bridge-cmd` feature is applied on top. Verified by grep: `switch_x_fraction: 0.75` at line 58, `settings_capture = None` at line 892, `settings_capture is not None` at line 1368, bridge symbols present. The bridge's own OS-level KDE grant is untouched (bridge binary/config never modified).
+  - `CHANGELOG.md` — auto-conflict resolved by keeping **both** entries: build 89 entry now carries both the E189 Fix and the PR #88 fold-in line; the bridge entry moved to a new build 90 `Added/Validation` section (pending after rebase — see below).
+  - `AUDIT.md` — both E189 (+fold-in) and E190 kept; E190 header re-labelled build 89→"rebased at build 90 — see E191"; this E191 allocates the next unique ID (E191; max prior was E190) for the rebase-at-build-90 moment. E190's historical build-89 content is preserved, not rewritten.
+  - `TASKS.md`/`UG_GATE.md` auto-merged; U05-UG14 handoff re-issued below as U05-UG14 build 90 (E191) with E189 retained in the chain.
+- **Build assumption stated explicitly:** this rebase bakes build **89 → 90** (`VERSION`, `version.py`, README displayed build, CHANGELOG 0.82.0 (90) entry) on the assumption HEAD at push-time is `9f5497c` (build 89) with no further build merged in between. **If a later build (e.g. a subsequent PR) lands before this is pushed/merged, the build number must be recomputed** (e.g. (91)) and the affected metadata + E191 header updated in a follow-up commit — never reuse or bump without re-checking origin/main's `CURRENT_PROJECT_VERSION`.
+- **Verification (this slice).** `python3 -m py_compile scripts/test-native-settings-wayland.py` OK; guard suite `tests/test_wayland_smoke_guard.py` 23 ran, OK; full Python suite **257 ran, OK (skipped=70; baseline 253/70 + 4 new)** — re-run after the build-90 resolution. **No live Wayland run in this worktree** (T3 agent cgroup, not the intended KDE session). Synthetic fixtures only.
+- **Gate.** UG Display hide-personal-info row stays OPEN (x 0.75 + guard live re-run still pending operator session); the `--bridge` route is harness-built only, so no UG row is claimed for it. Python default; UG **NOT PASSED**.
+- **Next step (operator, intended KDE session):** rebuild native debug binary from this head, then guarded run of `hide-personal-info` with `--bridge` (no Allow/APPROVE) — `--inspect-only` first, then the same without it; require persisted `hidePersonalInfo false→true` (changed keys=[[hidePersonalInfo]]) before claiming the row.

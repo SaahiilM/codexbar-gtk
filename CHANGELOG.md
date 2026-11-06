@@ -4,6 +4,44 @@ Client-side changelog for the CodexBar GTK front-end. Each entry keys a build
 number (`CURRENT_PROJECT_VERSION`) to the upstream macOS CodexBar release its
 short version tracks, so "which version has what" maps cleanly onto both trees.
 
+## 0.82.0 (90) — 2026-11-06
+
+Tracks upstream CodexBar 0.82.0.
+
+### Added
+
+- Add an optional `--bridge` input route to the guarded Wayland Settings
+  runner (`scripts/test-native-settings-wayland.py`) that sends clicks through
+  the agent-agnostic `linux-agent-access` bridge (absolute-coordinate
+  `action --application com.steipete.CodexBarGTK --json` calls) instead of
+  the RemoteDesktop portal consent prompt, so live runs need no per-run
+  operator Allow/APPROVE. The bridge is flag-gated: with neither `--bridge`
+  nor `--portal` the runner uses the bridge when installed and the portal
+  flow otherwise; the portal path still works unchanged.
+- Keep the fail-closed guard identical on both routes: the KWin observer
+  still reports cursor/top_hit/active with the same 0.15–0.35s age window,
+  the switch point must lie inside the synthetic window, and Spectacle
+  baseline/page-check evidence is captured as before. The bridge click is
+  absolute (x, y); the same `cursor==[x,y]` guard precedes it. The Portal
+  desktop-entry handling and the bridge's own OS-level grant are untouched.
+  The build-89 hide-personal-info x fix (E189, `switch_x_fraction` 0.75)
+  and the `settings_capture` cleanup guard (PR #88 fold-in) are retained
+  unchanged.
+
+### Validation
+
+- `py_compile` clean; guard suite 23 tests (19 prior + 4 bridge tests:
+  absolute action payloads, fail-closed error handling, command resolution,
+  guarded click requires the same KWin evidence). Full suite pending after
+  the build-90 rebase of the bridge route onto PR #90 (build 89, merged at
+  `9f5497c`); see `docs/rust-migration/AUDIT.md` E190/E191. No live Wayland
+  run in this worktree (T3 agent cgroup, not the intended KDE session). The
+  KDE native portal grant remains OS-level (authorized once); `--bridge`
+  removes only the per-run prompt. Python remains the default; UG stays
+  **NOT PASSED**.
+- See `docs/rust-migration/AUDIT.md` for the E190 bridge-runner entry and
+  E191 build-90 rebase entry.
+
 ## 0.82.0 (89) — 2026-11-06
 
 Tracks upstream CodexBar 0.82.0.
@@ -22,8 +60,11 @@ Tracks upstream CodexBar 0.82.0.
   PASS is claimed yet — the operator must re-run
   `--action hide-personal-info` on the intended KDE session and
   require `hidePersonalInfo` true with changed keys=[[hidePersonalInfo]]
-  (or the equivalent synthetic assertion). UG remains **NOT PASSED**;
-  Python remains the default.
+  (or the equivalent synthetic assertion). Fold-in from PR #88
+  (verbatim): `settings_capture = None` init + cleanup guard so an
+  exception before assignment no longer masks the real error with
+  `UnboundLocalError` on the `KEEP_WAYLAND_TEST_TMP` path. UG remains
+  **NOT PASSED**; Python remains the default.
 
 ## 0.82.0 (88) — 2026-11-06
 

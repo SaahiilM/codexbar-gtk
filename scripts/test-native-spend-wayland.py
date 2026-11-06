@@ -308,7 +308,7 @@ case "${{1-}}" in
     while [ -e "$NATIVE_SPEND_DELAY_COST" ] && [ ! -e "$NATIVE_SPEND_RELEASE_COST" ]; do sleep 0.03; done
     if [ -e "$NATIVE_SPEND_EMPTY_COST" ]; then printf '%s\n' '[]'; : > "$NATIVE_SPEND_COST_DONE"; exit 0; fi
     partial=""
-    if [ -e "$NATIVE_SPEND_PARTIAL_COST" ]; then partial=",\"historyCoverageIsEstablished\":false"; fi
+    if [ -e "$NATIVE_SPEND_PARTIAL_COST" ]; then partial=',"historyCoverageIsEstablished":false'; fi
     printf '[{{"provider":"codex","currencyCode":"USD","totalCost":12.5,"totalTokens":1200,"sessionCostUSD":1.25,"sessionTokens":100,"last30DaysCostUSD":12.5,"last30DaysTokens":1200,"coverage":{{"priced":3,"unpriced":1}}%s,"provenance":"synthetic_history","daily":[{{"date":"{today}","totalCost":3.25,"totalTokens":800}},{{"date":"{yesterday}","totalCost":0,"totalTokens":0}}],"projects":[{{"name":"Synthetic Workspace","totalCost":12.5,"totalTokens":1200}}],"models":[{{"name":"Synthetic Model","cost":12.5,"totalTokens":1200}}]}}]\n' "$partial"
     : > "$NATIVE_SPEND_COST_DONE"
     ;;
@@ -353,6 +353,11 @@ def main():
     for tool in ("spectacle",):
         if shutil.which(tool) is None:
             parser.error(f"required consent-window capture tool missing: {tool}")
+    _needed = (args.action, args.state)
+    if "retained-error" in _needed:
+        for tool in ("gapplication",):
+            if shutil.which(tool) is None:
+                parser.error(f"required central refresh tool missing: {tool}")
 
     scratch = pathlib.Path(tempfile.mkdtemp(prefix="codexbar-wayland-spend-"))
     scratch.chmod(0o700)
@@ -398,8 +403,6 @@ def main():
             empty_cost.write_text("")
         if args.state in ("partial",):
             partial_cost.write_text("")
-        if args.state in ("retained-error",):
-            fail_cost.write_text("")
 
         create_portal_desktop_entry(desktop_path)
         desktop_created = True
@@ -558,19 +561,28 @@ def main():
                 wait_cost(cost_done)
                 time.sleep(0.6)
             elif args.state == "retained-error":
-                # The fixture signals failure before exiting (see
-                # spend_fixture_script), but the backend publishes the
-                # retained-error view state only after the initial cost
-                # scan and its per-provider retries complete — the
-                # window is still "refreshing" between the first marker
-                # and publication. Wait for the 3rd cost call (1 + 2
-                # retries), then settle so the capture records no stale /
-                # neighbouring frame. Wait for the 3rd cost call (1 + 2
-                # retries), then settle before capturing, otherwise the
-                # capture races the view-state update and may record the
-                # earlier (e.g. partial) frame.
+                # Retained-error needs controller state holding successful
+                # spend data before the failing refresh, so the initial scan
+                # must complete with cost_done first. Only then arm the
+                # failure marker and dispatch the central app.refresh action;
+                # each failing cost attempt writes cost_failure_done before
+                # exiting, and the backend publishes the retained-error view
+                # state only after the initial cost scan plus its
+                # per-provider retries (3 more cost calls) complete. Settle
+                # before capturing, otherwise the capture races the
+                # view-state update and may record the earlier frame
+                # (a stale / neighbouring frame).
+                wait_cost(cost_done)
+                fail_cost.write_text("")
+                fired = subprocess.run(
+                    ["gapplication", "action", "com.steipete.CodexBarGTK", "refresh"],
+                    capture_output=True, text=True, timeout=10)
+                if fired.returncode != 0:
+                    raise RuntimeError(
+                        f"central refresh action failed: {(fired.stderr or fired.stdout).strip()[-500:]}"
+                    )
                 wait_cost(cost_failure_done, timeout=40)
-                wait_cost_calls_at_least(cost_calls_path, 3, timeout=20)
+                wait_cost_calls_at_least(cost_calls_path, 4, timeout=20)
                 time.sleep(1.2)
             elif args.state == "partial":
                 # Fixture succeeds with historyCoverageIsEstablished=false,

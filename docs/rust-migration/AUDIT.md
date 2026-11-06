@@ -5821,3 +5821,37 @@ future models must verify the linked PR's status rather than trusting a stale
 - **Verification (this slice).** `python3 -m py_compile scripts/test-native-settings-wayland.py` OK; guard suite `tests/test_wayland_smoke_guard.py` 23 ran, OK; full Python suite **257 ran, OK (skipped=70; baseline 253/70 + 4 new)** — re-run after the build-90 resolution. **No live Wayland run in this worktree** (T3 agent cgroup, not the intended KDE session). Synthetic fixtures only.
 - **Gate.** UG Display hide-personal-info row stays OPEN (x 0.75 + guard live re-run still pending operator session); the `--bridge` route is harness-built only, so no UG row is claimed for it. Python default; UG **NOT PASSED**.
 - **Next step (operator, intended KDE session):** rebuild native debug binary from this head, then guarded run of `hide-personal-info` with `--bridge` (no Allow/APPROVE) — `--inspect-only` first, then the same without it; require persisted `hidePersonalInfo false→true` (changed keys=[[hidePersonalInfo]]) before claiming the row.
+
+
+### E192 — 2026-11-06: valid Spend fixtures and successful-scan-before-failure sequence (build 91)
+
+- **Scope:** `scripts/test-native-spend-wayland.py` and
+  `tests/test_wayland_spend_guard.py`; fixture/harness corrections only.
+  The partial fixture previously lost JSON property quotes through Python
+  f-string and shell quoting, producing unreadable cost data. The retained-error
+  fixture previously failed before any successful scan, so it could not show
+  retained spend. No backend coverage policy change is needed for these bugs.
+- **Behavior:** the optional JSON property is a shell single-quoted token.
+  Retained-error now waits for successful cost output, arms the failure marker,
+  dispatches central `app.refresh`, and waits for failure attempts before capture.
+  Existing screenshot/PID guards remain in place.
+- **Observed dependency merge:** PR #91 head
+  `aa9ab84228afcfdbc1e15d291f199648228c5179` passed `test` and `tray-dbus`
+  in run `42270342535`; root observed normal merge at
+  `4659d1150cb0a647a68983d40ad99126da445c60`, verified by fetch.
+  This entry records that observed merge, superseding E191's pending handoff.
+- **Verification:** generated fixture subprocess tests parse success/partial/
+  empty outputs and execute failure and success-then-failure transitions.
+  Explicit zero daily cost and priced/unpriced counts remain asserted.
+  `py_compile` passed; focused Spend guard/fixture suite: 19 passed; full Python
+  suite: 263 ran, 70 extension-dependent skips. The skips do not establish
+  Rust-extension parity in this local environment; remote workflow checks
+  remain to be observed on the PR head.
+- **Limits:** no new live KDE/GTK run or screenshot is claimed. The sequence
+  dispatch and final rendered retained-data state still need end-to-end
+  verification. Bridge accessibility/focus and other UG rows remain open.
+  Python remains default; UG/C01/C02/C03/CG are not accepted by this patch.
+- **Next:** verify the PR's current checks and merge normally, then reconcile
+  the additive installer prototype to the resulting main/build and continue
+  the actual Wayland action matrix. Packaging/runtime smoke prototypes remain
+  local and are not evidence of a default cutover.

@@ -4,6 +4,25 @@ Client-side changelog for the CodexBar GTK front-end. Each entry keys a build
 number (`CURRENT_PROJECT_VERSION`) to the upstream macOS CodexBar release its
 short version tracks, so "which version has what" maps cleanly onto both trees.
 
+## 0.82.0 (91) — 2026-11-06
+
+Tracks upstream CodexBar 0.82.0.
+
+### Fixed
+
+- Generate valid JSON for the synthetic Wayland partial-spend fixture.
+- Seed successful cost data before requesting the failed refresh used by the
+  retained-error capture, so the test can exercise retained data rather than
+  an initial failure.
+
+### Validation
+
+- Generated-fixture subprocess tests preserve explicit zero, coverage, empty
+  and failure states; focused Spend tests: 19 passed. Full Python suite:
+  263 ran, 70 extension-dependent skips. Live Wayland retained-data rendering
+  has not been reverified by this slice. Python remains the default and UG
+  remains open; see AUDIT E192.
+
 ## 0.82.0 (90) — 2026-11-06
 
 Tracks upstream CodexBar 0.82.0.

@@ -1,5 +1,8 @@
 import importlib.util
+import json
+import os
 import pathlib
+import subprocess
 import tempfile
 import unittest
 
@@ -154,8 +157,30 @@ class SpendWaylandGuardTests(unittest.TestCase):
         # initial scan plus its per-provider retries (3 cost calls)
         # and a view-state settle before the capture.
         source = pathlib.Path(MODULE.__file__).read_text(encoding="utf-8")
-        self.assertIn("wait_cost_calls_at_least(cost_calls_path, 3", source)
+        self.assertIn("wait_cost_calls_at_least(cost_calls_path, 4", source)
         self.assertIn("neighbouring frame", source)
+
+    def test_retained_error_arms_failure_only_after_initial_success(self):
+        # Retained-error must start from successful controller state:
+        # the initial cost scan completes (cost_done) before the fail
+        # marker is armed and the central refresh is dispatched. A
+        # pre-seeded fail marker would leave no retained data at all.
+        source = pathlib.Path(MODULE.__file__).read_text(encoding="utf-8")
+        retained = source[source.index('elif args.state == "retained-error":'):]
+        self.assertLess(
+            retained.index("wait_cost(cost_done)"),
+            retained.index('fail_cost.write_text("")'),
+        )
+        self.assertLess(
+            retained.index('fail_cost.write_text("")'),
+            retained.index(
+                '["gapplication", "action", "com.steipete.CodexBarGTK", "refresh"]'
+            ),
+        )
+        self.assertNotIn('if args.state in ("retained-error",):', source)
+        # The central refresh dispatches until, not just when, the
+        # failure-completed controller state is known.
+        self.assertIn("wait_cost(cost_failure_done", retained)
 
     def test_state_capture_requires_active_spend_window(self):
         # A state capture of a foreign/covert window is non-evidence:
@@ -169,3 +194,108 @@ class SpendWaylandGuardTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SpendFixtureSubprocessTests(unittest.TestCase):
+    """Execute the generated cost fixture for each scripted state."""
+
+    MARKERS = (
+        "cost-done", "cost-failure-done", "partial-cost",
+        "empty-cost", "fail-cost",
+    )
+
+    def make_fixture(self, root):
+        fake = root / "codexbar"
+        fake.write_text(MODULE.spend_fixture_script("2026-11-06", "2026-11-05"))
+        fake.chmod(0o700)
+        env = dict(os.environ)
+        env.update(
+            NATIVE_SPEND_CALLS=str(root / "calls.log"),
+            NATIVE_SPEND_COST_CALLS=str(root / "cost-calls.log"),
+            NATIVE_SPEND_COST_DONE=str(root / "cost-done"),
+            NATIVE_SPEND_COST_FAILURE_DONE=str(root / "cost-failure-done"),
+            NATIVE_SPEND_PARTIAL_COST=str(root / "partial-cost"),
+            NATIVE_SPEND_EMPTY_COST=str(root / "empty-cost"),
+            NATIVE_SPEND_FAIL_COST=str(root / "fail-cost"),
+            NATIVE_SPEND_DELAY_COST=str(root / "delay-cost"),
+            NATIVE_SPEND_RELEASE_COST=str(root / "release-cost"),
+        )
+        return fake, env
+
+    def run_cost(self, fake, env, root, *markers):
+        for name in ("release-cost", "delay-cost"):
+            (root / name).unlink(missing_ok=True)
+        for name in ("cost-done", "cost-failure-done",
+                     "partial-cost", "empty-cost", "fail-cost"):
+            (root / name).unlink(missing_ok=True)
+        for marker in markers:
+            (root / marker).write_text("")
+        return subprocess.run(
+            [str(fake), "cost"], capture_output=True, text=True,
+            env=env, timeout=10,
+        )
+
+    def test_success_payload_is_valid_json_with_known_zero_and_coverage(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            fake, env = self.make_fixture(root)
+            result = self.run_cost(fake, env, root)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertTrue((root / "cost-done").exists())
+            payloads = json.loads(result.stdout)
+            self.assertEqual(len(payloads), 1)
+            entry = payloads[0]
+            self.assertEqual(entry["provider"], "codex")
+            self.assertNotIn("historyCoverageIsEstablished", entry)
+            self.assertEqual(entry["totalCost"], 12.5)
+            self.assertEqual(entry["coverage"], {"priced": 3, "unpriced": 1})
+            # Yesterday's day is an explicit known zero, not missing.
+            yesterday = next(
+                d for d in entry["daily"] if d["date"] == "2026-11-05"
+            )
+            self.assertEqual(yesterday, {"date": "2026-11-05",
+                                         "totalCost": 0, "totalTokens": 0})
+
+    def test_partial_payload_sets_coverage_not_established(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            fake, env = self.make_fixture(root)
+            result = self.run_cost(fake, env, root, "partial-cost")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertTrue((root / "cost-done").exists())
+            entry = json.loads(result.stdout)[0]
+            # The JSON property name must survive shell generation.
+            self.assertIs(entry["historyCoverageIsEstablished"], False)
+            self.assertEqual(entry["coverage"], {"priced": 3, "unpriced": 1})
+
+    def test_empty_payload_is_valid_json_empty_array(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            fake, env = self.make_fixture(root)
+            result = self.run_cost(fake, env, root, "empty-cost")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertTrue((root / "cost-done").exists())
+            self.assertEqual(json.loads(result.stdout), [])
+
+    def test_failure_payload_exits_nonzero_with_failure_marker(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            fake, env = self.make_fixture(root)
+            result = self.run_cost(fake, env, root, "fail-cost")
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(result.stdout.strip(), "")
+            self.assertTrue((root / "cost-failure-done").exists())
+            self.assertFalse((root / "cost-done").exists())
+
+    def test_success_then_failure_on_same_fixture_rearms_failure_marker(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            fake, env = self.make_fixture(root)
+            first = self.run_cost(fake, env, root)
+            self.assertEqual(first.returncode, 0, first.stderr)
+            self.assertTrue((root / "cost-done").exists())
+            second = self.run_cost(fake, env, root, "fail-cost")
+            self.assertNotEqual(second.returncode, 0)
+            self.assertTrue((root / "cost-failure-done").exists())
+            # The failing pass leaves no new success marker.
+            self.assertFalse((root / "cost-done").exists())

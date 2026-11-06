@@ -2,8 +2,12 @@
 """Guarded Wayland Settings smoke using one RemoteDesktop portal connection.
 
 Run only in the intended KDE Wayland session and in the matching transient
-app scope documented in UG_GATE.md. The user must visually verify the consent
-prompt before approving. This script never falls back to X11 or fake input.
+app scope documented in UG_GATE.md. The default portal mode requires the
+user to visually verify the consent prompt before approving. The optional
+``--bridge`` mode instead routes input through the agent-agnostic
+``linux-agent-access`` bridge, which restores a reusable KDE portal grant
+without a per-run consent prompt; the fail-closed KWin guard is unchanged.
+This script never falls back to X11 or fake input.
 """
 import argparse
 import json
@@ -24,6 +28,11 @@ PORTAL_PATH = "/org/freedesktop/portal/desktop"
 REMOTE = "org.freedesktop.portal.RemoteDesktop"
 SESSION_IFACE = "org.freedesktop.portal.Session"
 APP_ID = "codexbar-gtk-synthetic-wayland-test"
+# The GTK application id (codexbar_gtk.APP_ID); also the AT-SPI name the
+# linux-agent-access bridge resolves for its exact-match focus check.
+APP_ID_REAL = "com.steipete.CodexBarGTK"
+BRIDGE_APPLICATION = APP_ID_REAL
+BRIDGE_DEFAULT_COMMAND = "linux-agent-access"
 WAYLAND_SWITCH_ACTIONS = {
     "refresh-when-panel-opens": {
         "preference": "refreshAllProvidersOnMenuOpen",
@@ -681,6 +690,77 @@ class PortalDriver:
             except Exception:
                 pass
 
+def resolve_bridge_command(override, exists_fn=shutil.which, is_file=pathlib.Path.is_file):
+    """Resolve the optional bridge entry point, fail-closed when absent.
+
+    Returns the command to invoke, preferring an explicit override. Raises
+    RuntimeError when the bridge is not installed, so a --bridge run never
+    silently falls back to the portal path (and vice versa).
+    """
+    if override:
+        if exists_fn(override) or is_file(pathlib.Path(override)):
+            return override
+        raise RuntimeError(f"bridge command not found: {override}; no input sent")
+    found = exists_fn(BRIDGE_DEFAULT_COMMAND)
+    if not found:
+        raise RuntimeError(
+            f"{BRIDGE_DEFAULT_COMMAND!r} not on PATH; bridge mode unavailable "
+            "(omit --bridge to use the portal consent flow)"
+        )
+    return found
+
+
+class BridgeDriver:
+    """Drive absolute-coordinate input through linux-agent-access.
+
+    Each ``action`` invocation reconnects, re-screenshots (a fresh
+    observation id) and checks the named AT-SPI application is active
+    before sending one action -- exactly the bridge's CLI contract. No
+    KDE consent prompt is involved: the bridge restores its reusable
+    OS-level portal grant unattended. The KWin observer in this script
+    remains the fail-closed evidence source; bridge coordinates are
+    absolute, so the caller keeps the cursor==target guard unchanged.
+    """
+    def __init__(self, command, application=BRIDGE_APPLICATION,
+                 runner=subprocess.run, timeout=60):
+        self.command = command
+        self.application = application
+        self.runner = runner
+        self.timeout = timeout
+
+    def action(self, payload):
+        result = self.runner(
+            [self.command, "action", "--application", self.application,
+             "--json", json.dumps(payload)],
+            capture_output=True, text=True, timeout=self.timeout)
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"bridge action failed ({self.command}): "
+                f"{(result.stderr or '').strip() or result.stdout.strip()}"
+            )
+        try:
+            decoded = json.loads(result.stdout)
+        except (TypeError, ValueError) as error:
+            raise RuntimeError(
+                f"bridge action returned non-JSON output; no input confirmed"
+            ) from error
+        if isinstance(decoded, dict) and "error" in decoded:
+            raise RuntimeError(f"bridge action error: {decoded['error']}")
+        return decoded
+
+    def move(self, x, y):
+        return self.action({"kind": "move", "x": int(x), "y": int(y)})
+
+    def click(self, x, y):
+        return self.action({"kind": "click", "button": "left",
+                            "x": int(x), "y": int(y)})
+
+    def close(self):
+        # The bridge CLI keeps the portal session in its per-invocation
+        # backend worker (closed at process exit); nothing to tear down.
+        return None
+
+
 def guarded_click(portal, app_pid, latest, x, y):
     """Move to (x, y) and click only after the compositor state passes guard."""
     state = latest()
@@ -700,6 +780,36 @@ def guarded_click(portal, app_pid, latest, x, y):
     portal.click()
 
 
+def guarded_click_bridge(bridge, app_pid, latest, x, y):
+    """Bridge variant of guarded_click: absolute coords, same KWin guard.
+
+    The bridge sends NotifyPointerMotionAbsolute + button itself, so there
+    is no relative motion to await -- but the fail-closed guard is NOT
+    weakened: cursor must equal [x, y], pid/active/top_hit must match, and
+    the 0.15-0.35s age window must hold immediately before the click.
+    """
+    state = latest()
+    if not target_window_contains(state, x, y):
+        raise RuntimeError("action coordinates outside the synthetic window; no input sent")
+    if not (
+        state.get("pid") == app_pid
+        and state.get("active") is True
+        and state.get("top_hit") is True
+    ):
+        raise RuntimeError("synthetic Settings is not active/topmost; no input sent")
+    bridge.move(x, y)
+    deadline = time.monotonic() + 2
+    while time.monotonic() < deadline:
+        if guard_target(latest(), app_pid, x, y):
+            break
+        time.sleep(.01)
+    else:
+        raise RuntimeError("target/focus hit-test unstable after motion; no click sent")
+    if not guard_target(latest(), app_pid, x, y):
+        raise RuntimeError("final target/focus guard failed; no click sent")
+    bridge.click(x, y)
+
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -713,9 +823,22 @@ def main():
                              "with --inspect-only first)")
     parser.add_argument("--inspect-only", action="store_true",
                         help="capture the synthetic Settings window and exit without requesting portal access")
+    # Input routing: --bridge (agent-agnostic linux-agent-access bridge,
+    # no per-run KDE consent prompt) vs the default --portal flow. The
+    # bridge is optional and flag-gated: with neither flag the runner uses
+    # the bridge when installed, and the portal path only when it is not.
+    parser.add_argument("--bridge", action="store_true",
+                        help="send input via linux-agent-access (restores the "
+                             "reusable KDE grant; no consent prompt, no APPROVE)")
+    parser.add_argument("--portal", action="store_true",
+                        help="force the RemoteDesktop portal flow (KDE consent prompt + APPROVE)")
+    parser.add_argument("--bridge-cmd",
+                        help=f"bridge executable (default: {BRIDGE_DEFAULT_COMMAND} on PATH)")
     parser.add_argument("--switch-x", type=int, help="override the geometry-derived KWin X coordinate")
     parser.add_argument("--switch-y", type=int, help="override the geometry-derived KWin Y coordinate")
     args = parser.parse_args()
+    if args.bridge and args.portal:
+        parser.error("--bridge and --portal are mutually exclusive")
     if (args.switch_x is None) != (args.switch_y is None):
         parser.error("--switch-x and --switch-y must be supplied together")
     action = WAYLAND_SWITCH_ACTIONS[args.action]
@@ -743,10 +866,26 @@ def main():
     for tool in ("spectacle",):
         if shutil.which(tool) is None:
             parser.error(f"required consent-window capture tool missing: {tool}")
+    if args.portal:
+        use_bridge = False
+    elif args.bridge or args.bridge_cmd:
+        use_bridge = True
+    else:
+        use_bridge = shutil.which(BRIDGE_DEFAULT_COMMAND) is not None
+    bridge_command = None
+    if use_bridge:
+        try:
+            bridge_command = resolve_bridge_command(args.bridge_cmd)
+        except RuntimeError as error:
+            parser.error(str(error))
+        print(f"Input route: linux-agent-access bridge ({bridge_command}); "
+              "no KDE consent prompt or APPROVE is required.", flush=True)
+    else:
+        print("Input route: RemoteDesktop portal; expect the KDE consent prompt.", flush=True)
 
     scratch = pathlib.Path(tempfile.mkdtemp(prefix="codexbar-wayland-settings-"))
     scratch.chmod(0o700)
-    app = observer = portal = None
+    app = observer = portal = input_driver = None
     notification_monitor = None
     bus = None
     capture_status = None
@@ -894,24 +1033,38 @@ esac
             print("Inspection-only mode; no portal request or input sent.", flush=True)
             return 0
         print(f"Synthetic fixture and consent capture path: {scratch}", flush=True)
-        print("Waiting for KDE RemoteDesktop consent prompt. Verify its synthetic test name visually; click Allow only then.", flush=True)
-        portal = PortalDriver(bus)
-        portal.start()
-        capture_deadline = time.monotonic() + 3
-        while time.monotonic() < capture_deadline and not capture_status.exists():
-            time.sleep(.05)
-        if not capture_status.exists():
-            raise RuntimeError("portal returned without a captured approval window; no input sent")
-        capture_result = json.loads(capture_status.read_text())
-        if capture_result.get("exit_code") != 0 or not consent_capture.is_file():
-            raise RuntimeError("portal approval window capture failed; no input sent")
-        print(f"Portal approval window captured at {consent_capture}; waiting for reviewer confirmation.", flush=True)
-        print("After the reviewer verifies the synthetic test name and you click Allow, enter APPROVE here.", flush=True)
-        if sys.stdin.readline().strip() != "APPROVE":
-            raise RuntimeError("explicit operator approval token missing; no input sent")
+        if use_bridge:
+            print("Bridge mode: the linux-agent-access bridge restores its "
+                  "reusable KDE grant unattended; no consent prompt.", flush=True)
+            input_driver = BridgeDriver(bridge_command)
+            portal = input_driver
+        else:
+            print("Waiting for KDE RemoteDesktop consent prompt. Verify its synthetic test name visually; click Allow only then.", flush=True)
+            portal = PortalDriver(bus)
+            portal.start()
+            capture_deadline = time.monotonic() + 3
+            while time.monotonic() < capture_deadline and not capture_status.exists():
+                time.sleep(.05)
+            if not capture_status.exists():
+                raise RuntimeError("portal returned without a captured approval window; no input sent")
+            capture_result = json.loads(capture_status.read_text())
+            if capture_result.get("exit_code") != 0 or not consent_capture.is_file():
+                raise RuntimeError("portal approval window capture failed; no input sent")
+            print(f"Portal approval window captured at {consent_capture}; waiting for reviewer confirmation.", flush=True)
+            print("After the reviewer verifies the synthetic test name and you click Allow, enter APPROVE here.", flush=True)
+            if sys.stdin.readline().strip() != "APPROVE":
+                raise RuntimeError("explicit operator approval token missing; no input sent")
 
         def latest():
             return json.loads(state_path.read_text())
+
+        def guarded_input(app_pid, x, y):
+            # One entry point for both input routes: --bridge swaps only
+            # the transport; the KWin guard range and target checks are
+            # identical in both branches.
+            if use_bridge and isinstance(portal, BridgeDriver):
+                return guarded_click_bridge(portal, app_pid, latest, x, y)
+            return guarded_click(portal, app_pid, latest, x, y)
 
         # The operator confirmation runs in the T3 client, which becomes the
         # active window. Reactivate the exact synthetic Settings PID/title after
@@ -955,7 +1108,7 @@ esac
                 tab_y = round(gy + height * 0.94)
             if not target_window_contains(baseline, tab_x, tab_y):
                 raise RuntimeError("page-tab point outside Settings window; no click sent")
-            guarded_click(portal, app.pid, latest, tab_x, tab_y)
+            guarded_input(app.pid, tab_x, tab_y)
             deadline = time.monotonic() + 2
             while time.monotonic() < deadline:
                 if guard_target(latest(), app.pid, tab_x, tab_y):
@@ -1055,21 +1208,27 @@ esac
                 # subscription before the guarded pointer click.
                 time.sleep(0.2)
         dx, dy = switch_x - baseline["cursor"][0], switch_y - baseline["cursor"][1]
-        if abs(dx) > 1600 or abs(dy) > 1200:
-            raise RuntimeError("requested pointer delta exceeds safety bound; no input sent")
-        portal.move(dx, dy)
-        deadline = time.monotonic() + 2
-        while time.monotonic() < deadline:
-            state = latest()
-            if guard_target(state, app.pid, switch_x, switch_y):
-                break
-            time.sleep(.01)
+        if use_bridge:
+            # Absolute transport: the bridge moves to (x, y) itself; the
+            # safety bound is the target_window_contains check above plus
+            # the bridge's own screen-bounds validation.
+            guarded_input(app.pid, switch_x, switch_y)
         else:
-            raise RuntimeError("target/focus hit-test unstable after motion; no click sent")
-        # Final adjacent snapshot check: any stale or ambiguous state suppresses click.
-        if not guard_target(latest(), app.pid, switch_x, switch_y):
-            raise RuntimeError("final target/focus guard failed; no click sent")
-        portal.click()
+            if abs(dx) > 1600 or abs(dy) > 1200:
+                raise RuntimeError("requested pointer delta exceeds safety bound; no input sent")
+            portal.move(dx, dy)
+            deadline = time.monotonic() + 2
+            while time.monotonic() < deadline:
+                state = latest()
+                if guard_target(state, app.pid, switch_x, switch_y):
+                    break
+                time.sleep(.01)
+            else:
+                raise RuntimeError("target/focus hit-test unstable after motion; no click sent")
+            # Final adjacent snapshot check: any stale or ambiguous state suppresses click.
+            if not guard_target(latest(), app.pid, switch_x, switch_y):
+                raise RuntimeError("final target/focus guard failed; no click sent")
+            portal.click()
         if is_provider_action:
             deadline = time.monotonic() + 8
             while time.monotonic() < deadline:
@@ -1144,6 +1303,8 @@ esac
             stop_notification_monitor(notification_monitor)
         if portal:
             portal.close()
+        if input_driver is not None and input_driver is not portal:
+            input_driver.close()
         if app and app.poll() is None:
             try:
                 os.killpg(app.pid, signal.SIGTERM)

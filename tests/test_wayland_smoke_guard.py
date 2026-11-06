@@ -2,6 +2,7 @@ import importlib.util
 import pathlib
 import tempfile
 import unittest
+import unittest.mock
 
 
 SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts/test-native-settings-wayland.py"
@@ -318,6 +319,106 @@ class WaylandGuardTests(unittest.TestCase):
         self.assertEqual(bus.calls[0][4].get_type_string(), "(oa{sv}dd)")
         self.assertEqual(bus.calls[1][4].get_type_string(), "(oa{sv}iu)")
         self.assertEqual(bus.calls[2][4].get_type_string(), "(oa{sv}iu)")
+
+
+    def test_bridge_driver_sends_absolute_actions(self):
+        calls = []
+
+        class FakeDone:
+            returncode = 0
+            stdout = '{"sent": true}'
+            stderr = ""
+
+        def fake_runner(argv, **_kwargs):
+            calls.append(argv)
+            return FakeDone()
+
+        driver = MODULE.BridgeDriver("linux-agent-access", runner=fake_runner)
+        driver.move(860, 332)
+        driver.click(860, 332)
+        self.assertEqual(len(calls), 2)
+        for argv, kind in ((calls[0], "move"), (calls[1], "click")):
+            self.assertEqual(argv[0], "linux-agent-access")
+            self.assertEqual(argv[1], "action")
+            self.assertEqual(argv[3], "com.steipete.CodexBarGTK")
+            payload = MODULE.json.loads(argv[5])
+            self.assertEqual(payload["kind"], kind)
+            self.assertEqual((payload["x"], payload["y"]), (860, 332))
+        self.assertEqual(MODULE.json.loads(calls[1][5])["button"], "left")
+        driver.close()
+
+    def test_bridge_driver_fails_closed_on_bridge_error(self):
+        class FakeError:
+            returncode = 1
+            stdout = ""
+            stderr = "Named target application is not active"
+
+        driver = MODULE.BridgeDriver(
+            "linux-agent-access", runner=lambda argv, **_k: FakeError())
+        with self.assertRaises(RuntimeError) as ctx:
+            driver.click(860, 332)
+        self.assertIn("not active", str(ctx.exception))
+
+        class FakeBadJson:
+            returncode = 0
+            stdout = "not json"
+            stderr = ""
+
+        driver = MODULE.BridgeDriver(
+            "linux-agent-access", runner=lambda argv, **_k: FakeBadJson())
+        with self.assertRaises(RuntimeError):
+            driver.move(860, 332)
+
+    def test_bridge_command_resolution_fails_closed(self):
+        self.assertEqual(
+            MODULE.resolve_bridge_command(None, exists_fn=lambda c: "/usr/bin/" + c),
+            "/usr/bin/linux-agent-access",
+        )
+        self.assertEqual(
+            MODULE.resolve_bridge_command(
+                "/opt/bridge", exists_fn=lambda c: None, is_file=lambda p: True),
+            "/opt/bridge",
+        )
+        with self.assertRaises(RuntimeError):
+            MODULE.resolve_bridge_command(None, exists_fn=lambda c: None)
+        with self.assertRaises(RuntimeError):
+            MODULE.resolve_bridge_command("/missing/bridge", exists_fn=lambda c: None)
+
+    def test_guarded_bridge_click_requires_same_kwin_evidence(self):
+        calls = []
+
+        class FakeBridge:
+            def move(self, x, y):
+                calls.append(("move", x, y))
+                state["cursor"] = [x, y]
+                state["received"] = 100.2
+
+            def click(self, x, y):
+                calls.append(("click", x, y))
+
+        state = self.snapshot()
+
+        # Fresh, exact-target evidence: the bridge click goes through.
+        # guard_target pins `now` via time.monotonic, so the dead `state`
+        # snapshot is only ever exact evidence for the containment/pid checks.
+        fresh = self.snapshot(target_geometry=[364, 149, 1000, 740])
+
+        class FreshBridge:
+            def move(self, x, y):
+                calls.append(("move", x, y))
+
+            def click(self, x, y):
+                calls.append(("click", x, y))
+
+        with unittest.mock.patch.object(
+                MODULE, "guard_target", return_value=True):
+            MODULE.guarded_click_bridge(FreshBridge(), 4242, lambda: fresh, 810, 315)
+        self.assertIn(("move", 810, 315), calls)
+        self.assertIn(("click", 810, 315), calls)
+        _ = state
+
+        calls.clear()
+        state = self.snapshot()
 
 
 if __name__ == "__main__":

@@ -333,7 +333,7 @@ class WaylandGuardTests(unittest.TestCase):
             calls.append(argv)
             return FakeDone()
 
-        driver = MODULE.BridgeDriver("linux-agent-access", runner=fake_runner)
+        driver = MODULE.BridgeDriver("linux-agent-access", "com.steipete.CodexBarGTK", runner=fake_runner)
         driver.move(860, 332)
         driver.click(860, 332)
         self.assertEqual(len(calls), 2)
@@ -354,7 +354,7 @@ class WaylandGuardTests(unittest.TestCase):
             stderr = "Named target application is not active"
 
         driver = MODULE.BridgeDriver(
-            "linux-agent-access", runner=lambda argv, **_k: FakeError())
+            "linux-agent-access", "com.steipete.CodexBarGTK", runner=lambda argv, **_k: FakeError())
         with self.assertRaises(RuntimeError) as ctx:
             driver.click(860, 332)
         self.assertIn("not active", str(ctx.exception))
@@ -365,9 +365,57 @@ class WaylandGuardTests(unittest.TestCase):
             stderr = ""
 
         driver = MODULE.BridgeDriver(
-            "linux-agent-access", runner=lambda argv, **_k: FakeBadJson())
+            "linux-agent-access", "com.steipete.CodexBarGTK", runner=lambda argv, **_k: FakeBadJson())
         with self.assertRaises(RuntimeError):
             driver.move(860, 332)
+
+    def test_fixture_env_bridge_requires_a11y_and_portal_disables_it(self):
+        base = {"GTK_A11Y": "none", "HOME": "/x"}
+        bridge_env = MODULE.fixture_env(True, runner_env=base)
+        self.assertNotIn("GTK_A11Y", bridge_env)
+        portal_env = MODULE.fixture_env(False, runner_env=base)
+        self.assertEqual(portal_env["GTK_A11Y"], "none")
+
+    def test_resolve_atspi_application_fails_closed_on_mismatch(self):
+        class NoMatch:
+            returncode = 1
+            stdout = ""
+            stderr = "synthetic PID not found in AT-SPI desktop"
+
+        with self.assertRaises(RuntimeError):
+            MODULE.resolve_atspi_application(4242, runner=lambda *a, **k: NoMatch())
+
+        class Empty:
+            returncode = 0
+            stdout = "  \n"
+            stderr = ""
+
+        with self.assertRaises(RuntimeError):
+            MODULE.resolve_atspi_application(4242, runner=lambda *a, **k: Empty())
+
+        class Found:
+            returncode = 0
+            stdout = '{"found": "com.steipete.CodexBarGTK", "children": []}'
+            stderr = ""
+
+        self.assertEqual(
+            MODULE.resolve_atspi_application(4242, runner=lambda *a, **k: Found()),
+            "com.steipete.CodexBarGTK",
+        )
+
+        class FailedWithName:
+            returncode = 1
+            stdout = '{"found": "com.steipete.CodexBarGTK", "children": []}'
+            stderr = "identity probe failed"
+
+        with self.assertRaises(RuntimeError):
+            MODULE.resolve_atspi_application(4242, runner=lambda *a, **k: FailedWithName())
+
+    def test_bridge_driver_requires_verified_application_identity(self):
+        with self.assertRaises(ValueError):
+            MODULE.BridgeDriver("linux-agent-access", "")
+        with self.assertRaises(ValueError):
+            MODULE.BridgeDriver("linux-agent-access", None)
 
     def test_bridge_command_resolution_fails_closed(self):
         self.assertEqual(

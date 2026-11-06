@@ -8,14 +8,14 @@ history. A checked box means **verified and merged**, not merely implemented.
 
 | Field | Current checkpoint |
 | --- | --- |
-| Goal | Fully native Rust GTK4/libadwaita application, including verified packaging and removal of the legacy runtime. |
-| Current phase | BG passed and U01–U08 implementation merged. UG remains **NOT PASSED**; Python remains default. |
-| Last observed merge | PR #91 merged normally at `4659d1150cb0a647a68983d40ad99126da445c60` (build 90); head `aa9ab84228afcfdbc1e15d291f199648228c5179`, `test` and `tray-dbus` passed in run `42270342535` (E192). |
-| Active slice | Build 91 on `orchestrated/crouton-ug-build91`: correct synthetic partial JSON and retained-error success→failure setup; code commit `613fe34`, current PR checks/merge pending. |
-| Latest local checks | `py_compile`; 19 focused Spend guard/fixture tests; full Python suite 263 ran with 70 extension-dependent skips. These are fixture tests, not a live GTK pass or extension parity proof. |
-| UI acceptance | Partial/retained-error captures still require live revalidation. Bridge AT-SPI focus/accessibility and remaining Wayland controls/navigation remain open; see `UG_GATE.md`. |
-| Packaging | Additive installer prototype is local, with reviewed 13-case isolated smoke exit 0. Representative Docker Python-free runtime smoke passed for debug/release; installed-prefix/service/full UI and actual SVG decode acceptance remain open. No default switch or Python removal. |
-| Next step | Observe build-91 PR checks; merge normally if ready. Reconcile installer prototype onto that main with the next build number; continue UG interactions and then C01–CG gate acceptance. |
+| Goal | Fully native Rust GTK4/libadwaita application with verified packaging and legacy runtime removal. |
+| Current phase | BG passed and U01–U08 implementation merged. UG **NOT PASSED**; Python default. |
+| Last observed merge | PR #94 merged at `036a25814cbc6f6b4fbb28cba066095edfae7ee6` (build 92); head `46753a1`, both required checks passed in run `42292411933`. |
+| Active publication | Draft PR #93, build 93, additive isolated-prefix installer preparation. The branch incorporates build-92 main; fresh published-head CI is pending. |
+| Installer verification | 13-case isolated local smoke exit 0, covering debug/release/rollback identity, preservation, ownership, rendering failures/retry and missing HOME. Prior draft heads passed remote installer CI; those results do not establish this merged head's CI. |
+| UI acceptance | Corrected Spend states have live fixture evidence awaiting ledger reconciliation. The final guarded bridge click remains open after repairing the user accessibility bus. Other Wayland controls/navigation remain open; see `UG_GATE.md`. |
+| Runtime proof | Separate local Docker smoke passed for debug/release without Python, with real actions and clean quit. Installed-prefix, service/full UI and actual SVG decoding acceptance remain open; linkage inspection alone is insufficient. |
+| Next | Observe this draft's fresh CI/review; keep default Python and cutover gates open. Continue actual Wayland action matrix, integrate the runtime-proof harness separately, and accept C01–CG only with complete evidence. |
 
 
 **First commands for a new model/session:**

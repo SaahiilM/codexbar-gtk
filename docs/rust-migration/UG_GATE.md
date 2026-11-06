@@ -477,3 +477,12 @@ those inputs and transitions; they do not prove that GTK rendered the expected
 retained-data notice. No new screenshot or UI action pass is claimed here.
 The existing UG matrix remains open, including bridge accessibility/focus and
 remaining Wayland interactions. Python remains the default.
+
+
+### Build 92 bridge fixture accessibility (E194; live pass remains open)
+
+The bridge fixture now permits AT-SPI and resolves the exported application
+name by exact synthetic process ID. Failed probes suppress input, even if a
+name appears in their output. Unit tests cover these contracts, but earlier
+live attempts failed on accessibility discovery and the final code has no
+verified live click yet. The existing UG action rows remain open.

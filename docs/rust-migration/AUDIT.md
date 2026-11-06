@@ -5855,6 +5855,39 @@ future models must verify the linked PR's status rather than trusting a stale
   the additive installer prototype to the resulting main/build and continue
   the actual Wayland action matrix. Packaging/runtime smoke prototypes remain
   local and are not evidence of a default cutover.
+
+
+### E194 — 2026-11-06: bridge fixture accessibility and process-scoped identity (build 92)
+
+- **Scope:** `scripts/test-native-settings-wayland.py` and
+  `tests/test_wayland_smoke_guard.py`. The bridge uses AT-SPI focus evidence,
+  while the fixture previously forced `GTK_A11Y=none` and assumed the GTK
+  application ID was the exported AT-SPI name.
+- **Behavior:** bridge fixtures remove the disabling accessibility override;
+  portal-only fixtures retain it. A bounded subprocess initializes AT-SPI,
+  enumerates application names/PIDs only and selects the exact synthetic PID.
+  The resulting nonempty name is required by `BridgeDriver`; unsuccessful
+  probes fail closed, including nonzero exits that print a name. No session
+  address is guessed. Existing KWin process/focus/geometry guards remain.
+  The installed Linux Agent Access bridge and its saved grant are unchanged.
+- **Observed dependency:** PR #92 head
+  `d494bbe7f9875c9bd4ace2c3a9ee212eec11a969` passed both required checks in
+  run `42290011803` and merged normally at
+  `b69a9840b09db110539d3f64ca0e3cca4dd00dbf`, verified by root fetch.
+  Its corrected Spend fixtures do not by themselves prove live rendering.
+- **Verification:** `py_compile`, focused guard suite 26 passed, full Python
+  suite 266 ran with 70 extension-dependent skips, and diff checks passed.
+  Tests cover accessibility environment selection, identity mismatch/empty
+  output, nonzero probe status even with a returned name, and explicit bridge
+  identity. Remote workflow checks remain pending for the published head.
+- **Live limits:** earlier attempts failed closed on accessibility bus/no
+  response errors. The final corrected code has not been rerun live; no new
+  pointer click, persisted preference, or screenshot pass is claimed here.
+- **Gate/next:** UG remains NOT PASSED and Python stays default. Rebuild and
+  exercise the synthetic fixture through the existing bridge after PR checks,
+  verify only the selected preference changes, then continue remaining UG
+  actions and installed-package acceptance. Packaging remains a separate
+  additive draft; the Python-free Docker smoke is separate local evidence.
 ### E193 — 2026-11-06: C01 additive isolated-prefix packaging prototype (DRAFT; E192 taken by UI PR92)
 
 - **Branch:** `orchestrated/crouton-native-cutover-prep`, draft PR93 at
@@ -5916,3 +5949,15 @@ Both required checks passed on `774dccc` in run `42291465456`, including the
 installer smoke. Those results do not cover this new metadata commit, whose
 checks must be observed separately. PR #94 owns build 92; draft PR #93 is
 reserved for build 93. No C gate or default cutover is accepted here.
+
+
+#### E193 dependency reconciliation — 2026-11-06
+
+Root observed PR #94 head `46753a1481d50eae84c73fa509137d5af3aa905e`
+pass `test` and `tray-dbus` in run `42292411933`, then merged normally at
+`036a25814cbc6f6b4fbb28cba066095edfae7ee6`; fetch confirmed main. This
+packaging draft retains its own build 93 and both build-92 and build-93
+changelog entries. Main E194 and the earlier E193 prototype history are both
+preserved. Metadata/base reconciliation changes no installer behavior; the
+published merged head needs fresh CI. The remaining live bridge click is
+unverified; UG and C gates remain open and Python remains default.

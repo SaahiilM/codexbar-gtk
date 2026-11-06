@@ -4,6 +4,24 @@ Client-side changelog for the CodexBar GTK front-end. Each entry keys a build
 number (`CURRENT_PROJECT_VERSION`) to the upstream macOS CodexBar release its
 short version tracks, so "which version has what" maps cleanly onto both trees.
 
+## 0.82.0 (88) — 2026-11-06
+
+Tracks upstream CodexBar 0.82.0.
+
+### Fixed
+
+- Fix the guarded Wayland runner's hide-personal-info switch
+  `y_offset` (E188): pixel-measured from the kept Display
+  page-check capture (`/tmp/codexbar-display-page-check.png`), the
+  Hide account details toggle centre is at window y 311
+  (x 728..773, centre 750), not the guessed 320 (click point
+  (1264, 469) missed above the row; `hidePersonalInfo` stayed
+  false). `y_offset` is set to the measured 311; `switch_x_fraction`
+  stays 0.90 per instruction (toggle is at the row's right side —
+  pixel pill centre is 0.750, though, so a future live run should
+  confirm x too). No live Wayland PASS is claimed yet. UG remains
+  **NOT PASSED**; Python remains the default.
+
 ## 0.82.0 (87) — 2026-11-06
 
 Tracks upstream CodexBar 0.82.0.

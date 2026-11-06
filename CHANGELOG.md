@@ -4,6 +4,26 @@ Client-side changelog for the CodexBar GTK front-end. Each entry keys a build
 number (`CURRENT_PROJECT_VERSION`) to the upstream macOS CodexBar release its
 short version tracks, so "which version has what" maps cleanly onto both trees.
 
+## 0.82.0 (87) — 2026-11-06
+
+Tracks upstream CodexBar 0.82.0.
+
+### Fixed
+
+- Fix the Spend Wayland retained-error stale capture (E187): the
+  `--state retained-error` wait returned on the first failure marker,
+  before the backend finished the initial cost scan plus its
+  per-provider retries and published the retained-error view state,
+  so the capture could record the neighbouring partial frame
+  (byte-identical evidence). The wait now covers 3 cost-fixture
+  calls (1 initial + 2 retries) and a view-state settle before
+  capturing, and the state capture fails closed unless the
+  synthetic Spend window is active. No live Wayland PASS is
+  claimed yet — the operator must re-run `--state retained-error`
+  on the intended KDE session and require a retained-error capture
+  distinct from the partial capture. UG remains **NOT PASSED**;
+  Python remains the default.
+
 ## 0.82.0 (86) — 2026-11-05
 
 Tracks upstream CodexBar 0.82.0.

@@ -467,3 +467,13 @@ Only after those items are verified should UG be reconsidered. C01 upgrade and
 rollback in an isolated prefix/home, C02 no-Python/PyGObject/PyO3 verification,
 C03 Python removal, and CG final audit remain blocked behind UG. Keep Python as
 the default in the meantime.
+
+
+### Build 91 fixture correction (E192; live verification remains open)
+
+The partial Spend fixture now emits parseable JSON. Retained-error now seeds a
+successful cost scan before failing a refresh. Subprocess fixture tests prove
+those inputs and transitions; they do not prove that GTK rendered the expected
+retained-data notice. No new screenshot or UI action pass is claimed here.
+The existing UG matrix remains open, including bridge accessibility/focus and
+remaining Wayland interactions. Python remains the default.

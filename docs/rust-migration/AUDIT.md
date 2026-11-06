@@ -5857,8 +5857,10 @@ future models must verify the linked PR's status rather than trusting a stale
   local and are not evidence of a default cutover.
 ### E193 — 2026-11-06: C01 additive isolated-prefix packaging prototype (DRAFT; E192 taken by UI PR92)
 
-- **Branch:** `orchestrated/crouton-native-cutover-prep` (no PR/version bump;
-  UG NOT PASSED, C cutover gated; prototype additive only).
+- **Branch:** `orchestrated/crouton-native-cutover-prep`, draft PR93 at
+  `aa3a55f` (retargeted to `main` after PR92 merged at `b69a984`; merge
+  `origin/main` (`bb6d915`), no rebase churn; build 92 tentative confirmed).
+  UG NOT PASSED, C cutover gated; prototype additive only.
 - **Scope (prototype, no default cutover):** `scripts/build-native.sh` builds
   a prebuilt artifact separate from install; `scripts/install-native.sh`
   installs it into `--prefix` (default `$HOME/.local`) with atomic rename,
@@ -5874,8 +5876,9 @@ future models must verify the linked PR's status rather than trusting a stale
   install debug → upgrade release → rollback debug with sha256 on disk,
   byte-preservation through install/uninstall, pre-existing Python desktop/unit
   preservation, activate backup/restore, ELF/process evidence, no systemd
-  exec); `rust-gtk/tests/python_free_proof.rs` (ELF NEEDED has no
-  libpython/pyo3, has libgtk-4); `rust-gtk/tests/svg_loader_negative.rs`
+  exec); `rust-gtk/tests/python_free_linkage.rs` (ELF NEEDED has no
+  libpython/pyo3, has libgtk-4; linkage inspection only, C02 unproven);
+  `rust-gtk/tests/svg_loader_negative.rs`
   (ignored, separate from desktop-file validation).
 - **D2:** retained binary name `codexbar-gtk-native`; stable launcher may point
   to it later without rename.
@@ -5899,5 +5902,5 @@ future models must verify the linked PR's status rather than trusting a stale
   C02 absent-runtime proof remains unproven.
 - **Gate:** UG remains NOT PASSED; Python remains default. C01/C02/C03/CG
   not claimed accepted; C03 deletion/assertion mapping and CG audit remain.
-- **Next step:** reviewable in this branch; CI exact-head `test` + `tray-dbus`
-  on the new smoke after root assigns build/PR.
+- **Next step:** reviewable in this branch; exact-head CI must rerun on the
+  post-merge head (`bb6d915`) and root retains the final merge decision.

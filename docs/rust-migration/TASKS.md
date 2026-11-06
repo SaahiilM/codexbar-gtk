@@ -590,8 +590,8 @@ audit. C01 package checks must include `librsvg2-common`.
   service/autostart, upgrade and rollback. Preserve identity/config/history;
   test with isolated home and install prefix. Remove Python/typelib requirements
   from launch paths, not native GTK shared-library requirements.
-  Additive prototype (unallocated pending root — E190/E191 taken by PR91/E189 chain; branch `orchestrated/crouton-native-cutover-prep`,
-  tentative build 92, UG-gated cutover unchanged): `scripts/build-native.sh`
+  Additive prototype (E193, branch `orchestrated/crouton-native-cutover-prep` stacked on merged PR92
+  at `b69a984`, draft PR93 at `aa3a55f`, tentative build 92, UG-gated cutover unchanged): `scripts/build-native.sh`
   (prebuilt artifact, separate from install), `scripts/install-native.sh` +
   stage templates `scripts/native/stage/` (`--activate` only writes canonical
   `codexbar-gtk.desktop`/`codexbar-gtk.service` with `.pre-native` backup and

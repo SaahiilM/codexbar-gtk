@@ -5716,3 +5716,19 @@ future models must verify the linked PR's status rather than trusting a stale
 - **Verification (this slice).** `py_compile` OK; full Python suite 253 ran, OK (skipped=70; baseline 253/70). **No live Wayland run in this worktree** (T3 agent cgroup, not the intended KDE session). Screenshot `/tmp/verify-hide-offset.png` (annotated) left in /tmp only.
 - **Gate.** UG Display hide-personal-info row stays OPEN (harness-fixed; live PASS pending operator re-run). Python default; UG **NOT PASSED**.
 - **Next step (operator, intended KDE session):** rebuild native debug binary from this head, then guarded run of `hide-personal-info` with a fresh named grant; require persisted `hidePersonalInfo false→true` before claiming the row. If x=0.90 misses horizontally, re-measure `switch_x_fraction` from the fresh page-check capture and adjust (pixel pill centre 0.750) in a follow-up.
+
+### E189 — 2026-11-06: hide-personal-info switch_x_fraction pixel-measured (build 89)
+
+- **Branch:** `orchestrated/luna-ug-hide-x-fix` from `origin/main` at `e65be44` (build 88 after PR #89 merged). **Status: harness-fixed; live re-verification open.** Python stays default; UG stays **NOT PASSED**.
+- **Diagnosis (live-run evidence).** E188 fixed y to the measured 311 (screenshot toggle centre y 311, absolute y 460 now correct) but the guarded Wayland runner's hide-personal-info click still failed — preference stayed false, changed keys=[]. The Hide account details toggle pill centre is at window-absolute (1114, 460) — x_fraction 0.75. The runner clicked (1264, 460) because `switch_x_fraction=0.90` → 364 + 900 = 1264. That's 150px too far right, into the window padding past the toggle. E188 had measured pill centre 0.750 and flagged this, but kept 0.90 per the then-instruction; that was the remaining miss.
+- **Fix.** `hide-personal-info` `switch_x_fraction` 0.90→0.75 in `scripts/test-native-settings-wayland.py`; `y_offset` stays 311. Build 88→89.
+- **Verification (this slice).** `python3 -m py_compile scripts/test-native-settings-wayland.py` OK; full Python suite 253 ran, OK (skipped=70; baseline 253/70). **No live Wayland run in this worktree** (T3 agent cgroup, not the intended KDE session). Synthetic fixtures only.
+- **Gate.** UG Display hide-personal-info row stays OPEN (harness-fixed; live PASS pending operator re-run). Python default; UG **NOT PASSED**.
+- **Next step (operator, intended KDE session):** rebuild native debug binary from this head, then guarded run of `hide-personal-info` with a fresh named grant; require persisted `hidePersonalInfo false→true` (changed keys=[[hidePersonalInfo]]) before claiming the row.
+
+### E189 fold-in (build 89) — PR #88 settings_capture guard
+
+- **Origin:** PR #88 (`orchestrated/luna-ug-settings-capture-guard`, commit `949248c`, based on stale build-80 `bacc374`). The behavior is still needed on current main: `settings_capture` is assigned at line 841, after several raise points (e.g. line 888 "synthetic Settings was not active"), while the `finally` block at line 1207 references it unconditionally on the `KEEP_WAYLAND_TEST_TMP=1` path — raising an exception before assignment and then raising `UnboundLocalError` in cleanup masks the real error.
+- **Disposition:** The exact two-line fix from #88 is folded into this branch (build 89) without a cherry-pick, verbatim: `settings_capture = None` initialized alongside `capture_status = None`, and the cleanup reference guarded with `settings_capture is not None and ...`. Verified identical to #88's diff (script-only, +2/-1).
+- **Effect on #88:** #88 is then redundant for this behavior — its branch should be closed as superseded by this PR once build 89 merges, not merged separately. Its live-run history (observing the `UnboundLocalError` masking) is preserved here and in this entry.
+- **Verification:** `python3 -m py_compile scripts/test-native-settings-wayland.py` OK; full suite re-run below.

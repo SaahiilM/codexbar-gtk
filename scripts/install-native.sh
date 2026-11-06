@@ -14,6 +14,8 @@
 # unproven — the installed ELF is what runs without Python, the installer
 # helper is not shipped in the prefix.
 set -euo pipefail
+: "${HOME:?HOME must identify the installation user}"
+[[ "$HOME" == /* ]] || { echo "HOME must be absolute" >&2; exit 1; }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(dirname "$SCRIPT_DIR")"
@@ -26,6 +28,11 @@ PREFIX_DIR="${PREFIX:-${HOME:-}/.local}"
 ACTIVATE="" # empty = inherit previous manifest (upgrade preserves activation)
 UNINSTALL=0
 REQUESTED_ACTIVATE=0
+RENDER_DIR=""
+cleanup_rendered_files() {
+  if [[ -n "$RENDER_DIR" ]]; then rm -rf -- "$RENDER_DIR"; fi
+}
+trap cleanup_rendered_files EXIT
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -82,15 +89,6 @@ read_manifest_value() {
 }
 
 sha_of() { sha256sum "$1" 2>/dev/null | awk '{print $1}'; }
-
-render_activation() {
-  local mode="$1" template="$2" dest="$3"
-  local tmp
-  tmp="$(mktemp)"
-  python3 "$RENDERER" "$template" "$BIN_DEST" "$mode" > "$tmp"
-  atomic_write "$dest" "$tmp"
-  rm -f "$tmp"
-}
 
 do_uninstall() {
   local bin_sha des_bak des_pre svc_bak svc_pre des_sha svc_sha prev_activated
@@ -199,6 +197,17 @@ do_install() {
   # Validate path before any side effect.
   validate_binary_path "$BIN_DEST"
 
+  # Rendering can fail (missing Python, broken template, or renderer error).
+  # Complete BOTH renders before replacing binaries, backups, or the manifest.
+  if [[ "$ACTIVATE" == "1" ]]; then
+    RENDER_DIR="$(mktemp -d)"
+    if ! python3 "$RENDERER" "$STAGE_DESKTOP" "$BIN_DEST" desktop > "$RENDER_DIR/desktop" ||
+       ! python3 "$RENDERER" "$STAGE_SERVICE" "$BIN_DEST" service > "$RENDER_DIR/service"; then
+      echo "activation rendering failed; installation unchanged" >&2
+      exit 1
+    fi
+  fi
+
   # Atomic binary swap (rename over existing owned binary).
   local dir tmp
   dir="$(dirname "$BIN_DEST")"
@@ -239,8 +248,8 @@ do_install() {
         svc_pre=0; svc_bak=""
       fi
     fi
-    render_activation desktop "$STAGE_DESKTOP" "$DESKTOP_DEST"
-    render_activation service "$STAGE_SERVICE" "$UNIT_DEST"
+    atomic_write "$DESKTOP_DEST" "$RENDER_DIR/desktop"
+    atomic_write "$UNIT_DEST" "$RENDER_DIR/service"
     des_sha="$(sha_of "$DESKTOP_DEST")"
     svc_sha="$(sha_of "$UNIT_DEST")"
   fi

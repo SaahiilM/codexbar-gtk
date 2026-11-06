@@ -314,6 +314,68 @@ grep -qi "unsupported" "$SCRATCH/deact.log" || fail "deactivation rejection mess
 [[ "$(sha256sum "$DEACT_PREFIX/bin/codexbar-gtk-native" | awk '{print $1}')" == "$DEACT_BIN_SHA" ]] || fail "rejected deactivation swapped binary"
 [[ "$(sha256sum "$DEACT_PREFIX/share/codexbar-gtk/native-manifest" | awk '{print $1}')" == "$DEACT_MAN_SHA" ]] || fail "rejected deactivation rewrote manifest"
 ok "explicit deactivation transition rejected, no orphan activation"
+
+echo "=== 12. render failures leave a fresh install or upgrade unchanged ==="
+RENDER_TEST_HOME="$SCRATCH/render-home"
+RENDER_PREFIX="$SCRATCH/render-prefix"
+RENDER_BIN="$RENDER_PREFIX/bin/codexbar-gtk-native"
+RENDER_MANIFEST="$RENDER_PREFIX/share/codexbar-gtk/native-manifest"
+RENDER_DESKTOP="$RENDER_PREFIX/share/applications/codexbar-gtk.desktop"
+RENDER_SERVICE="$RENDER_TEST_HOME/.config/systemd/user/codexbar-gtk.service"
+mkdir -p "$RENDER_TEST_HOME/.config/systemd/user" "$RENDER_PREFIX/share/applications" "$SCRATCH/render-tools"
+printf '[Desktop Entry]\nExec=python3 legacy\n' > "$RENDER_DESKTOP"
+printf '[Service]\nExecStart=python3 legacy\n' > "$RENDER_SERVICE"
+RENDER_DESKTOP_SHA="$(sha256sum "$RENDER_DESKTOP" | awk '{print $1}')"
+RENDER_SERVICE_SHA="$(sha256sum "$RENDER_SERVICE" | awk '{print $1}')"
+REAL_RENDER_PYTHON="$(command -v python3)"
+cat > "$SCRATCH/render-tools/python3" <<'RENDER_FAILURE'
+#!/bin/sh
+set -eu
+count=0
+if [ -f "$RENDER_TEST_CALLS" ]; then read -r count < "$RENDER_TEST_CALLS"; fi
+count=$((count + 1))
+printf '%s\n' "$count" > "$RENDER_TEST_CALLS"
+if [ "$count" -eq "$RENDER_TEST_FAIL_AT" ]; then exit 42; fi
+exec "$REAL_RENDER_PYTHON" "$@"
+RENDER_FAILURE
+chmod 700 "$SCRATCH/render-tools/python3"
+for scenario in fresh upgrade; do
+  if [[ "$scenario" == upgrade ]]; then
+    HOME="$RENDER_TEST_HOME" "$INSTALLER" --artifact "$DEBUG_BIN" --prefix "$RENDER_PREFIX"
+    RENDER_MANIFEST_SHA="$(sha256sum "$RENDER_MANIFEST" | awk '{print $1}')"
+  fi
+  for fail_at in 1 2; do
+    printf '0\n' > "$SCRATCH/render-call-count"
+    if HOME="$RENDER_TEST_HOME" PATH="$SCRATCH/render-tools:$PATH" \
+       REAL_RENDER_PYTHON="$REAL_RENDER_PYTHON" RENDER_TEST_CALLS="$SCRATCH/render-call-count" \
+       RENDER_TEST_FAIL_AT="$fail_at" "$INSTALLER" --artifact "$RELEASE_BIN" \
+       --prefix "$RENDER_PREFIX" --activate > "$SCRATCH/render-failure.log" 2>&1; then
+      fail "render failure $fail_at unexpectedly succeeded ($scenario)"
+    fi
+    grep -q 'activation rendering failed' "$SCRATCH/render-failure.log" || fail "render failure not reported"
+    [[ "$(sha256sum "$RENDER_DESKTOP" | awk '{print $1}')" == "$RENDER_DESKTOP_SHA" ]] || fail "renderer failure changed desktop"
+    [[ "$(sha256sum "$RENDER_SERVICE" | awk '{print $1}')" == "$RENDER_SERVICE_SHA" ]] || fail "renderer failure changed service"
+    [[ ! -e "$RENDER_DESKTOP.pre-native" && ! -e "$RENDER_SERVICE.pre-native" ]] || fail "renderer failure created backups"
+    if [[ "$scenario" == fresh ]]; then
+      [[ ! -e "$RENDER_BIN" && ! -e "$RENDER_MANIFEST" ]] || fail "renderer failure modified fresh install"
+    else
+      [[ "$(sha256sum "$RENDER_BIN" | awk '{print $1}')" == "$DEBUG_SHA" ]] || fail "renderer failure swapped binary"
+      [[ "$(sha256sum "$RENDER_MANIFEST" | awk '{print $1}')" == "$RENDER_MANIFEST_SHA" ]] || fail "renderer failure changed manifest"
+    fi
+  done
+done
+HOME="$RENDER_TEST_HOME" "$INSTALLER" --artifact "$RELEASE_BIN" --prefix "$RENDER_PREFIX" --activate
+[[ "$(sha256sum "$RENDER_BIN" | awk '{print $1}')" == "$RELEASE_SHA" ]] || fail "retry after renderer failure wedged"
+HOME="$RENDER_TEST_HOME" "$INSTALLER" --uninstall --prefix "$RENDER_PREFIX"
+ok "both render failures leave install unchanged; retry succeeds"
+
+echo "=== 13. missing HOME fails before installation ==="
+if env -u HOME "$INSTALLER" --artifact "$DEBUG_BIN" --prefix "$SCRATCH/no-home" > "$SCRATCH/no-home.log" 2>&1; then
+  fail "missing HOME should be rejected"
+fi
+[[ ! -e "$SCRATCH/no-home" ]] || fail "missing HOME created install files"
+grep -q 'HOME' "$SCRATCH/no-home.log" || fail "missing HOME diagnostic absent"
+ok "missing HOME rejected before writes"
 # Fixtures wrote no runtime activity; history appending by the real runtime
 # is legitimate and outside byte-check scope (install/uninstall only).
 

@@ -9,13 +9,13 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Field | Current checkpoint |
 | --- | --- |
 | Goal | Fully native Rust GTK4/libadwaita app; backend first, UI second |
-| Current phase | BG passed; U01–U08 implementation PRs are merged. U05 evidence PR #74 merged at `87467ce5eec475f153466c6f87866d22c723a09a` (E145). Build-75 guarded runner PR #75 merged at `2501f7a2ce3da3819e52eee04e987740ba54448f`; its exact head passed both required checks (E156). Build-76 action PR #76 merged at `862ec69`. PR #77 (start-at-login guard, build 78) merged at `a40b143`; PR #78 (Display-page navigation, build 79) merged at `bd4146f` with both checks green (run 41887138543). Post-merge follow-ups on `orchestrated/luna-ug-postmerge` (build 80): page-check capture + reactivation + E181 retraction + E183 manual-navigation PASS. Build-81 automated Display-tab fix (E184-auto-tab) on `orchestrated/luna-ug-auto-tab` (PR #80, merged). Build-82 Notifications harness (E184-notifications) on `orchestrated/luna-ug-notifications` (this PR, rebased onto main build 85; live Wayland evidence pending). Build-85 Wayland update-check harness (E185) on `orchestrated/luna-ug-update-check` (merged; live Wayland PASS still pending). UG remains **NOT PASSED**: E151 is one verified portal-driven control; E160 adds one user-driven Wayland General control; E173/E183 add automated-start-at-login and manual-navigation hide-personal-info passes. |
+| Current phase | BG passed; U01–U08 implementation PRs are merged. U05 evidence PR #74 merged at `87467ce5eec475f153466c6f87866d22c723a09a` (E145). Build-75 guarded runner PR #75 merged at `2501f7a2ce3da3819e52eee04e987740ba54448f`; its exact head passed both required checks (E156). Build-76 action PR #76 merged at `862ec69`. PR #77 (start-at-login guard, build 78) merged at `a40b143`; PR #78 (Display-page navigation, build 79) merged at `bd4146f` with both checks green (run 41887138543). Post-merge follow-ups on `orchestrated/luna-ug-postmerge` (build 80): page-check capture + reactivation + E181 retraction + E183 manual-navigation PASS. Build-81 automated Display-tab fix (E184-auto-tab) on `orchestrated/luna-ug-auto-tab` (PR #80, merged). Build-82 Notifications harness (E184-notifications) on `orchestrated/luna-ug-notifications` (this PR, rebased onto main build 85; live Wayland evidence pending). Build-85 Wayland update-check harness (E185) on `orchestrated/luna-ug-update-check` (merged; live Wayland PASS still pending). Build-86 Providers harness (E186) on `orchestrated/luna-ug-providers` (this PR; harness-built, live Wayland PASS pending). UG remains **NOT PASSED**: E151 is one verified portal-driven control; E160 adds one user-driven Wayland General control; E173/E183 add automated-start-at-login and manual-navigation hide-personal-info passes. |
 | Last merged implementation | U05-UG11 Wayland update-check harness PR #84 merged at `8747e64` (build 85); see E185. Prior: U05-UG10 automated Display-tab fix PR #80 merged at `7df9845effe59a3d5cf2b883986346cb4992893f` (build 81); see E184-auto-tab. |
 | Planning change | [PR #18](https://github.com/SaahiilM/codexbar-gtk/pull/18), merged at `69c5496`, build `0.81.0 (17)` |
 | Backend tasks completed after that baseline | B00–B15 and BG are accepted and merged. B11's Actions startup failures remain documented as failures; see E086. |
-| Active implementation task / owner | U05-UG-menubar (E184-menubar) on `orchestrated/luna-ug-menubar` (PR #81, rebased onto main build 85): harness-built Menu Bar `show-tray-icon` guarded-runner action. Sibling slices merged: U05-UG-notifications (E184-notifications, build 82) and U05-UG-update-check (E185, build 85). Spend slice (E184-spend, build 84) rebased onto main build 85 (PR #83). Next: live `show-tray-icon` run with fresh named KDE grant (manual Menu Bar tab selection) or live Notifications/Display-tab/update-check/Spend runs. UG remains NOT PASSED; Python default. |
-| Latest gate result | **BG passed** (E085/E086). **UG NOT PASSED**: build-75 General, start-at-login (E173) and hide-personal-info (E183) verified; Menu Bar `show-tray-icon` harness-built (E184-menubar, NOT PASSED until live evidence); Notifications harness-built (E184-notifications, build 82); update-check harness-built (E185, build 85); automated Display-tab fix built (E184-auto-tab, build 81); Usage & Spend harness-built (E184-spend, build 84). Remaining Wayland rows (Providers, Menu Bar combos + live switch run, Display remaining, Notifications live run, Usage & Spend live pointer runs, Hooks, Plugins, Advanced, About, update-check live run, cross-surface actions) OPEN per UG_GATE. |
-| Next domain slice | Live-run the Menu Bar `show-tray-icon` harness (manual Menu Bar tab selection before approval, `--inspect-only` first) and/or the Notifications harness on the intended KDE session; require persisted `false→true` for switches plus synthetic delivery for `test-notification` before claiming any row PASS. Automated Display-tab verification (E184-auto-tab), the build-85 update-check harness (E185), and the Spend harness (E184-spend) also still pending fresh named KDE grants. Preserve Python default and keep UG open. |
+| Active implementation task / owner | U05-UG-providers (E186) on `orchestrated/luna-ug-providers` (this PR, build 86): harness-built Providers `disable-codex-provider` guarded-runner action against a fixture CLI state file (seeded ON, flips true→false via `config disable --provider codex`); source/API-key/login stay manual by design. Sibling slices merged: U05-UG-notifications (E184-notifications, build 82), U05-UG-menubar (E184-menubar, build 83), U05-UG-spend (E184-spend, build 84), U05-UG-update-check (E185, build 85). Next: live Providers run with fresh named KDE grant (manual Providers tab selection, `--inspect-only` first) or live Notifications/Display-tab/Menu Bar/Usage & Spend/update-check runs. UG remains NOT PASSED; Python default. |
+| Latest gate result | **BG passed** (E085/E086). **UG NOT PASSED**: build-75 General, start-at-login (E173) and hide-personal-info (E183) verified; Menu Bar `show-tray-icon` harness-built (E184-menubar, NOT PASSED until live evidence); Notifications harness-built (E184-notifications, build 82); update-check harness-built (E185, build 85); automated Display-tab fix built (E184-auto-tab, build 81); Usage & Spend harness-built (E184-spend, build 84); Providers harness-built (E186, build 86: `disable-codex-provider` switch vs fixture CLI state file; source/API-key/login manual). Remaining Wayland rows (Menu Bar combos + live switch run, Display remaining, Notifications live run, Usage & Spend live pointer runs, Hooks, Plugins, Advanced, About, update-check live run, cross-surface actions) OPEN per UG_GATE. |
+| Next domain slice | Live-run the Providers `disable-codex-provider` harness (manual Providers tab selection before approval, `--inspect-only` first; require fixture `config disable --provider codex` + state file `true→false` with no preference change) and/or the Menu Bar `show-tray-icon` harness (manual Menu Bar tab selection before approval, `--inspect-only` first) and/or the Notifications harness on the intended KDE session; require persisted `false→true` for switches plus synthetic delivery for `test-notification` before claiming any row PASS. Automated Display-tab verification (E184-auto-tab), the build-85 update-check harness (E185), and the Spend harness (E184-spend) also still pending fresh named KDE grants. Preserve Python default and keep UG open. |
 | Open external blockers | Build 71's child exit remains undiagnosed. E147–E149 retain earlier unexplained cursor activity and headless capture limitations. Weston is absent system-wide; rootless Weston 13 connected a private Wayland client but could not capture a visible GTK window. CI retains several Xvfb native GTK smokes, but the full Settings smoke is omitted from Actions after repeated native chooser failures (E162); the script remains available for local verification. These X11 checks do not establish Wayland input or desktop shell parity. Other Wayland provider/import/reset/page actions remain open. B11 zero-job Actions startup failures remain documented in E086. |
 | Latest checks | PR #75 exact head `8a8a2ca3a5c7ff77269bd2b36bd040b63c007081` passed `test` and `tray-dbus` in run `41685025347`; merged at `2501f7a2ce3da3819e52eee04e987740ba54448f` (E156). PR #76 head `129fee63e8926476c827d0c1692499944d6f69c5` failed `test` at Settings chooser steps in jobs `126115902407` and `126121236165` in run `41692934828`; `tray-dbus` passed (E162). This handoff removes only the full Settings smoke from Actions; inspect the live exact-head status after push and before merge. Local build-76 `py_compile`, all 10 guard tests, and the full Python suite (224 passed, 21 expected skips) passed. The current shell lacks `xvfb-run`, so the local Settings smoke could not be repeated; an earlier build-76 local pass remains recorded in E157. Other native GTK Xvfb smokes remain in CI. E157–E159 record an automated wrong-target click followed by safe aborts; E160 records one manual Wayland click persisting only `showPopupOnStart=false→true`, not automated runner input. The strict post-consent guard remains unchanged; Weston limitations remain in E150–E151. |
 | UI validation | Builds 73–74 retain the portal/focus evidence in E143 and E146–E149. Build 75's runner is merged; build 76 adds an allowlisted action for another General switch. Xvfb and unit checks do not establish Wayland input. E151 is the single verified automated portal pointer action; E160 is a separate manual click with isolated JSON persistence. Neither establishes keyboard, desktop-shell, other-control, automation parity for show-on-start, or full UG parity. A Weston renderer/widget test would be separate GTK evidence, not portal consent or real desktop input. |
@@ -884,3 +884,62 @@ plus the kept `/tmp/codexbar-wayland-update-result.png` showing the
 "Update available" dialog plus an unowned app id after quit, before
 claiming the UG update-check row PASS. Until then UG remains
 **NOT PASSED** and Python default.
+### U05-UG12 handoff — build 86 Providers Wayland harness (E186)
+
+Owner: current U05 session; branch `orchestrated/luna-ug-providers`,
+build `0.82.0 (86)`, based on `origin/main` (`3872ebc`, PR #83/Spend merge).
+**Status: partial (harness + unit tests + version/docs only; live
+Wayland evidence pending).**
+
+Scope: the Providers row of UG_GATE. Control-to-CLI mapping
+(`rust-gtk/src/settings_window.rs::populate_providers`; Python parity
+`codexbar_gtk/ui/settings.py::_providers_page`; backend
+`rust-backend/src/settings.rs::provider_action`/`set_api_key` via
+`rust-backend/src/cli.rs`): "Provider enabled" switch → `config
+enable|disable --provider <id>`; "Source" combo → `config set-source
+--provider <id> --source <auto|web|cli|oauth|api>`; "Sign in with
+provider CLI" (claude/codex) → native LoginDialog over the B11 PTY
+(`auth login --claudeai` / codex login; events in memory only);
+"API key" Apply → `config set-api-key --provider <id> --api-key
+<secret>` (trimmed, entry cleared, never persisted). Xvfb already
+passes all four against the fake CLI in
+`scripts/smoke-native-settings.sh` (randomized synthetic key checked
+absent from preferences/calls/app.log; synthetic PTY code completes
+with "Sign-in completed."). On Wayland only the switch is safe to
+drive guarded, and it persists no preference JSON — the fixture CLI
+owns provider state — so `scripts/test-native-settings-wayland.py`
+adds `disable-codex-provider` (`kind=provider_switch`,
+`preference=None`, page Providers, tab estimate + switch estimate from
+the Xvfb smoke), which seeds the fixture provider ON, clicks to
+disable, and requires the recorded `config disable --provider codex`
+call plus the state-file flip `true→false` (plus an unchanged
+preference store), mirroring the autostart-entry check. Source
+combo, API-key entry and PTY login are `kind=manual` allowlist
+entries that refuse to drive (`parser.error`) and must use
+`--inspect-only` plus a manual step against synthetic fixtures —
+never faked. Automated tab navigation still handles Display only;
+Providers needs manual tab selection or a measured tab point.
+Existing General/Display/Menu Bar/Notifications actions untouched.
+
+Local verification: `py_compile` OK; guard tests 19/19 (16
+pre-existing + 3 new: switch mapping/geometry, state-check
+fail-closed table, manual-only table); full Python suite 251 tests /
+70 skipped (248/70 pre-change → +3 new tests). No Rust source
+changed, so no cargo build was needed for this slice; no live
+Wayland run was performed in this session (no KDE Wayland, no
+`app-codexbar-gtk-synthetic-wayland-test.scope` cgroup, no debug
+binary, no fresh named grant). Synthetic fixtures only; no real
+accounts/keys/OAuth output anywhere. See E186.
+
+**Concrete handoff:** on the intended KDE session rebuild the debug
+native binary from this head, then
+`systemd-run --user --scope --unit=app-codexbar-gtk-synthetic-wayland-test.scope python3 scripts/test-native-settings-wayland.py --binary "$PWD/rust-gtk/target/debug/codexbar-gtk-native" --action disable-codex-provider --inspect-only`
+first (manually select the Providers tab, calibrate tab/row points
+with `--switch-x/--switch-y` if the estimate is off), then a fresh
+grant without `--inspect-only` and require terminal
+`PASS: synthetic fixture CLI recorded config disable --provider codex and the Codex provider state flipped enabled true->false (no preference JSON changed)`
+plus the kept `/tmp/codexbar-providers-page-check.png`, before
+claiming any Providers Wayland PASS. Manual source/API-key/login
+steps stay manual until the runner gains a measured tab point and a
+guarded keyboard path. Until then UG remains **NOT PASSED** and
+Python default.

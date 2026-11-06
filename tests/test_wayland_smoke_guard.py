@@ -69,6 +69,8 @@ class WaylandGuardTests(unittest.TestCase):
                 "session-quota-notifications", "quota-warning-notifications",
                 "limit-reset-notifications", "predictive-pace-notifications",
                 "test-notification", "show-tray-icon",
+                "disable-codex-provider", "provider-source", "provider-api-key",
+                "provider-login",
             },
         )
         self.assertEqual(
@@ -124,7 +126,8 @@ class WaylandGuardTests(unittest.TestCase):
             {"refresh-when-panel-opens", "show-panel-on-start", "start-at-login", "hide-personal-info",
              "session-quota-notifications", "quota-warning-notifications",
              "limit-reset-notifications", "predictive-pace-notifications", "test-notification",
-             "show-tray-icon"},
+             "show-tray-icon", "disable-codex-provider", "provider-source",
+             "provider-api-key", "provider-login"},
         )
         self.assertEqual(
             actions["show-panel-on-start"]["preference"],
@@ -168,6 +171,66 @@ class WaylandGuardTests(unittest.TestCase):
         self.assertNotIn("icon-style", actions)
         self.assertNotIn("icon-shows", actions)
         self.assertNotIn("provider-rows", actions)
+
+    def test_provider_switch_maps_to_cli_disable_and_state_file(self):
+        actions = MODULE.WAYLAND_SWITCH_ACTIONS
+        action = actions["disable-codex-provider"]
+        # No preference key: the CLI owns provider state, like autostart.
+        self.assertIsNone(action["preference"])
+        self.assertEqual(action.get("kind"), "provider_switch")
+        self.assertEqual(action["cli_action"], "disable")
+        self.assertEqual(action["provider_id"], "codex")
+        self.assertEqual(action["page"], "Providers")
+        self.assertIn("/tmp/codexbar-providers-page-check.png",
+                      action.get("page_check", ""))
+        point = MODULE.switch_point_from_geometry(
+            [364, 149, 1000, 740],
+            y_offset=action["y_offset"],
+            x_fraction=action["switch_x_fraction"],
+        )
+        self.assertEqual(point, (1174, 383))
+        self.assertTrue(
+            MODULE.target_window_contains(
+                self.snapshot(target_geometry=[364, 149, 1000, 740]), *point
+            )
+        )
+        self.assertEqual(
+            MODULE.provider_cli_call("disable", "codex"),
+            "config disable --provider codex",
+        )
+        self.assertEqual(
+            MODULE.provider_cli_call("set-source", "codex", "api"),
+            "config set-source --provider codex --source api",
+        )
+
+    def test_provider_state_check_requires_call_and_flipped_file(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            calls = pathlib.Path(temporary) / "calls.log"
+            enabled = pathlib.Path(temporary) / "enabled"
+            self.assertFalse(MODULE.check_provider_state(calls, enabled, "disable", "codex"))
+            enabled.write_text("true\n")
+            self.assertFalse(MODULE.check_provider_state(calls, enabled, "disable", "codex"))
+            calls.write_text("config disable --provider codex\n")
+            self.assertFalse(MODULE.check_provider_state(calls, enabled, "disable", "codex"))
+            enabled.write_text("false\n")
+            self.assertTrue(MODULE.check_provider_state(calls, enabled, "disable", "codex"))
+            enabled.write_text("true\n")
+            self.assertFalse(MODULE.check_provider_state(calls, enabled, "disable", "codex"))
+
+    def test_provider_source_api_key_and_login_are_manual_only(self):
+        actions = MODULE.WAYLAND_SWITCH_ACTIONS
+        for name, cli_action in (
+            ("provider-source", "set-source"),
+            ("provider-api-key", "set-api-key"),
+            ("provider-login", "login"),
+        ):
+            with self.subTest(action=name):
+                action = actions[name]
+                self.assertEqual(action.get("kind"), "manual")
+                self.assertIsNone(action["preference"])
+                self.assertEqual(action["cli_action"], cli_action)
+                self.assertEqual(action["provider_id"], "codex")
+                self.assertEqual(action["page"], "Providers")
 
     def test_action_result_reports_only_the_selected_preference_change(self):
         before = {"showPopupOnStart": False, "launchAtLogin": False}

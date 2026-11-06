@@ -45,7 +45,7 @@ WAYLAND_SWITCH_ACTIONS = {
         "preference": "hidePersonalInfo",
         "label": "Hide account details",
         "page": "Display",
-        "y_offset": 320,
+        "y_offset": 311,
         "switch_x_fraction": 0.90,
     },
     # Notifications page: four preference switches + "Send a test notification"

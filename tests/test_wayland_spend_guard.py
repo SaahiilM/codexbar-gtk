@@ -148,6 +148,24 @@ class SpendWaylandGuardTests(unittest.TestCase):
         self.assertNotIn("api_key", script.lower())
         self.assertNotIn("oauth", script.lower())
 
+    def test_retained_error_fixture_sequence_covers_retries_and_settle(self):
+        # The failure marker fires before the backend publishes the
+        # retained-error view state; the state wait must cover the
+        # initial scan plus its per-provider retries (3 cost calls)
+        # and a view-state settle before the capture.
+        source = pathlib.Path(MODULE.__file__).read_text(encoding="utf-8")
+        self.assertIn("wait_cost_calls_at_least(cost_calls_path, 3", source)
+        self.assertIn("neighbouring frame", source)
+
+    def test_state_capture_requires_active_spend_window(self):
+        # A state capture of a foreign/covert window is non-evidence:
+        # the capture helper must fail closed unless the synthetic
+        # Spend PID is active (same gate as the baseline capture).
+        source = pathlib.Path(MODULE.__file__).read_text(encoding="utf-8")
+        self.assertIn("def capture_state_screenshot():", source)
+        self.assertIn("active_target(spend_state, app.pid)", source)
+        self.assertIn("synthetic Spend was not active for state capture", source)
+
 
 if __name__ == "__main__":
     unittest.main()

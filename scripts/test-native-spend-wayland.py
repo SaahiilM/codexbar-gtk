@@ -494,35 +494,41 @@ def main():
                 time.sleep(.05)
             raise RuntimeError(f"timed out waiting for fixture markers: {[str(p) for p in paths]}")
 
-        # State runs: fixture-only sequences, captured without any portal.
-        if args.state:
-            if args.state == "loading":
-                deadline = time.monotonic() + 5
-                while time.monotonic() < deadline and not delay_cost.exists():
-                    pass  # already seeded; loading = delayed cost call below
-                # Cost call is blocked on the fixture; the loading label shows.
-                wait_cost(cost_calls_path)
-                # Give the view a beat to render the loading state.
-                time.sleep(0.6)
-            elif args.state == "empty":
-                wait_cost(cost_done)
-                time.sleep(0.6)
-            elif args.state == "retained-error":
-                # No delay file: the initial cost scan runs under exponential
-                # backoff (markers appear only after retries complete). All
-                # calls fail; the view shows the retained error with no rows.
-                wait_cost(cost_failure_done, timeout=40)
-                time.sleep(0.5)
-            elif args.state == "partial":
-                # Fixture succeeds with historyCoverageIsEstablished=false,
-                # yielding the "partial" label in the view ("· partial" on
-                # the Total spend card). wait_cost(cost_done) waits for the
-                # cost marker; the capture then shows partial data.
-                wait_cost(cost_done)
-                time.sleep(0.6)
-            else:  # success
-                wait_cost(cost_done)
-                time.sleep(0.6)
+        def wait_cost_calls_at_least(path, count, timeout=20):
+            deadline = time.monotonic() + timeout
+            while time.monotonic() < deadline:
+                if count_cost_calls(path) >= count:
+                    return
+                time.sleep(.05)
+            raise RuntimeError(f"timed out waiting for {count} fixture calls in {path}")
+
+        def capture_state_screenshot():
+            """Spectacle active-window capture with fail-closed active-target gate."""
+            # Fail closed unless the synthetic Spend PID is active — a state
+            # capture of a foreign window would be non-evidence.
+            focus_deadline = time.monotonic() + 5
+            spend_state = json.loads(state_path.read_text())
+            while time.monotonic() < focus_deadline and not active_target(spend_state, app.pid):
+                if app.poll() is not None:
+                    break
+                time.sleep(.02)
+                if state_path.exists():
+                    spend_state = json.loads(state_path.read_text())
+            if not active_target(spend_state, app.pid):
+                raise RuntimeError("synthetic Spend was not active for state capture; no capture claimed")
+            focus_js_path = scratch / "kwin-focus-state.js"
+            focus_js_path.write_text(activation_script(app.pid))
+            subprocess.run(["qdbus6", "org.kde.KWin", "/Scripting",
+                            "org.kde.kwin.Scripting.loadScript", str(focus_js_path), focus_plugin],
+                           check=True, capture_output=True, text=True)
+            loaded = subprocess.run(["qdbus6", "org.kde.KWin", "/Scripting",
+                                     "org.kde.kwin.Scripting.isScriptLoaded", focus_plugin],
+                                    check=True, capture_output=True, text=True).stdout.strip()
+            if loaded != "true":
+                raise RuntimeError("KWin did not load the synthetic Spend focus helper; no capture claimed")
+            subprocess.run(["qdbus6", "org.kde.KWin", "/Scripting",
+                            "org.kde.kwin.Scripting.start"], check=True, capture_output=True)
+            time.sleep(0.5)
             state_capture = scratch / f"spend-state-{args.state}.png"
             result = subprocess.run(
                 ["spectacle", "--background", "--activewindow", "--nonotify",
@@ -537,6 +543,46 @@ def main():
                 kept = state_capture
             print(f"PASS: synthetic Spend state {args.state} captured at {kept}", flush=True)
             return 0
+
+        # State runs: fixture-only sequences, captured without any portal.
+        if args.state:
+            if args.state == "loading":
+                deadline = time.monotonic() + 5
+                while time.monotonic() < deadline and not delay_cost.exists():
+                    pass  # already seeded; loading = delayed cost call below
+                # Cost call is blocked on the fixture; the loading label shows.
+                wait_cost(cost_calls_path)
+                # Give the view a beat to render the loading state.
+                time.sleep(0.6)
+            elif args.state == "empty":
+                wait_cost(cost_done)
+                time.sleep(0.6)
+            elif args.state == "retained-error":
+                # The fixture signals failure before exiting (see
+                # spend_fixture_script), but the backend publishes the
+                # retained-error view state only after the initial cost
+                # scan and its per-provider retries complete — the
+                # window is still "refreshing" between the first marker
+                # and publication. Wait for the 3rd cost call (1 + 2
+                # retries), then settle so the capture records no stale /
+                # neighbouring frame. Wait for the 3rd cost call (1 + 2
+                # retries), then settle before capturing, otherwise the
+                # capture races the view-state update and may record the
+                # earlier (e.g. partial) frame.
+                wait_cost(cost_failure_done, timeout=40)
+                wait_cost_calls_at_least(cost_calls_path, 3, timeout=20)
+                time.sleep(1.2)
+            elif args.state == "partial":
+                # Fixture succeeds with historyCoverageIsEstablished=false,
+                # yielding the "partial" label in the view ("· partial" on
+                # the Total spend card). wait_cost(cost_done) waits for the
+                # cost marker; the capture then shows partial data.
+                wait_cost(cost_done)
+                time.sleep(0.6)
+            else:  # success
+                wait_cost(cost_done)
+                time.sleep(0.6)
+            return capture_state_screenshot()
 
         # Action / inspect runs need settled data before portal consent.
         if args.action == "refresh":

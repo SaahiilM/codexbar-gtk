@@ -46,7 +46,7 @@ WAYLAND_SWITCH_ACTIONS = {
         "label": "Hide account details",
         "page": "Display",
         "y_offset": 311,
-        "switch_x_fraction": 0.90,
+        "switch_x_fraction": 0.75,
     },
     # Notifications page: four preference switches + "Send a test notification"
     # button (rust-gtk/src/settings_window.rs; python parity

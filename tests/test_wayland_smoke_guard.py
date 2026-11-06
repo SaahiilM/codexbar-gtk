@@ -469,5 +469,45 @@ class WaylandGuardTests(unittest.TestCase):
         state = self.snapshot()
 
 
+    def test_bridge_can_move_from_outside_before_strict_click_guard(self):
+        calls = []
+        state = self.snapshot(
+            target_geometry=[364, 149, 1000, 740],
+            cursor=[1727, 84], top_hit=False, received=100.2,
+        )
+
+        class Bridge:
+            def move(self, x, y):
+                calls.append(("move", x, y))
+                state.update(cursor=[x, y], top_hit=True)
+
+            def click(self, x, y):
+                calls.append(("click", x, y))
+
+        with unittest.mock.patch.object(MODULE.time, "monotonic", return_value=100.4):
+            MODULE.guarded_click_bridge(Bridge(), 4242, lambda: state, 810, 315)
+        self.assertEqual(calls, [("move", 810, 315), ("click", 810, 315)])
+
+    def test_bridge_never_clicks_if_top_hit_does_not_follow_motion(self):
+        calls = []
+        state = self.snapshot(
+            target_geometry=[364, 149, 1000, 740],
+            cursor=[1727, 84], top_hit=False, received=100.2,
+        )
+
+        class Bridge:
+            def move(self, x, y):
+                calls.append(("move", x, y))
+                state.update(cursor=[x, y])
+
+            def click(self, x, y):
+                calls.append(("click", x, y))
+
+        with unittest.mock.patch.object(
+                MODULE.time, "monotonic", side_effect=[100.4, 100.4, 100.4, 103]):
+            with self.assertRaisesRegex(RuntimeError, "no click sent"):
+                MODULE.guarded_click_bridge(Bridge(), 4242, lambda: state, 810, 315)
+        self.assertEqual(calls, [("move", 810, 315)])
+
 if __name__ == "__main__":
     unittest.main()

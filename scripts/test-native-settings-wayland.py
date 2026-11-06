@@ -883,12 +883,11 @@ def guarded_click_bridge(bridge, app_pid, latest, x, y):
     state = latest()
     if not target_window_contains(state, x, y):
         raise RuntimeError("action coordinates outside the synthetic window; no input sent")
-    if not (
-        state.get("pid") == app_pid
-        and state.get("active") is True
-        and state.get("top_hit") is True
-    ):
-        raise RuntimeError("synthetic Settings is not active/topmost; no input sent")
+    # The current cursor may be outside the active fixture. Require exact
+    # focus before moving, then require top-hit AND exact cursor position
+    # after motion and again immediately before the click.
+    if not active_target(state, app_pid):
+        raise RuntimeError("synthetic Settings is not active; no input sent")
     bridge.move(x, y)
     deadline = time.monotonic() + 2
     while time.monotonic() < deadline:

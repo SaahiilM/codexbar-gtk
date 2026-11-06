@@ -5879,14 +5879,24 @@ future models must verify the linked PR's status rather than trusting a stale
   (ignored, separate from desktop-file validation).
 - **D2:** retained binary name `codexbar-gtk-native`; stable launcher may point
   to it later without rename.
-- **Verification (local, no xvfb-run in this shell):** `cargo test
-  --test python_free_proof` ok; `cargo test --test svg_loader_negative
-  --ignored` ok (loader present; negative path documented only); debug and
-  release binaries built and distinguished by sha256; headless install/
-  upgrade/rollback/uninstall, spaced paths, Python preservation and
-  activate backup/restore verified by direct installer invocation (launch
-  probe and full smoke require xvfb-run + dbus-run-session, present in CI).
-  No external install, no shared desktop, no bridge/VNC change.
+- **Verification (local, extracted Xvfb + private dbus session):** 13-case
+  `smoke-native-install.sh` exit 0 (direct log
+  `/tmp/codexbar-installer-review-fixes.log`): PID exe+hash for debug/release/
+  rollback, idempotent uninstall, activate backup/restore, user edit, unsupported
+  %, no-manifest/mismatch foreign rejection, deactivation rejection, PLUS
+  case 12 (renderer failure at first AND second renderer for fresh + upgrade
+  leaves binary/manifest/activation/backup unchanged; normal retry succeeds)
+  and case 13 (missing HOME fails before writes). `bash -n` + `git diff --check`
+  OK; cargo fmt OK; clippy OK; `python_free_linkage` 1 passed; SVG negative
+  intentionally FAILs with loader present (precondition proof);
+  `git check-ignore rust-gtk/target/native` verified (build-native output
+  default gitignored). No external install, no shared desktop, no bridge/VNC.
+- **Independent review:** medium blocker — activation renderer could fail
+  after binary swap, before manifest update. Fixed in 5fc7c2b: HOME absolute/
+  nonempty validated; BOTH activation templates rendered into private temp
+  files BEFORE touching binary/backups/manifest, with cleanup trap removing
+  temp; rendered files installed later. Renderer remains Python prep tooling;
+  C02 absent-runtime proof remains unproven.
 - **Gate:** UG remains NOT PASSED; Python remains default. C01/C02/C03/CG
   not claimed accepted; C03 deletion/assertion mapping and CG audit remain.
 - **Next step:** reviewable in this branch; CI exact-head `test` + `tray-dbus`

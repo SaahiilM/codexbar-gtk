@@ -592,6 +592,44 @@ audit. C01 package checks must include `librsvg2-common`.
   service/autostart, upgrade and rollback. Preserve identity/config/history;
   test with isolated home and install prefix. Remove Python/typelib requirements
   from launch paths, not native GTK shared-library requirements.
+  Investigation (E187, 2026-11-06; research-only, build 86, no version bump):
+  "blocked by UG" applies to the cutover, not the installer mechanics —
+  the design below can be reviewed now while live UG runs proceed, but do
+  not merge or flip any default until UG passes. Present today: shared
+  identity `com.steipete.CodexBarGTK` (Python `APP_ID` == Rust
+  `APPLICATION_ID`); identical config/history paths
+  (`~/.config/codexbar-gtk/settings.json`, `history.jsonl`); CLI-surface
+  parity (`--settings`/`--about`/`--panel`/`--page`); CI native build
+  (`cargo build --locked --bin codexbar-gtk-native --manifest-path
+  rust-gtk/Cargo.toml`, exit 0, dev profile, with `librsvg2-common`);
+  provider assets embedded by `rust-gtk/build.rs`. Missing (new C01
+  slice M1–M8): (1) single-command native build/install script;
+  (2) native desktop entry (`com.steipete.CodexBarGTK.desktop`
+  recommended) whose `Exec` points at the installed binary;
+  (3) native autostart + systemd unit (keep `codexbar-gtk.desktop`
+  autostart filename — `rust-backend/src/settings.rs:autostart_file` reads
+  it — tray-before-plasmashell order, `Slice=app.slice`);
+  (4) install/uninstall + isolated-prefix test (synthetic HOME, fake CLI,
+  settings/history survive install and uninstall);
+  (5) upgrade/rollback design (build N → N+1 over same prefix, atomic
+  rename swap, no config migration, rollback = reinstall N);
+  (6) remove Python/typelib from launch paths (`run.sh`, installed
+  launcher, desktop `Exec`, `ExecStart`, autostart all exec the binary
+  directly — no `python3`, `PYTHONPATH`, `GI_TYPELIB_PATH`, or `.deps`
+  copies);
+  (7) runtime-dep declaration incl. `librsvg2-common` (not a
+  "Recommended" package);
+  (8) installed-prefix runtime smoke (beyond cargo-output smokes).
+  Precise first slice: add opt-in `scripts/install-native.sh`
+  (release build → `$PREFIX` layout modeled on `scripts/install.sh`,
+  all artifacts point at the binary, Python untouched and still default),
+  plus an isolated-prefix upgrade/rollback smoke
+  (`scripts/smoke-native-install.sh`) asserting synthetic settings/history
+  survival across install → upgrade → uninstall. Do not touch `run.sh`,
+  `scripts/install.sh`, `scripts/bootstrap-deps.sh`, or
+  `scripts/build-rust-core.sh` in that slice; do not rename the app id or
+  move config/history paths; do not flip the default launcher. Full
+  inventory and rationale: AUDIT E187.
 - [ ] **C02** Default-native launch, CI and clean-environment proof: installed
   app starts and functions with no Python, PyGObject or PyO3 extension available.
   Verify flags, provider settings, login fixtures, history and tray lifecycle.

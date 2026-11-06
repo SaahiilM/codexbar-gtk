@@ -5855,3 +5855,36 @@ future models must verify the linked PR's status rather than trusting a stale
   the additive installer prototype to the resulting main/build and continue
   the actual Wayland action matrix. Packaging/runtime smoke prototypes remain
   local and are not evidence of a default cutover.
+
+
+### E194 — 2026-11-06: bridge fixture accessibility and process-scoped identity (build 92)
+
+- **Scope:** `scripts/test-native-settings-wayland.py` and
+  `tests/test_wayland_smoke_guard.py`. The bridge uses AT-SPI focus evidence,
+  while the fixture previously forced `GTK_A11Y=none` and assumed the GTK
+  application ID was the exported AT-SPI name.
+- **Behavior:** bridge fixtures remove the disabling accessibility override;
+  portal-only fixtures retain it. A bounded subprocess initializes AT-SPI,
+  enumerates application names/PIDs only and selects the exact synthetic PID.
+  The resulting nonempty name is required by `BridgeDriver`; unsuccessful
+  probes fail closed, including nonzero exits that print a name. No session
+  address is guessed. Existing KWin process/focus/geometry guards remain.
+  The installed Linux Agent Access bridge and its saved grant are unchanged.
+- **Observed dependency:** PR #92 head
+  `d494bbe7f9875c9bd4ace2c3a9ee212eec11a969` passed both required checks in
+  run `42290011803` and merged normally at
+  `b69a9840b09db110539d3f64ca0e3cca4dd00dbf`, verified by root fetch.
+  Its corrected Spend fixtures do not by themselves prove live rendering.
+- **Verification:** `py_compile`, focused guard suite 26 passed, full Python
+  suite 266 ran with 70 extension-dependent skips, and diff checks passed.
+  Tests cover accessibility environment selection, identity mismatch/empty
+  output, nonzero probe status even with a returned name, and explicit bridge
+  identity. Remote workflow checks remain pending for the published head.
+- **Live limits:** earlier attempts failed closed on accessibility bus/no
+  response errors. The final corrected code has not been rerun live; no new
+  pointer click, persisted preference, or screenshot pass is claimed here.
+- **Gate/next:** UG remains NOT PASSED and Python stays default. Rebuild and
+  exercise the synthetic fixture through the existing bridge after PR checks,
+  verify only the selected preference changes, then continue remaining UG
+  actions and installed-package acceptance. Packaging remains a separate
+  additive draft; the Python-free Docker smoke is separate local evidence.

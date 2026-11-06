@@ -4,6 +4,24 @@ Client-side changelog for the CodexBar GTK front-end. Each entry keys a build
 number (`CURRENT_PROJECT_VERSION`) to the upstream macOS CodexBar release its
 short version tracks, so "which version has what" maps cleanly onto both trees.
 
+## 0.82.0 (92) — 2026-11-06
+
+Tracks upstream CodexBar 0.82.0.
+
+### Fixed
+
+- Enable accessibility for synthetic bridge sessions and resolve the exact
+  AT-SPI application name from the fixture process ID before sending input.
+- Require an explicit bridge target and reject failed identity probes even
+  when they print a name. Portal-only fixtures retain disabled accessibility.
+
+### Validation
+
+- Focused guard suite: 26 tests; full Python suite: 266 tests with 70
+  extension-dependent skips. The corrected discovery path has not yet
+  passed a live Wayland click; prior attempts failed closed. UG remains open
+  and Python remains the default. See AUDIT E194.
+
 ## 0.82.0 (91) — 2026-11-06
 
 Tracks upstream CodexBar 0.82.0.

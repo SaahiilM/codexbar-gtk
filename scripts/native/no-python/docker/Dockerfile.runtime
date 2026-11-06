@@ -1,0 +1,63 @@
+# C02 clean-runtime-image recipe (additive, not used by default).
+#
+# The default harness path in scripts/smoke-native-no-python.sh uses
+# bubblewrap / unshare on the HOST. On hosts where rootless user+mount
+# namespaces are blocked (this dev machine: bwrap gets RTM_NEWADDR EPERM,
+# unshare -r cannot write uid_map), the container image below is the
+# fallback: the native ELF runs in a container whose image contains NO
+# python3, NO PyGObject, NO PyO3. Absolute-path access to those therefore
+# fails with ENOENT by construction, not by masking.
+#
+# Evidence worth recording per run (append to evidence dir):
+#   `docker images --digests | grep codexbar-no-python`
+#   `docker inspect <container-id>` (image digest, network=none)
+#   In-container: `ls /usr/bin/python*` -> empty; `ls -l /proc/self/maps`
+#   grep for libpython -> absent.
+#
+# Build recipe (root does the pull once; no new host config beyond a
+# container runtime, which is a documented pre-requisite):
+#
+#   docker build -t codexbar-no-python:smoke \
+#     -f scripts/native/no-python/docker/Dockerfile.runtime .
+#
+# Requirements inside the image (verified at smoke time, not build time):
+#   - libgtk-4, libadwaita, gdk-pixbuf + librsvg2 (SVG decode), fonts,
+#     dbus-daemon, Xvfb/Xwayland. No python3* packages.
+# If the base image ships python3 (debian/ubuntu do!), remove it
+# BEFORE running the app:
+#
+#   apt-get purge -y python3*   # and remove any python3-named binaries
+#   rm -rf /usr/lib/python* /usr/local/lib/python*  (only the python subtree)
+#   rm -f /usr/bin/python* /usr/local/bin/python*
+#
+# The harness (--isolation docker) runs the app with --network none and a
+# private D-Bus/X socket mounted from the host; the container still has
+# no Python reachable by absolute path.
+#
+# This Dockerfile is a RECIPE + documented post-base step, not a full
+# hermetic build. If `apt-get purge python3*` breaks a package the app
+# needs (it should not: the ELF links only GTK/libadwaita), the run
+# fails loudly and C02 is not claimed.
+
+FROM ubuntu:24.04@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852
+# Built image digest: sha256:49524f8dd91f9f3374cda2bddfaf519eba1a17d01ea9643cf7fe86ce722943f3 (see docker images --digests)
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Runtime closure: GTK4/libadwaita + gdk-pixbuf/librsvg + dbus + X server.
+# delibately NO python3 / python3-gi packages.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      libgtk-4-1 libadwaita-1-0 libgdk-pixbuf-2.0-0 librsvg2-2 librsvg2-common \
+      libglib2.0-0 dbus-x11 libfontconfig1 fonts-dejavu-core \
+      xvfb 2>/dev/null || apt-get install -y --no-install-recommends \
+      libgtk-4-1 libadwaita-1-0 libgdk-pixbuf-2.0-0 librsvg2-2 librsvg2-common \
+      libglib2.0-0 dbus-daemon libfontconfig1 fonts-dejavu-core \
+      xvfb \
+  && apt-get purge -y python3 python3-minimal python3-gi 2>/dev/null || true \
+  && rm -f /usr/bin/python* /usr/local/bin/python* \
+  && rm -rf /usr/lib/python* /usr/local/lib/python* \
+  && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# The native artifact + synthetic HOME are mounted at runtime; nothing
+# else is baked in. The app is launched by the harness, not by CMD.
+ENTRYPOINT ["/bin/sh", "-c"]

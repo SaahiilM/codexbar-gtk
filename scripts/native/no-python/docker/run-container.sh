@@ -46,11 +46,15 @@ echo "EVIDENCE:owner=$OWNER"
 UNIX_PID="none"
 for i in 1 2 3 4 5; do
   V=$(gdbus call --session --dest org.freedesktop.DBus --object-path /org/freedesktop/DBus --method org.freedesktop.DBus.GetConnectionUnixProcessID "$APP_ID" --timeout 3 2>&1 || echo FAIL)
-  P=$(printf '%s' "$V" | grep -oE '[0-9]+' | head -1 || true)
+  P=$(printf '%s' "$V" | sed -nE 's/^\(uint32 ([0-9]+),\)$/\1/p')
   if printf '%s' "$P" | grep -qE '^[0-9]+$' && [ "$P" != "0" ]; then UNIX_PID="$P"; break; fi
   sleep 1
 done
 echo "EVIDENCE:unix-pid=$UNIX_PID"
+if [ "$UNIX_PID" != "$APP_PID" ]; then
+  echo "FAIL: D-Bus owner $UNIX_PID does not match launched app $APP_PID" >&2
+  exit 1
+fi
 echo "EVIDENCE:exe=$(readlink /proc/$UNIX_PID/exe 2>/dev/null || echo MISSING)"
 echo "EVIDENCE:exe-sha=$(sha256sum /proc/$UNIX_PID/exe 2>/dev/null | awk '{print $1}' || echo MISSING)"
 if printf '%s' "$UNIX_PID" | grep -qE '^[0-9]+$' && [ -f "/proc/$UNIX_PID/maps" ]; then

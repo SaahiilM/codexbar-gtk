@@ -78,6 +78,7 @@ cat "$WORK/image-digest.txt" || true
 note "--- docker run ---"
 bash "$REPO_ROOT/scripts/native/no-python/docker/run-container.sh" "$ARTIFACT" "$WORK" "$EXPECTED_SHA" >"$WORK/container.log" 2>&1
 RUN_RC=$?
+if [ "$RUN_RC" -ne 0 ]; then fail "container runner exited with status $RUN_RC"; fi
 cat "$WORK/container.log"
 EVIDENCE="$(grep '^EVIDENCE:' "$WORK/container.log" | sed 's/^EVIDENCE://' || true)"
 CONTAINER_NAME="$(echo "$EVIDENCE" | grep -E '^container-name=' | head -1 | cut -d= -f2-)"
@@ -92,6 +93,8 @@ NHO="$(get_ev namehasowner)"; note "NameHasOwner: $NHO"
 if printf '%s' "$NHO" | grep -q '(true,)'; then pass "NameHasOwner $APP_ID true"; else fail "NameHasOwner not true: $NHO"; fi
 UNIX_PID="$(get_ev unix-pid)"; note "unix-pid: $UNIX_PID"
 if printf '%s' "$UNIX_PID" | grep -qE '^[0-9]+$' && [ "$UNIX_PID" != "0" ] && [ -n "$UNIX_PID" ]; then pass "PID parsed as uint32: $UNIX_PID"; else fail "PID parse failed: '$UNIX_PID'"; fi
+APP_PID="$(get_ev app-pid)"
+if [ -n "$APP_PID" ] && [ "$UNIX_PID" = "$APP_PID" ]; then pass "D-Bus owner is the launched app"; else fail "D-Bus owner $UNIX_PID differs from launched app $APP_PID"; fi
 EXE="$(get_ev exe)"; EXESHA="$(get_ev exe-sha)"; note "exe=$EXE sha=$EXESHA"
 if [ "$EXE" = "/app/$BIN_NAME" ]; then pass "exe matches /app artifact"; else fail "exe mismatch: $EXE"; fi
 if [ "$EXESHA" = "$EXPECTED_SHA" ] && [ -n "$EXESHA" ]; then pass "exe sha256 matches expected"; else fail "exe sha mismatch: $EXESHA != $EXPECTED_SHA"; fi

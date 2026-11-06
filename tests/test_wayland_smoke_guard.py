@@ -403,6 +403,14 @@ class WaylandGuardTests(unittest.TestCase):
             "com.steipete.CodexBarGTK",
         )
 
+        class FailedWithName:
+            returncode = 1
+            stdout = '{"found": "com.steipete.CodexBarGTK", "children": []}'
+            stderr = "identity probe failed"
+
+        with self.assertRaises(RuntimeError):
+            MODULE.resolve_atspi_application(4242, runner=lambda *a, **k: FailedWithName())
+
     def test_bridge_driver_requires_verified_application_identity(self):
         with self.assertRaises(ValueError):
             MODULE.BridgeDriver("linux-agent-access", "")

@@ -703,8 +703,6 @@ def resolve_atspi_application(pid, runner=subprocess.run, timeout=15):
     # AT-SPI through Atspi.get_desktop needs Atspi.init() and the session
     # a11y bus. The probe only reads names + PIDs — never window contents.
     need_env = dict(os.environ)
-    if "DBUS_SESSION_BUS_ADDRESS" not in need_env:
-        need_env["DBUS_SESSION_BUS_ADDRESS"] = f"unix:path={os.environ.get('XDG_RUNTIME_DIR','/run/user/1000')}/bus"
     probe = (
         "import sys,gi,json;gi.require_version('Atspi','2.0');"
         "from gi.repository import Atspi\n"
@@ -757,7 +755,7 @@ def resolve_atspi_application(pid, runner=subprocess.run, timeout=15):
             )[:500]
         except Exception:
             pass
-        if proc.returncode not in (True, 0) and name is None:
+        if proc.returncode != 0:
             returncode = getattr(proc, "returncode", 1)
             err_full = (getattr(proc, "stderr", "") or "").strip()
             # Last line of stderr usually carries the real error.

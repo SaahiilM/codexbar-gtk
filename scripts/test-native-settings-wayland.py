@@ -288,6 +288,7 @@ def main():
     app = observer = portal = None
     bus = None
     capture_status = None
+    settings_capture = None
     kwin_plugin = "codexbar_u05_guard_" + uuid.uuid4().hex[:12]
     focus_plugin = "codexbar_u05_focus_" + uuid.uuid4().hex[:12]
     focus_script_loaded = False
@@ -630,7 +631,7 @@ def main():
             except OSError:
                 pass
         if os.environ.get("KEEP_WAYLAND_TEST_TMP") == "1":
-            if settings_capture.is_file():
+            if settings_capture is not None and settings_capture.is_file():
                 kept = pathlib.Path("/tmp/codexbar-display-baseline.png")
                 try:
                     kept.write_bytes(settings_capture.read_bytes())

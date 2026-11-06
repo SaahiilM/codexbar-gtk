@@ -8,14 +8,14 @@ history. A checked box means **verified and merged**, not merely implemented.
 
 | Field | Current checkpoint |
 | --- | --- |
-| Goal | Fully native Rust GTK4/libadwaita application, including verified packaging and removal of the legacy runtime. |
-| Current phase | BG passed and U01–U08 implementation merged. UG remains **NOT PASSED**; Python remains default. |
-| Last observed merge | PR #91 merged normally at `4659d1150cb0a647a68983d40ad99126da445c60` (build 90); head `aa9ab84228afcfdbc1e15d291f199648228c5179`, `test` and `tray-dbus` passed in run `42270342535` (E192). |
-| Active slice | Build 91 on `orchestrated/crouton-ug-build91`: correct synthetic partial JSON and retained-error success→failure setup; code commit `613fe34`, current PR checks/merge pending. |
-| Latest local checks | `py_compile`; 19 focused Spend guard/fixture tests; full Python suite 263 ran with 70 extension-dependent skips. These are fixture tests, not a live GTK pass or extension parity proof. |
-| UI acceptance | Partial/retained-error captures still require live revalidation. Bridge AT-SPI focus/accessibility and remaining Wayland controls/navigation remain open; see `UG_GATE.md`. |
-| Packaging | Additive installer prototype is local, with reviewed 13-case isolated smoke exit 0. Representative Docker Python-free runtime smoke passed for debug/release; installed-prefix/service/full UI and actual SVG decode acceptance remain open. No default switch or Python removal. |
-| Next step | Observe build-91 PR checks; merge normally if ready. Reconcile installer prototype onto that main with the next build number; continue UG interactions and then C01–CG gate acceptance. |
+| Goal | Fully native Rust GTK4/libadwaita application with verified packaging and legacy runtime removal. |
+| Current phase | BG passed and U01–U08 implementation merged. UG **NOT PASSED**; Python default. |
+| Last observed merge | PR #92 merged at `b69a9840b09db110539d3f64ca0e3cca4dd00dbf` (build 91); head `d494bbe`, both checks passed in run `42290011803` (E194). |
+| Active slice | Build 92 on `orchestrated/crouton-bridge-a11y-build92`: enable fixture accessibility for bridge mode and resolve the exact exported name from synthetic PID. Published-head CI and live action verification remain pending. |
+| Local verification | `py_compile`; 26 focused guard tests; 266 Python tests with 70 extension-dependent skips. These do not establish live GTK action or Rust-extension parity. |
+| UI acceptance | Final bridge discovery/click and corrected partial/retained Spend states still require live revalidation. Other Wayland controls/navigation remain open; see `UG_GATE.md`. |
+| Packaging | Additive draft PR #93 is being renumbered to tentative build 93; installer prototype has 13-case isolated local smoke exit 0. Representative Docker no-Python runtime smoke passed for debug/release; installed-prefix, service/full UI, and actual SVG decode acceptance remain open. |
+| Next | Observe this PR's checks and merge normally if ready. Continue actual Wayland matrix; reconcile optional packaging draft to new main/build, then complete C01–CG before default cutover. |
 
 
 **First commands for a new model/session:**

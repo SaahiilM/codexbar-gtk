@@ -5858,8 +5858,8 @@ future models must verify the linked PR's status rather than trusting a stale
 ### E193 — 2026-11-06: C01 additive isolated-prefix packaging prototype (DRAFT; E192 taken by UI PR92)
 
 - **Branch:** `orchestrated/crouton-native-cutover-prep`, draft PR93 at
-  `aa3a55f` (retargeted to `main` after PR92 merged at `b69a984`; merge
-  `origin/main` (`bb6d915`), no rebase churn; build 92 tentative confirmed).
+  previously tested head `774dccc` (retargeted to `main` after PR92 merged at `b69a984`; merge
+  `origin/main` (`bb6d915`), no rebase churn; tentative build 93).
   UG NOT PASSED, C cutover gated; prototype additive only.
 - **Scope (prototype, no default cutover):** `scripts/build-native.sh` builds
   a prebuilt artifact separate from install; `scripts/install-native.sh`
@@ -5904,3 +5904,15 @@ future models must verify the linked PR's status rather than trusting a stale
   not claimed accepted; C03 deletion/assertion mapping and CG audit remain.
 - **Next step:** reviewable in this branch; exact-head CI must rerun on the
   post-merge head (`bb6d915`) and root retains the final merge decision.
+
+
+#### E193 publication correction — 2026-11-06
+
+Root verified that the previously reported `1b58a039` metadata commit was not
+present in this repository or on PR #93. The build-93 changes remained local
+on actual head `774dccc`; root completed their commit/push instead. The earlier
+unverified draft reference `aa3a55f` is corrected above to the tested head.
+Both required checks passed on `774dccc` in run `42291465456`, including the
+installer smoke. Those results do not cover this new metadata commit, whose
+checks must be observed separately. PR #94 owns build 92; draft PR #93 is
+reserved for build 93. No C gate or default cutover is accepted here.

@@ -15,6 +15,13 @@ on:
       - "scripts/smoke-native-wayland-assets.sh"
       - "scripts/smoke-native-usage-pages.sh"
       - "scripts/smoke-native-settings.sh"
+      - "scripts/build-native.sh"
+      - "scripts/install-native.sh"
+      - "scripts/smoke-native-install.sh"
+      - "scripts/native/**"
+      - "rust-gtk/tests/python_free_linkage.rs"
+      - "rust-gtk/tests/svg_loader_negative.rs"
+      - "scripts/native/render_activation.py"
       - "scripts/capture-native-gtk-wayland.sh"
       - "codexbar_gtk/providers.py"
       - "codexbar_gtk/activity.py"
@@ -93,6 +100,13 @@ jobs:
         run: NATIVE_GTK_SCALE=2 ./scripts/smoke-native-dashboard.sh
       - name: Exercise native Spend and Sessions with synthetic data
         run: ./scripts/smoke-native-usage-pages.sh
+      - name: Build native release artifact (C01 prototype)
+        run: |
+          cargo build --manifest-path rust-gtk/Cargo.toml --locked --release --bin codexbar-gtk-native
+      - name: Exercise isolated native install/uninstall/upgrade/rollback smoke
+        run: ./scripts/smoke-native-install.sh
+      - name: Verify native binary has no Python linkage (linkage inspection only, C02 unproven)
+        run: cargo test --manifest-path rust-gtk/Cargo.toml --locked --test python_free_linkage
       # Keep the comprehensive Settings smoke available for local verification.
       # Its fixed-coordinate native file chooser interaction failed twice in
       # CI at different points; the other native GTK Xvfb smokes remain enabled.

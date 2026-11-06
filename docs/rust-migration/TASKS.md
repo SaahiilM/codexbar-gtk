@@ -590,6 +590,24 @@ audit. C01 package checks must include `librsvg2-common`.
   service/autostart, upgrade and rollback. Preserve identity/config/history;
   test with isolated home and install prefix. Remove Python/typelib requirements
   from launch paths, not native GTK shared-library requirements.
+  Additive prototype (unallocated pending root — E190/E191 taken by PR91/E189 chain; branch `orchestrated/crouton-native-cutover-prep`,
+  tentative build 92, UG-gated cutover unchanged): `scripts/build-native.sh`
+  (prebuilt artifact, separate from install), `scripts/install-native.sh` +
+  stage templates `scripts/native/stage/` (`--activate` only writes canonical
+  `codexbar-gtk.desktop`/`codexbar-gtk.service` with `.pre-native` backup and
+  manifest ownership; default writes prefix binary + manifest only), atomic
+  rename swap, safe quoting for spaced paths, ownership-aware uninstall
+  preserving pre-existing non-native files, default NO service/autostart
+  registration and no overwrite of Python entry/unit. Upgrade/rollback uses
+  distinguishable debug/release ELF artifacts asserting sha256 on disk and
+  installed; byte-preservation through install/uninstall, runtime history
+  compatibility not byte-identical through runtime. `runtime_deps.txt` is
+  documentation-only (no `Depends`, no invented `codexbar` apt package).
+  Linkage inspection only (`python_free_linkage.rs`, C02 unproven) plus
+  smoke ELF/process evidence. SVG loader negative test separate
+  (`svg_loader_negative.rs`, ignored; desktop validation separate).
+  C03 deletion mapping and CG audit not yet done; do not claim C gates accepted.
+  D2: binary retains `codexbar-gtk-native` name.
   Investigation (E187, 2026-11-06; research-only, build 86, no version bump):
   "blocked by UG" applies to the cutover, not the installer mechanics —
   the design below can be reviewed now while live UG runs proceed, but do

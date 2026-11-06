@@ -1,0 +1,11 @@
+# Native runtime dependencies — DOCUMENTATION ONLY, not a package Depends.
+#
+# The installed ELF binary needs these system libraries present at runtime
+# (dpkg dependencies live in the distro package, not here):
+#   libgtk-4-1
+#   libadwaita-1-0
+#   librsvg2-common  (required for GDK SVG decode of bundled provider icons)
+#   libglib2.0-0, libgio2.0-0, libcairo2, libgdk-pixbuf-2.0-0
+#
+# The external CodexBar CLI is discovered at runtime via PATH/CLI settings;
+# it is NOT an apt package name and is not named here as one.

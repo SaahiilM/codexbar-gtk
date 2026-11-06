@@ -5855,3 +5855,39 @@ future models must verify the linked PR's status rather than trusting a stale
   the additive installer prototype to the resulting main/build and continue
   the actual Wayland action matrix. Packaging/runtime smoke prototypes remain
   local and are not evidence of a default cutover.
+### E193 — 2026-11-06: C01 additive isolated-prefix packaging prototype (DRAFT; E192 taken by UI PR92)
+
+- **Branch:** `orchestrated/crouton-native-cutover-prep` (no PR/version bump;
+  UG NOT PASSED, C cutover gated; prototype additive only).
+- **Scope (prototype, no default cutover):** `scripts/build-native.sh` builds
+  a prebuilt artifact separate from install; `scripts/install-native.sh`
+  installs it into `--prefix` (default `$HOME/.local`) with atomic rename,
+  safe Desktop Exec quoting (spaces), manifest at
+  `share/codexbar-gtk/native-manifest`. Default (`--no-activate`) writes binary
+  + manifest only — no `codexbar-gtk.desktop`/`codexbar-gtk.service`/autostart
+  entry, no Python file touched. `--activate` writes canonical names with
+  `.pre-native` backup and restore on ownership-aware uninstall. Stage templates
+  in `scripts/native/stage/` encode ownership markers
+  (`X-CodexBar-DesktopFile`, `X-CodexBar-Service`). `scripts/native/runtime_deps.txt`
+  is documentation-only (no `Depends`, no `codexbar` apt package).
+- **Tests:** `scripts/smoke-native-install.sh` (isolated spaced HOME/prefix,
+  install debug → upgrade release → rollback debug with sha256 on disk,
+  byte-preservation through install/uninstall, pre-existing Python desktop/unit
+  preservation, activate backup/restore, ELF/process evidence, no systemd
+  exec); `rust-gtk/tests/python_free_proof.rs` (ELF NEEDED has no
+  libpython/pyo3, has libgtk-4); `rust-gtk/tests/svg_loader_negative.rs`
+  (ignored, separate from desktop-file validation).
+- **D2:** retained binary name `codexbar-gtk-native`; stable launcher may point
+  to it later without rename.
+- **Verification (local, no xvfb-run in this shell):** `cargo test
+  --test python_free_proof` ok; `cargo test --test svg_loader_negative
+  --ignored` ok (loader present; negative path documented only); debug and
+  release binaries built and distinguished by sha256; headless install/
+  upgrade/rollback/uninstall, spaced paths, Python preservation and
+  activate backup/restore verified by direct installer invocation (launch
+  probe and full smoke require xvfb-run + dbus-run-session, present in CI).
+  No external install, no shared desktop, no bridge/VNC change.
+- **Gate:** UG remains NOT PASSED; Python remains default. C01/C02/C03/CG
+  not claimed accepted; C03 deletion/assertion mapping and CG audit remain.
+- **Next step:** reviewable in this branch; CI exact-head `test` + `tray-dbus`
+  on the new smoke after root assigns build/PR.

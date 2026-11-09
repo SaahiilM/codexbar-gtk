@@ -10,14 +10,18 @@ without a per-run consent prompt; the fail-closed KWin guard is unchanged.
 This script never falls back to X11 or fake input.
 """
 import argparse
+import inspect
 import json
 import os
 import pathlib
 import shutil
+import select
 import signal
+import struct
 import subprocess
 import sys
 import tempfile
+import textwrap
 import time
 import uuid
 
@@ -245,6 +249,81 @@ def active_target(state, expected_pid):
     return state.get("pid") == expected_pid and state.get("active") is True
 
 
+def fresh_active_target(state, expected_pid, now=None):
+    """Require the exact active fixture and the established fresh-sample window."""
+    now = time.monotonic() if now is None else now
+    try:
+        age = now - state.get("received", 0)
+    except (TypeError, ValueError):
+        return False
+    return 0.15 <= age <= 0.35 and active_target(state, expected_pid)
+
+
+def valid_kwin_observer_sample(sender, expected_sender, state, last_sequence):
+    """Accept only well-formed, ordered reports from the compositor connection."""
+    if sender != expected_sender or not isinstance(state, dict):
+        return False
+    sequence = state.get("sample_seq")
+    if type(sequence) is not int or sequence <= last_sequence:
+        return False
+    if type(state.get("pid")) is not int:
+        return False
+    if any(type(state.get(key)) is not bool for key in
+           ("active", "top_hit", "target_present", "portal_active")):
+        return False
+    cursor = state.get("cursor")
+    if (not isinstance(cursor, list) or len(cursor) != 2 or
+            any(type(value) is not int for value in cursor)):
+        return False
+    geometry = state.get("target_geometry")
+    if geometry is not None and (
+            not isinstance(geometry, list) or len(geometry) != 4 or
+            any(type(value) is not int for value in geometry)):
+        return False
+    return True
+
+
+def activate_target_window(app_pid, focus_js_path, focus_plugin,
+                           runner=subprocess.run):
+    """Ask KWin to activate only the exact synthetic Settings PID/title."""
+    focus_js_path = pathlib.Path(focus_js_path)
+    focus_js_path.write_text(activation_script(app_pid))
+    runner(["qdbus6", "org.kde.KWin", "/Scripting",
+            "org.kde.kwin.Scripting.loadScript", str(focus_js_path), focus_plugin],
+           check=True, capture_output=True, text=True)
+    loaded = runner(["qdbus6", "org.kde.KWin", "/Scripting",
+                     "org.kde.kwin.Scripting.isScriptLoaded", focus_plugin],
+                    check=True, capture_output=True, text=True).stdout.strip()
+    if loaded != "true":
+        raise RuntimeError("KWin did not load the synthetic Settings focus helper; no input sent")
+    runner(["qdbus6", "org.kde.KWin", "/Scripting",
+            "org.kde.kwin.Scripting.start"], check=True, capture_output=True)
+
+
+def wait_for_fresh_active_target(latest, expected_pid, timeout_seconds=5.0):
+    """Wait a bounded interval for fresh focus evidence from the exact fixture."""
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        state = latest()
+        if fresh_active_target(state, expected_pid):
+            return state
+        time.sleep(.02)
+    raise RuntimeError("Settings did not regain stable focus; no input sent")
+
+
+def activate_and_wait_for_target(app_pid, focus_js_path, focus_plugin, latest,
+                                 runner=subprocess.run, timeout_seconds=5.0):
+    """Share the target-only activation and 0.15–0.35s focus gate across routes."""
+    activate_target_window(app_pid, focus_js_path, focus_plugin, runner=runner)
+    return wait_for_fresh_active_target(latest, app_pid, timeout_seconds=timeout_seconds)
+
+
+def read_acknowledgement(timeout_seconds=60.0):
+    """Read a bounded inspection acknowledgement from the runner's stdin."""
+    ready, _, _ = select.select([sys.stdin], [], [], timeout_seconds)
+    return sys.stdin.readline().strip() if ready else ""
+
+
 def target_window_contains(state, x, y):
     """Check requested target lies inside the synthetic window's geometry."""
     geometry = state.get("target_geometry")
@@ -252,6 +331,78 @@ def target_window_contains(state, x, y):
         return False
     gx, gy, width, height = geometry
     return width > 0 and height > 0 and gx <= x < gx + width and gy <= y < gy + height
+
+
+class BoundedTelemetry:
+    """Synthetic-only timestamped diagnostic records with strict size bounds."""
+    MAX_ENTRIES = 64
+    MAX_SECONDS = 8.0
+
+    def __init__(self, path):
+        self.path = pathlib.Path(path)
+        self.started = time.monotonic()
+        self.entries = []
+
+    def add(self, event, **fields):
+        now = time.monotonic()
+        if len(self.entries) >= self.MAX_ENTRIES or now - self.started > self.MAX_SECONDS:
+            return False
+        item = {"timestamp_monotonic": now, "event": str(event)[:48]}
+        item.update(fields)
+        self.entries.append(item)
+        self.path.write_text(json.dumps(self.entries, separators=(",", ":")) + "\n")
+        return True
+
+
+def telemetry_snapshot(telemetry, state, expected_pid, requested=None):
+    """Record only allowed KWin diagnostic fields; never titles or content."""
+    now = time.monotonic()
+    age = now - state.get("received", 0)
+    safe = {
+        "target_pid": expected_pid,
+        "active_pid": state.get("pid") if isinstance(state.get("pid"), int) else None,
+        "active": state.get("active") is True,
+        "top_hit": state.get("top_hit") is True,
+        "cursor": state.get("cursor") if isinstance(state.get("cursor"), list) else None,
+        "geometry": state.get("target_geometry") if isinstance(state.get("target_geometry"), list) else None,
+        "state_age_seconds": round(age, 6),
+    }
+    if requested is not None:
+        safe["requested"] = list(requested)
+    telemetry.add("kwin_snapshot", **safe)
+
+
+def returned_image_dimensions(decoded):
+    """Read dimensions only from an image path explicitly returned by bridge."""
+    if not isinstance(decoded, dict):
+        return None
+    for key in ("image_path", "screenshot_path", "screenshot"):
+        value = decoded.get(key)
+        if isinstance(value, str):
+            try:
+                with open(value, "rb") as image_file:
+                    header = image_file.read(24)
+                if header[:8] == b"\x89PNG\r\n\x1a\n" and header[12:16] == b"IHDR":
+                    return {"width": struct.unpack(">I", header[16:20])[0],
+                            "height": struct.unpack(">I", header[20:24])[0]}
+            except OSError:
+                pass
+    return None
+
+
+def bridge_return_metadata(decoded):
+    """Copy only documented-looking scalar result metadata, never image/content."""
+    if not isinstance(decoded, dict):
+        return {}
+    metadata = {}
+    for key in ("sent", "action_count", "actions_sent", "image_width", "image_height"):
+        value = decoded.get(key)
+        if isinstance(value, (bool, int)) and not isinstance(value, str):
+            metadata[key] = value
+    dimensions = returned_image_dimensions(decoded)
+    if dimensions:
+        metadata["returned_image_dimensions"] = dimensions
+    return metadata
 
 
 def start_notification_monitor(log_path):
@@ -812,32 +963,57 @@ class BridgeDriver:
     absolute, so the caller keeps the cursor==target guard unchanged.
     """
     def __init__(self, command, application,
-                 runner=subprocess.run, timeout=60):
+                 runner=subprocess.run, timeout=60, telemetry=None):
         if not application:
             raise ValueError("bridge application identity is required; no input sent")
         self.command = command
         self.application = application
         self.runner = runner
         self.timeout = timeout
+        self.telemetry = telemetry
 
     def action(self, payload):
-        result = self.runner(
-            [self.command, "action", "--application", self.application,
-             "--json", json.dumps(payload)],
-            capture_output=True, text=True, timeout=self.timeout)
+        started = time.monotonic()
+        if self.telemetry:
+            self.telemetry.add("bridge_request", coordinates=[payload.get("x"), payload.get("y")],
+                               action=payload.get("kind"), monotonic_start=started)
+        try:
+            result = self.runner(
+                [self.command, "action", "--application", self.application,
+                 "--json", json.dumps(payload)],
+                capture_output=True, text=True, timeout=self.timeout)
+        except Exception:
+            if self.telemetry:
+                self.telemetry.add("bridge_result", monotonic_end=time.monotonic(),
+                                   bridge_return_code=None, outcome="exception")
+            raise
         if result.returncode != 0:
+            if self.telemetry:
+                self.telemetry.add("bridge_result", monotonic_end=time.monotonic(),
+                                   bridge_return_code=result.returncode, outcome="failed")
             raise RuntimeError(
-                f"bridge action failed ({self.command}): "
-                f"{(result.stderr or '').strip() or result.stdout.strip()}"
+                f"bridge action failed ({self.command}); see bounded synthetic telemetry"
             )
         try:
             decoded = json.loads(result.stdout)
         except (TypeError, ValueError) as error:
+            if self.telemetry:
+                self.telemetry.add("bridge_result", monotonic_end=time.monotonic(),
+                                   bridge_return_code=result.returncode,
+                                   outcome="non_json_return")
             raise RuntimeError(
                 f"bridge action returned non-JSON output; no input confirmed"
             ) from error
         if isinstance(decoded, dict) and "error" in decoded:
-            raise RuntimeError(f"bridge action error: {decoded['error']}")
+            if self.telemetry:
+                self.telemetry.add("bridge_result", monotonic_end=time.monotonic(),
+                                   bridge_return_code=result.returncode,
+                                   outcome="reported_error")
+            raise RuntimeError("bridge action reported an error; see bounded synthetic telemetry")
+        if self.telemetry:
+            self.telemetry.add("bridge_result", monotonic_end=time.monotonic(),
+                               bridge_return_code=result.returncode, outcome="returned",
+                               return_metadata=bridge_return_metadata(decoded))
         return decoded
 
     def move(self, x, y):
@@ -883,12 +1059,11 @@ def guarded_click_bridge(bridge, app_pid, latest, x, y):
     state = latest()
     if not target_window_contains(state, x, y):
         raise RuntimeError("action coordinates outside the synthetic window; no input sent")
-    if not (
-        state.get("pid") == app_pid
-        and state.get("active") is True
-        and state.get("top_hit") is True
-    ):
-        raise RuntimeError("synthetic Settings is not active/topmost; no input sent")
+    # The current cursor may be outside the active fixture. Require exact
+    # focus before moving, then require top-hit AND exact cursor position
+    # after motion and again immediately before the click.
+    if not active_target(state, app_pid):
+        raise RuntimeError("synthetic Settings is not active; no input sent")
     bridge.move(x, y)
     deadline = time.monotonic() + 2
     while time.monotonic() < deadline:
@@ -900,6 +1075,50 @@ def guarded_click_bridge(bridge, app_pid, latest, x, y):
     if not guard_target(latest(), app_pid, x, y):
         raise RuntimeError("final target/focus guard failed; no click sent")
     bridge.click(x, y)
+
+
+def move_only_diagnostic(bridge, app_pid, latest, preferences_path, telemetry,
+                         timeout_seconds=2.0):
+    """Run one explicit, isolated move probe; this function has no click route."""
+    before_bytes = pathlib.Path(preferences_path).read_bytes()
+    before = latest()
+    geometry = before.get("target_geometry")
+    if not isinstance(geometry, list) or len(geometry) != 4:
+        raise RuntimeError("move-only precondition failed: synthetic geometry unavailable")
+    x, y = page_tab_point_from_geometry(geometry, "Display")
+    if not target_window_contains(before, x, y):
+        raise RuntimeError("move-only precondition failed: Display point is outside the window")
+    telemetry_snapshot(telemetry, before, app_pid, requested=[x, y])
+    telemetry.add("diagnostic", label="move_only", requested_coordinates=[x, y],
+                  baseline_preferences_unchanged=True)
+    # Re-sample directly before the only permitted input. Cursor position and
+    # top-hit are intentionally not checked here because the cursor may start
+    # outside the fixture; the post-motion telemetry records both.
+    before_move = latest()
+    if not fresh_active_target(before_move, app_pid):
+        raise RuntimeError("move-only precondition failed: no fresh active synthetic Settings sample")
+    telemetry_snapshot(telemetry, before_move, app_pid, requested=[x, y])
+    bridge.move(x, y)  # exactly one bridge action; no navigation or follow-up input
+    deadline = time.monotonic() + timeout_seconds
+    last_signature = None
+    while time.monotonic() < deadline:
+        state = latest()
+        signature = tuple(state.get(key) for key in
+                          ("pid", "active", "top_hit", "cursor", "target_geometry"))
+        if signature != last_signature:
+            telemetry_snapshot(telemetry, state, app_pid, requested=[x, y])
+            last_signature = signature
+        time.sleep(.02)
+    final_state = latest()
+    telemetry_snapshot(telemetry, final_state, app_pid, requested=[x, y])
+    unchanged = pathlib.Path(preferences_path).read_bytes() == before_bytes
+    telemetry.add("diagnostic_end", json_unchanged=unchanged,
+                  requested_coordinates=[x, y], observed_cursor=final_state.get("cursor"))
+    if not unchanged:
+        raise RuntimeError("move-only diagnostic changed synthetic preferences JSON")
+    print("DIAGNOSTIC ONLY: one bridge move returned; no click/key/scroll/navigation; "
+          f"preferences JSON unchanged; telemetry={telemetry.path}", flush=True)
+    return 0
 
 
 
@@ -915,6 +1134,8 @@ def main():
                              "with --inspect-only first)")
     parser.add_argument("--inspect-only", action="store_true",
                         help="capture the synthetic Settings window and exit without requesting portal access")
+    parser.add_argument("--move-only", action="store_true",
+                        help="one bridge pointer move to the measured Display tab point; diagnostic only, no other input")
     # Input routing: --bridge (agent-agnostic linux-agent-access bridge,
     # no per-run KDE consent prompt) vs the default --portal flow. The
     # bridge is optional and flag-gated: with neither flag the runner uses
@@ -931,6 +1152,8 @@ def main():
     args = parser.parse_args()
     if args.bridge and args.portal:
         parser.error("--bridge and --portal are mutually exclusive")
+    if args.move_only and (args.portal or args.inspect_only):
+        parser.error("--move-only requires bridge mode and cannot be combined with --portal/--inspect-only")
     if (args.switch_x is None) != (args.switch_y is None):
         parser.error("--switch-x and --switch-y must be supplied together")
     action = WAYLAND_SWITCH_ACTIONS[args.action]
@@ -965,6 +1188,8 @@ def main():
     else:
         use_bridge = shutil.which(BRIDGE_DEFAULT_COMMAND) is not None
     bridge_command = None
+    if args.move_only and not use_bridge:
+        parser.error("--move-only requires --bridge")
     if use_bridge:
         try:
             bridge_command = resolve_bridge_command(args.bridge_cmd)
@@ -1056,9 +1281,25 @@ esac
                               GLib.VariantType.new("(b)"), Gio.DBusCallFlags.NONE, 3000, None).unpack()[0]
         if owned:
             raise RuntimeError("native application ID already owned; refusing to target an existing app")
+        watcher_owned = bus.call_sync(
+            "org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus",
+            "NameHasOwner", GLib.Variant("(s)", ("org.kde.StatusNotifierWatcher",)),
+            GLib.VariantType.new("(b)"), Gio.DBusCallFlags.NONE, 3000, None).unpack()[0]
+        if not watcher_owned:
+            raise RuntimeError("StatusNotifierWatcher is unavailable; refusing synthetic app launch")
+        sni_owned = bus.call_sync(
+            "org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus",
+            "NameHasOwner", GLib.Variant("(s)", ("org.kde.StatusNotifierItem-codexbar-gtk",)),
+            GLib.VariantType.new("(b)"), Gio.DBusCallFlags.NONE, 3000, None).unpack()[0]
+        if sni_owned:
+            raise RuntimeError("synthetic StatusNotifierItem name already owned; refusing launch")
         portal_owner = bus.call_sync(
             "org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus",
             "GetNameOwner", GLib.Variant("(s)", ("org.freedesktop.impl.portal.desktop.kde",)),
+            GLib.VariantType.new("(s)"), Gio.DBusCallFlags.NONE, 3000, None).unpack()[0]
+        kwin_owner = bus.call_sync(
+            "org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus",
+            "GetNameOwner", GLib.Variant("(s)", ("org.kde.KWin",)),
             GLib.VariantType.new("(s)"), Gio.DBusCallFlags.NONE, 3000, None).unpack()[0]
         portal_pid = bus.call_sync(
             "org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus",
@@ -1073,9 +1314,11 @@ esac
         settings_capture = scratch / "settings-before.png"
         capture_status = scratch / "portal-capture.json"
         observer_py = scratch / "observer.py"
-        observer_py.write_text(OBSERVER_PY)
+        observer_py.write_text(OBSERVER_PY.replace(
+            "__VALIDATOR__", textwrap.dedent(inspect.getsource(valid_kwin_observer_sample))))
         observer = subprocess.Popen([sys.executable, str(observer_py), str(state_path), str(observer_ready),
-                                     str(portal_pid), str(consent_capture), str(capture_status)],
+                                     str(portal_pid), str(consent_capture), str(capture_status),
+                                     kwin_owner],
                                     env=os.environ.copy(), stdout=subprocess.DEVNULL,
                                     stderr=(scratch / "observer.log").open("wb"), start_new_session=True)
         ready_deadline = time.monotonic() + 5
@@ -1124,6 +1367,10 @@ esac
         if args.inspect_only:
             print("Inspection-only mode; no portal request or input sent.", flush=True)
             return 0
+        if args.move_only:
+            print("Inspect the synthetic Settings baseline image, then enter INSPECTED within 60 seconds to continue the single move-only probe; any other input aborts without input.", flush=True)
+            if read_acknowledgement() != "INSPECTED":
+                raise RuntimeError("move-only baseline inspection acknowledgement missing; no input sent")
         print(f"Synthetic fixture and consent capture path: {scratch}", flush=True)
         if use_bridge:
             print("Bridge mode: the linux-agent-access bridge restores its "
@@ -1132,7 +1379,8 @@ esac
             # guess it (the window title and APP_ID can differ).
             bridge_application = resolve_atspi_application(app.pid)
             print(f"Bridge target AT-SPI name: {bridge_application!r} (PID {app.pid})", flush=True)
-            input_driver = BridgeDriver(bridge_command, bridge_application)
+            telemetry = BoundedTelemetry(scratch / "move-only-telemetry.json") if args.move_only else None
+            input_driver = BridgeDriver(bridge_command, bridge_application, telemetry=telemetry)
             portal = input_driver
         else:
             print("Waiting for KDE RemoteDesktop consent prompt. Verify its synthetic test name visually; click Allow only then.", flush=True)
@@ -1154,6 +1402,20 @@ esac
         def latest():
             return json.loads(state_path.read_text())
 
+        if args.move_only:
+            if not isinstance(portal, BridgeDriver) or not bridge_application:
+                raise RuntimeError("move-only diagnostic requires verified bridge identity")
+            focus_js_path = scratch / "kwin-focus-target.js"
+            activate_target_window(app.pid, focus_js_path, focus_plugin)
+            focus_script_loaded = True
+            try:
+                wait_for_fresh_active_target(latest, app.pid)
+            except RuntimeError as error:
+                raise RuntimeError(f"{error}; no input sent") from error
+            return move_only_diagnostic(
+                portal, app.pid, latest, preferences, telemetry
+            )
+
         def guarded_input(app_pid, x, y):
             # One entry point for both input routes: --bridge swaps only
             # the transport; the KWin guard range and target checks are
@@ -1166,32 +1428,15 @@ esac
         # active window. Reactivate the exact synthetic Settings PID/title after
         # receiving APPROVE even if an earlier snapshot happened to show it active.
         focus_js_path = scratch / "kwin-focus-target.js"
-        focus_js_path.write_text(activation_script(app.pid))
-        subprocess.run(["qdbus6", "org.kde.KWin", "/Scripting",
-                        "org.kde.kwin.Scripting.loadScript", str(focus_js_path), focus_plugin],
-                       check=True, capture_output=True, text=True)
-        loaded = subprocess.run(["qdbus6", "org.kde.KWin", "/Scripting",
-                                 "org.kde.kwin.Scripting.isScriptLoaded", focus_plugin],
-                                check=True, capture_output=True, text=True).stdout.strip()
-        if loaded != "true":
-            raise RuntimeError("KWin did not load the synthetic Settings focus helper; no input sent")
+        activate_target_window(app.pid, focus_js_path, focus_plugin)
         focus_script_loaded = True
-        subprocess.run(["qdbus6", "org.kde.KWin", "/Scripting",
-                        "org.kde.kwin.Scripting.start"], check=True, capture_output=True)
 
         # Wait for the Settings window to regain focus and a stable pointer after
         # consent. Never move if focus remains elsewhere or cursor samples churn.
-        deadline = time.monotonic() + 5
-        baseline = None
-        while time.monotonic() < deadline:
-            state = latest()
-            age = time.monotonic() - state.get("received", 0)
-            if state.get("pid") == app.pid and state.get("active") and 0.15 <= age <= 0.35:
-                baseline = state
-                break
-            time.sleep(.02)
-        if baseline is None:
-            raise RuntimeError("Settings did not regain stable focus after portal consent; no input sent")
+        try:
+            baseline = wait_for_fresh_active_target(latest, app.pid)
+        except RuntimeError as error:
+            raise RuntimeError(f"{error} after portal consent") from error
         if "page" in action:
             geometry = baseline.get("target_geometry")
             if not isinstance(geometry, list) or len(geometry) != 4:
@@ -1475,12 +1720,19 @@ esac
 
 OBSERVER_PY = r'''import json, pathlib, subprocess, sys, threading, time
 from gi.repository import Gio, GLib
-path=pathlib.Path(sys.argv[1]); ready=pathlib.Path(sys.argv[2]); portal_pid=int(sys.argv[3]); image=pathlib.Path(sys.argv[4]); status=pathlib.Path(sys.argv[5]); loop=GLib.MainLoop(); captured=False
+__VALIDATOR__
+path=pathlib.Path(sys.argv[1]); ready=pathlib.Path(sys.argv[2]); portal_pid=int(sys.argv[3]); image=pathlib.Path(sys.argv[4]); status=pathlib.Path(sys.argv[5]); expected_sender=sys.argv[6]; loop=GLib.MainLoop(); captured=False; last_sequence=0
 xml='<node><interface name="org.codexbar.U05.Guard"><method name="Record"><arg name="state" type="s" direction="in"/></method></interface></node>'
 node=Gio.DBusNodeInfo.new_for_xml(xml); bus=Gio.bus_get_sync(Gio.BusType.SESSION,None)
-def method(_c,_s,_p,_i,_m,params,inv):
-    global captured
-    (raw,)=params.unpack(); state=json.loads(raw); state['received']=time.monotonic()
+def method(_c,sender,_p,_i,_m,params,inv):
+    global captured,last_sequence
+    try:
+        (raw,)=params.unpack(); state=json.loads(raw)
+    except (ValueError, TypeError):
+        inv.return_value(GLib.Variant('()',())); return
+    if not valid_kwin_observer_sample(sender,expected_sender,state,last_sequence):
+        inv.return_value(GLib.Variant('()',())); return
+    last_sequence=state['sample_seq']; state['received']=time.monotonic()
     tmp=path.with_suffix('.tmp'); tmp.write_text(json.dumps(state)); tmp.replace(path)
     if state.get('portal_active') and not captured:
         captured=True
@@ -1498,8 +1750,9 @@ loop.run()
 '''
 
 KWIN_JS = r'''var TARGET_PID=__PID__, PORTAL_PID=__PORTAL_PID__, PLUGIN="__PLUGIN__", service="org.codexbar.U05.Guard", path="/org/codexbar/U05/Guard", iface="org.codexbar.U05.Guard";
-function report(){var p=workspace.cursorPos,h=workspace.windowAt(p,1),top=h&&h.length?h[0]:null,a=workspace.activeWindow,w=workspace.stackingOrder,t=null;for(var i=0;i<w.length;i++)if(Number(w[i].pid)===TARGET_PID)t=w[i];var g=t?{x:Number(t.x),y:Number(t.y),width:Number(t.width),height:Number(t.height)}:null;var s={pid:a?Number(a.pid):0,active:!!(a&&Number(a.pid)===TARGET_PID),top_hit:!!(top&&Number(top.pid)===TARGET_PID),target_present:!!t,target_geometry:g?[g.x,g.y,g.width,g.height]:null,cursor:[Number(p.x),Number(p.y)],portal_active:!!(a&&Number(a.pid)===PORTAL_PID)};callDBus(service,path,iface,"Record",JSON.stringify(s));}
-report();workspace.cursorPosChanged.connect(report);workspace.windowActivated.connect(report);workspace.windowAdded.connect(report);workspace.windowRemoved.connect(report);'''
+var SAMPLE_INTERVAL_MS=250, MAX_SAMPLES=2400, MAX_LIFETIME_MS=600000, startedAt=Date.now(), lastSampleAt=0, sampleSequence=0, sampleInFlight=false, sampler=null;
+function report(){var now=Date.now();if(now-startedAt>=MAX_LIFETIME_MS||sampleSequence>=MAX_SAMPLES){if(sampler)sampler.stop();return;}if(sampleInFlight||now-lastSampleAt<SAMPLE_INTERVAL_MS)return;sampleInFlight=true;lastSampleAt=now;var sequence=++sampleSequence;var p=workspace.cursorPos,h=workspace.windowAt(p,1),top=h&&h.length?h[0]:null,a=workspace.activeWindow,w=workspace.stackingOrder,t=null;for(var i=0;i<w.length;i++)if(Number(w[i].pid)===TARGET_PID)t=w[i];var g=t?{x:Number(t.x),y:Number(t.y),width:Number(t.width),height:Number(t.height)}:null;var s={sample_seq:sequence,pid:a?Number(a.pid):0,active:!!(a&&Number(a.pid)===TARGET_PID),top_hit:!!(top&&Number(top.pid)===TARGET_PID),target_present:!!t,target_geometry:g?[g.x,g.y,g.width,g.height]:null,cursor:[Number(p.x),Number(p.y)],portal_active:!!(a&&Number(a.pid)===PORTAL_PID)};callDBus(service,path,iface,"Record",JSON.stringify(s),function(){sampleInFlight=false;});}
+sampler=new QTimer(this);sampler.timeout.connect(report);sampler.start(SAMPLE_INTERVAL_MS);report();workspace.cursorPosChanged.connect(report);workspace.windowActivated.connect(report);workspace.windowAdded.connect(report);workspace.windowRemoved.connect(report);'''
 
 
 if __name__ == "__main__":

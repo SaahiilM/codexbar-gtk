@@ -5948,3 +5948,11 @@ future models must verify the linked PR's status rather than trusting a stale
 - **Next:** root publishes the focused build-93 commit and observes CI, then
   handles its PR/merge. Continue the remaining UG interaction matrix. Packaging
   draft PR #93 remains reserved for build 94 and is outside this change.
+
+
+### E196 — 2026-11-09: PR #95 README build-display correction
+
+- Observed exact-head run `42681185967` on `25e5d1d628b69382d28b14b1c7e2f3de28a746b6`: `tray-dbus` succeeded; `test` failed in `tests::version_metadata_tracks_the_root_version_file`. Core/backend steps passed, but subsequent artwork, PyO3/Python, Clippy and native runtime smoke steps were skipped.
+- Root found README's quoted display example still said `"0.82.0 (92)"` while VERSION and version.py specified build 93. E195's earlier local consistency claim did not catch this mismatch; this entry records the correction without rewriting that history.
+- Correct README's display example to build 93. The existing native consistency assertion is retained unchanged. No runtime, guard, screenshot, or live action evidence changed.
+- Local verification: `cargo test --manifest-path rust-gtk/Cargo.toml --locked --lib tests::version_metadata_tracks_the_root_version_file -- --exact` passed (1 test); `git diff --check` passed. Fresh published-head CI remains required. UG is NOT PASSED and Python remains the default.

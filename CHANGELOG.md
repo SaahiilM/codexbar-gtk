@@ -38,16 +38,6 @@ Client-side changelog for the CodexBar GTK front-end. Each entry keys a build
 number (`CURRENT_PROJECT_VERSION`) to the upstream macOS CodexBar release its
 short version tracks, so "which version has what" maps cleanly onto both trees.
 
-## 0.82.0 (93) — 2026-11-06
-
-Tracks upstream CodexBar 0.82.0.
-
-### Added
-
-- Additive C01 packaging prototype (opt-in, no default cutover): prebuilt
-  native artifact build, isolated-prefix install/uninstall with manifest
-  ownership, upgrade/rollback smoke. DRAFT only; no C gate acceptance.
-
 ## 0.82.0 (92) — 2026-11-06
 
 Tracks upstream CodexBar 0.82.0.

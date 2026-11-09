@@ -6047,8 +6047,9 @@ unverified; UG and C gates remain open and Python remains default.
   guard tests, UG evidence and pre-click screenshot are retained. Only build
   metadata and migration documentation are reconciled: `VERSION` and
   `codexbar_gtk/version.py` reserve build 94, README's displayed About string
-  is updated, and CHANGELOG prepends build 94 while retaining the UI build-93,
-  installer build-93 and all earlier entries. The installer implementation is
+  is updated, and CHANGELOG prepends build 94 while retaining the published UI
+  build-93 and all earlier main entries. The unpublished draft installer
+  build-93 entry is superseded by build 94, avoiding duplicate build numbers. The installer implementation is
   unchanged. GTK 4.14.5 and libadwaita 1.5.0 are available via pkg-config.
 - **Old versus new draft checks:** prior draft head
   `7097c096e0d83b9b7d9e83b282129bb2c3f9d605` had `test` and `tray-dbus`
@@ -6062,7 +6063,7 @@ unverified; UG and C gates remain open and Python remains default.
   executable hash to D-Bus owner/PID, exercised fixture refresh and normal Gio
   quit, preserved seeded settings/history, and decoded bundled SVG with
   dimensions asserted. The running PID had no Python, libpython, PyO3 or
-  Rust-core mapping; the container had no network. This is scoped local
+  `_rust_core` extension mapping; the container had no network. This is scoped local
   prototype evidence, not draft CI or C02/gate acceptance. Activation,
   service/autostart, a genuine version upgrade, full UG, and root acceptance
   remain open. The evidence files and harness are not added to git.

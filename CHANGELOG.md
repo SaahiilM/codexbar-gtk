@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.82.0 (94) — 2026-11-09
+
+Tracks upstream CodexBar 0.82.0.
+
+### Added
+
+- Reconcile the additive C01 isolated-prefix installer draft with build-93
+  main. The installer remains opt-in; no default cutover or C-gate acceptance
+  is claimed.
+
+### Validation
+
+- The existing 13-case isolated installer smoke belongs to the prior draft
+  implementation. Fresh exact-head CI is pending for this reconciled draft.
+  See AUDIT E197.
+
 ## 0.82.0 (93) — 2026-11-09
 
 Tracks upstream CodexBar 0.82.0.

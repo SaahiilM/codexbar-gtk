@@ -146,6 +146,8 @@ Wayland action matrix and repeatable local panel focus/SNI evidence remain
 open. The Python launcher remains the default until the gate passes. See E086
 for the BG merge, B11 CI limitation and B15 compatibility bounds.
 
+Build 94 carries the additive isolated-prefix installer draft; it does not change the default launcher or pass a cutover gate.
+
 Build 93 records one guarded synthetic Wayland Display action: `hidePersonalInfo`
 changed from false to true, with the complete saved preferences JSON differing
 only at that key (AUDIT E195). The pre-click Display capture is
@@ -242,7 +244,7 @@ The GTK front-end uses the same version pair as the macOS bundle:
   this client is feature-compatible with (`0.82.0`).
 * `CURRENT_PROJECT_VERSION` is the build number of the Linux front-end.
 * `codexbar_gtk/version.py` turns the pair into the macOS-style
-  `"0.82.0 (93)"` string shown under Settings → About, in the tray menu and by
+  `"0.82.0 (94)"` string shown under Settings → About, in the tray menu and by
   `./run.sh --about`.
 
 Increment `CURRENT_PROJECT_VERSION` for each merged PR and keep it in sync with

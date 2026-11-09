@@ -1,0 +1,16 @@
+[Unit]
+Description=CodexBar (GTK) — AI coding quota monitor
+PartOf=graphical-session.target
+Before=plasma-plasmashell.service
+After=dbus.service
+
+[Service]
+Type=simple
+ExecStart=codexbar-gtk-native
+Restart=on-failure
+RestartSec=5
+Slice=app.slice
+
+[Install]
+WantedBy=graphical-session.target
+X-CodexBar-Service=codexbar-gtk.service

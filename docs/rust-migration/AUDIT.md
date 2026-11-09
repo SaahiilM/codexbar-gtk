@@ -5888,6 +5888,81 @@ future models must verify the linked PR's status rather than trusting a stale
   verify only the selected preference changes, then continue remaining UG
   actions and installed-package acceptance. Packaging remains a separate
   additive draft; the Python-free Docker smoke is separate local evidence.
+### E193 — 2026-11-06: C01 additive isolated-prefix packaging prototype (DRAFT; E192 taken by UI PR92)
+
+- **Branch:** `orchestrated/crouton-native-cutover-prep`, draft PR93 at
+  previously tested head `774dccc` (retargeted to `main` after PR92 merged at `b69a984`; merge
+  `origin/main` (`bb6d915`), no rebase churn; tentative build 93).
+  UG NOT PASSED, C cutover gated; prototype additive only.
+- **Scope (prototype, no default cutover):** `scripts/build-native.sh` builds
+  a prebuilt artifact separate from install; `scripts/install-native.sh`
+  installs it into `--prefix` (default `$HOME/.local`) with atomic rename,
+  safe Desktop Exec quoting (spaces), manifest at
+  `share/codexbar-gtk/native-manifest`. Default (`--no-activate`) writes binary
+  + manifest only — no `codexbar-gtk.desktop`/`codexbar-gtk.service`/autostart
+  entry, no Python file touched. `--activate` writes canonical names with
+  `.pre-native` backup and restore on ownership-aware uninstall. Stage templates
+  in `scripts/native/stage/` encode ownership markers
+  (`X-CodexBar-DesktopFile`, `X-CodexBar-Service`). `scripts/native/runtime_deps.txt`
+  is documentation-only (no `Depends`, no `codexbar` apt package).
+- **Tests:** `scripts/smoke-native-install.sh` (isolated spaced HOME/prefix,
+  install debug → upgrade release → rollback debug with sha256 on disk,
+  byte-preservation through install/uninstall, pre-existing Python desktop/unit
+  preservation, activate backup/restore, ELF/process evidence, no systemd
+  exec); `rust-gtk/tests/python_free_linkage.rs` (ELF NEEDED has no
+  libpython/pyo3, has libgtk-4; linkage inspection only, C02 unproven);
+  `rust-gtk/tests/svg_loader_negative.rs`
+  (ignored, separate from desktop-file validation).
+- **D2:** retained binary name `codexbar-gtk-native`; stable launcher may point
+  to it later without rename.
+- **Verification (local, extracted Xvfb + private dbus session):** 13-case
+  `smoke-native-install.sh` exit 0 (direct log
+  `/tmp/codexbar-installer-review-fixes.log`): PID exe+hash for debug/release/
+  rollback, idempotent uninstall, activate backup/restore, user edit, unsupported
+  %, no-manifest/mismatch foreign rejection, deactivation rejection, PLUS
+  case 12 (renderer failure at first AND second renderer for fresh + upgrade
+  leaves binary/manifest/activation/backup unchanged; normal retry succeeds)
+  and case 13 (missing HOME fails before writes). `bash -n` + `git diff --check`
+  OK; cargo fmt OK; clippy OK; `python_free_linkage` 1 passed; SVG negative
+  intentionally FAILs with loader present (precondition proof);
+  `git check-ignore rust-gtk/target/native` verified (build-native output
+  default gitignored). No external install, no shared desktop, no bridge/VNC.
+- **Independent review:** medium blocker — activation renderer could fail
+  after binary swap, before manifest update. Fixed in 5fc7c2b: HOME absolute/
+  nonempty validated; BOTH activation templates rendered into private temp
+  files BEFORE touching binary/backups/manifest, with cleanup trap removing
+  temp; rendered files installed later. Renderer remains Python prep tooling;
+  C02 absent-runtime proof remains unproven.
+- **Gate:** UG remains NOT PASSED; Python remains default. C01/C02/C03/CG
+  not claimed accepted; C03 deletion/assertion mapping and CG audit remain.
+- **Next step:** reviewable in this branch; exact-head CI must rerun on the
+  post-merge head (`bb6d915`) and root retains the final merge decision.
+
+
+#### E193 publication correction — 2026-11-06
+
+Root verified that the previously reported `1b58a039` metadata commit was not
+present in this repository or on PR #93. The build-93 changes remained local
+on actual head `774dccc`; root completed their commit/push instead. The earlier
+unverified draft reference `aa3a55f` is corrected above to the tested head.
+Both required checks passed on `774dccc` in run `42291465456`, including the
+installer smoke. Those results do not cover this new metadata commit, whose
+checks must be observed separately. PR #94 owns build 92; draft PR #93 is
+reserved for build 93. No C gate or default cutover is accepted here.
+
+
+#### E193 dependency reconciliation — 2026-11-06
+
+Root observed PR #94 head `46753a1481d50eae84c73fa509137d5af3aa905e`
+pass `test` and `tray-dbus` in run `42292411933`, then merged normally at
+`036a25814cbc6f6b4fbb28cba066095edfae7ee6`; fetch confirmed main. This
+packaging draft retains its own build 93 and both build-92 and build-93
+changelog entries. Main E194 and the earlier E193 prototype history are both
+preserved. Metadata/base reconciliation changes no installer behavior; the
+published merged head needs fresh CI. The remaining live bridge click is
+unverified; UG and C gates remain open and Python remains default.
+
+
 
 
 ### E195 — 2026-11-09: build 93 guarded Display action evidence
@@ -5956,3 +6031,51 @@ future models must verify the linked PR's status rather than trusting a stale
 - Root found README's quoted display example still said `"0.82.0 (92)"` while VERSION and version.py specified build 93. E195's earlier local consistency claim did not catch this mismatch; this entry records the correction without rewriting that history.
 - Correct README's display example to build 93. The existing native consistency assertion is retained unchanged. No runtime, guard, screenshot, or live action evidence changed.
 - Local verification: `cargo test --manifest-path rust-gtk/Cargo.toml --locked --lib tests::version_metadata_tracks_the_root_version_file -- --exact` passed (1 test); `git diff --check` passed. Fresh published-head CI remains required. UG is NOT PASSED and Python remains the default.
+
+
+### E197 — 2026-11-09: PR #95 merge and additive installer draft reconciliation (build 94)
+
+- **Observed main merge:** PR #95 exact head
+  `db9d01b1237018c1b3de078d2ca094e46205cd6c` passed `test` and `tray-dbus`
+  in run `42681791223` and merged normally at
+  `d34840fe4d0ffa7a49f13b128890c1a3f0803a39`. Root observed no reviews,
+  change requests, comments, or inline review threads. The earlier failed
+  exact-head run `42681185967` on `25e5d1d` is retained in E196; its README
+  version example was corrected without weakening the native assertion.
+- **Draft reconciliation:** the existing additive installer branch merges
+  `origin/main` with history preserved (no rebase). Main's harness guard,
+  guard tests, UG evidence and pre-click screenshot are retained. Only build
+  metadata and migration documentation are reconciled: `VERSION` and
+  `codexbar_gtk/version.py` reserve build 94, README's displayed About string
+  is updated, and CHANGELOG prepends build 94 while retaining the published UI
+  build-93 and all earlier main entries. The unpublished draft installer
+  build-93 entry is superseded by build 94, avoiding duplicate build numbers. The installer implementation is
+  unchanged. GTK 4.14.5 and libadwaita 1.5.0 are available via pkg-config.
+- **Old versus new draft checks:** prior draft head
+  `7097c096e0d83b9b7d9e83b282129bb2c3f9d605` had `test` and `tray-dbus`
+  success in run `42293525448`, including the 13-case installer smoke. That is
+  historical evidence for the old base only; this reconciled build-94 head has
+  not been published and has no new CI result.
+- **Separate local runtime evidence (not integrated into this PR):**
+  `/tmp/codexbar-no-python-final-commit.mdvLoc/run.log` records a Docker
+  network-disabled smoke against the local additive `--no-activate` prefix.
+  Debug install, release install and debug rollback each matched installed
+  executable hash to D-Bus owner/PID, exercised fixture refresh and normal Gio
+  quit, preserved seeded settings/history, and decoded bundled SVG with
+  dimensions asserted. The running PID had no Python, libpython, PyO3 or
+  `_rust_core` extension mapping; the container had no network. This is scoped local
+  prototype evidence, not draft CI or C02/gate acceptance. Activation,
+  service/autostart, a genuine version upgrade, full UG, and root acceptance
+  remain open. The evidence files and harness are not added to git.
+- **Verification for reconciliation:** the first native metadata regression
+  run failed because README still contained the build-93 About string; it was
+  updated to 94, then the exact regression command passed (1 test). Version
+  consistency across VERSION/version.py/README, changelog retention, bash syntax
+  for the three installer scripts, and `git diff --check` passed. No full 13-case
+  installer smoke or GUI smoke is rerun here; the former implementation is
+  unchanged and fresh CI is for root to observe after publication. No desktop,
+  app, portal or host-native version command was run.
+- **Gate/next:** UG remains **NOT PASSED**, Python remains default, and C01/C02/
+  C03/CG are unaccepted. Root owns draft body update, publication, fresh CI and
+  any merge decision. Continue the UG matrix and keep the separate runtime
+  proof separate from this installer draft.

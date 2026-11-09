@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Name=CodexBar
+GenericName=AI coding quota monitor
+Comment=Show usage limits for OpenAI Codex, Claude Code and more
+Exec=codexbar-gtk-native %U
+Icon=codexbar-gtk
+Terminal=false
+Categories=Utility;Development;
+Keywords=codex;claude;usage;quota;limits;
+StartupNotify=false
+StartupWMClass=com.steipete.CodexBarGTK
+NoDisplay=true
+X-CodexBar-DesktopFile=codexbar-gtk.desktop

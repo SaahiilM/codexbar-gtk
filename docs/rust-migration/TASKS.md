@@ -10,12 +10,11 @@ history. A checked box means **verified and merged**, not merely implemented.
 | --- | --- |
 | Goal | Fully native Rust GTK4/libadwaita application with verified packaging and legacy runtime removal. |
 | Current phase | BG passed and U01–U08 implementation merged. UG **NOT PASSED**; Python default. |
-| Last observed merge | PR #94 merged at `036a258` (build 92); root-observed exact head `46753a1` passed `test` and `tray-dbus` in run `42292411933`. |
-| Active slice | Build 93 implementation/evidence on `orchestrated/crouton-bridge-a11y-build92` (current branch name retained): bounded KWin sampling/fresh revalidation plus one live synthetic Display action; PR #95 is open; initial head `25e5d1d` failed the native README version-consistency assertion in run `42681185967`. The README display example is corrected; fresh-head checks remain pending. |
-| Local verification | Build 93: `py_compile`; 39 focused guard tests; full Python suite (279 ran, 70 skipped). No local extension artifact was present; Rust opt-in was unavailable and not run (E195). Live click evidence is one synthetic Display preference only. |
-| UI acceptance | E195 verifies one guarded `hidePersonalInfo` Display click. Other Wayland controls, page navigation and keyboard parity remain open; UG is NOT PASSED. |
-| Packaging | Additive draft PR #93 remains reserved for build 94 at `7097c09` pending UI merge/renumbering by root. Installer prototype has 13-case isolated local smoke exit 0. Representative Docker no-Python runtime smoke passed for debug/release; installed-prefix, service/full UI, and actual SVG decode acceptance remain open. |
-| Next | Root publishes this focused build93 commit and observes exact-head CI; root handles PR/merge and renumbers packaging draft to build94. Continue remaining Wayland matrix and C01–CG before any default cutover. |
+| Last observed merge | PR #95 merged normally at `d34840fe4d0ffa7a49f13b128890c1a3f0803a39` (build 93); exact head `db9d01b1237018c1b3de078d2ca094e46205cd6c` passed `test` and `tray-dbus` in run `42681791223`. |
+| Active publication | Draft PR #93, build 94, additive isolated-prefix installer preparation, reconciled with build-93 main. Fresh CI for the reconciled draft is pending; no publication or cutover is claimed. |
+| Installer verification | 13-case isolated local smoke exit 0 on the prior draft implementation. Separate local Docker debug/release no-Python runtime proof is documented in E197 as unpublished, scoped evidence; it is not integrated into this draft. These do not replace fresh draft CI or C-gate acceptance. |
+| UI acceptance | E195 records one guarded synthetic Display action; other Wayland controls/navigation remain open. UG is **NOT PASSED** and Python remains the default; see `UG_GATE.md`. |
+| Next | Root owns publication and observes this draft's fresh CI/review. Continue the Wayland action matrix and handle runtime proof separately; C01–CG and default cutover remain open. |
 
 
 **First commands for a new model/session:**
@@ -590,6 +589,24 @@ audit. C01 package checks must include `librsvg2-common`.
   service/autostart, upgrade and rollback. Preserve identity/config/history;
   test with isolated home and install prefix. Remove Python/typelib requirements
   from launch paths, not native GTK shared-library requirements.
+  Additive prototype (E193, branch `orchestrated/crouton-native-cutover-prep` stacked on merged PR92
+  at `b69a984`, draft PR93, tentative build 93, UG-gated cutover unchanged): `scripts/build-native.sh`
+  (prebuilt artifact, separate from install), `scripts/install-native.sh` +
+  stage templates `scripts/native/stage/` (`--activate` only writes canonical
+  `codexbar-gtk.desktop`/`codexbar-gtk.service` with `.pre-native` backup and
+  manifest ownership; default writes prefix binary + manifest only), atomic
+  rename swap, safe quoting for spaced paths, ownership-aware uninstall
+  preserving pre-existing non-native files, default NO service/autostart
+  registration and no overwrite of Python entry/unit. Upgrade/rollback uses
+  distinguishable debug/release ELF artifacts asserting sha256 on disk and
+  installed; byte-preservation through install/uninstall, runtime history
+  compatibility not byte-identical through runtime. `runtime_deps.txt` is
+  documentation-only (no `Depends`, no invented `codexbar` apt package).
+  Linkage inspection only (`python_free_linkage.rs`, C02 unproven) plus
+  smoke ELF/process evidence. SVG loader negative test separate
+  (`svg_loader_negative.rs`, ignored; desktop validation separate).
+  C03 deletion mapping and CG audit not yet done; do not claim C gates accepted.
+  D2: binary retains `codexbar-gtk-native` name.
   Investigation (E187, 2026-11-06; research-only, build 86, no version bump):
   "blocked by UG" applies to the cutover, not the installer mechanics —
   the design below can be reviewed now while live UG runs proceed, but do

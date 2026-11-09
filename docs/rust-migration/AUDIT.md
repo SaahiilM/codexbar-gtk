@@ -5901,8 +5901,8 @@ future models must verify the linked PR's status rather than trusting a stale
   250 ms timer and validates fresh sequence/sender data. This commit adds build
   metadata, docs and one tracked synthetic pre-click screenshot; it does not
   add further harness behavior.
-- **Guard behavior retained:** bridge movement may establish the target only
-  for the move-only path; click guard remains strict at 0.15–0.35 s sample age,
+- **Guard behavior retained:** bridge movement may establish the target from outside its window
+  while the exact fixture is active; the subsequent click guard remains strict at 0.15–0.35 s sample age,
   exact synthetic PID active, `top_hit`, and cursor agreement. The KWin observer
   continues to check sender identity, valid ordered sequence numbers, and
   fresh samples. No bridge/API grant was changed.

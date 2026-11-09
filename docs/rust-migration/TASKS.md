@@ -10,12 +10,11 @@ history. A checked box means **verified and merged**, not merely implemented.
 | --- | --- |
 | Goal | Fully native Rust GTK4/libadwaita application with verified packaging and legacy runtime removal. |
 | Current phase | BG passed and U01–U08 implementation merged. UG **NOT PASSED**; Python default. |
-| Last observed merge | PR #94 merged at `036a25814cbc6f6b4fbb28cba066095edfae7ee6` (build 92); head `46753a1`, both required checks passed in run `42292411933`. |
-| Active publication | Draft PR #93, build 93, additive isolated-prefix installer preparation. The branch incorporates build-92 main; fresh published-head CI is pending. |
-| Installer verification | 13-case isolated local smoke exit 0, covering debug/release/rollback identity, preservation, ownership, rendering failures/retry and missing HOME. Prior draft heads passed remote installer CI; those results do not establish this merged head's CI. |
-| UI acceptance | Corrected Spend states have live fixture evidence awaiting ledger reconciliation. The final guarded bridge click remains open after repairing the user accessibility bus. Other Wayland controls/navigation remain open; see `UG_GATE.md`. |
-| Runtime proof | Separate local Docker smoke passed for debug/release without Python, with real actions and clean quit. Installed-prefix, service/full UI and actual SVG decoding acceptance remain open; linkage inspection alone is insufficient. |
-| Next | Observe this draft's fresh CI/review; keep default Python and cutover gates open. Continue actual Wayland action matrix, integrate the runtime-proof harness separately, and accept C01–CG only with complete evidence. |
+| Last observed merge | PR #95 merged normally at `d34840fe4d0ffa7a49f13b128890c1a3f0803a39` (build 93); exact head `db9d01b1237018c1b3de078d2ca094e46205cd6c` passed `test` and `tray-dbus` in run `42681791223`. |
+| Active publication | Draft PR #93, build 94, additive isolated-prefix installer preparation, reconciled with build-93 main. Fresh CI for the reconciled draft is pending; no publication or cutover is claimed. |
+| Installer verification | 13-case isolated local smoke exit 0 on the prior draft implementation. Separate local Docker debug/release no-Python runtime proof is documented in E197 as unpublished, scoped evidence; it is not integrated into this draft. These do not replace fresh draft CI or C-gate acceptance. |
+| UI acceptance | E195 records one guarded synthetic Display action; other Wayland controls/navigation remain open. UG is **NOT PASSED** and Python remains the default; see `UG_GATE.md`. |
+| Next | Root owns publication and observes this draft's fresh CI/review. Continue the Wayland action matrix and handle runtime proof separately; C01–CG and default cutover remain open. |
 
 
 **First commands for a new model/session:**
@@ -1013,3 +1012,37 @@ Python default.
 ### U05-UG14 handoff — build 90 `--bridge` consent-free runner route rebased onto merged PR #90 (E190/E191)
 
 **Status: partial (harness-built; live re-verification open).** PR #91 rebased onto merged PR #90 build 89 (`9f5497c`) as build 90. The build-89 fixes are retained unchanged: `switch_x_fraction` 0.75 (E189) and the `settings_capture = None` + cleanup guard (PR #88 fold-in). The bridge feature is preserved: `--bridge`/`--portal`/`--bridge-cmd` with `BridgeDriver`/`guarded_click_bridge` delegating to the same `guard_target` checks; KDE OS-level grant untouched. PR #90 merged at `9f5497c` after root reviewed head `6d811e8` with `test`/`tray-dbus` PASS; PR #88 closed as superseded. E190 is preserved as historical build-89 content; E191 is the build-90 rebase entry. **Build-assumption caveat:** E191 and this handoff bake build 90 assuming HEAD at push-time is `9f5497c` (build 89) — if any later build lands before merge, recompute the build number. No live Wayland PASS is claimed for `--bridge`; operator must re-run `--action hide-personal-info --bridge` on the intended KDE session and require persisted `hidePersonalInfo false→true`. Python stays default; UG stays **NOT PASSED**.
+
+
+### U05-UG14 continuation — build 93 guarded Display evidence (E195)
+
+**Status: partial, live one-control verification recorded; PR pending root publication.**
+The existing build-92 branch carries the build-93 implementation/evidence commit.
+`c95` allows guarded bridge motion only before an initial top-hit sample;
+`b48` bounds move-only telemetry; `ece` uses exact-PID activation/fresh state;
+`e9` samples KWin every 250 ms with fresh sequence/sender validation. Strict
+click checks remain: sample age 0.15–0.35 seconds, exact synthetic PID active,
+`top_hit`, and cursor agreement.
+
+The 2026-11-09 14:01:10–14:01:16 EST live run used synthetic PID 3272001 and
+window geometry `[364,149,1000,740]`. After Display tab navigation, one guarded
+bridge click at `(1114,460)` persisted only `hidePersonalInfo: false→true`;
+the complete after-JSON was compared with the Rust default map and the runner
+reported PASS. Tracked [`screenshots/build93-wayland-display-before.png`](screenshots/build93-wayland-display-before.png) is the fresh pre-click Display image showing the switch off. The runner did not persist its
+pre-click `sample_seq`/age, click timestamp, or a post-click image; the original
+synthetic settings file was removed during cleanup. The saved `result.log`
+contains before/after JSON and the runner assertion. Do not describe it as a
+retained raw settings file or infer an event trace. The general baseline is not
+tracked.
+
+Verification: 39 focused `tests/test_wayland_smoke_guard.py` tests and the full
+Python default suite; extension opt-in status and exact counts are in E195.
+No desktop/app/portal input was performed during this implementation turn. The
+prior cleanup worker confirmed the scoped app/Spectacle/SNI names and owned
+processes were gone; the unrelated watcher was preserved. No new exact-head CI
+or merge result is claimed. The synthetic screenshot is reviewed, and the live
+run reported only the selected preference change.
+
+**Next:** root publishes this focused commit, observes CI, and handles PR/merge.
+Continue open UG interactions; keep Python default and all cutover gates closed.
+Packaging draft PR #93 is reserved for build 94 and is not part of this change.

@@ -146,6 +146,15 @@ Wayland action matrix and repeatable local panel focus/SNI evidence remain
 open. The Python launcher remains the default until the gate passes. See E086
 for the BG merge, B11 CI limitation and B15 compatibility bounds.
 
+Build 94 carries the additive isolated-prefix installer draft; it does not change the default launcher or pass a cutover gate.
+
+Build 93 records one guarded synthetic Wayland Display action: `hidePersonalInfo`
+changed from false to true, with the complete saved preferences JSON differing
+only at that key (AUDIT E195). The pre-click Display capture is
+[`build93-wayland-display-before.png`](docs/rust-migration/screenshots/build93-wayland-display-before.png).
+This verifies one control only; other Settings actions, navigation and keyboard
+parity remain open, UG is **NOT PASSED**, and Python remains the default.
+
 U05 PR #73 is merged on live `main` at `cbdcc129ab4ac3ec5d6f3a8ef805567f96d354ff`
 (E141); exact head `06dabbe1b0d24f79a8e9fa5eaa78575038a1450c` passed `test` and
 `tray-dbus` in run `41514939406`. Build 73 records an incomplete synthetic
@@ -235,7 +244,7 @@ The GTK front-end uses the same version pair as the macOS bundle:
   this client is feature-compatible with (`0.82.0`).
 * `CURRENT_PROJECT_VERSION` is the build number of the Linux front-end.
 * `codexbar_gtk/version.py` turns the pair into the macOS-style
-  `"0.82.0 (93)"` string shown under Settings → About, in the tray menu and by
+  `"0.82.0 (94)"` string shown under Settings → About, in the tray menu and by
   `./run.sh --about`.
 
 Increment `CURRENT_PROJECT_VERSION` for each merged PR and keep it in sync with

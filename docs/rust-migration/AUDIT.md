@@ -5961,3 +5961,120 @@ changelog entries. Main E194 and the earlier E193 prototype history are both
 preserved. Metadata/base reconciliation changes no installer behavior; the
 published merged head needs fresh CI. The remaining live bridge click is
 unverified; UG and C gates remain open and Python remains default.
+
+
+
+
+### E195 — 2026-11-09: build 93 guarded Display action evidence
+
+- **Scope and branch:** Build 93 on the existing branch
+  `orchestrated/crouton-bridge-a11y-build92` (branch name retained for this
+  focused evidence commit). Source changes already present in the four local
+  harness commits: `c95f4e3` permits guarded bridge movement without an initial
+  `top_hit`; `b48fc45` bounds move-only diagnostics; `ece2562` activates the
+  exact synthetic PID and requires fresh state; `e9e3415` samples KWin on a
+  250 ms timer and validates fresh sequence/sender data. This commit adds build
+  metadata, docs and one tracked synthetic pre-click screenshot; it does not
+  add further harness behavior.
+- **Guard behavior retained:** bridge movement may establish the target from outside its window
+  while the exact fixture is active; the subsequent click guard remains strict at 0.15–0.35 s sample age,
+  exact synthetic PID active, `top_hit`, and cursor agreement. The KWin observer
+  continues to check sender identity, valid ordered sequence numbers, and
+  fresh samples. No bridge/API grant was changed.
+- **Observed live synthetic action (2026-11-09, 14:01:10–14:01:16 EST):** the
+  runner reported synthetic PID `3272001`, geometry `[364,149,1000,740]`, Display
+  tab navigation and one guarded bridge click at `(1114,460)`. Its PASS result
+  says only `hidePersonalInfo` changed (`false→true`). The complete persisted
+  JSON was compared with the Rust `PreferencesStore` default map: matching key
+  sets and no other changed values. The report was saved at
+  `/tmp/codexbar-wayland-settings-8tl6_f9d/result.log`. Script SHA-256:
+  `6bfcbda10fe55a6c711a51dc4bbcac34f590ac36e4a41e16ef5bc4c4f91ca94a`; native
+  binary SHA-256:
+  `861d51bfc4b3b62523be5a2aafa0fe5e1feeb58c782b4119eb9acdb98a20a857`.
+- **Image and evidence limits:**
+  [`screenshots/build93-wayland-display-before.png`](screenshots/build93-wayland-display-before.png)
+  is the fresh Display page screenshot before the click; it shows Hide account
+  details OFF. The general baseline is not included. The runner did not persist
+  the pre-click `sample_seq` or sample age, a click timestamp, or a post-click
+  screenshot. The original synthetic HOME settings file was removed by cleanup;
+  the retained result log includes before/after JSON and the runner assertion,
+  but is not the original settings-file artifact. Do not infer a missing event
+  trace or describe this image as post-click evidence.
+- **Local checks in this implementation turn:** `py_compile` passed for
+  `scripts/test-native-settings-wayland.py`,
+  `tests/test_wayland_smoke_guard.py`, and `codexbar_gtk/version.py`; focused
+  `tests.test_wayland_smoke_guard`: 39 passed; full
+  `python3 -m unittest discover -s tests`: 279 ran, OK (70 skipped). Skips are
+  extension-dependent. `codexbar_gtk/_rust_core.so` was absent, so
+  `CODEXBAR_RUST_CORE=1` opt-in was unavailable and not run; these skips do not
+  prove Rust extension parity. `git diff --check` and version metadata
+  consistency passed. Separate prior baseline only: PR #94 exact head `46753a1`
+  passed `test` and `tray-dbus` in run `42292411933`, then merged at
+  `036a25814cbc6f6b4fbb28cba066095edfae7ee6`. That result is not a check of this
+  build-93 head. No new Rust build, Xvfb/GTK smoke, or exact-head CI result is
+  claimed in this evidence commit; exact-head CI remains for root to observe.
+- **Cleanup and gate:** the prior cleanup worker confirmed the scoped app,
+  Spectacle and SNI names were unowned, owned processes were gone, and the
+  unrelated watcher remained. No desktop/app/portal input was sent during this
+  implementation turn. This is evidence for one Display control only; it does
+  not pass the complete Settings page, automated page navigation, other
+  controls, keyboard input, or UG. Python remains the default, and cutover gates
+  remain closed.
+- **Next:** root publishes the focused build-93 commit and observes CI, then
+  handles its PR/merge. Continue the remaining UG interaction matrix. Packaging
+  draft PR #93 remains reserved for build 94 and is outside this change.
+
+
+### E196 — 2026-11-09: PR #95 README build-display correction
+
+- Observed exact-head run `42681185967` on `25e5d1d628b69382d28b14b1c7e2f3de28a746b6`: `tray-dbus` succeeded; `test` failed in `tests::version_metadata_tracks_the_root_version_file`. Core/backend steps passed, but subsequent artwork, PyO3/Python, Clippy and native runtime smoke steps were skipped.
+- Root found README's quoted display example still said `"0.82.0 (92)"` while VERSION and version.py specified build 93. E195's earlier local consistency claim did not catch this mismatch; this entry records the correction without rewriting that history.
+- Correct README's display example to build 93. The existing native consistency assertion is retained unchanged. No runtime, guard, screenshot, or live action evidence changed.
+- Local verification: `cargo test --manifest-path rust-gtk/Cargo.toml --locked --lib tests::version_metadata_tracks_the_root_version_file -- --exact` passed (1 test); `git diff --check` passed. Fresh published-head CI remains required. UG is NOT PASSED and Python remains the default.
+
+
+### E197 — 2026-11-09: PR #95 merge and additive installer draft reconciliation (build 94)
+
+- **Observed main merge:** PR #95 exact head
+  `db9d01b1237018c1b3de078d2ca094e46205cd6c` passed `test` and `tray-dbus`
+  in run `42681791223` and merged normally at
+  `d34840fe4d0ffa7a49f13b128890c1a3f0803a39`. Root observed no reviews,
+  change requests, comments, or inline review threads. The earlier failed
+  exact-head run `42681185967` on `25e5d1d` is retained in E196; its README
+  version example was corrected without weakening the native assertion.
+- **Draft reconciliation:** the existing additive installer branch merges
+  `origin/main` with history preserved (no rebase). Main's harness guard,
+  guard tests, UG evidence and pre-click screenshot are retained. Only build
+  metadata and migration documentation are reconciled: `VERSION` and
+  `codexbar_gtk/version.py` reserve build 94, README's displayed About string
+  is updated, and CHANGELOG prepends build 94 while retaining the UI build-93,
+  installer build-93 and all earlier entries. The installer implementation is
+  unchanged. GTK 4.14.5 and libadwaita 1.5.0 are available via pkg-config.
+- **Old versus new draft checks:** prior draft head
+  `7097c096e0d83b9b7d9e83b282129bb2c3f9d605` had `test` and `tray-dbus`
+  success in run `42293525448`, including the 13-case installer smoke. That is
+  historical evidence for the old base only; this reconciled build-94 head has
+  not been published and has no new CI result.
+- **Separate local runtime evidence (not integrated into this PR):**
+  `/tmp/codexbar-no-python-final-commit.mdvLoc/run.log` records a Docker
+  network-disabled smoke against the local additive `--no-activate` prefix.
+  Debug install, release install and debug rollback each matched installed
+  executable hash to D-Bus owner/PID, exercised fixture refresh and normal Gio
+  quit, preserved seeded settings/history, and decoded bundled SVG with
+  dimensions asserted. The running PID had no Python, libpython, PyO3 or
+  Rust-core mapping; the container had no network. This is scoped local
+  prototype evidence, not draft CI or C02/gate acceptance. Activation,
+  service/autostart, a genuine version upgrade, full UG, and root acceptance
+  remain open. The evidence files and harness are not added to git.
+- **Verification for reconciliation:** the first native metadata regression
+  run failed because README still contained the build-93 About string; it was
+  updated to 94, then the exact regression command passed (1 test). Version
+  consistency across VERSION/version.py/README, changelog retention, bash syntax
+  for the three installer scripts, and `git diff --check` passed. No full 13-case
+  installer smoke or GUI smoke is rerun here; the former implementation is
+  unchanged and fresh CI is for root to observe after publication. No desktop,
+  app, portal or host-native version command was run.
+- **Gate/next:** UG remains **NOT PASSED**, Python remains default, and C01/C02/
+  C03/CG are unaccepted. Root owns draft body update, publication, fresh CI and
+  any merge decision. Continue the UG matrix and keep the separate runtime
+  proof separate from this installer draft.

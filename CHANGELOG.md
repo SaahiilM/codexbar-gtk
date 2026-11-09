@@ -1,5 +1,39 @@
 # Changelog
 
+## 0.82.0 (94) — 2026-11-09
+
+Tracks upstream CodexBar 0.82.0.
+
+### Added
+
+- Reconcile the additive C01 isolated-prefix installer draft with build-93
+  main. The installer remains opt-in; no default cutover or C-gate acceptance
+  is claimed.
+
+### Validation
+
+- The existing 13-case isolated installer smoke belongs to the prior draft
+  implementation. Fresh exact-head CI is pending for this reconciled draft.
+  See AUDIT E197.
+
+## 0.82.0 (93) — 2026-11-09
+
+Tracks upstream CodexBar 0.82.0.
+
+### Verified
+
+- Record one guarded synthetic Wayland Settings action: the Display page's
+  Hide account details switch persisted `hidePersonalInfo: false → true` and
+  the full preferences JSON differed only at that key. The pre-click image is
+  [`build93-wayland-display-before.png`](docs/rust-migration/screenshots/build93-wayland-display-before.png).
+
+### Validation
+
+- Focused Wayland guard suite: 39 tests; full Python suite: see AUDIT E195 for
+  exact results and extension-dependent skips. The runner's pre-click sample
+  sequence/age and a post-click image were not retained. This verifies one
+  control only; UG remains open and Python remains the default.
+
 Client-side changelog for the CodexBar GTK front-end. Each entry keys a build
 number (`CURRENT_PROJECT_VERSION`) to the upstream macOS CodexBar release its
 short version tracks, so "which version has what" maps cleanly onto both trees.

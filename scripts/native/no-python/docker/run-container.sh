@@ -1,14 +1,17 @@
 #!/usr/bin/env bash
 # Single supported C02 proof path: one container, --network none, Xvfb and
 # private D-Bus entirely inside the container, no host DISPLAY/bus mounts.
-# Args: <artifact-path> <workdir> <expected-sha256>
+# Args: artifact, workdir, expected-sha256, [installer-source, debug-artifact,
+# release-artifact, svg-test-binary]. Staged inputs are mounted under /work,
+# with optional immutable artifact/probe mounts under /artifacts and /probe.
 # Emits EVIDENCE: lines on stdout plus container name. Tests the ACTUAL app
 # PID (from GetConnectionUnixProcessID), never the harness shell.
 set -uo pipefail
 ARTIFACT="$1"; WORKDIR="$2"; EXPECTED_SHA="$3"
+INSTALLER_SOURCE="${4:-}"; DEBUG_ARTIFACT="${5:-}"; RELEASE_ARTIFACT="${6:-}"; SVG_TEST_BINARY="${7:-}"
 IMAGE="${DOCKER_IMAGE:-codexbar-no-python:smoke}"
 CONTAINER="codexbar-no-python-$$"
-echo "image: $IMAGE (network=none, no host mounts beyond /app + /work)"
+echo "image: $IMAGE (network=none, host mounts limited to app, work, and requested artifacts/probe)"
 cat > "$WORKDIR/in-container.sh" <<'INNER'
 set -u
 mkdir -p /tmp/dbus /work/home/.config/codexbar-gtk /work/home/.local/bin
@@ -20,6 +23,44 @@ export PATH="/work/home/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr
 export DISPLAY=:99
 export GDK_BACKEND=x11
 export DBUS_SESSION_BUS_ADDRESS="unix:abstract=/tmp/dbus/bus"
+APP_EXEC=/app/codexbar-gtk-native
+APP_EXPECTED_SHA="$1"
+if [ -f /work/installer/scripts/install-native.sh ]; then
+  PREFIX='/work/prefix with spaces'
+  INSTALLER=/work/installer/scripts/install-native.sh
+  SETTINGS_SHA=$(sha256sum "$HOME/.config/codexbar-gtk/settings.json" | awk '{print $1}')
+  HISTORY_SHA=$(sha256sum "$HOME/.config/codexbar-gtk/history.jsonl" | awk '{print $1}')
+  if [ -x /artifacts/debug ] && [ -x /artifacts/release ]; then
+    "$INSTALLER" --artifact /artifacts/debug --prefix "$PREFIX" --no-activate
+    DEBUG_SHA=$(sha256sum /artifacts/debug | awk '{print $1}')
+    grep -qx "binary_sha256=$DEBUG_SHA" "$PREFIX/share/codexbar-gtk/native-manifest" || { echo 'FAIL: debug manifest hash'; exit 1; }
+    "$INSTALLER" --artifact /artifacts/release --prefix "$PREFIX" --no-activate
+    RELEASE_SHA=$(sha256sum /artifacts/release | awk '{print $1}')
+    grep -qx "binary_sha256=$RELEASE_SHA" "$PREFIX/share/codexbar-gtk/native-manifest" || { echo 'FAIL: release upgrade manifest hash'; exit 1; }
+    "$INSTALLER" --artifact /artifacts/debug --prefix "$PREFIX" --no-activate
+    grep -qx "binary_sha256=$DEBUG_SHA" "$PREFIX/share/codexbar-gtk/native-manifest" || { echo 'FAIL: debug rollback manifest hash'; exit 1; }
+    echo "EVIDENCE:build-profile-lifecycle=debug-install:$DEBUG_SHA,release-upgrade:$RELEASE_SHA,debug-rollback:$DEBUG_SHA"
+  else
+    "$INSTALLER" --artifact /app/codexbar-gtk-native --prefix "$PREFIX" --no-activate
+    APP_EXPECTED_SHA=$(sha256sum "$PREFIX/bin/codexbar-gtk-native" | awk '{print $1}')
+  fi
+  if [ "$(sha256sum "$HOME/.config/codexbar-gtk/settings.json" | awk '{print $1}')" != "$SETTINGS_SHA" ] ||
+     [ "$(sha256sum "$HOME/.config/codexbar-gtk/history.jsonl" | awk '{print $1}')" != "$HISTORY_SHA" ]; then
+    echo 'FAIL: installer operation modified user settings/history'; exit 1
+  fi
+  "$INSTALLER" --uninstall --prefix "$PREFIX"
+  [ ! -e "$PREFIX/bin/codexbar-gtk-native" ] && [ ! -e "$PREFIX/share/codexbar-gtk/native-manifest" ] || { echo 'FAIL: uninstall left owned prefix files'; exit 1; }
+  [ "$(sha256sum "$HOME/.config/codexbar-gtk/settings.json" | awk '{print $1}')" = "$SETTINGS_SHA" ] || { echo 'FAIL: uninstall modified settings'; exit 1; }
+  [ "$(sha256sum "$HOME/.config/codexbar-gtk/history.jsonl" | awk '{print $1}')" = "$HISTORY_SHA" ] || { echo 'FAIL: uninstall modified history'; exit 1; }
+  echo 'EVIDENCE:installer-data-preserved=1'
+  RUNTIME_ARTIFACT=/app/codexbar-gtk-native
+  if [ -x /artifacts/debug ]; then RUNTIME_ARTIFACT=/artifacts/debug; fi
+  "$INSTALLER" --artifact "$RUNTIME_ARTIFACT" --prefix "$PREFIX" --no-activate
+  APP_EXEC="$PREFIX/bin/codexbar-gtk-native"
+  APP_EXPECTED_SHA=$(sha256sum "$APP_EXEC" | awk '{print $1}')
+  grep -qx "binary_sha256=$APP_EXPECTED_SHA" "$PREFIX/share/codexbar-gtk/native-manifest" || { echo 'FAIL: installed runtime manifest hash'; exit 1; }
+  echo "EVIDENCE:installer-manifest-sha=$APP_EXPECTED_SHA"
+fi
 Xvfb :99 -screen 0 1280x800x24 >/tmp/xvfb.log 2>&1 &
 sleep 2
 dbus-daemon --session --address="unix:abstract=/tmp/dbus/bus" --fork
@@ -29,9 +70,28 @@ for i in 1 2 3 4 5 6 7 8 9 10; do
   sleep 1
 done
 echo "EVIDENCE:bus-ready=$bus_ready"
+if [ -x /probe/a11y_assets ]; then
+  (cd /tmp && /probe/a11y_assets --ignored --exact provider_artwork_decodes_outside_repository_cwd_and_keeps_textual_fallback --nocapture) >/tmp/svg-test.log 2>&1
+  RC=$?
+  cat /tmp/svg-test.log
+  [ "$RC" -eq 0 ] && grep -q '1 passed' /tmp/svg-test.log || { echo 'FAIL: SVG decode test executable failed'; exit 1; }
+  echo 'EVIDENCE:svg-decode-test=PASS dimensions-asserted'
+fi
 rm -f /work/home/cli.log
-/app/codexbar-gtk-native >/tmp/app.log 2>/tmp/app.err &
+"$APP_EXEC" >/tmp/app.log 2>/tmp/app.err &
 APP_PID=$!
+cleanup_app() {
+  if kill -0 "$APP_PID" 2>/dev/null; then
+    kill -TERM "$APP_PID" 2>/dev/null || true
+    for _ in 1 2 3 4 5; do
+      kill -0 "$APP_PID" 2>/dev/null || break
+      sleep 1
+    done
+    kill -KILL "$APP_PID" 2>/dev/null || true
+    wait "$APP_PID" 2>/dev/null || true
+  fi
+}
+trap cleanup_app EXIT INT TERM
 echo "EVIDENCE:app-pid=$APP_PID"
 APP_ID="com.steipete.CodexBarGTK"
 for i in $(seq 1 30); do
@@ -52,11 +112,17 @@ for i in 1 2 3 4 5; do
 done
 echo "EVIDENCE:unix-pid=$UNIX_PID"
 if [ "$UNIX_PID" != "$APP_PID" ]; then
+  wait "$APP_PID" 2>/dev/null; APP_RC=$?
+  echo "EVIDENCE:app-early-exit=$APP_RC"
+  cat /tmp/app.log /tmp/app.err 2>/dev/null || true
   echo "FAIL: D-Bus owner $UNIX_PID does not match launched app $APP_PID" >&2
   exit 1
 fi
-echo "EVIDENCE:exe=$(readlink /proc/$UNIX_PID/exe 2>/dev/null || echo MISSING)"
+echo "EVIDENCE:exe=$(readlink -f /proc/$UNIX_PID/exe 2>/dev/null || echo MISSING)"
 echo "EVIDENCE:exe-sha=$(sha256sum /proc/$UNIX_PID/exe 2>/dev/null | awk '{print $1}' || echo MISSING)"
+RUNNING_SHA=$(sha256sum "/proc/$UNIX_PID/exe" 2>/dev/null | awk '{print $1}')
+[ "$RUNNING_SHA" = "$APP_EXPECTED_SHA" ] || { echo "FAIL: running executable hash $RUNNING_SHA != expected $APP_EXPECTED_SHA"; exit 1; }
+echo 'EVIDENCE:running-executable-hash-match=1'
 if printf '%s' "$UNIX_PID" | grep -qE '^[0-9]+$' && [ -f "/proc/$UNIX_PID/maps" ]; then
   echo "EVIDENCE:maps-libpython=$(grep -ci 'libpython' /proc/$UNIX_PID/maps || echo 0)"
   echo "EVIDENCE:maps-pyo3=$(grep -ciE 'PyO3|pyo3' /proc/$UNIX_PID/maps || echo 0)"
@@ -106,16 +172,26 @@ fi
 echo "EVIDENCE:container-done=1"
 cat /tmp/app.err 2>/dev/null | head -50 || true
 INNER
+VOLUMES=(--volume "$ARTIFACT:/app/codexbar-gtk-native:ro")
+if [ -n "$DEBUG_ARTIFACT" ]; then
+  VOLUMES+=(--volume "$DEBUG_ARTIFACT:/artifacts/debug:ro" --volume "$RELEASE_ARTIFACT:/artifacts/release:ro")
+fi
+if [ -n "$SVG_TEST_BINARY" ]; then VOLUMES+=(--volume "$SVG_TEST_BINARY:/probe/a11y_assets:ro"); fi
 CID=$(docker run -d --name "$CONTAINER" --network none \
-  --volume "$ARTIFACT:/app/codexbar-gtk-native:ro" \
+  "${VOLUMES[@]}" \
   --volume "$WORKDIR:/work:rw" \
-  "$IMAGE" /bin/bash /work/in-container.sh 2>&1)
-START=$SECONDS
+  "$IMAGE" /bin/bash /work/in-container.sh "$EXPECTED_SHA" 2>&1)
+START=$SECONDS; DONE=0
 while [ $((SECONDS-START)) -lt 60 ]; do
-  if docker logs "$CONTAINER" 2>/dev/null | grep -q "EVIDENCE:container-done"; then break; fi
+  if docker logs "$CONTAINER" 2>/dev/null | grep -q "EVIDENCE:container-done"; then DONE=1; break; fi
+  if [ "$(docker inspect --format '{{.State.Running}}' "$CONTAINER" 2>/dev/null || echo false)" = false ]; then break; fi
   sleep 2
 done
+if [ "$DONE" != 1 ]; then echo 'FAIL: bounded container runtime timed out; stopping owned container' >&2; docker kill "$CONTAINER" >/dev/null 2>&1 || true; fi
 echo "container-name=$CONTAINER"
 echo "container-id=$(docker inspect --format '{{.Id}}' "$CONTAINER" 2>/dev/null || echo unknown)"
 docker logs "$CONTAINER" 2>&1
 echo "EVIDENCE:container-name=$CONTAINER"
+CONTAINER_RC=$(docker wait "$CONTAINER" 2>/dev/null || echo 125)
+echo "EVIDENCE:container-exit=$CONTAINER_RC"
+if [ "$CONTAINER_RC" != 0 ]; then exit 1; fi

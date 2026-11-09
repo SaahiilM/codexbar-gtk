@@ -4,6 +4,9 @@
 # exe/hash match + CLI log delta + settings/about windows + quit exit 0.
 # Missing Docker -> SKIP exit 2. Any check failing -> FAIL exit 1.
 # Dry-run is never PASS. TERM/KILL is failure cleanup only.
+# Optional --installer-source adds a real --no-activate prefix lifecycle;
+# debug/release artifacts add a distinct build-profile upgrade/rollback proof.
+# This local prototype does not exercise activation, service, or autostart.
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${CODEXBAR_GTK:-$SCRIPT_DIR/..}" && pwd)"
@@ -14,11 +17,16 @@ TIMEOUT="${TIMEOUT:-30}"
 EVIDENCE_DIR="${SMOKE_EVIDENCE:-}"
 DOCKER_IMAGE="${DOCKER_IMAGE:-codexbar-no-python:smoke}"
 KEEP=0; DRY=0
+INSTALLER_SOURCE=""; DEBUG_ARTIFACT=""; RELEASE_ARTIFACT=""; SVG_TEST_BINARY=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --artifact) ARTIFACT="$2"; shift 2;;
     --timeout) TIMEOUT="$2"; shift 2;;
     --evidence-dir) EVIDENCE_DIR="$2"; shift 2;;
+    --installer-source) INSTALLER_SOURCE="$2"; shift 2;;
+    --debug-artifact) DEBUG_ARTIFACT="$2"; shift 2;;
+    --release-artifact) RELEASE_ARTIFACT="$2"; shift 2;;
+    --svg-test-binary) SVG_TEST_BINARY="$2"; shift 2;;
     --keep) KEEP=1; shift;;
     --dry-run) DRY=1; shift;;
     -h|--help) sed -n '2,7p' "$0" | sed 's/^# \{0,1\}//'; exit 0;;
@@ -40,6 +48,25 @@ resolve_artifact() {
   echo "SKIP: no native artifact found (use --artifact PATH)" >&2; exit 2
 }
 resolve_artifact
+for item in "$DEBUG_ARTIFACT" "$RELEASE_ARTIFACT" "$SVG_TEST_BINARY"; do
+  if [ -n "$item" ] && { [ ! -f "$item" ] || [ ! -x "$item" ]; }; then
+    echo "input must be an executable file: $item" >&2; exit 3
+  fi
+done
+if [ -n "$INSTALLER_SOURCE" ]; then
+  if [ ! -f "$INSTALLER_SOURCE/scripts/install-native.sh" ] ||
+     [ ! -f "$INSTALLER_SOURCE/scripts/native/stage/native.desktop" ] ||
+     [ ! -f "$INSTALLER_SOURCE/scripts/native/stage/native.service" ]; then
+    echo "installer source must contain scripts/install-native.sh and both staging templates: $INSTALLER_SOURCE" >&2; exit 3
+  fi
+fi
+if { [ -n "$DEBUG_ARTIFACT" ] || [ -n "$RELEASE_ARTIFACT" ]; } &&
+   { [ -z "$DEBUG_ARTIFACT" ] || [ -z "$RELEASE_ARTIFACT" ] || [ "$DEBUG_ARTIFACT" = "$RELEASE_ARTIFACT" ]; }; then
+  echo "build-profile lifecycle requires distinct --debug-artifact and --release-artifact files" >&2; exit 3
+fi
+if [ -n "$DEBUG_ARTIFACT" ] && [ -z "$INSTALLER_SOURCE" ]; then
+  echo "--debug-artifact/--release-artifact lifecycle requires --installer-source" >&2; exit 3
+fi
 EVIDENCE_DIR="${EVIDENCE_DIR:-$(mktemp -d "${TMPDIR:-/tmp}/smoke-no-python.XXXXXX")}"
 mkdir -p "$EVIDENCE_DIR"
 WORK="$EVIDENCE_DIR/work"
@@ -49,6 +76,16 @@ LOGFILE="$EVIDENCE_DIR/run.log"
 exec > >(tee "$LOGFILE") 2>&1
 note "evidence dir: $EVIDENCE_DIR"
 note "artifact: $ARTIFACT"
+if [ -n "$INSTALLER_SOURCE" ]; then
+  mkdir -p "$WORK/installer/scripts/native/stage"
+  cp "$INSTALLER_SOURCE/scripts/install-native.sh" "$WORK/installer/scripts/install-native.sh"
+  cp "$INSTALLER_SOURCE/scripts/native/stage/native.desktop" "$WORK/installer/scripts/native/stage/native.desktop"
+  cp "$INSTALLER_SOURCE/scripts/native/stage/native.service" "$WORK/installer/scripts/native/stage/native.service"
+  chmod 755 "$WORK/installer/scripts/install-native.sh"
+  sha256sum "$WORK/installer/scripts/install-native.sh" \
+    "$WORK/installer/scripts/native/stage/native.desktop" "$WORK/installer/scripts/native/stage/native.service" > "$WORK/installer-source.sha256"
+  note "installer source: $INSTALLER_SOURCE (staged files and digests in installer-source.sha256)"
+fi
 cat > "$HOME_DIR/.local/bin/codexbar" <<'EOF'
 #!/bin/sh
 echo "$@" >> /work/home/cli.log 2>/dev/null || true
@@ -58,9 +95,13 @@ EOF
 chmod +x "$HOME_DIR/.local/bin/codexbar"
 printf '%s' '{"preferredCurrencyCode":"auto","refreshIntervalSeconds":300}' > "$HOME_DIR/.config/codexbar-gtk/settings.json"
 chmod 600 "$HOME_DIR/.config/codexbar-gtk/settings.json"
-printf '%s\n' '{"ts":"2026-11-06T00:00:00Z","provider":"synthetic","usage":0,"cost":0}' > "$HOME_DIR/.config/codexbar-gtk/history.jsonl"
-EXPECTED_SHA="$(sha256sum "$ARTIFACT" | awk '{print $1}')"
+printf '%s\n' '{"t":1794009600.0,"p":"synthetic","w":"primary","u":0.0}' > "$HOME_DIR/.config/codexbar-gtk/history.jsonl"
+RUNTIME_ARTIFACT="$ARTIFACT"
+if [ -n "$DEBUG_ARTIFACT" ]; then RUNTIME_ARTIFACT="$DEBUG_ARTIFACT"; fi
+EXPECTED_SHA="$(sha256sum "$RUNTIME_ARTIFACT" | awk '{print $1}')"
 note "expected sha256: $EXPECTED_SHA"
+note "primary artifact sha256: $(sha256sum "$ARTIFACT" | awk '{print $1}')"
+if [ -n "$DEBUG_ARTIFACT" ]; then sha256sum "$DEBUG_ARTIFACT" "$RELEASE_ARTIFACT" > "$WORK/lifecycle-artifacts.sha256"; fi
 if ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
   echo "RESULT: SKIP — docker unavailable. C02 NOT passed." | tee "$EVIDENCE_DIR/result.txt"; exit 2
 fi
@@ -76,7 +117,8 @@ pass "image built $DOCKER_IMAGE"
 docker images --digests 2>/dev/null | grep codexbar-no-python >"$WORK/image-digest.txt" || true
 cat "$WORK/image-digest.txt" || true
 note "--- docker run ---"
-bash "$REPO_ROOT/scripts/native/no-python/docker/run-container.sh" "$ARTIFACT" "$WORK" "$EXPECTED_SHA" >"$WORK/container.log" 2>&1
+bash "$REPO_ROOT/scripts/native/no-python/docker/run-container.sh" "$ARTIFACT" "$WORK" "$EXPECTED_SHA" \
+  "$INSTALLER_SOURCE" "$DEBUG_ARTIFACT" "$RELEASE_ARTIFACT" "$SVG_TEST_BINARY" >"$WORK/container.log" 2>&1
 RUN_RC=$?
 if [ "$RUN_RC" -ne 0 ]; then fail "container runner exited with status $RUN_RC"; fi
 cat "$WORK/container.log"
@@ -96,8 +138,21 @@ if printf '%s' "$UNIX_PID" | grep -qE '^[0-9]+$' && [ "$UNIX_PID" != "0" ] && [ 
 APP_PID="$(get_ev app-pid)"
 if [ -n "$APP_PID" ] && [ "$UNIX_PID" = "$APP_PID" ]; then pass "D-Bus owner is the launched app"; else fail "D-Bus owner $UNIX_PID differs from launched app $APP_PID"; fi
 EXE="$(get_ev exe)"; EXESHA="$(get_ev exe-sha)"; note "exe=$EXE sha=$EXESHA"
-if [ "$EXE" = "/app/$BIN_NAME" ]; then pass "exe matches /app artifact"; else fail "exe mismatch: $EXE"; fi
+EXPECTED_EXE="/app/$BIN_NAME"
+if [ -n "$INSTALLER_SOURCE" ]; then EXPECTED_EXE="/work/prefix with spaces/bin/$BIN_NAME"; fi
+if [ "$EXE" = "$EXPECTED_EXE" ]; then pass "exe matches expected artifact path $EXPECTED_EXE"; else fail "exe mismatch: $EXE"; fi
 if [ "$EXESHA" = "$EXPECTED_SHA" ] && [ -n "$EXESHA" ]; then pass "exe sha256 matches expected"; else fail "exe sha mismatch: $EXESHA != $EXPECTED_SHA"; fi
+if [ "$(get_ev running-executable-hash-match)" = 1 ]; then pass "running executable hash matches installed manifest"; else fail "running executable hash did not match installed manifest"; fi
+if [ -n "$INSTALLER_SOURCE" ]; then
+  if [ "$(get_ev installer-data-preserved)" = 1 ]; then pass "installer and uninstall preserved seeded settings/history"; else fail "installer data preservation proof missing"; fi
+  if [ -n "$DEBUG_ARTIFACT" ]; then
+    if [ -n "$(get_ev build-profile-lifecycle)" ]; then pass "distinct debug install/release upgrade/debug rollback manifest lifecycle"; else fail "build-profile lifecycle evidence missing"; fi
+  else note "build-profile lifecycle skipped (distinct debug/release artifacts not supplied)"; fi
+fi
+if [ -n "$SVG_TEST_BINARY" ]; then
+  if [ "$(get_ev svg-decode-test)" = "PASS dimensions-asserted" ]; then pass "host-built GTK test decoded bundled SVG and asserted dimensions"; else fail "SVG decode test proof missing or failed"; fi
+fi
+note "scope: additive --no-activate installed-prefix runtime and build-profile lifecycle only; activation/service/autostart untested; C02 remains pending root acceptance"
 for k in maps-libpython maps-pyo3 maps-rustcore; do
   v="$(get_ev $k)"; note "$k=$v"
   if [ "$v" = "0" ]; then pass "$k absent on app PID"; else fail "$k=$v (must be 0)"; fi
@@ -123,9 +178,40 @@ if [ -n "$CONTAINER_NAME" ] && [ $KEEP -ne 1 ]; then
   docker stop -t 10 "$CONTAINER_NAME" >/dev/null 2>&1 || true
   docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
 fi
+if [ -f "$WORK/home/.config/codexbar-gtk/settings.json" ] && [ -f "$WORK/home/.config/codexbar-gtk/history.jsonl" ]; then
+  if ! python3 - "$WORK/home/.config/codexbar-gtk/settings.json" "$WORK/home/.config/codexbar-gtk/history.jsonl" <<'PY'
+import json, math, re, sys
+settings_path, history_path = sys.argv[1:]
+with open(settings_path, encoding="utf-8") as f:
+    settings = json.load(f)
+assert isinstance(settings, dict), "settings must remain a JSON object"
+assert settings.get("preferredCurrencyCode") == "auto" or re.fullmatch(
+    r"[A-Z]{3}", str(settings.get("preferredCurrencyCode", ""))
+), "currency setting changed to an invalid value"
+interval = settings.get("refreshIntervalSeconds")
+assert isinstance(interval, int) and not isinstance(interval, bool) and interval > 0, "refresh interval must remain a positive integer"
+records = []
+with open(history_path, encoding="utf-8") as f:
+    for number, line in enumerate(f, 1):
+        record = json.loads(line)
+        assert isinstance(record, dict), f"history line {number} must be an object"
+        assert isinstance(record.get("t"), (int, float)) and math.isfinite(record["t"]), f"history line {number} timestamp invalid"
+        assert isinstance(record.get("p"), str) and record["p"], f"history line {number} provider invalid"
+        assert isinstance(record.get("w"), str) and record["w"], f"history line {number} window invalid"
+        assert isinstance(record.get("u"), (int, float)) and math.isfinite(record["u"]), f"history line {number} usage invalid"
+        records.append(record)
+seed = {"t": 1794009600.0, "p": "synthetic", "w": "primary", "u": 0.0}
+assert seed in records, "seeded history sample was not semantically preserved"
+assert all(row["p"] == "synthetic" for row in records if row != seed), "appended history must remain synthetic"
+print(f"EVIDENCE:runtime-data-semantic-validation=PASS history-records={len(records)} settings-keys={','.join(sorted(settings))}")
+PY
+  then fail "settings/history semantic validation failed"; fi
+else
+  fail "runtime settings or history missing for semantic preservation check"
+fi
 if [ $FAILS -gt 0 ]; then
   echo "RESULT: FAIL ($FAILS failing checks). C02 NOT passed." | tee "$EVIDENCE_DIR/result.txt"; exit 1
 fi
-echo "RESULT: PASS (runtime evidence observed; see run.log). C02 checked pending root acceptance." | tee "$EVIDENCE_DIR/result.txt"
+echo "RESULT: PASS — local installed-prefix/no-Python prototype only; activation/service/autostart untested; C02 pending root acceptance (see run.log)." | tee "$EVIDENCE_DIR/result.txt"
 note "evidence: $EVIDENCE_DIR"
 exit $RUN_RC

@@ -5,7 +5,7 @@
 # Missing Docker -> SKIP exit 2. Any check failing -> FAIL exit 1.
 # Dry-run is never PASS. TERM/KILL is failure cleanup only.
 # Optional --installer-source adds a real --no-activate prefix lifecycle;
-# debug/release artifacts add a distinct build-profile upgrade/rollback proof.
+# debug/release artifacts add a distinct build-profile install/rollback proof.
 # This local prototype does not exercise activation, service, or autostart.
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -17,6 +17,7 @@ TIMEOUT="${TIMEOUT:-30}"
 EVIDENCE_DIR="${SMOKE_EVIDENCE:-}"
 DOCKER_IMAGE="${DOCKER_IMAGE:-codexbar-no-python:smoke}"
 KEEP=0; DRY=0
+ORIGINAL_ARGS=("$@")
 INSTALLER_SOURCE=""; DEBUG_ARTIFACT=""; RELEASE_ARTIFACT=""; SVG_TEST_BINARY=""
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -68,6 +69,7 @@ if [ -n "$DEBUG_ARTIFACT" ] && [ -z "$INSTALLER_SOURCE" ]; then
   echo "--debug-artifact/--release-artifact lifecycle requires --installer-source" >&2; exit 3
 fi
 EVIDENCE_DIR="${EVIDENCE_DIR:-$(mktemp -d "${TMPDIR:-/tmp}/smoke-no-python.XXXXXX")}"
+if [ -e "$EVIDENCE_DIR/run.log" ]; then echo "evidence directory already contains run.log: $EVIDENCE_DIR" >&2; exit 3; fi
 mkdir -p "$EVIDENCE_DIR"
 WORK="$EVIDENCE_DIR/work"
 mkdir -p "$WORK/home/.config/codexbar-gtk" "$WORK/home/.local/bin"
@@ -94,6 +96,7 @@ exit 0
 EOF
 chmod +x "$HOME_DIR/.local/bin/codexbar"
 printf '%s' '{"preferredCurrencyCode":"auto","refreshIntervalSeconds":300}' > "$HOME_DIR/.config/codexbar-gtk/settings.json"
+printf '%s' '{"preferredCurrencyCode":"auto","refreshIntervalSeconds":300}' > "$WORK/expected-settings.json"
 chmod 600 "$HOME_DIR/.config/codexbar-gtk/settings.json"
 printf '%s\n' '{"t":1794009600.0,"p":"synthetic","w":"primary","u":0.0}' > "$HOME_DIR/.config/codexbar-gtk/history.jsonl"
 RUNTIME_ARTIFACT="$ARTIFACT"
@@ -101,6 +104,12 @@ if [ -n "$DEBUG_ARTIFACT" ]; then RUNTIME_ARTIFACT="$DEBUG_ARTIFACT"; fi
 EXPECTED_SHA="$(sha256sum "$RUNTIME_ARTIFACT" | awk '{print $1}')"
 note "expected sha256: $EXPECTED_SHA"
 note "primary artifact sha256: $(sha256sum "$ARTIFACT" | awk '{print $1}')"
+note "harness source sha256: $(sha256sum "$0" | awk '{print $1}')"
+note "container runner source sha256: $(sha256sum "$REPO_ROOT/scripts/native/no-python/docker/run-container.sh" | awk '{print $1}')"
+printf -v ORIGINAL_INVOCATION '%q ' "$0" "${ORIGINAL_ARGS[@]}"
+note "invocation: ${ORIGINAL_INVOCATION% }"
+[ -z "$DEBUG_ARTIFACT" ] || note "debug artifact sha256: $(sha256sum "$DEBUG_ARTIFACT" | awk '{print $1}')"
+[ -z "$RELEASE_ARTIFACT" ] || note "release artifact sha256: $(sha256sum "$RELEASE_ARTIFACT" | awk '{print $1}')"
 if [ -n "$DEBUG_ARTIFACT" ]; then sha256sum "$DEBUG_ARTIFACT" "$RELEASE_ARTIFACT" > "$WORK/lifecycle-artifacts.sha256"; fi
 if ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
   echo "RESULT: SKIP — docker unavailable. C02 NOT passed." | tee "$EVIDENCE_DIR/result.txt"; exit 2
@@ -114,8 +123,8 @@ if ! docker build -t "$DOCKER_IMAGE" -f "$DOCKERFILE" "$REPO_ROOT" >"$WORK/docke
   cat "$WORK/docker-build.log"; echo "RESULT: FAIL — image build failed. C02 NOT passed." | tee "$EVIDENCE_DIR/result.txt"; exit 1
 fi
 pass "image built $DOCKER_IMAGE"
-docker images --digests 2>/dev/null | grep codexbar-no-python >"$WORK/image-digest.txt" || true
-cat "$WORK/image-digest.txt" || true
+docker image inspect "$DOCKER_IMAGE" --format 'image-id={{.Id}} repo-digests={{json .RepoDigests}}' >"$WORK/image-id.txt" || { echo "RESULT: FAIL — unable to inspect built image. C02 NOT passed." | tee "$EVIDENCE_DIR/result.txt"; exit 1; }
+cat "$WORK/image-id.txt"
 note "--- docker run ---"
 bash "$REPO_ROOT/scripts/native/no-python/docker/run-container.sh" "$ARTIFACT" "$WORK" "$EXPECTED_SHA" \
   "$INSTALLER_SOURCE" "$DEBUG_ARTIFACT" "$RELEASE_ARTIFACT" "$SVG_TEST_BINARY" >"$WORK/container.log" 2>&1
@@ -146,7 +155,10 @@ if [ "$(get_ev running-executable-hash-match)" = 1 ]; then pass "running executa
 if [ -n "$INSTALLER_SOURCE" ]; then
   if [ "$(get_ev installer-data-preserved)" = 1 ]; then pass "installer and uninstall preserved seeded settings/history"; else fail "installer data preservation proof missing"; fi
   if [ -n "$DEBUG_ARTIFACT" ]; then
-    if [ -n "$(get_ev build-profile-lifecycle)" ]; then pass "distinct debug install/release upgrade/debug rollback manifest lifecycle"; else fail "build-profile lifecycle evidence missing"; fi
+    if [ -n "$(get_ev build-profile-lifecycle)" ]; then pass "debug/release profile installs and debug rollback each passed installed runtime probe"; else fail "build-profile lifecycle runtime evidence missing"; fi
+    for stage in debug release rollback; do
+      if printf '%s' "$(get_ev "$stage-runtime")" | grep -q '^PASS owner-pid='; then pass "$stage installed runtime owner/hash/refresh/quit proof"; else fail "$stage installed runtime proof missing"; fi
+    done
   else note "build-profile lifecycle skipped (distinct debug/release artifacts not supplied)"; fi
 fi
 if [ -n "$SVG_TEST_BINARY" ]; then
@@ -179,17 +191,15 @@ if [ -n "$CONTAINER_NAME" ] && [ $KEEP -ne 1 ]; then
   docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
 fi
 if [ -f "$WORK/home/.config/codexbar-gtk/settings.json" ] && [ -f "$WORK/home/.config/codexbar-gtk/history.jsonl" ]; then
-  if ! python3 - "$WORK/home/.config/codexbar-gtk/settings.json" "$WORK/home/.config/codexbar-gtk/history.jsonl" <<'PY'
-import json, math, re, sys
-settings_path, history_path = sys.argv[1:]
+  if ! python3 - "$WORK/home/.config/codexbar-gtk/settings.json" "$WORK/home/.config/codexbar-gtk/history.jsonl" "$WORK/expected-settings.json" <<'PY'
+import json, math, sys
+settings_path, history_path, expected_path = sys.argv[1:]
 with open(settings_path, encoding="utf-8") as f:
     settings = json.load(f)
+with open(expected_path, encoding="utf-8") as f:
+    expected_settings = json.load(f)
 assert isinstance(settings, dict), "settings must remain a JSON object"
-assert settings.get("preferredCurrencyCode") == "auto" or re.fullmatch(
-    r"[A-Z]{3}", str(settings.get("preferredCurrencyCode", ""))
-), "currency setting changed to an invalid value"
-interval = settings.get("refreshIntervalSeconds")
-assert isinstance(interval, int) and not isinstance(interval, bool) and interval > 0, "refresh interval must remain a positive integer"
+assert settings == expected_settings, f"settings changed from seeded values/keys: {settings!r}"
 records = []
 with open(history_path, encoding="utf-8") as f:
     for number, line in enumerate(f, 1):

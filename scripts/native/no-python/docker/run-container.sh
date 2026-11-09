@@ -25,30 +25,106 @@ export GDK_BACKEND=x11
 export DBUS_SESSION_BUS_ADDRESS="unix:abstract=/tmp/dbus/bus"
 APP_EXEC=/app/codexbar-gtk-native
 APP_EXPECTED_SHA="$1"
+Xvfb :99 -screen 0 1280x800x24 >/tmp/xvfb.log 2>&1 &
+sleep 2
+dbus-daemon --session --address="unix:abstract=/tmp/dbus/bus" --fork
+bus_ready=0
+for i in 1 2 3 4 5 6 7 8 9 10; do
+  if gdbus call --session --dest org.freedesktop.DBus --object-path /org/freedesktop/DBus --method org.freedesktop.DBus.ListNames --timeout 3 >/dev/null 2>&1; then bus_ready=1; break; fi
+  sleep 1
+done
+echo "EVIDENCE:bus-ready=$bus_ready"
+[ "$bus_ready" = 1 ] || { echo "FAIL: private D-Bus did not become ready" >&2; exit 1; }
 if [ -f /work/installer/scripts/install-native.sh ]; then
   PREFIX='/work/prefix with spaces'
   INSTALLER=/work/installer/scripts/install-native.sh
   SETTINGS_SHA=$(sha256sum "$HOME/.config/codexbar-gtk/settings.json" | awk '{print $1}')
   HISTORY_SHA=$(sha256sum "$HOME/.config/codexbar-gtk/history.jsonl" | awk '{print $1}')
+  install_profile() {
+    local label="$1" artifact="$2" expected="$3" actual
+    if "$INSTALLER" --artifact "$artifact" --prefix "$PREFIX" --no-activate; then
+      :
+    else
+      rc=$?
+      echo "FAIL: $label installer exited $rc" >&2
+      return 1
+    fi
+    [ -x "$PREFIX/bin/codexbar-gtk-native" ] || { echo "FAIL: $label installed binary missing" >&2; return 1; }
+    [ -f "$PREFIX/share/codexbar-gtk/native-manifest" ] || { echo "FAIL: $label installed manifest missing" >&2; return 1; }
+    actual=$(sha256sum "$PREFIX/bin/codexbar-gtk-native" | awk '{print $1}')
+    [ "$actual" = "$expected" ] || { echo "FAIL: $label installed binary hash $actual != $expected" >&2; return 1; }
+    grep -qx "binary_sha256=$expected" "$PREFIX/share/codexbar-gtk/native-manifest" || { echo "FAIL: $label manifest hash" >&2; return 1; }
+    echo "EVIDENCE:$label-install=PASS binary-sha=$actual manifest-sha=$expected"
+  }
+  run_app_probe() {
+    local label="$1" expected="$2" exe="$3" pid ownerpid owner exe_path running_sha before after waited rc
+    if gdbus call --session --dest org.freedesktop.DBus --object-path /org/freedesktop/DBus --method org.freedesktop.DBus.NameHasOwner com.steipete.CodexBarGTK --timeout 3 2>&1 | grep -q '(true,)'; then
+      echo "FAIL: $label probe began while app already owned D-Bus name" >&2; return 1
+    fi
+    "$exe" >/tmp/app-"$label".log 2>/tmp/app-"$label".err &
+    pid=$!
+    local done=0
+    for _ in $(seq 1 30); do
+      if gdbus call --session --dest org.freedesktop.DBus --object-path /org/freedesktop/DBus --method org.freedesktop.DBus.NameHasOwner com.steipete.CodexBarGTK --timeout 3 2>&1 | grep -q '(true,)'; then done=1; break; fi
+      if ! kill -0 "$pid" 2>/dev/null; then break; fi
+      sleep 1
+    done
+    ownerpid=$(gdbus call --session --dest org.freedesktop.DBus --object-path /org/freedesktop/DBus --method org.freedesktop.DBus.GetConnectionUnixProcessID com.steipete.CodexBarGTK --timeout 3 2>/dev/null | sed -nE 's/^\(uint32 ([0-9]+),\)$/\1/p')
+    if [ "$done" != 1 ] || [ "$ownerpid" != "$pid" ]; then
+      echo "FAIL: $label owner/PID mismatch (owner=$ownerpid launched=$pid)" >&2
+      cat /tmp/app-"$label".log /tmp/app-"$label".err 2>/dev/null || true
+      cleanup_probe "$pid"
+      return 1
+    fi
+    exe_path=$(readlink -f "/proc/$ownerpid/exe" 2>/dev/null || true)
+    running_sha=$(sha256sum "/proc/$ownerpid/exe" 2>/dev/null | awk '{print $1}')
+    [ "$exe_path" = "$exe" ] || { echo "FAIL: $label exe $exe_path != $exe" >&2; cleanup_probe "$pid"; return 1; }
+    [ "$running_sha" = "$expected" ] || { echo "FAIL: $label running hash $running_sha != $expected" >&2; cleanup_probe "$pid"; return 1; }
+    before=$(wc -l < /work/home/cli.log 2>/dev/null || echo 0); before=$(printf '%s' "$before" | tr -d ' ')
+    gdbus call --session --dest com.steipete.CodexBarGTK --object-path /com/steipete/CodexBarGTK --method org.gtk.Actions.Activate refresh '[]' '{}' --timeout 5 >/dev/null 2>&1 || true
+    sleep 2
+    after=$(wc -l < /work/home/cli.log 2>/dev/null || echo 0); after=$(printf '%s' "$after" | tr -d ' ')
+    [ -n "$after" ] && [ "$after" -gt "$before" ] 2>/dev/null || { echo "FAIL: $label refresh did not increase CLI calls ($before->$after)" >&2; cleanup_probe "$pid"; return 1; }
+    gdbus call --session --dest com.steipete.CodexBarGTK --object-path /com/steipete/CodexBarGTK --method org.gtk.Actions.Activate quit '[]' '{}' --timeout 5 >/dev/null 2>&1 || true
+    waited=0
+    while kill -0 "$pid" 2>/dev/null && [ "$waited" -lt 10 ]; do sleep 1; waited=$((waited+1)); done
+    if kill -0 "$pid" 2>/dev/null; then echo "FAIL: $label quit timed out" >&2; cleanup_probe "$pid"; return 1; fi
+    wait "$pid"; rc=$?
+    [ "$rc" -eq 0 ] || { echo "FAIL: $label quit exited $rc" >&2; return 1; }
+    if gdbus call --session --dest org.freedesktop.DBus --object-path /org/freedesktop/DBus --method org.freedesktop.DBus.NameHasOwner com.steipete.CodexBarGTK --timeout 3 2>&1 | grep -q '(true,)'; then echo "FAIL: $label left app as D-Bus owner" >&2; return 1; fi
+    echo "EVIDENCE:$label-runtime=PASS owner-pid=$ownerpid exe=$exe sha=$running_sha refresh-cli=$before->$after quit=$rc"
+  }
+  cleanup_probe() {
+    local pid="$1"
+    if kill -0 "$pid" 2>/dev/null; then
+      kill -TERM "$pid" 2>/dev/null || true
+      for _ in 1 2 3 4 5; do kill -0 "$pid" 2>/dev/null || break; sleep 1; done
+      kill -KILL "$pid" 2>/dev/null || true
+      wait "$pid" 2>/dev/null || true
+    fi
+  }
   if [ -x /artifacts/debug ] && [ -x /artifacts/release ]; then
-    "$INSTALLER" --artifact /artifacts/debug --prefix "$PREFIX" --no-activate
     DEBUG_SHA=$(sha256sum /artifacts/debug | awk '{print $1}')
-    grep -qx "binary_sha256=$DEBUG_SHA" "$PREFIX/share/codexbar-gtk/native-manifest" || { echo 'FAIL: debug manifest hash'; exit 1; }
-    "$INSTALLER" --artifact /artifacts/release --prefix "$PREFIX" --no-activate
     RELEASE_SHA=$(sha256sum /artifacts/release | awk '{print $1}')
-    grep -qx "binary_sha256=$RELEASE_SHA" "$PREFIX/share/codexbar-gtk/native-manifest" || { echo 'FAIL: release upgrade manifest hash'; exit 1; }
-    "$INSTALLER" --artifact /artifacts/debug --prefix "$PREFIX" --no-activate
-    grep -qx "binary_sha256=$DEBUG_SHA" "$PREFIX/share/codexbar-gtk/native-manifest" || { echo 'FAIL: debug rollback manifest hash'; exit 1; }
-    echo "EVIDENCE:build-profile-lifecycle=debug-install:$DEBUG_SHA,release-upgrade:$RELEASE_SHA,debug-rollback:$DEBUG_SHA"
+    install_profile debug /artifacts/debug "$DEBUG_SHA" || exit 1
+    run_app_probe debug "$DEBUG_SHA" "$PREFIX/bin/codexbar-gtk-native" || exit 1
+    install_profile release /artifacts/release "$RELEASE_SHA" || exit 1
+    run_app_probe release "$RELEASE_SHA" "$PREFIX/bin/codexbar-gtk-native" || exit 1
+    install_profile rollback /artifacts/debug "$DEBUG_SHA" || exit 1
+    run_app_probe rollback "$DEBUG_SHA" "$PREFIX/bin/codexbar-gtk-native" || exit 1
+    echo "EVIDENCE:build-profile-lifecycle=debug-install-runtime:$DEBUG_SHA,release-profile-install-runtime:$RELEASE_SHA,debug-rollback-runtime:$DEBUG_SHA"
   else
-    "$INSTALLER" --artifact /app/codexbar-gtk-native --prefix "$PREFIX" --no-activate
+    if "$INSTALLER" --artifact /app/codexbar-gtk-native --prefix "$PREFIX" --no-activate; then :; else rc=$?; echo "FAIL: installer exited $rc" >&2; exit 1; fi
+    [ -x "$PREFIX/bin/codexbar-gtk-native" ] || { echo 'FAIL: installed binary missing'; exit 1; }
+    [ -f "$PREFIX/share/codexbar-gtk/native-manifest" ] || { echo 'FAIL: installed manifest missing'; exit 1; }
     APP_EXPECTED_SHA=$(sha256sum "$PREFIX/bin/codexbar-gtk-native" | awk '{print $1}')
+    grep -qx "binary_sha256=$APP_EXPECTED_SHA" "$PREFIX/share/codexbar-gtk/native-manifest" || { echo 'FAIL: installed manifest hash'; exit 1; }
   fi
   if [ "$(sha256sum "$HOME/.config/codexbar-gtk/settings.json" | awk '{print $1}')" != "$SETTINGS_SHA" ] ||
      [ "$(sha256sum "$HOME/.config/codexbar-gtk/history.jsonl" | awk '{print $1}')" != "$HISTORY_SHA" ]; then
     echo 'FAIL: installer operation modified user settings/history'; exit 1
   fi
-  "$INSTALLER" --uninstall --prefix "$PREFIX"
+  if "$INSTALLER" --uninstall --prefix "$PREFIX"; then :; else rc=$?; echo "FAIL: uninstall exited $rc" >&2; exit 1; fi
   [ ! -e "$PREFIX/bin/codexbar-gtk-native" ] && [ ! -e "$PREFIX/share/codexbar-gtk/native-manifest" ] || { echo 'FAIL: uninstall left owned prefix files'; exit 1; }
   [ "$(sha256sum "$HOME/.config/codexbar-gtk/settings.json" | awk '{print $1}')" = "$SETTINGS_SHA" ] || { echo 'FAIL: uninstall modified settings'; exit 1; }
   [ "$(sha256sum "$HOME/.config/codexbar-gtk/history.jsonl" | awk '{print $1}')" = "$HISTORY_SHA" ] || { echo 'FAIL: uninstall modified history'; exit 1; }
@@ -61,15 +137,6 @@ if [ -f /work/installer/scripts/install-native.sh ]; then
   grep -qx "binary_sha256=$APP_EXPECTED_SHA" "$PREFIX/share/codexbar-gtk/native-manifest" || { echo 'FAIL: installed runtime manifest hash'; exit 1; }
   echo "EVIDENCE:installer-manifest-sha=$APP_EXPECTED_SHA"
 fi
-Xvfb :99 -screen 0 1280x800x24 >/tmp/xvfb.log 2>&1 &
-sleep 2
-dbus-daemon --session --address="unix:abstract=/tmp/dbus/bus" --fork
-bus_ready=0
-for i in 1 2 3 4 5 6 7 8 9 10; do
-  if gdbus call --session --dest org.freedesktop.DBus --object-path /org/freedesktop/DBus --method org.freedesktop.DBus.ListNames --timeout 3 >/dev/null 2>&1; then bus_ready=1; break; fi
-  sleep 1
-done
-echo "EVIDENCE:bus-ready=$bus_ready"
 if [ -x /probe/a11y_assets ]; then
   (cd /tmp && /probe/a11y_assets --ignored --exact provider_artwork_decodes_outside_repository_cwd_and_keeps_textual_fallback --nocapture) >/tmp/svg-test.log 2>&1
   RC=$?
@@ -112,10 +179,8 @@ for i in 1 2 3 4 5; do
 done
 echo "EVIDENCE:unix-pid=$UNIX_PID"
 if [ "$UNIX_PID" != "$APP_PID" ]; then
-  wait "$APP_PID" 2>/dev/null; APP_RC=$?
-  echo "EVIDENCE:app-early-exit=$APP_RC"
+  echo "FAIL: D-Bus owner $UNIX_PID does not match launched app $APP_PID; bounded cleanup will terminate the launched process" >&2
   cat /tmp/app.log /tmp/app.err 2>/dev/null || true
-  echo "FAIL: D-Bus owner $UNIX_PID does not match launched app $APP_PID" >&2
   exit 1
 fi
 echo "EVIDENCE:exe=$(readlink -f /proc/$UNIX_PID/exe 2>/dev/null || echo MISSING)"
@@ -184,7 +249,8 @@ CID=$(docker run -d --name "$CONTAINER" --network none \
 START=$SECONDS; DONE=0
 while [ $((SECONDS-START)) -lt 60 ]; do
   if docker logs "$CONTAINER" 2>/dev/null | grep -q "EVIDENCE:container-done"; then DONE=1; break; fi
-  if [ "$(docker inspect --format '{{.State.Running}}' "$CONTAINER" 2>/dev/null || echo false)" = false ]; then break; fi
+  STATE=$(docker inspect --format '{{.State.Status}}' "$CONTAINER" 2>/dev/null || true)
+  if [ "$STATE" != running ]; then break; fi
   sleep 2
 done
 if [ "$DONE" != 1 ]; then echo 'FAIL: bounded container runtime timed out; stopping owned container' >&2; docker kill "$CONTAINER" >/dev/null 2>&1 || true; fi

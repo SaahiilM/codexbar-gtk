@@ -10,18 +10,20 @@ without a per-run consent prompt; the fail-closed KWin guard is unchanged.
 This script never falls back to X11 or fake input.
 """
 import argparse
+import inspect
 import json
 import os
 import pathlib
 import shutil
 import select
 import signal
+import struct
 import subprocess
 import sys
 import tempfile
+import textwrap
 import time
 import uuid
-import struct
 
 from gi.repository import Gio, GLib
 
@@ -255,6 +257,30 @@ def fresh_active_target(state, expected_pid, now=None):
     except (TypeError, ValueError):
         return False
     return 0.15 <= age <= 0.35 and active_target(state, expected_pid)
+
+
+def valid_kwin_observer_sample(sender, expected_sender, state, last_sequence):
+    """Accept only well-formed, ordered reports from the compositor connection."""
+    if sender != expected_sender or not isinstance(state, dict):
+        return False
+    sequence = state.get("sample_seq")
+    if type(sequence) is not int or sequence <= last_sequence:
+        return False
+    if type(state.get("pid")) is not int:
+        return False
+    if any(type(state.get(key)) is not bool for key in
+           ("active", "top_hit", "target_present", "portal_active")):
+        return False
+    cursor = state.get("cursor")
+    if (not isinstance(cursor, list) or len(cursor) != 2 or
+            any(type(value) is not int for value in cursor)):
+        return False
+    geometry = state.get("target_geometry")
+    if geometry is not None and (
+            not isinstance(geometry, list) or len(geometry) != 4 or
+            any(type(value) is not int for value in geometry)):
+        return False
+    return True
 
 
 def activate_target_window(app_pid, focus_js_path, focus_plugin,
@@ -1271,6 +1297,10 @@ esac
             "org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus",
             "GetNameOwner", GLib.Variant("(s)", ("org.freedesktop.impl.portal.desktop.kde",)),
             GLib.VariantType.new("(s)"), Gio.DBusCallFlags.NONE, 3000, None).unpack()[0]
+        kwin_owner = bus.call_sync(
+            "org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus",
+            "GetNameOwner", GLib.Variant("(s)", ("org.kde.KWin",)),
+            GLib.VariantType.new("(s)"), Gio.DBusCallFlags.NONE, 3000, None).unpack()[0]
         portal_pid = bus.call_sync(
             "org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus",
             "GetConnectionUnixProcessID", GLib.Variant("(s)", (portal_owner,)),
@@ -1284,9 +1314,11 @@ esac
         settings_capture = scratch / "settings-before.png"
         capture_status = scratch / "portal-capture.json"
         observer_py = scratch / "observer.py"
-        observer_py.write_text(OBSERVER_PY)
+        observer_py.write_text(OBSERVER_PY.replace(
+            "__VALIDATOR__", textwrap.dedent(inspect.getsource(valid_kwin_observer_sample))))
         observer = subprocess.Popen([sys.executable, str(observer_py), str(state_path), str(observer_ready),
-                                     str(portal_pid), str(consent_capture), str(capture_status)],
+                                     str(portal_pid), str(consent_capture), str(capture_status),
+                                     kwin_owner],
                                     env=os.environ.copy(), stdout=subprocess.DEVNULL,
                                     stderr=(scratch / "observer.log").open("wb"), start_new_session=True)
         ready_deadline = time.monotonic() + 5
@@ -1688,12 +1720,19 @@ esac
 
 OBSERVER_PY = r'''import json, pathlib, subprocess, sys, threading, time
 from gi.repository import Gio, GLib
-path=pathlib.Path(sys.argv[1]); ready=pathlib.Path(sys.argv[2]); portal_pid=int(sys.argv[3]); image=pathlib.Path(sys.argv[4]); status=pathlib.Path(sys.argv[5]); loop=GLib.MainLoop(); captured=False
+__VALIDATOR__
+path=pathlib.Path(sys.argv[1]); ready=pathlib.Path(sys.argv[2]); portal_pid=int(sys.argv[3]); image=pathlib.Path(sys.argv[4]); status=pathlib.Path(sys.argv[5]); expected_sender=sys.argv[6]; loop=GLib.MainLoop(); captured=False; last_sequence=0
 xml='<node><interface name="org.codexbar.U05.Guard"><method name="Record"><arg name="state" type="s" direction="in"/></method></interface></node>'
 node=Gio.DBusNodeInfo.new_for_xml(xml); bus=Gio.bus_get_sync(Gio.BusType.SESSION,None)
-def method(_c,_s,_p,_i,_m,params,inv):
-    global captured
-    (raw,)=params.unpack(); state=json.loads(raw); state['received']=time.monotonic()
+def method(_c,sender,_p,_i,_m,params,inv):
+    global captured,last_sequence
+    try:
+        (raw,)=params.unpack(); state=json.loads(raw)
+    except (ValueError, TypeError):
+        inv.return_value(GLib.Variant('()',())); return
+    if not valid_kwin_observer_sample(sender,expected_sender,state,last_sequence):
+        inv.return_value(GLib.Variant('()',())); return
+    last_sequence=state['sample_seq']; state['received']=time.monotonic()
     tmp=path.with_suffix('.tmp'); tmp.write_text(json.dumps(state)); tmp.replace(path)
     if state.get('portal_active') and not captured:
         captured=True
@@ -1711,8 +1750,9 @@ loop.run()
 '''
 
 KWIN_JS = r'''var TARGET_PID=__PID__, PORTAL_PID=__PORTAL_PID__, PLUGIN="__PLUGIN__", service="org.codexbar.U05.Guard", path="/org/codexbar/U05/Guard", iface="org.codexbar.U05.Guard";
-function report(){var p=workspace.cursorPos,h=workspace.windowAt(p,1),top=h&&h.length?h[0]:null,a=workspace.activeWindow,w=workspace.stackingOrder,t=null;for(var i=0;i<w.length;i++)if(Number(w[i].pid)===TARGET_PID)t=w[i];var g=t?{x:Number(t.x),y:Number(t.y),width:Number(t.width),height:Number(t.height)}:null;var s={pid:a?Number(a.pid):0,active:!!(a&&Number(a.pid)===TARGET_PID),top_hit:!!(top&&Number(top.pid)===TARGET_PID),target_present:!!t,target_geometry:g?[g.x,g.y,g.width,g.height]:null,cursor:[Number(p.x),Number(p.y)],portal_active:!!(a&&Number(a.pid)===PORTAL_PID)};callDBus(service,path,iface,"Record",JSON.stringify(s));}
-report();workspace.cursorPosChanged.connect(report);workspace.windowActivated.connect(report);workspace.windowAdded.connect(report);workspace.windowRemoved.connect(report);'''
+var SAMPLE_INTERVAL_MS=250, MAX_SAMPLES=2400, MAX_LIFETIME_MS=600000, startedAt=Date.now(), lastSampleAt=0, sampleSequence=0, sampleInFlight=false, sampler=null;
+function report(){var now=Date.now();if(now-startedAt>=MAX_LIFETIME_MS||sampleSequence>=MAX_SAMPLES){if(sampler)sampler.stop();return;}if(sampleInFlight||now-lastSampleAt<SAMPLE_INTERVAL_MS)return;sampleInFlight=true;lastSampleAt=now;var sequence=++sampleSequence;var p=workspace.cursorPos,h=workspace.windowAt(p,1),top=h&&h.length?h[0]:null,a=workspace.activeWindow,w=workspace.stackingOrder,t=null;for(var i=0;i<w.length;i++)if(Number(w[i].pid)===TARGET_PID)t=w[i];var g=t?{x:Number(t.x),y:Number(t.y),width:Number(t.width),height:Number(t.height)}:null;var s={sample_seq:sequence,pid:a?Number(a.pid):0,active:!!(a&&Number(a.pid)===TARGET_PID),top_hit:!!(top&&Number(top.pid)===TARGET_PID),target_present:!!t,target_geometry:g?[g.x,g.y,g.width,g.height]:null,cursor:[Number(p.x),Number(p.y)],portal_active:!!(a&&Number(a.pid)===PORTAL_PID)};callDBus(service,path,iface,"Record",JSON.stringify(s),function(){sampleInFlight=false;});}
+sampler=new QTimer(this);sampler.timeout.connect(report);sampler.start(SAMPLE_INTERVAL_MS);report();workspace.cursorPosChanged.connect(report);workspace.windowActivated.connect(report);workspace.windowAdded.connect(report);workspace.windowRemoved.connect(report);'''
 
 
 if __name__ == "__main__":

@@ -44,6 +44,114 @@ class WaylandGuardTests(unittest.TestCase):
             with self.subTest(changes=changes):
                 self.assertFalse(MODULE.guard_target(self.snapshot(**changes), 4242, 810, 315, now=100.2))
 
+    def test_compositor_sampler_refreshes_stationary_target_with_ordered_reports(self):
+        sample = {
+            "sample_seq": 1, "pid": 4242, "active": True, "top_hit": True,
+            "target_present": True, "target_geometry": [364, 149, 1000, 740],
+            "cursor": [810, 315], "portal_active": False,
+        }
+        state = dict(sample, received=100.25)
+        self.assertTrue(MODULE.valid_kwin_observer_sample(":1.20", ":1.20", sample, 0))
+        self.assertTrue(MODULE.guard_target(state, 4242, 810, 315, now=100.45))
+
+        # Same cursor, active PID and hit result; the timer's next compositor
+        # query has a new sequence and receive time, so the age gate can pass.
+        next_sample = dict(sample, sample_seq=2)
+        self.assertTrue(MODULE.valid_kwin_observer_sample(":1.20", ":1.20", next_sample, 1))
+        refreshed = dict(next_sample, received=100.50)
+        self.assertEqual(refreshed["cursor"], state["cursor"])
+        self.assertTrue(MODULE.guard_target(refreshed, 4242, 810, 315, now=100.70))
+
+    def test_observer_rejects_wrong_sender_malformed_and_replayed_samples(self):
+        sample = {
+            "sample_seq": 8, "pid": 4242, "active": True, "top_hit": True,
+            "target_present": True, "target_geometry": [364, 149, 1000, 740],
+            "cursor": [810, 315], "portal_active": False,
+        }
+        self.assertFalse(MODULE.valid_kwin_observer_sample(":1.21", ":1.20", sample, 7))
+        self.assertFalse(MODULE.valid_kwin_observer_sample(":1.20", ":1.20", sample, 8))
+        self.assertFalse(MODULE.valid_kwin_observer_sample(
+            ":1.20", ":1.20", dict(sample, sample_seq=True), 7))
+        self.assertFalse(MODULE.valid_kwin_observer_sample(
+            ":1.20", ":1.20", dict(sample, cursor=[810, "315"]), 7))
+
+    def test_kwin_sampler_is_bounded_timer_and_single_flight(self):
+        script = MODULE.KWIN_JS
+        self.assertIn("new QTimer(this)", script)
+        self.assertIn("SAMPLE_INTERVAL_MS=250", script)
+        self.assertIn("sampler.start(SAMPLE_INTERVAL_MS)", script)
+        self.assertIn("MAX_SAMPLES=2400", script)
+        self.assertIn("MAX_LIFETIME_MS=600000", script)
+        self.assertIn("if(sampleInFlight||now-lastSampleAt<SAMPLE_INTERVAL_MS)return", script)
+        self.assertIn("sample_seq:sequence", script)
+        self.assertIn("workspace.windowAt(p,1)", script)
+        self.assertIn("workspace.activeWindow", script)
+        self.assertIn("workspace.stackingOrder", script)
+        self.assertIn("__VALIDATOR__", MODULE.OBSERVER_PY)
+        self.assertIn("valid_kwin_observer_sample(sender,expected_sender,state,last_sequence)",
+                      MODULE.OBSERVER_PY)
+
+    def test_delayed_bridge_return_uses_new_compositor_sample_before_click(self):
+        calls = []
+        state = self.snapshot(target_geometry=[364, 149, 1000, 740], received=100.0,
+                              sample_seq=1)
+
+        class SlowBridge:
+            def move(self, x, y):
+                calls.append(("move", x, y))
+                # Simulate two 250 ms compositor timer samples while the
+                # bridge's screenshot-backed call is still returning.
+                state.update(received=100.72, sample_seq=3, cursor=[x, y], top_hit=True)
+
+            def click(self, x, y):
+                calls.append(("click", x, y))
+
+        # More than the 350 ms age limit elapsed in move(); only the timer
+        # report received at 100.72 can make the exact-target guard pass.
+        with unittest.mock.patch.object(
+                MODULE.time, "monotonic", side_effect=[100.80, 100.80, 100.91, 100.93]):
+            MODULE.guarded_click_bridge(SlowBridge(), 4242, lambda: dict(state), 810, 315)
+        self.assertEqual(calls, [("move", 810, 315), ("click", 810, 315)])
+        self.assertEqual(state["sample_seq"], 3)
+
+    def test_no_heartbeat_after_delayed_move_never_clicks(self):
+        calls = []
+        state = self.snapshot(target_geometry=[364, 149, 1000, 740], received=100.0,
+                              sample_seq=1)
+
+        class StalledBridge:
+            def move(self, x, y):
+                calls.append(("move", x, y))
+
+            def click(self, x, y):
+                calls.append(("click", x, y))
+
+        with unittest.mock.patch.object(
+                MODULE.time, "monotonic", side_effect=[100.80, 100.80, 100.80, 103.0]), \
+                unittest.mock.patch.object(MODULE.time, "sleep", return_value=None):
+            with self.assertRaisesRegex(RuntimeError, "no click sent"):
+                MODULE.guarded_click_bridge(StalledBridge(), 4242, lambda: dict(state), 810, 315)
+        self.assertEqual(calls, [("move", 810, 315)])
+
+    def test_focus_change_after_motion_never_clicks(self):
+        calls = []
+        state = self.snapshot(target_geometry=[364, 149, 1000, 740], received=100.2)
+
+        class FocusChangingBridge:
+            def move(self, x, y):
+                calls.append(("move", x, y))
+                state.update(pid=17, active=False, top_hit=False, cursor=[x, y], received=100.2)
+
+            def click(self, x, y):
+                calls.append(("click", x, y))
+
+        with unittest.mock.patch.object(
+                MODULE.time, "monotonic", side_effect=[100.4, 100.4, 100.4, 103.0]), \
+                unittest.mock.patch.object(MODULE.time, "sleep", return_value=None):
+            with self.assertRaisesRegex(RuntimeError, "no click sent"):
+                MODULE.guarded_click_bridge(FocusChangingBridge(), 4242, lambda: dict(state), 810, 315)
+        self.assertEqual(calls, [("move", 810, 315)])
+
     def test_window_geometry_rejects_coordinates_outside_target(self):
         state = self.snapshot(target_geometry=[100, 200, 900, 700])
         self.assertTrue(MODULE.target_window_contains(state, 810, 315))

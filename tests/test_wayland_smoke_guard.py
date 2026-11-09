@@ -280,6 +280,90 @@ class WaylandGuardTests(unittest.TestCase):
         self.assertIn('"Record",JSON.stringify(state)', script)
         self.assertNotIn("NotifyPointer", script)
 
+    def test_move_only_reactivates_lost_focus_then_samples_before_one_move(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            preferences = root / "settings.json"
+            preferences.write_text('{"showPopupOnStart":false}\n')
+            original_preferences = preferences.read_bytes()
+            telemetry = MODULE.BoundedTelemetry(root / "telemetry.json")
+            events = []
+            state = self.snapshot(active=False, target_geometry=[364, 149, 1000, 740])
+
+            class MoveOnly:
+                def move(self, x, y):
+                    events.append(("move", x, y))
+
+                def __getattr__(self, name):
+                    raise AssertionError(f"move-only diagnostic attempted forbidden {name}")
+
+            class CommandResult:
+                returncode = 0
+                stdout = "true\n"
+
+            def fake_runner(argv, **_kwargs):
+                events.append(("activate", argv[4] if len(argv) > 4 else "start"))
+                if argv[-1:] == ["org.kde.kwin.Scripting.start"]:
+                    state.update(active=True, pid=4242,
+                                 received=MODULE.time.monotonic() - .2)
+                return CommandResult()
+
+            def latest():
+                events.append(("sample", state["active"], state["pid"]))
+                return dict(state)
+
+            # Baseline focus was lost; activation must restore the exact PID
+            # before a fresh sample is accepted and before the one move.
+            self.assertFalse(MODULE.active_target(state, 4242))
+            baseline = MODULE.activate_and_wait_for_target(
+                4242, root / "focus.js", "focus-plugin", latest,
+                runner=fake_runner,
+            )
+            self.assertTrue(MODULE.fresh_active_target(baseline, 4242))
+            MODULE.move_only_diagnostic(
+                MoveOnly(), 4242, latest, preferences, telemetry,
+                timeout_seconds=0,
+            )
+            move_index = next(i for i, event in enumerate(events) if event[0] == "move")
+            start_index = max(i for i, event in enumerate(events[:move_index])
+                              if event[0] == "activate")
+            fresh_sample_index = max(i for i, event in enumerate(events[:move_index])
+                                     if event[0] == "sample" and event[1:]
+                                     == (True, 4242))
+            self.assertLess(start_index, fresh_sample_index)
+            self.assertLess(fresh_sample_index, move_index)
+            self.assertEqual([event[0] for event in events].count("move"), 1)
+            self.assertEqual(preferences.read_bytes(), original_preferences)
+
+    def test_move_only_rejects_stale_or_wrong_pid_immediately_before_move(self):
+        for changes in (
+            {"received": MODULE.time.monotonic() - .5},
+            {"pid": 7, "active": False},
+        ):
+            with self.subTest(changes=changes), tempfile.TemporaryDirectory() as temporary:
+                root = pathlib.Path(temporary)
+                preferences = root / "settings.json"
+                preferences.write_text('{"showPopupOnStart":false}\n')
+                telemetry = MODULE.BoundedTelemetry(root / "telemetry.json")
+                state = self.snapshot(
+                    **{**changes, "target_geometry": [364, 149, 1000, 740]}
+                )
+
+                class MoveOnly:
+                    moves = 0
+
+                    def move(self, _x, _y):
+                        self.moves += 1
+
+                bridge = MoveOnly()
+                with self.assertRaisesRegex(RuntimeError, "fresh active"):
+                    MODULE.move_only_diagnostic(
+                        bridge, 4242, lambda: dict(state), preferences,
+                        telemetry, timeout_seconds=0,
+                    )
+                self.assertEqual(bridge.moves, 0)
+                self.assertEqual(preferences.read_text(), '{"showPopupOnStart":false}\n')
+
     def test_portal_desktop_entry_never_replaces_existing_user_file(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = pathlib.Path(temporary)
@@ -453,7 +537,10 @@ class WaylandGuardTests(unittest.TestCase):
             preferences = root / "settings.json"
             original = b'{"hidePersonalInfo":false}\n'
             preferences.write_bytes(original)
-            state = self.snapshot(target_geometry=[364, 149, 1000, 740])
+            state = self.snapshot(
+                received=MODULE.time.monotonic() - .2,
+                target_geometry=[364, 149, 1000, 740],
+            )
             calls = []
 
             class MoveOnlyBridge:
@@ -491,8 +578,11 @@ class WaylandGuardTests(unittest.TestCase):
                 def click(self, *_args):
                     calls.append("click")
 
-            state = self.snapshot(target_geometry=[364, 149, 1000, 740], active=False)
-            with self.assertRaisesRegex(RuntimeError, "not active"):
+            state = self.snapshot(
+                received=MODULE.time.monotonic() - .2,
+                target_geometry=[364, 149, 1000, 740], active=False,
+            )
+            with self.assertRaisesRegex(RuntimeError, "fresh active"):
                 MODULE.move_only_diagnostic(
                     Bridge(), 4242, lambda: state, prefs,
                     MODULE.BoundedTelemetry(root / "telemetry.json"), 0,

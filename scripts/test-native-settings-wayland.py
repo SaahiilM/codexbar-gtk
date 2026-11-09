@@ -14,6 +14,7 @@ import json
 import os
 import pathlib
 import shutil
+import select
 import signal
 import subprocess
 import sys
@@ -244,6 +245,57 @@ def guard_target(state, expected_pid, x, y, now=None):
 def active_target(state, expected_pid):
     """Require exact synthetic app focus for a read-only baseline capture."""
     return state.get("pid") == expected_pid and state.get("active") is True
+
+
+def fresh_active_target(state, expected_pid, now=None):
+    """Require the exact active fixture and the established fresh-sample window."""
+    now = time.monotonic() if now is None else now
+    try:
+        age = now - state.get("received", 0)
+    except (TypeError, ValueError):
+        return False
+    return 0.15 <= age <= 0.35 and active_target(state, expected_pid)
+
+
+def activate_target_window(app_pid, focus_js_path, focus_plugin,
+                           runner=subprocess.run):
+    """Ask KWin to activate only the exact synthetic Settings PID/title."""
+    focus_js_path = pathlib.Path(focus_js_path)
+    focus_js_path.write_text(activation_script(app_pid))
+    runner(["qdbus6", "org.kde.KWin", "/Scripting",
+            "org.kde.kwin.Scripting.loadScript", str(focus_js_path), focus_plugin],
+           check=True, capture_output=True, text=True)
+    loaded = runner(["qdbus6", "org.kde.KWin", "/Scripting",
+                     "org.kde.kwin.Scripting.isScriptLoaded", focus_plugin],
+                    check=True, capture_output=True, text=True).stdout.strip()
+    if loaded != "true":
+        raise RuntimeError("KWin did not load the synthetic Settings focus helper; no input sent")
+    runner(["qdbus6", "org.kde.KWin", "/Scripting",
+            "org.kde.kwin.Scripting.start"], check=True, capture_output=True)
+
+
+def wait_for_fresh_active_target(latest, expected_pid, timeout_seconds=5.0):
+    """Wait a bounded interval for fresh focus evidence from the exact fixture."""
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        state = latest()
+        if fresh_active_target(state, expected_pid):
+            return state
+        time.sleep(.02)
+    raise RuntimeError("Settings did not regain stable focus; no input sent")
+
+
+def activate_and_wait_for_target(app_pid, focus_js_path, focus_plugin, latest,
+                                 runner=subprocess.run, timeout_seconds=5.0):
+    """Share the target-only activation and 0.15–0.35s focus gate across routes."""
+    activate_target_window(app_pid, focus_js_path, focus_plugin, runner=runner)
+    return wait_for_fresh_active_target(latest, app_pid, timeout_seconds=timeout_seconds)
+
+
+def read_acknowledgement(timeout_seconds=60.0):
+    """Read a bounded inspection acknowledgement from the runner's stdin."""
+    ready, _, _ = select.select([sys.stdin], [], [], timeout_seconds)
+    return sys.stdin.readline().strip() if ready else ""
 
 
 def target_window_contains(state, x, y):
@@ -1005,8 +1057,6 @@ def move_only_diagnostic(bridge, app_pid, latest, preferences_path, telemetry,
     before_bytes = pathlib.Path(preferences_path).read_bytes()
     before = latest()
     geometry = before.get("target_geometry")
-    if not active_target(before, app_pid):
-        raise RuntimeError("move-only precondition failed: synthetic Settings is not active")
     if not isinstance(geometry, list) or len(geometry) != 4:
         raise RuntimeError("move-only precondition failed: synthetic geometry unavailable")
     x, y = page_tab_point_from_geometry(geometry, "Display")
@@ -1015,6 +1065,13 @@ def move_only_diagnostic(bridge, app_pid, latest, preferences_path, telemetry,
     telemetry_snapshot(telemetry, before, app_pid, requested=[x, y])
     telemetry.add("diagnostic", label="move_only", requested_coordinates=[x, y],
                   baseline_preferences_unchanged=True)
+    # Re-sample directly before the only permitted input. Cursor position and
+    # top-hit are intentionally not checked here because the cursor may start
+    # outside the fixture; the post-motion telemetry records both.
+    before_move = latest()
+    if not fresh_active_target(before_move, app_pid):
+        raise RuntimeError("move-only precondition failed: no fresh active synthetic Settings sample")
+    telemetry_snapshot(telemetry, before_move, app_pid, requested=[x, y])
     bridge.move(x, y)  # exactly one bridge action; no navigation or follow-up input
     deadline = time.monotonic() + timeout_seconds
     last_signature = None
@@ -1278,6 +1335,10 @@ esac
         if args.inspect_only:
             print("Inspection-only mode; no portal request or input sent.", flush=True)
             return 0
+        if args.move_only:
+            print("Inspect the synthetic Settings baseline image, then enter INSPECTED within 60 seconds to continue the single move-only probe; any other input aborts without input.", flush=True)
+            if read_acknowledgement() != "INSPECTED":
+                raise RuntimeError("move-only baseline inspection acknowledgement missing; no input sent")
         print(f"Synthetic fixture and consent capture path: {scratch}", flush=True)
         if use_bridge:
             print("Bridge mode: the linux-agent-access bridge restores its "
@@ -1312,6 +1373,13 @@ esac
         if args.move_only:
             if not isinstance(portal, BridgeDriver) or not bridge_application:
                 raise RuntimeError("move-only diagnostic requires verified bridge identity")
+            focus_js_path = scratch / "kwin-focus-target.js"
+            activate_target_window(app.pid, focus_js_path, focus_plugin)
+            focus_script_loaded = True
+            try:
+                wait_for_fresh_active_target(latest, app.pid)
+            except RuntimeError as error:
+                raise RuntimeError(f"{error}; no input sent") from error
             return move_only_diagnostic(
                 portal, app.pid, latest, preferences, telemetry
             )
@@ -1328,32 +1396,15 @@ esac
         # active window. Reactivate the exact synthetic Settings PID/title after
         # receiving APPROVE even if an earlier snapshot happened to show it active.
         focus_js_path = scratch / "kwin-focus-target.js"
-        focus_js_path.write_text(activation_script(app.pid))
-        subprocess.run(["qdbus6", "org.kde.KWin", "/Scripting",
-                        "org.kde.kwin.Scripting.loadScript", str(focus_js_path), focus_plugin],
-                       check=True, capture_output=True, text=True)
-        loaded = subprocess.run(["qdbus6", "org.kde.KWin", "/Scripting",
-                                 "org.kde.kwin.Scripting.isScriptLoaded", focus_plugin],
-                                check=True, capture_output=True, text=True).stdout.strip()
-        if loaded != "true":
-            raise RuntimeError("KWin did not load the synthetic Settings focus helper; no input sent")
+        activate_target_window(app.pid, focus_js_path, focus_plugin)
         focus_script_loaded = True
-        subprocess.run(["qdbus6", "org.kde.KWin", "/Scripting",
-                        "org.kde.kwin.Scripting.start"], check=True, capture_output=True)
 
         # Wait for the Settings window to regain focus and a stable pointer after
         # consent. Never move if focus remains elsewhere or cursor samples churn.
-        deadline = time.monotonic() + 5
-        baseline = None
-        while time.monotonic() < deadline:
-            state = latest()
-            age = time.monotonic() - state.get("received", 0)
-            if state.get("pid") == app.pid and state.get("active") and 0.15 <= age <= 0.35:
-                baseline = state
-                break
-            time.sleep(.02)
-        if baseline is None:
-            raise RuntimeError("Settings did not regain stable focus after portal consent; no input sent")
+        try:
+            baseline = wait_for_fresh_active_target(latest, app.pid)
+        except RuntimeError as error:
+            raise RuntimeError(f"{error} after portal consent") from error
         if "page" in action:
             geometry = baseline.get("target_geometry")
             if not isinstance(geometry, list) or len(geometry) != 4:

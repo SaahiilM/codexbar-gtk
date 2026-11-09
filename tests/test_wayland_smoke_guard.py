@@ -357,7 +357,7 @@ class WaylandGuardTests(unittest.TestCase):
             "linux-agent-access", "com.steipete.CodexBarGTK", runner=lambda argv, **_k: FakeError())
         with self.assertRaises(RuntimeError) as ctx:
             driver.click(860, 332)
-        self.assertIn("not active", str(ctx.exception))
+        self.assertIn("bounded synthetic telemetry", str(ctx.exception))
 
         class FakeBadJson:
             returncode = 0
@@ -416,6 +416,88 @@ class WaylandGuardTests(unittest.TestCase):
             MODULE.BridgeDriver("linux-agent-access", "")
         with self.assertRaises(ValueError):
             MODULE.BridgeDriver("linux-agent-access", None)
+
+    def test_bridge_telemetry_is_bounded_sanitized_and_does_not_invent_sent(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = pathlib.Path(temporary) / "telemetry.json"
+            telemetry = MODULE.BoundedTelemetry(path)
+
+            class FakeDone:
+                returncode = 0
+                stdout = '{"action_count":1,"window_title":"private","content":"secret"}'
+                stderr = ""
+
+            driver = MODULE.BridgeDriver(
+                "linux-agent-access", "synthetic-app", runner=lambda *a, **k: FakeDone(),
+                telemetry=telemetry,
+            )
+            driver.move(689, 865)
+            records = MODULE.json.loads(path.read_text())
+            self.assertEqual([record["event"] for record in records],
+                             ["bridge_request", "bridge_result"])
+            request, result = records
+            self.assertEqual(request["coordinates"], [689, 865])
+            self.assertLessEqual(request["monotonic_start"], request["timestamp_monotonic"])
+            self.assertEqual(result["bridge_return_code"], 0)
+            self.assertEqual(result["return_metadata"], {"action_count": 1})
+            self.assertNotIn("sent", result["return_metadata"])
+            self.assertNotIn("private", path.read_text())
+            self.assertNotIn("secret", path.read_text())
+            for index in range(100):
+                telemetry.add("bounded", index=index)
+            self.assertEqual(len(telemetry.entries), telemetry.MAX_ENTRIES)
+
+    def test_move_only_diagnostic_calls_only_one_move_and_preserves_json(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            preferences = root / "settings.json"
+            original = b'{"hidePersonalInfo":false}\n'
+            preferences.write_bytes(original)
+            state = self.snapshot(target_geometry=[364, 149, 1000, 740])
+            calls = []
+
+            class MoveOnlyBridge:
+                def move(self, x, y):
+                    calls.append(("move", x, y))
+                    state["cursor"] = [x, y]
+
+                def click(self, *_args):
+                    calls.append(("click",))
+                    raise AssertionError("move-only diagnostic must not click")
+
+            telemetry = MODULE.BoundedTelemetry(root / "telemetry.json")
+            result = MODULE.move_only_diagnostic(
+                MoveOnlyBridge(), 4242, lambda: state, preferences, telemetry,
+                timeout_seconds=0.025,
+            )
+            self.assertEqual(result, 0)
+            self.assertEqual(calls, [("move", 689, 865)])
+            self.assertEqual(preferences.read_bytes(), original)
+            records = MODULE.json.loads((root / "telemetry.json").read_text())
+            self.assertEqual(records[0]["requested"], [689, 865])
+            self.assertEqual(records[-1]["event"], "diagnostic_end")
+            self.assertTrue(records[-1]["json_unchanged"])
+
+    def test_move_only_fails_before_input_without_target_activation(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            prefs = root / "settings.json"
+            prefs.write_text("{}")
+            calls = []
+
+            class Bridge:
+                def move(self, *_args):
+                    calls.append("move")
+                def click(self, *_args):
+                    calls.append("click")
+
+            state = self.snapshot(target_geometry=[364, 149, 1000, 740], active=False)
+            with self.assertRaisesRegex(RuntimeError, "not active"):
+                MODULE.move_only_diagnostic(
+                    Bridge(), 4242, lambda: state, prefs,
+                    MODULE.BoundedTelemetry(root / "telemetry.json"), 0,
+                )
+            self.assertEqual(calls, [])
 
     def test_bridge_command_resolution_fails_closed(self):
         self.assertEqual(

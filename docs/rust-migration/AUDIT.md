@@ -6700,7 +6700,7 @@ parity and shell syntax were rerun after the fixture preservation change.
 - **Claim/base/build:** BUILD102 / E205, branch
   `orchestrated/luna-native-service-proof`, based on PR #102 merge
   `07e6fb2e6d9ed40d517c8c89b55c10e83466b049`. Implementation commit
-  `a75cc887b86ee9cebaddff0171136cf80e3bc2a4` is local; no PR, push, branch CI,
+  `3153fac55f8bafb8cfbb6596b0db4cc114403028` is local; no PR, push, branch CI,
   merge, or gate acceptance is claimed. `VERSION`, Python metadata, README and
   changelog use `0.82.0 (102)`. Build 99 is also marketing 0.82.0 (99): the
   sequence is a frontend build-number comparison, not an upstream marketing
@@ -6717,8 +6717,8 @@ parity and shell syntax were rerun after the fixture preservation change.
   that container and its image. The container trap is installed before Xvfb or
   private D-Bus startup and uses bounded QUIT/TERM/KILL plus PID reaping.
 - **Private proof:** `scripts/smoke-native-service.sh` passed on exact current
-  source commit `a75cc887b86ee9cebaddff0171136cf80e3bc2a4`, source-file inventory
-  SHA-256 `e224691ba52473e149679c4d5a45bc7f2b99c26c0140966a1af247bae490a71b`.
+  source commit `3153fac55f8bafb8cfbb6596b0db4cc114403028`, source-file inventory
+  SHA-256 `68fc2896772d0d2f019497f356efc516e730f2d298ed3d83eb4c1075e9562853`.
   It built build 99 from the pinned source and build 102 from current source,
   then passed the private 99→102→99 sequence inside Docker `--network none`
   using synthetic HOME, private Xvfb and private D-Bus. Build-99 artifact SHA-256

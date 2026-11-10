@@ -50,6 +50,8 @@ fi
 fail() { echo "FAIL: $*" >&2; exit 1; }
 ok() { echo "ok: $*"; }
 
+"$ROOT/scripts/test-native-activation-renderer.sh"
+
 SCRATCH="${NATIVE_INSTALL_SMOKE_SCRATCH:-$(mktemp -d)}"
 chmod 700 "$SCRATCH"
 APP_PIDS=""
@@ -207,9 +209,11 @@ probe_launch() {
   local owner_sha
   owner_sha="$(sha256sum "/proc/$owner_pid/exe" 2>/dev/null | awk '{print $1}')"
   [[ "$owner_sha" == "$expect_sha" ]] || fail "owner hash $owner_sha != expected $expect_sha ($label)"
-  file "$BIN_DEST" | grep -q ELF || fail "not ELF ($label)"
-  readelf -d "$BIN_DEST" >"$SCRATCH/readelf-${label}.txt" || fail "readelf failed ($label)"
-  ! grep -qi "libpython\|pyo3" "$SCRATCH/readelf-${label}.txt" || fail "links python ($label)"
+  local elf_magic
+  elf_magic="$(od -An -tx1 -N4 "$BIN_DEST" | tr -d ' \n')"
+  [[ "$elf_magic" == "7f454c46" ]] || fail "not ELF ($label)"
+  ldd "$BIN_DEST" >"$SCRATCH/ldd-${label}.txt" || fail "ldd failed ($label)"
+  ! grep -qi "libpython\|pyo3" "$SCRATCH/ldd-${label}.txt" || fail "links python ($label)"
   timeout 5 gapplication action com.steipete.CodexBarGTK quit >/dev/null 2>&1 || true
   local wd=$((SECONDS + 5))
   while kill -0 "$pid" 2>/dev/null && [[ "$SECONDS" -lt "$wd" ]]; do sleep 0.1; done
@@ -246,6 +250,7 @@ echo "=== 7. activate: backup, upgrade preserves provenance, uninstall restores 
 "$INSTALLER" --artifact "$RELEASE_BIN" --prefix "$PREFIX" --activate
 [[ -f "$PY_DSK.pre-native" ]] || fail "activate no desktop backup"
 [[ -f "$PY_SVC.pre-native" ]] || fail "activate no service backup"
+[[ ! -e "$TEST_HOME/.config/autostart/codexbar-gtk.desktop" ]] || fail "activate created autostart entry"
 grep -q "X-CodexBar-DesktopFile" "$PY_DSK" || fail "desktop marker"
 grep -q "X-CodexBar-Service" "$PY_SVC" || fail "service marker"
 "$INSTALLER" --artifact "$DEBUG_BIN" --prefix "$PREFIX"
@@ -315,42 +320,43 @@ grep -qi "unsupported" "$SCRATCH/deact.log" || fail "deactivation rejection mess
 [[ "$(sha256sum "$DEACT_PREFIX/share/codexbar-gtk/native-manifest" | awk '{print $1}')" == "$DEACT_MAN_SHA" ]] || fail "rejected deactivation rewrote manifest"
 ok "explicit deactivation transition rejected, no orphan activation"
 
-echo "=== 12. render failures leave a fresh install or upgrade unchanged ==="
+echo "=== 12. activation renderer failures leave fresh install and upgrade unchanged ==="
+FIXTURE_ROOT="$SCRATCH/renderer-fixture"
+FIXTURE_INSTALLER="$FIXTURE_ROOT/scripts/install-native.sh"
+mkdir -p "$FIXTURE_ROOT/scripts/native/stage"
+cp "$INSTALLER" "$FIXTURE_INSTALLER"
+cp "$ROOT/scripts/native/render_activation.sh" "$FIXTURE_ROOT/scripts/native/render_activation.sh"
+cp "$ROOT/scripts/native/stage/native.desktop" "$FIXTURE_ROOT/scripts/native/stage/native.desktop"
+cp "$ROOT/scripts/native/stage/native.service" "$FIXTURE_ROOT/scripts/native/stage/native.service"
 RENDER_TEST_HOME="$SCRATCH/render-home"
 RENDER_PREFIX="$SCRATCH/render-prefix"
 RENDER_BIN="$RENDER_PREFIX/bin/codexbar-gtk-native"
 RENDER_MANIFEST="$RENDER_PREFIX/share/codexbar-gtk/native-manifest"
 RENDER_DESKTOP="$RENDER_PREFIX/share/applications/codexbar-gtk.desktop"
 RENDER_SERVICE="$RENDER_TEST_HOME/.config/systemd/user/codexbar-gtk.service"
-mkdir -p "$RENDER_TEST_HOME/.config/systemd/user" "$RENDER_PREFIX/share/applications" "$SCRATCH/render-tools"
-printf '[Desktop Entry]\nExec=python3 legacy\n' > "$RENDER_DESKTOP"
-printf '[Service]\nExecStart=python3 legacy\n' > "$RENDER_SERVICE"
+mkdir -p "$RENDER_TEST_HOME/.config/systemd/user" "$RENDER_PREFIX/share/applications"
+printf '[Desktop Entry]\nExec=foreign desktop\n' > "$RENDER_DESKTOP"
+printf '[Service]\nExecStart=foreign service\n' > "$RENDER_SERVICE"
 RENDER_DESKTOP_SHA="$(sha256sum "$RENDER_DESKTOP" | awk '{print $1}')"
 RENDER_SERVICE_SHA="$(sha256sum "$RENDER_SERVICE" | awk '{print $1}')"
-REAL_RENDER_PYTHON="$(command -v python3)"
-cat > "$SCRATCH/render-tools/python3" <<'RENDER_FAILURE'
-#!/bin/sh
-set -eu
-count=0
-if [ -f "$RENDER_TEST_CALLS" ]; then read -r count < "$RENDER_TEST_CALLS"; fi
-count=$((count + 1))
-printf '%s\n' "$count" > "$RENDER_TEST_CALLS"
-if [ "$count" -eq "$RENDER_TEST_FAIL_AT" ]; then exit 42; fi
-exec "$REAL_RENDER_PYTHON" "$@"
-RENDER_FAILURE
-chmod 700 "$SCRATCH/render-tools/python3"
+
 for scenario in fresh upgrade; do
   if [[ "$scenario" == upgrade ]]; then
-    HOME="$RENDER_TEST_HOME" "$INSTALLER" --artifact "$DEBUG_BIN" --prefix "$RENDER_PREFIX"
+    HOME="$RENDER_TEST_HOME" "$FIXTURE_INSTALLER" --artifact "$DEBUG_BIN" --prefix "$RENDER_PREFIX"
     RENDER_MANIFEST_SHA="$(sha256sum "$RENDER_MANIFEST" | awk '{print $1}')"
+    [[ "$(sha256sum "$RENDER_BIN" | awk '{print $1}')" == "$DEBUG_SHA" ]] || fail "upgrade baseline missing"
   fi
-  for fail_at in 1 2; do
-    printf '0\n' > "$SCRATCH/render-call-count"
-    if HOME="$RENDER_TEST_HOME" PATH="$SCRATCH/render-tools:$PATH" \
-       REAL_RENDER_PYTHON="$REAL_RENDER_PYTHON" RENDER_TEST_CALLS="$SCRATCH/render-call-count" \
-       RENDER_TEST_FAIL_AT="$fail_at" "$INSTALLER" --artifact "$RELEASE_BIN" \
+  for fail_at in desktop service; do
+    if [[ "$fail_at" == desktop ]]; then
+      printf '[Desktop Entry]\nName=missing Exec key\n' > "$FIXTURE_ROOT/scripts/native/stage/native.desktop"
+      cp "$ROOT/scripts/native/stage/native.service" "$FIXTURE_ROOT/scripts/native/stage/native.service"
+    else
+      cp "$ROOT/scripts/native/stage/native.desktop" "$FIXTURE_ROOT/scripts/native/stage/native.desktop"
+      printf '[Service]\nDescription=missing ExecStart key\n' > "$FIXTURE_ROOT/scripts/native/stage/native.service"
+    fi
+    if HOME="$RENDER_TEST_HOME" "$FIXTURE_INSTALLER" --artifact "$RELEASE_BIN" \
        --prefix "$RENDER_PREFIX" --activate > "$SCRATCH/render-failure.log" 2>&1; then
-      fail "render failure $fail_at unexpectedly succeeded ($scenario)"
+      fail "$fail_at template failure unexpectedly succeeded ($scenario)"
     fi
     grep -q 'activation rendering failed' "$SCRATCH/render-failure.log" || fail "render failure not reported"
     [[ "$(sha256sum "$RENDER_DESKTOP" | awk '{print $1}')" == "$RENDER_DESKTOP_SHA" ]] || fail "renderer failure changed desktop"
@@ -364,10 +370,12 @@ for scenario in fresh upgrade; do
     fi
   done
 done
-HOME="$RENDER_TEST_HOME" "$INSTALLER" --artifact "$RELEASE_BIN" --prefix "$RENDER_PREFIX" --activate
+cp "$ROOT/scripts/native/stage/native.desktop" "$FIXTURE_ROOT/scripts/native/stage/native.desktop"
+cp "$ROOT/scripts/native/stage/native.service" "$FIXTURE_ROOT/scripts/native/stage/native.service"
+HOME="$RENDER_TEST_HOME" "$FIXTURE_INSTALLER" --artifact "$RELEASE_BIN" --prefix "$RENDER_PREFIX" --activate
 [[ "$(sha256sum "$RENDER_BIN" | awk '{print $1}')" == "$RELEASE_SHA" ]] || fail "retry after renderer failure wedged"
-HOME="$RENDER_TEST_HOME" "$INSTALLER" --uninstall --prefix "$RENDER_PREFIX"
-ok "both render failures leave install unchanged; retry succeeds"
+HOME="$RENDER_TEST_HOME" "$FIXTURE_INSTALLER" --uninstall --prefix "$RENDER_PREFIX"
+ok "first/second template failures preserve fresh install and upgrade; retry succeeds"
 
 echo "=== 13. missing HOME fails before installation ==="
 if env -u HOME "$INSTALLER" --artifact "$DEBUG_BIN" --prefix "$SCRATCH/no-home" > "$SCRATCH/no-home.log" 2>&1; then

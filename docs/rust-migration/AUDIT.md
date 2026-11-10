@@ -6079,3 +6079,162 @@ unverified; UG and C gates remain open and Python remains default.
   C03/CG are unaccepted. Root owns draft body update, publication, fresh CI and
   any merge decision. Continue the UG matrix and keep the separate runtime
   proof separate from this installer draft.
+
+
+### E198 — 2026-11-10: Build-95 installed-prefix Python-free runtime proof
+
+- **Base/ownership:** this worktree began clean on
+  `t3/native-no-python-harness` at required local prototype commit
+  `87b52d824c4d21f18e4e1a824c8062d09ed152fb`. It merged current
+  `origin/main` `473a083676dc23152a9b42203a1fae9b527e3721` with a normal merge
+  (merge commit `b9d3907`); there were no conflicts. The published main state
+  recorded by root includes PR #93's build-94 installer. The older draft wording
+  in this file is retained as history; current TASKS now identifies the build-94
+  installer as merged and build 95 as local, with no PR or merge claimed.
+- **Implementation commit:** `7babb4f67f3f856f2b69713a20956199869cb00a`
+  increments build 95 and adds exact-target Cargo JSON artifact discovery,
+  focused harness tests, a required `python-free-runtime-proof` CI job, and
+  failure-only retention for sanitized synthetic logs and hashes. Cargo
+  discovery rejects malformed JSON, missing or ambiguous target matches, and
+  a missing/non-executable artifact; it never picks the first hash-suffixed
+  file. Local Docker-unavailable behavior remains SKIP/2, invalid input remains
+  exit 3, and runtime failures remain FAIL/1. CI passes `--require-docker`, so
+  an unavailable daemon is FAIL/1. The container runner now checks the final
+  reinstall's exit status explicitly.
+- **Code paths:** `.github/workflows/rust-core.yml`,
+  `scripts/native/no-python/cargo-artifact.py`,
+  `scripts/native/no-python/docker/run-container.sh`,
+  `scripts/smoke-native-no-python.sh`, `tests/test_no_python_harness.py`,
+  `VERSION`, `codexbar_gtk/version.py`, `README.md`, `CHANGELOG.md`,
+  `docs/rust-migration/README.md`, and `docs/rust-migration/TASKS.md`.
+  `UG_GATE.md` was not edited; root reserved it for ledger corrections.
+- **Validation before commit:** four focused tests passed (Cargo artifact exact
+  selection; missing/ambiguous/malformed Cargo output; bad artifact exit 3;
+  required Docker unavailable exit 1). `py_compile`, `bash -n` for both changed
+  shell scripts, `git diff --check`, and build/version/README/changelog
+  consistency passed. The first metadata check found the displayed About
+  example still at build 94; it was corrected to 95 and the check then passed.
+  `actionlint` was not installed, so no actionlint result is claimed.
+- **Fresh committed-source artifacts:** from empty
+  `/tmp/codexbar-build95-commit-target` using locked Cargo commands, debug and
+  release `codexbar-gtk-native` builds passed; the `a11y_assets` test executable
+  was compiled with `cargo test --no-run` and not launched on the host. SHA-256:
+  debug `993dbb2a4e1f95fc9845b785957c439ee4013f4d96dbe7252d494d0908c51eef`,
+  release `33a2d29d572990e98214f0eaa633034e3ca360ce2d1464373130b3d49d1eae51`,
+  SVG test `8008e1a25d6526827246bd6d73e5e909f20110a0322e1b9ac3b60328f5e0d28c`.
+- **Observed full Docker proof:**
+  `/tmp/codexbar-build95-committed-proof/run.log` and `result.txt` report PASS.
+  Docker image ID/digest is
+  `sha256:0666be210e207477f7deb65cf4b93224d481f431e5af997571879efed65059e6`;
+  container ID was
+  `fb6ed011b7b4af6e05de7ee31be596c36d905c82763ce271273000c91fccc2f3` and was
+  removed after the run. Its runtime network mode was `none`; Xvfb and the
+  session D-Bus were private to the container. The runtime image had no Python
+  interpreter, Python library directory, or libpython; the running app had zero
+  libpython, PyO3, and `_rust_core` mappings. The SVG loader was present, and
+  the actual bundled-artwork decode test passed (1 test) from `/tmp` outside
+  the repository.
+- **Installed-prefix behavior:** the real `--no-activate` installer used
+  `/work/prefix with spaces`. Debug install, release install, and debug rollback
+  each verified installed manifest hash, actual D-Bus owner PID, `/proc/PID/exe`
+  path and hash, fixture CLI refresh increase, and Gio quit exit 0. Refresh call
+  counts were 5→9, 14→18, and 23→27. The final installed-prefix run also proved
+  owner PID/executable hash, refresh increase, Settings/About window presence,
+  and Gio quit exit 0. Synthetic settings and seeded history were semantically
+  preserved. No real account data, credentials, OAuth output, screenshots, or
+  host desktop/app launches were used. GTK emitted a missing accessibility-bus
+  warning in the private test container; the SVG test and application probes
+  still passed.
+- **Scope and limits:** this is installed-prefix runtime component evidence.
+  It is not a genuine version upgrade, activation/rendering, systemd service or
+  autostart proof, full settings/login/history behavior coverage, C01/C02
+  acceptance, UG acceptance, or a default-launcher cutover. Python remains the
+  default. The CI job and exact-head CI are pending root publication; no GitHub
+  check or review result is claimed. C03 must retain Python-reference
+  assertions until mapped native coverage exists; do not blanket-delete
+  `test_app.py`. Root owns the separate activation-renderer work.
+- **UG handoff note (peer read-only review, not changed here):** root reserved
+  `UG_GATE.md`. Reconcile the duplicate Display rows for E183 manual navigation
+  and E195's single guarded `hidePersonalInfo` action without counting two
+  control passes. The Spend wait is currently
+  `wait_cost_calls_at_least(..., 4)` (one successful seed plus three failing
+  fallback attempts); four ranges and three heatmap modes remain unverified live
+  actions. These findings do not alter this proof or UG's **NOT PASSED** state.
+- **Next:** root reviews and publishes this focused build-95 change, then
+  observes exact-head CI. Continue UG corrections separately; activation,
+  service/autostart, genuine migration and all remaining C-gate work stay open.
+
+
+#### E198 root publication review — 2026-11-10
+
+- Pin the runtime-proof build job to Ubuntu 24.04, matching its Ubuntu 24.04 runtime image ABI, rather than a moving `ubuntu-latest` image. Resolve Cargo executable paths in standalone assignments before writing GITHUB_ENV, so resolver failure is not masked by a successful `echo`. No app or harness behavior changed in this review.
+- Consolidate the duplicate Display ledger rows: E183 manual navigation and E195 guarded bridge evidence describe the same `hidePersonalInfo` control. Preserve both histories without counting two distinct control passes. Correct the retained-error fixture wait to four total calls (one successful seed plus three failing fallback attempts); range and mode pointer interactions remain separate, open evidence.
+- Current handoff now records the observed, user-authorized additive PR #93 merge at `473a083676dc23152a9b42203a1fae9b527e3721`, exact head `1c033312942b45eaf594b6ec55648406bbaac979`, both checks successful in run `42683841325`. It does not pass UG or C01–CG. Fresh published-head checks remain pending.
+
+- Root verification before publication: the four focused harness tests passed; `py_compile`, both shell syntax checks, YAML parsing, and `git diff --check` passed. The existing native version-metadata regression passed (1 test). These do not replace exact-head remote execution of the new runtime-proof job.
+
+
+### E199 — 2026-11-10: Python-free native installer activation rendering (build 96)
+
+- **Base and observed dependency:** the implementation branch
+  `orchestrated/luna-native-activation-no-python` began clean at
+  `7f006b66fabe2deb359cff84252f1ad65831fc54` and merged fetched `origin/main`
+  `b6437353365b1826b08e2929f78b8309ae623222` with a normal merge commit
+  (`f32455c`); there were no conflicts. PR #96's exact head
+  `943e2f4927840a32c8cfd38e4add80db30d7e876` passed `test`, `tray-dbus`, and
+  `python-free-runtime-proof` in run `42843160132`; no reviews, comments, or
+  inline threads were present. This records the observed dependency only; it
+  does not claim checks for this build-96 implementation.
+- **Scope:** reserve build 96 on this branch for the additive activation
+  renderer change. `VERSION`, `codexbar_gtk/version.py`, README's quoted About
+  string, and the leading CHANGELOG entry are synchronized. The active
+  handoff now identifies this branch/build and keeps UG NOT PASSED and Python
+  as the default. `UG_GATE.md` was not changed.
+- **Code paths:** `scripts/native/render_activation.py` is replaced by
+  `scripts/native/render_activation.sh`; `scripts/install-native.sh` invokes
+  the shell renderer, and `scripts/test-native-activation-renderer.sh` plus
+  case 12 in `scripts/smoke-native-install.sh` cover the renderer and install
+  failure behavior. `.github/workflows/rust-core.yml` tracks the new renderer
+  path. The existing runtime-proof job continues to stage the installer with
+  `--no-activate`; that path does not invoke the renderer.
+- **Behavior:** the Bash renderer independently validates the template,
+  absolute binary path and exactly one expected command key, then uses separate
+  desktop `Exec` and systemd `ExecStart` encodings. Both activation templates
+  are rendered into private temporary files before binary, backup, or manifest
+  mutation. Existing ownership/provenance checks are unchanged. Activation
+  writes only desktop and service files; it does not start or enable a service
+  and does not create an autostart entry.
+- **Prior local verification:** root independently reran renderer tests. The
+  13-case `scripts/smoke-native-install.sh` run in the Python-free runtime
+  container passed at
+  `/tmp/native-activation-pythonless-final-20261110T151026Z-3004231/run.log`.
+  Case 12 tested invalid first and second templates during fresh install and
+  upgrade, verified existing binary/manifest/activation/backups were preserved,
+  and confirmed a retry succeeds. The initial proof attempt stopped because
+  the image lacked `file`; the portable `od`/`ldd` check passed. This limitation
+  is retained; the absent utility is not represented as a full failure of the
+  final proof. No full 13-case rerun was needed for this metadata/docs
+  reconciliation. On the reconciled head, `bash scripts/test-native-activation-renderer.sh`
+  passed; `bash -n` passed for the installer, renderer, renderer tests, both
+  smoke scripts, and the runtime container script. ShellCheck passed on the
+  installer, renderer and renderer-test files. A broader ShellCheck invocation
+  reported existing findings in the smoke/runtime harness files (SC2317,
+  SC2231, SC2002 and SC2034), so no clean broad-harness ShellCheck result is
+  claimed. The native version metadata regression passed (1 test),
+  `tests.test_no_python_harness` passed (4 tests), and `git diff --check`
+  passed. Workflow staging compatibility was checked: its changed-file filter
+  matches the renamed renderer, while the runtime container's installer calls
+  explicitly pass `--no-activate`; the four harness tests passed. The
+  previously observed Python-free 13-case result remains prior local evidence,
+  not a run on this reconciled head.
+- **Limits:** this is additive installer preparation only. It does not prove a
+  genuine version upgrade, C01/C02/CG acceptance, service/autostart behavior,
+  or a default-launcher switch. The Python test/development environment and
+  legacy launcher remain until their gates. No host GUI, native `--version`,
+  shared desktop, real systemd service, autostart, bridge, or VNC change was
+  used.
+- **Next:** root owns publication and exact-head CI. Continue the blocked
+  Settings/UG work separately; do not infer gate acceptance from this renderer
+  or from the earlier `--no-activate` runtime proof.
+
+- Root publication review: renderer behavior checks and the four runtime-proof harness tests independently passed. Add the standalone renderer test script to the workflow path filter so test-only changes also trigger CI. Installer code is unchanged from the previously observed 13-case Python-free smoke; final published-head CI remains pending.

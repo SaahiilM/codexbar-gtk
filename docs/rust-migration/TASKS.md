@@ -10,11 +10,11 @@ history. A checked box means **verified and merged**, not merely implemented.
 | --- | --- |
 | Goal | Fully native Rust GTK4/libadwaita application with verified packaging and legacy runtime removal. |
 | Current phase | BG passed and U01–U08 implementation merged. UG **NOT PASSED**; Python default. |
-| Last observed merge | PR #95 merged normally at `d34840fe4d0ffa7a49f13b128890c1a3f0803a39` (build 93); exact head `db9d01b1237018c1b3de078d2ca094e46205cd6c` passed `test` and `tray-dbus` in run `42681791223`. |
-| Active publication | Draft PR #93, build 94, additive isolated-prefix installer preparation, reconciled with build-93 main. Fresh CI for the reconciled draft is pending; no publication or cutover is claimed. |
-| Installer verification | 13-case isolated local smoke exit 0 on the prior draft implementation. Separate local Docker debug/release no-Python runtime proof is documented in E197 as unpublished, scoped evidence; it is not integrated into this draft. These do not replace fresh draft CI or C-gate acceptance. |
+| Last observed merge | PR #96 merged normally at `b6437353365b1826b08e2929f78b8309ae623222` (build 95). Exact head `943e2f4927840a32c8cfd38e4add80db30d7e876` passed `test`, `tray-dbus`, and `python-free-runtime-proof` in run `42843160132`; no reviews, comments, or inline threads were present. This merge did not accept UG or C gates. |
+| Active implementation | Build 96, branch `orchestrated/luna-native-activation-no-python`, local only; replaces the activation renderer with independently validated Bash and keeps both renders ahead of installer state mutation. No PR or merge is claimed. |
+| Installer/runtime verification | E198 records the merged build-95 installed-prefix/Python-free runtime proof. E199 records prior local 13-case activation smoke evidence in a Python-free container; its first attempt lacked `file`, and the portable `od`/`ldd` check passed. These component results do not pass C02 or authorize cutover. |
 | UI acceptance | E195 records one guarded synthetic Display action; other Wayland controls/navigation remain open. UG is **NOT PASSED** and Python remains the default; see `UG_GATE.md`. |
-| Next | Root owns publication and observes this draft's fresh CI/review. Continue the Wayland action matrix and handle runtime proof separately; C01–CG and default cutover remain open. |
+| Next | Root owns publication and exact-head CI/review. Continue the separate Wayland action matrix; UG remains **NOT PASSED**, Python remains default, and C01–CG/cutover are not accepted. |
 
 
 **First commands for a new model/session:**
@@ -1045,4 +1045,31 @@ run reported only the selected preference change.
 
 **Next:** root publishes this focused commit, observes CI, and handles PR/merge.
 Continue open UG interactions; keep Python default and all cutover gates closed.
-Packaging draft PR #93 is reserved for build 94 and is not part of this change.
+Additive installer PR #93 later merged as build 94; the current build-96
+renderer handoff and build-95 runtime proof are summarized above.
+
+### C02 component-proof handoff — build 96 (E198/E199)
+
+**Status: local Docker proof verified; root publication/exact-head CI pending.**
+The existing `scripts/smoke-native-no-python.sh` and Docker runtime harness now have a
+required-CI mode, exact Cargo JSON artifact discovery, same-commit debug and
+release inputs, the existing native SVG test executable, and an explicit
+nonzero failure for the final installer invocation. Focused tests cover Cargo
+artifact selection/rejection, bad artifact input, and unavailable Docker in
+required mode. The CI job runs all application launches inside the
+network-disabled runtime image with private Xvfb and D-Bus; it does not launch
+the app on the host.
+
+E199 separately removes Python from activation rendering and records isolated
+installer evidence. The Python-free 13-case run covered invalid first and
+second templates on fresh install and upgrade, unchanged binary/manifest/
+activation/backups on failure, and a successful retry. Activation writes only
+desktop/service files; it does not start or enable a service or create
+autostart. This is prior local evidence, not a rerun on the reconciled build-96
+head.
+
+These proofs cover components only. Genuine version upgrade, C02 settings/
+login/history coverage, UG acceptance, and the Python-default cutover remain
+open. Python remains the launcher default. Next exact step: root reviews and
+publishes the local build-96 implementation, then observes exact-head CI before
+deciding any gate status.

@@ -5,6 +5,7 @@ import pathlib
 import subprocess
 import sys
 import tempfile
+import types
 import unittest
 import unittest.mock
 
@@ -37,16 +38,19 @@ class WaylandGuardTests(unittest.TestCase):
         raw = {
             "application": "codexbar-gtk-synthetic-wayland-test", "pid": 4242,
             "requested_label": "Notifications", "expected_roles": ["page tab"],
+            "application_bus_name": "org.example.synthetic",
             "desktop_scale_factors": [1],
             "top_level_windows": [{
                 "name": "CodexBar Settings", "role": "frame", "visible": True,
                 "showing": True, "screen": [364, 149, 1000, 740],
-                "window": [0, 0, 1000, 740],
+                "window": [0, 0, 1000, 740], "bus_name": "org.example.synthetic",
+                "object_path": "/org/example/window",
             }],
             "controls": [{
                 "name": "Notifications", "role": "page tab", "visible": True,
                 "showing": True, "screen": [500, 300, 80, 40],
-                "window": [136, 151, 80, 40],
+                "window": [136, 151, 80, 40], "bus_name": "org.example.synthetic",
+                "object_path": "/org/example/tab",
             }],
         }
         return raw, kwin
@@ -85,8 +89,8 @@ class WaylandGuardTests(unittest.TestCase):
             (lambda raw, kwin: (raw["top_level_windows"][0].update(screen=[0, 0, 1000, 740]),
                                 raw["controls"][0].update(window=[990, 720, 20, 20])), "outside"),
             (lambda raw, kwin: raw["top_level_windows"][0].update(screen=[-1, -1, -1, -1], window=[-1, -1, -1, -1]), "sentinel"),
-            (lambda raw, kwin: raw["controls"].append(dict(raw["controls"][0])), "ambiguous"),
-            (lambda raw, kwin: raw["top_level_windows"].append(dict(raw["top_level_windows"][0])), "multiple frames"),
+            (lambda raw, kwin: raw["controls"].append({**raw["controls"][0], "object_path": "/org/example/tab2"}), "ambiguous"),
+            (lambda raw, kwin: raw["top_level_windows"].append({**raw["top_level_windows"][0], "object_path": "/org/example/window2"}), "multiple frames"),
             (lambda raw, kwin: raw["top_level_windows"][0].update(screen=[10, 10, 1000, 740]), "unverified translation"),
         )
         for mutate, label in mutations:
@@ -96,6 +100,131 @@ class WaylandGuardTests(unittest.TestCase):
                 with self.assertRaises(MODULE.GeometryResolutionError):
                     MODULE.resolve_coordinate_geometry(raw, kwin, 4242,
                                                         "codexbar-gtk-synthetic-wayland-test")
+
+    def test_atspi_identity_collapses_only_same_bus_and_path(self):
+        raw, kwin = self.geometry_fixture()
+        raw["controls"].append(dict(raw["controls"][0]))
+        result = MODULE.resolve_coordinate_geometry(raw, kwin, 4242,
+                                                    "codexbar-gtk-synthetic-wayland-test")
+        self.assertEqual(result["calculated_point"], [540, 320])
+        raw["controls"].append({**raw["controls"][0], "bus_name": "org.example.other"})
+        with self.assertRaises(MODULE.GeometryResolutionError):
+            MODULE.resolve_coordinate_geometry(raw, kwin, 4242,
+                                               "codexbar-gtk-synthetic-wayland-test")
+
+    def test_distinct_overlapping_checkboxes_remain_ambiguous(self):
+        raw, kwin = self.geometry_fixture()
+        raw["expected_roles"] = ["check box"]
+        raw["requested_label"] = "Notifications"
+        raw["controls"] = [{**raw["controls"][0], "role": "check box"},
+                            {**raw["controls"][0], "role": "check box",
+                             "object_path": "/org/example/checkbox2"}]
+        with self.assertRaises(MODULE.GeometryResolutionError):
+            MODULE.resolve_coordinate_geometry(raw, kwin, 4242,
+                                               "codexbar-gtk-synthetic-wayland-test")
+
+    def test_atspi_identity_rejects_missing_invalid_or_wrong_application(self):
+        raw0, kwin0 = self.geometry_fixture()
+        for field, value in (("object_path", None), ("object_path", "relative/path"),
+                             ("bus_name", "org.example.other")):
+            raw, kwin = json.loads(json.dumps(raw0)), json.loads(json.dumps(kwin0))
+            raw["controls"][0][field] = value
+            with self.subTest(field=field, value=value), self.assertRaises(MODULE.GeometryResolutionError):
+                MODULE.resolve_coordinate_geometry(raw, kwin, 4242,
+                                                   "codexbar-gtk-synthetic-wayland-test")
+
+    def test_atspi_same_identity_with_contradictory_record_is_rejected(self):
+        raw, kwin = self.geometry_fixture()
+        raw["controls"].append({**raw["controls"][0], "window": [137, 151, 80, 40]})
+        with self.assertRaises(MODULE.GeometryResolutionError):
+            MODULE.resolve_coordinate_geometry(raw, kwin, 4242,
+                                               "codexbar-gtk-synthetic-wayland-test")
+
+    def test_generated_probe_terminates_cycle_and_collapses_repeated_remote_reference(self):
+        raw, kwin = self.geometry_fixture()
+
+        class App:
+            bus_name = "org.example.synthetic"
+            path = "/org/example/app"
+            def __init__(self): self.children = []
+            def get_name(self): return "codexbar-gtk-synthetic-wayland-test"
+            def get_process_id(self): return 4242
+            def get_role_name(self): return "application"
+            def get_state_set(self): return State()
+            def get_component_iface(self): return None
+            def get_child_count(self): return len(self.children)
+            def get_child_at_index(self, index): return self.children[index]
+
+        class State:
+            def contains(self, _state): return True
+
+        class Component:
+            def __init__(self, values): self.values = values
+            def get_extents(self, coord):
+                return types.SimpleNamespace(x=self.values[coord][0], y=self.values[coord][1],
+                                             width=self.values[coord][2], height=self.values[coord][3])
+
+        class Node:
+            def __init__(self, name, role, path, values=None):
+                self.app, self.path = app, path
+                self.name, self.role, self.children = name, role, []
+                self.component = Component(values or {})
+            def get_name(self): return self.name
+            def get_role_name(self): return self.role
+            def get_state_set(self): return State()
+            def get_component_iface(self): return self.component
+            def get_child_count(self): return len(self.children)
+            def get_child_at_index(self, index): return self.children[index]
+
+        app = App()
+        screen, window = "SCREEN", "WINDOW"
+        frame = Node("CodexBar Settings", "frame", "/org/example/window",
+                     {screen: [364, 149, 1000, 740], window: [0, 0, 1000, 740]})
+        target = Node("Notifications", "page tab", "/org/example/tab",
+                      {screen: [500, 300, 80, 40], window: [136, 151, 80, 40]})
+        frame.children = [target, target]
+        target.children = [frame]
+        app.children = [frame]
+        desktop = types.SimpleNamespace(get_child_count=lambda: 1,
+                                       get_child_at_index=lambda _index: app)
+        atspi = types.SimpleNamespace(init=lambda: None, get_desktop=lambda _index: desktop,
+            CoordType=types.SimpleNamespace(SCREEN=screen, WINDOW=window),
+            StateType=types.SimpleNamespace(VISIBLE=1, SHOWING=2))
+        monitor_model = types.SimpleNamespace(get_n_items=lambda: 1,
+            get_item=lambda _index: types.SimpleNamespace(get_scale_factor=lambda: 1))
+        gdk = types.SimpleNamespace(Display=types.SimpleNamespace(get_default=lambda:
+            types.SimpleNamespace(get_monitors=lambda: monitor_model)))
+        gtk = types.SimpleNamespace(init=lambda: None)
+
+        def fake_runner(command, **_kwargs):
+            repository = types.ModuleType("gi.repository")
+            repository.Atspi, repository.Gdk, repository.Gtk = atspi, gdk, gtk
+            gi = types.ModuleType("gi")
+            gi.require_version = lambda *_args: None
+            gi.repository = repository
+            with unittest.mock.patch.dict(sys.modules, {"gi": gi, "gi.repository": repository}):
+                old_argv, capture = sys.argv, __import__("io").StringIO()
+                try:
+                    sys.argv = ["-c", *command[3:]]
+                    with unittest.mock.patch("sys.stdout", capture):
+                        exec(compile(command[2], "<generated-atspi-probe>", "exec"), {})
+                finally:
+                    sys.argv = old_argv
+            return subprocess.CompletedProcess(command, 0, capture.getvalue(), "")
+
+        result = MODULE.resolve_atspi_geometry(
+            "codexbar-gtk-synthetic-wayland-test", 4242, "Notifications", kwin,
+            runner=fake_runner, expected_roles=("page tab",))
+        self.assertEqual(result["calculated_point"], [540, 320])
+
+        foreign_bus_alias = Node("Notifications", "page tab", "/org/example/tab",
+                                 {screen: [500, 300, 80, 40], window: [136, 151, 80, 40]})
+        foreign_bus_alias.app = types.SimpleNamespace(bus_name="org.example.other")
+        frame.children.append(foreign_bus_alias)
+        with self.assertRaises(MODULE.GeometryResolutionError):
+            MODULE.resolve_atspi_geometry(
+                "codexbar-gtk-synthetic-wayland-test", 4242, "Notifications", kwin,
+                runner=fake_runner, expected_roles=("page tab",))
 
     def test_accepts_fresh_stable_target(self):
         self.assertTrue(MODULE.guard_target(self.snapshot(), 4242, 810, 315, now=100.2))
@@ -246,6 +375,7 @@ class WaylandGuardTests(unittest.TestCase):
         kwin = self.geometry_fixture()[1]
         raw = {
             "application": "synthetic-app", "pid": 4242,
+            "application_bus_name": "org.example.synthetic",
             "requested_label": "Refresh when the panel opens",
             "expected_roles": list(MODULE.AT_SPI_TOGGLE_ROLES),
             "desktop_scale_factors": [1],
@@ -253,6 +383,7 @@ class WaylandGuardTests(unittest.TestCase):
                 "name": "CodexBar Settings", "role": "frame", "visible": True,
                 "showing": True, "screen": [0, 0, 1000, 740],
                 "window": [0, 0, 1000, 740],
+                "bus_name": "org.example.synthetic", "object_path": "/org/example/window",
             }],
             # This mirrors the measured GTK export: one checkbox, its list row,
             # and the text label all have the same accessible name.
@@ -260,15 +391,18 @@ class WaylandGuardTests(unittest.TestCase):
                 {"name": "Refresh when the panel opens", "role": "check box",
                  "visible": True, "showing": True,
                  "labelled_by": "Refresh when the panel opens",
-                 "screen": [0, 0, 46, 26], "window": [731, 306, 46, 26]},
+                 "screen": [0, 0, 46, 26], "window": [731, 306, 46, 26],
+                 "bus_name": "org.example.synthetic", "object_path": "/org/example/checkbox"},
                 {"name": "Refresh when the panel opens", "role": "list item",
                  "visible": True, "showing": True,
                  "labelled_by": "Refresh when the panel opens",
                  "described_by": "Refreshes provider data when the panel opens",
-                 "screen": [0, 0, 576, 58], "window": [214, 289, 576, 58]},
+                 "screen": [0, 0, 576, 58], "window": [214, 289, 576, 58],
+                 "bus_name": "org.example.synthetic", "object_path": "/org/example/list_row"},
                 {"name": "Refresh when the panel opens", "role": "label",
                  "visible": True, "showing": True,
-                 "screen": [0, 0, 496, 21], "window": [226, 295, 496, 21]},
+                 "screen": [0, 0, 496, 21], "window": [226, 295, 496, 21],
+                 "bus_name": "org.example.synthetic", "object_path": "/org/example/label"},
             ],
         }
         result = unittest.mock.Mock(returncode=0, stdout=json.dumps(raw))
@@ -291,7 +425,7 @@ class WaylandGuardTests(unittest.TestCase):
         hidden_checkbox["controls"][0]["showing"] = False
         rejected.append((hidden_checkbox, kwin))
         duplicate_checkbox = json.loads(json.dumps(raw))
-        duplicate_checkbox["controls"].append(json.loads(json.dumps(raw["controls"][0])))
+        duplicate_checkbox["controls"].append({**raw["controls"][0], "object_path": "/org/example/checkbox2"})
         rejected.append((duplicate_checkbox, kwin))
         wrong_pid = json.loads(json.dumps(raw))
         wrong_pid["pid"] = 77

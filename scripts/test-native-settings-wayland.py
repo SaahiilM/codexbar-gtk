@@ -40,6 +40,42 @@ BRIDGE_DEFAULT_COMMAND = "linux-agent-access"
 # GTK/platform variants that expose that role directly.
 AT_SPI_TOGGLE_ROLES = ("check box", "switch")
 AT_SPI_TARGET_ROLES = ("page tab", "button", *AT_SPI_TOGGLE_ROLES)
+
+
+def _valid_atspi_identity(bus_name, object_path):
+    """Accept only a D-Bus unique/well-known name and an absolute object path."""
+    if not isinstance(bus_name, str) or not isinstance(object_path, str):
+        return False
+    components = bus_name[1:].split(".") if bus_name.startswith(":") else bus_name.split(".")
+    component_ok = all(component and
+                       re.fullmatch(r"[A-Za-z0-9_-]+", component) is not None and
+                       (bus_name.startswith(":") or
+                        re.match(r"[A-Za-z_-]", component) is not None)
+                       for component in components)
+    bus_ok = (len(bus_name) <= 255 and component_ok and
+              (bus_name.startswith(":") or len(components) >= 2))
+    path_parts = object_path.split("/")[1:] if isinstance(object_path, str) else []
+    path_ok = (isinstance(object_path, str) and len(object_path) <= 1024 and
+               object_path.startswith("/") and
+               (object_path == "/" or all(part and part.isascii() and
+                                            re.fullmatch(r"[A-Za-z0-9_]+", part)
+                                            for part in path_parts)))
+    return bus_ok and path_ok
+
+
+def _unique_atspi_records(records, expected_bus, description):
+    """Collapse only repeated remote identities; reject invalid/contradictory rows."""
+    unique = {}
+    for record in records:
+        bus, path = record.get("bus_name"), record.get("object_path")
+        if not _valid_atspi_identity(bus, path) or bus != expected_bus:
+            raise GeometryResolutionError(f"AT-SPI {description} has missing, invalid, or wrong-application identity", {})
+        key = (bus, path)
+        previous = unique.get(key)
+        if previous is not None and previous != record:
+            raise GeometryResolutionError(f"AT-SPI {description} has contradictory records for one remote identity", {})
+        unique[key] = record
+    return list(unique.values())
 WAYLAND_SWITCH_ACTIONS = {
     "refresh-when-panel-opens": {
         "preference": "refreshAllProvidersOnMenuOpen",
@@ -495,8 +531,16 @@ def resolve_coordinate_geometry(raw, kwin, expected_pid, expected_application,
         reject("KWin does not show one focused exact-PID/title Settings window")
     frame_rows = raw.get("top_level_windows")
     controls = raw.get("controls")
-    if (not isinstance(frame_rows, list) or len(frame_rows) != 1 or
-            not isinstance(frame_rows[0], dict)):
+    if not isinstance(frame_rows, list) or any(not isinstance(item, dict) for item in frame_rows):
+        reject("AT-SPI target has missing or malformed top-level windows")
+    app_bus = raw.get("application_bus_name")
+    if not _valid_atspi_identity(app_bus, "/"):
+        reject("AT-SPI application has missing or invalid D-Bus identity")
+    try:
+        frame_rows = _unique_atspi_records(frame_rows, app_bus, "frame")
+    except GeometryResolutionError as error:
+        reject(str(error))
+    if len(frame_rows) != 1:
         reject("AT-SPI target has missing or multiple top-level windows")
     if not isinstance(controls, list) or any(not isinstance(item, dict) for item in controls):
         reject("AT-SPI exact label/role is missing or malformed")
@@ -514,9 +558,13 @@ def resolve_coordinate_geometry(raw, kwin, expected_pid, expected_application,
     # Only exact-label, visible nodes with an explicitly allowed role can be
     # pointer targets. In particular, do not fall back to row clicks or a first
     # matching name when GTK exports a compound row.
-    candidates = [item for item in controls
-                  if item.get("name") == requested_label
-                  and item.get("role") in expected_roles
+    named_controls = [item for item in controls if item.get("name") == requested_label]
+    try:
+        named_controls = _unique_atspi_records(named_controls, app_bus, "named control")
+    except GeometryResolutionError as error:
+        reject(str(error))
+    candidates = [item for item in named_controls
+                  if item.get("role") in expected_roles
                   and item.get("visible") is True
                   and item.get("showing") is True]
     if len(candidates) != 1:
@@ -582,24 +630,35 @@ def states(node):
   st=node.get_state_set()
   return {"visible":bool(st.contains(Atspi.StateType.VISIBLE)),"showing":bool(st.contains(Atspi.StateType.SHOWING))}
  except Exception: return {"visible":False,"showing":False}
+def identity(node):
+ try:
+  owner=node.app
+  bus=str(owner.bus_name) if owner is not None else None
+  path=str(node.path) if node.path is not None else None
+  return {"bus_name":bus,"object_path":path}
+ except Exception: return {"bus_name":None,"object_path":None}
 for i in range(min(d.get_child_count(),100)):
  app=d.get_child_at_index(i)
  try:
   if app.get_name()!=want_name or int(app.get_process_id())!=want_pid: continue
-  app_match={"application":app.get_name(),"pid":int(app.get_process_id())}; q=[app]; seen=0
+  app_bus=str(app.bus_name)
+  app_match={"application":app.get_name(),"pid":int(app.get_process_id()),"application_bus_name":app_bus}; q=[app]; seen=0; visited=set()
   while q and seen<3000:
    n=q.pop(0); seen+=1
    try:
+    ident=identity(n); key=(ident["bus_name"],ident["object_path"])
+    if ident["bus_name"] and ident["object_path"] and key in visited: continue
+    if ident["bus_name"] and ident["object_path"]: visited.add(key)
     name=n.get_name()
     role=n.get_role_name()
     st=states(n)
     if role in ("frame","window","dialog"):
-     frames.append({"name":name,"role":role,**st,"screen":rect(n,"screen"),"window":rect(n,"window")})
+     frames.append({"name":name,"role":role,**st,**ident,"screen":rect(n,"screen"),"window":rect(n,"window")})
     # Return every exact-name node: the parent resolver filters by the narrow
     # role allowlist and visibility, so compound rows and labels cannot create
     # false ambiguity or become click targets.
     if name==want_label:
-     controls.append({"name":name,"role":role,**st,"screen":rect(n,"screen"),"window":rect(n,"window")})
+     controls.append({"name":name,"role":role,**st,**ident,"screen":rect(n,"screen"),"window":rect(n,"window")})
     count=min(n.get_child_count(),200)
     q.extend(n.get_child_at_index(j) for j in range(count))
    except Exception: pass

@@ -12,7 +12,7 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Current phase | BG passed and U01–U08 implementation merged. UG **NOT PASSED**; Python default. |
 | Last observed merge | PR #95 merged normally at `d34840fe4d0ffa7a49f13b128890c1a3f0803a39` (build 93); exact head `db9d01b1237018c1b3de078d2ca094e46205cd6c` passed `test` and `tray-dbus` in run `42681791223`. PR #93's build-94 installer is part of current main per root's observed merge record. |
 | Active implementation | Build 95, branch `t3/native-no-python-harness`, local only; preserves the installed-prefix/no-Python prototype and adds Cargo JSON artifact discovery, focused fail-closed tests, and a required runtime-proof workflow job. No PR or merge is claimed. |
-| Installer/runtime verification | E197's local Docker debug/release/rollback evidence remains scoped prototype evidence. The installed-prefix lifecycle is now wired to exact-commit CI; fresh CI is pending. Neither result alone passes C02 or authorizes cutover. |
+| Installer/runtime verification | E198 records a fresh clean-target build and Docker debug/release/rollback proof for commit `7babb4f67f3f856f2b69713a20956199869cb00a`. The workflow is wired to repeat it on the exact PR head; CI is pending. This component result does not pass C02 or authorize cutover. |
 | UI acceptance | E195 records one guarded synthetic Display action; other Wayland controls/navigation remain open. UG is **NOT PASSED** and Python remains the default; see `UG_GATE.md`. |
 | Next | Root owns publication and exact-head CI/review. Continue the separate Wayland action matrix; UG remains **NOT PASSED**, Python remains default, and C01–CG/cutover are not accepted. |
 
@@ -1049,8 +1049,8 @@ Packaging draft PR #93 is reserved for build 94 and is not part of this change.
 
 ### C02 component-proof handoff — build 95 (E198)
 
-**Status: active, local commit only; root owns publication.** The existing
-`scripts/smoke-native-no-python.sh` and Docker runtime harness now have a
+**Status: local Docker proof verified; root publication/exact-head CI pending.**
+The existing `scripts/smoke-native-no-python.sh` and Docker runtime harness now have a
 required-CI mode, exact Cargo JSON artifact discovery, same-commit debug and
 release inputs, the existing native SVG test executable, and an explicit
 nonzero failure for the final installer invocation. Focused tests cover Cargo

@@ -1,6 +1,9 @@
 import importlib.util
 import json
+import os
 import pathlib
+import subprocess
+import sys
 import tempfile
 import unittest
 import unittest.mock
@@ -38,6 +41,81 @@ class WaylandGuardTests(unittest.TestCase):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 MODULE.parse_action_batch(value, MODULE.WAYLAND_SWITCH_ACTIONS)
 
+    def test_batch_cli_rejects_unsupported_routes_before_environment_or_input(self):
+        action = "session-quota-notifications"
+        cases = (
+            (["--actions", action, "--portal"], "cannot be combined"),
+            (["--actions", action, "--bridge", "--inspect-only"], "cannot be combined"),
+            (["--actions", action, "--bridge", "--move-only"], "cannot be combined"),
+            (["--actions", action], "requires explicit --bridge"),
+            (["--actions", "unknown", "--portal"], "unknown action"),
+            (["--actions", f"{action},{action}", "--portal"], "must be unique"),
+        )
+        for extra, expected in cases:
+            with self.subTest(extra=extra):
+                result = subprocess.run(
+                    [sys.executable, str(SCRIPT), "--binary", "/does/not/exist", *extra],
+                    capture_output=True, text=True, timeout=8,
+                )
+                self.assertEqual(result.returncode, 2)
+                self.assertIn(expected, result.stderr)
+                self.assertNotIn("--binary must name", result.stderr)
+
+    def test_synthetic_generated_cli_hooks_and_provider_readout(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            cli = root / "codexbar"
+            hooks_state = root / "hooks-enabled"
+            provider_state = root / "provider-enabled"
+            calls = root / "calls.log"
+            cli.write_text(MODULE.synthetic_cli_source(True, True))
+            cli.chmod(0o700)
+            env = dict(os.environ, HOME=str(root / "home"), FIXTURE_HOOKS_ENABLED=str(hooks_state),
+                       FIXTURE_PROVIDER_ENABLED=str(provider_state), FIXTURE_CLI_CALLS=str(calls))
+            (root / "home").mkdir()
+
+            for state in ("true", "false"):
+                hooks_state.write_text(state)
+                result = subprocess.run([str(cli), "hooks", "list"], env=env,
+                                        capture_output=True, text=True, timeout=3)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(json.loads(result.stdout), {"enabled": state == "true", "events": []})
+                self.assertFalse(result.stderr)
+
+            for command, expected in (("disable", "false"), ("enable", "true")):
+                result = subprocess.run([str(cli), "hooks", command], env=env,
+                                        capture_output=True, text=True, timeout=3)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(json.loads(result.stdout), {"ok": True})
+                self.assertEqual(hooks_state.read_text(), expected)
+            self.assertEqual(calls.read_text().splitlines(), ["hooks disable", "hooks enable"])
+
+            provider_state.write_text("true")
+            result = subprocess.run([str(cli), "config", "providers"], env=env,
+                                    capture_output=True, text=True, timeout=3)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout.splitlines(), [
+                "codex: enabled (Codex)", "claude: disabled (Claude)",
+            ])
+            self.assertEqual(calls.read_text().splitlines(), [
+                "hooks disable", "hooks enable", "config providers",
+            ])
+
+    def test_batch_preference_comparison_requires_full_native_default_map(self):
+        action = "session-quota-notifications"
+        expected = MODULE.batch_expected_preferences([action])
+        self.assertEqual(expected["sessionQuotaNotificationsEnabled"], False)
+        expected["sessionQuotaNotificationsEnabled"] = True
+        self.assertTrue(MODULE.preferences_equal(expected, dict(expected)))
+        invalid_maps = (
+            {**expected, "unknownAddedKey": False},
+            {**expected, "showTray": False},
+            {key: value for key, value in expected.items() if key != "debugMenuEnabled"},
+        )
+        for observed in invalid_maps:
+            with self.subTest(observed=observed):
+                self.assertFalse(MODULE.preferences_equal(expected, observed))
+
     def test_batch_phase_plan_groups_only_adjacent_actions_on_same_page(self):
         actions = ["session-quota-notifications", "quota-warning-notifications",
                    "show-tray-icon", "disable-global-hooks", "predictive-pace-notifications"]
@@ -47,6 +125,15 @@ class WaylandGuardTests(unittest.TestCase):
             {"page": "Hooks", "actions": actions[3:4]},
             {"page": "Notifications", "actions": actions[4:]},
         ])
+
+    def test_six_control_batch_counts_page_tabs_as_separate_input(self):
+        actions = ["session-quota-notifications", "quota-warning-notifications",
+                   "limit-reset-notifications", "predictive-pace-notifications",
+                   "show-tray-icon", "disable-global-hooks"]
+        phases = MODULE.batch_page_phases(actions)
+        navigation_clicks = len(phases)
+        self.assertEqual(navigation_clicks, 3)
+        self.assertEqual(len(actions) + navigation_clicks, 9)
 
     def test_batch_hooks_maps_to_existing_global_cli_switch(self):
         hooks = MODULE.WAYLAND_SWITCH_ACTIONS["disable-global-hooks"]
@@ -64,13 +151,15 @@ class WaylandGuardTests(unittest.TestCase):
             return result
 
         bounds = MODULE.resolve_atspi_bounds("synthetic-app", 4242, "Pace warnings",
-                                             runner=runner)
+                                             runner=runner, expected_roles=("switch",))
         self.assertEqual(bounds, [850, 300, 28, 28])
         argv, kwargs = calls[0]
-        self.assertEqual(argv[-4:], ["4242", "synthetic-app", "Pace warnings", "[]"])
+        self.assertEqual(argv[-4:], ["4242", "synthetic-app", "Pace warnings", '["switch"]'])
         self.assertEqual(kwargs["timeout"], 8)
         self.assertIn("int(app.get_process_id())!=want_pid", argv[2])
         self.assertIn("app.get_name()!=want_name", argv[2])
+        self.assertIn("candidate_role not in roles", argv[2])
+        self.assertEqual(json.loads(argv[-1]), ["switch"])
         self.assertNotIn("do_action", argv[2].lower())
 
     def test_batch_control_probe_rejects_missing_ambiguous_invalid_and_failed(self):
@@ -103,6 +192,7 @@ class WaylandGuardTests(unittest.TestCase):
         self.assertEqual(set(evidence), {
             "action", "target_pid", "control", "control_bounds", "target_geometry",
             "input_method", "sample_seq", "sample_age_seconds", "sample_received_monotonic",
+            "input_requested_monotonic", "input_outcome", "input_return_metadata",
             "action_state_before", "action_state_after",
         })
         self.assertFalse(any("password" in key.lower() or "secret" in key.lower()
@@ -116,6 +206,15 @@ class WaylandGuardTests(unittest.TestCase):
                     "predictive-pace-notifications", {**state, **changes}, 4242,
                     "Pace warnings", [850, 300, 28, 28], False, True,
                 )
+
+    def test_batch_preclick_guard_checks_unrounded_age(self):
+        for age in (0.1496, 0.3504):
+            state = self.snapshot(sample_seq=1, received=100.0,
+                                  pre_click_age_seconds=age,
+                                  target_geometry=[364, 149, 1000, 740], cursor=[864, 314])
+            with self.subTest(age=age), self.assertRaises(ValueError):
+                MODULE.safe_action_evidence("predictive-pace-notifications", state, 4242,
+                                            "Pace warnings", [850, 300, 28, 28], False, True)
 
     def test_read_only_baseline_requires_exact_active_target_but_not_pointer_hit(self):
         state = self.snapshot(top_hit=False, cursor=[1727, 2])
@@ -200,10 +299,13 @@ class WaylandGuardTests(unittest.TestCase):
         # More than the 350 ms age limit elapsed in move(); only the timer
         # report received at 100.72 can make the exact-target guard pass.
         with unittest.mock.patch.object(
-                MODULE.time, "monotonic", side_effect=[100.80, 100.80, 100.91, 100.93]):
-            MODULE.guarded_click_bridge(SlowBridge(), 4242, lambda: dict(state), 810, 315)
+                MODULE.time, "monotonic", side_effect=[100.80, 100.80, 100.91, 100.93, 100.94]):
+            clicked = MODULE.guarded_click_bridge(SlowBridge(), 4242, lambda: dict(state), 810, 315)
         self.assertEqual(calls, [("move", 810, 315), ("click", 810, 315)])
         self.assertEqual(state["sample_seq"], 3)
+        self.assertEqual(clicked["input_requested_monotonic"], 100.94)
+        self.assertEqual(clicked["input_outcome"], "returned")
+        self.assertEqual(clicked["input_return_metadata"], {})
 
     def test_no_heartbeat_after_delayed_move_never_clicks(self):
         calls = []

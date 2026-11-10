@@ -14,6 +14,7 @@ import inspect
 import json
 import os
 import pathlib
+import re
 import shutil
 import select
 import signal
@@ -283,6 +284,104 @@ def parse_action_batch(spec, allowed_actions, maximum=8):
     return actions
 
 
+def rust_default_preferences():
+    """Read the Rust store's JSON-compatible default map without duplicating it."""
+    source = pathlib.Path(__file__).resolve().parents[1] / "rust-core/src/preferences.rs"
+    text = source.read_text()
+    defaults_at = text.find("pub fn default_values() -> Map<String, Value>")
+    macro_at = text.find("json!({", defaults_at)
+    if defaults_at < 0 or macro_at < 0:
+        raise RuntimeError("could not locate native Preferences defaults")
+    start = macro_at + len("json!(")
+    depth = 0
+    in_string = False
+    escaped = False
+    end = None
+    for index in range(start, len(text)):
+        char = text[index]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+        elif char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                end = index + 1
+                break
+    if end is None:
+        raise RuntimeError("native Preferences defaults have unbalanced braces")
+    body = text[start:end]
+    body = re.sub(r"(?m)(^|[{,]\s*)([A-Za-z_][A-Za-z0-9_]*)\s*:",
+                  lambda match: f'{match.group(1)}"{match.group(2)}":', body)
+    body = re.sub(r",\s*}", "}", body)
+    try:
+        values = json.loads(body)
+    except json.JSONDecodeError as error:
+        raise RuntimeError("native Preferences defaults are no longer JSON-compatible") from error
+    if not isinstance(values, dict):
+        raise RuntimeError("native Preferences defaults are not an object")
+    return values
+
+
+def synthetic_cli_source(include_hooks, include_provider=False):
+    """Generate the bounded fake CLI used by the synthetic Hooks fixture."""
+    if not include_hooks and not include_provider:
+        return "#!/bin/sh\ncase \"${1-}\" in --version) printf '%s\\n' 'CodexBar synthetic fixture 0.82.0';; *) printf '%s\\n' '[]';; esac\n"
+    return '''#!/bin/sh
+set -eu
+case "${1-}/${2-}" in
+  --version/*) printf '%s\\n' 'CodexBar synthetic fixture 0.82.0' ;;
+  hooks/list)
+    printf '{"enabled":%s,"events":[]}\\n' "$(cat "$FIXTURE_HOOKS_ENABLED")"
+    ;;
+  hooks/enable|hooks/disable)
+    printf '%s\\n' "$*" >> "$FIXTURE_CLI_CALLS"
+    if [ "${2-}" = "enable" ]; then printf 'true' > "$FIXTURE_HOOKS_ENABLED"; else printf 'false' > "$FIXTURE_HOOKS_ENABLED"; fi
+    printf '%s\\n' '{"ok":true}'
+    ;;
+  config/providers)
+    printf '%s\\n' "$*" >> "$FIXTURE_CLI_CALLS"
+    if [ "$(cat "$FIXTURE_PROVIDER_ENABLED")" = "true" ]; then
+      printf '%s\\n' 'codex: enabled (Codex)' 'claude: disabled (Claude)'
+    else
+      printf '%s\\n' 'codex: disabled (Codex)' 'claude: disabled (Claude)'
+    fi
+    ;;
+  config/enable|config/disable)
+    printf '%s\\n' "$*" >> "$FIXTURE_CLI_CALLS"
+    if [ "${4-}" = "codex" ]; then
+      printf '%s\\n' "$2" | sed 's/^enable$/true/;s/^disable$/false/' > "$FIXTURE_PROVIDER_ENABLED"
+    fi
+    printf '%s\\n' '{"ok":true}'
+    ;;
+  *) printf '%s\\n' '[]' ;;
+esac
+'''
+
+
+def batch_expected_preferences(action_ids):
+    """Rust defaults with just the selected batch switches seeded false."""
+    expected = rust_default_preferences()
+    for action_id in action_ids:
+        key = WAYLAND_SWITCH_ACTIONS[action_id].get("preference")
+        if key is not None:
+            expected[key] = False
+    return expected
+
+
+def preferences_equal(expected, actual):
+    """Require complete native preference-map equality, including key set."""
+    return isinstance(actual, dict) and actual == expected
+
+
 def batch_page_phases(action_ids, action_map=WAYLAND_SWITCH_ACTIONS):
     """Preserve user-specified order while marking only actual page changes."""
     phases = []
@@ -326,6 +425,9 @@ def safe_action_evidence(action_id, state, target_pid, control, bounds, before, 
         "sample_seq": int(state["sample_seq"]),
         "sample_age_seconds": round(recorded_age, 3),
         "sample_received_monotonic": round(float(state["received"]), 6),
+        "input_requested_monotonic": state.get("input_requested_monotonic"),
+        "input_outcome": state.get("input_outcome"),
+        "input_return_metadata": state.get("input_return_metadata", {}),
         "action_state_before": before,
         "action_state_after": after,
     }
@@ -354,11 +456,23 @@ for i in range(min(d.get_child_count(),100)):
    try:
     name=n.get_name()
     role=n.get_role_name()
-    if name==want_label and (not roles or role in roles):
-     comp=n.get_component_iface()
-     ext=comp.get_extents(Atspi.CoordType.SCREEN) if comp else None
-     st=n.get_state_set(); visible=st.contains(Atspi.StateType.VISIBLE) and st.contains(Atspi.StateType.SHOWING)
-     if ext and visible: found.append([int(ext.x),int(ext.y),int(ext.width),int(ext.height)])
+    if name==want_label:
+     candidates=[n]
+     descendants=[]
+     children=[n.get_child_at_index(j) for j in range(min(n.get_child_count(),50))]
+     while children and len(descendants)<200:
+      child=children.pop(0)
+      descendants.append(child)
+      children.extend(child.get_child_at_index(j) for j in range(min(child.get_child_count(),50)))
+     candidates.extend(descendants)
+     for candidate in candidates:
+      candidate_role=candidate.get_role_name()
+      if roles and candidate_role not in roles: continue
+      if not roles and candidate is not n: continue
+      comp=candidate.get_component_iface()
+      ext=comp.get_extents(Atspi.CoordType.SCREEN) if comp else None
+      st=candidate.get_state_set(); visible=st.contains(Atspi.StateType.VISIBLE) and st.contains(Atspi.StateType.SHOWING)
+      if ext and visible: found.append([int(ext.x),int(ext.y),int(ext.width),int(ext.height)])
     count=min(n.get_child_count(),200)
     q.extend(n.get_child_at_index(j) for j in range(count))
    except Exception: pass
@@ -1178,7 +1292,7 @@ def guarded_click(portal, app_pid, latest, x, y):
     if not guard_target(pre_click_state, app_pid, x, y, now=guard_time):
         raise RuntimeError("final target/focus guard failed; no click sent")
     pre_click_state = dict(pre_click_state)
-    pre_click_state["pre_click_age_seconds"] = round(guard_time - pre_click_state["received"], 3)
+    pre_click_state["pre_click_age_seconds"] = guard_time - pre_click_state["received"]
     portal.click()
     return pre_click_state
 
@@ -1212,8 +1326,12 @@ def guarded_click_bridge(bridge, app_pid, latest, x, y):
     if not guard_target(pre_click_state, app_pid, x, y, now=guard_time):
         raise RuntimeError("final target/focus guard failed; no click sent")
     pre_click_state = dict(pre_click_state)
-    pre_click_state["pre_click_age_seconds"] = round(guard_time - pre_click_state["received"], 3)
-    bridge.click(x, y)
+    pre_click_state["pre_click_age_seconds"] = guard_time - pre_click_state["received"]
+    requested_at = time.monotonic()
+    response = bridge.click(x, y)
+    pre_click_state["input_requested_monotonic"] = requested_at
+    pre_click_state["input_outcome"] = "returned"
+    pre_click_state["input_return_metadata"] = bridge_return_metadata(response)
     return pre_click_state
 
 
@@ -1298,20 +1416,25 @@ def main():
         parser.error("--move-only requires bridge mode and cannot be combined with --portal/--inspect-only")
     if (args.switch_x is None) != (args.switch_y is None):
         parser.error("--switch-x and --switch-y must be supplied together")
-    if args.actions and args.action is not None:
+    batch_requested = args.actions is not None
+    if batch_requested and args.action is not None:
         parser.error("use either --action or --actions, not both")
-    if args.actions:
+    if batch_requested:
         try:
             action_ids = parse_action_batch(args.actions, WAYLAND_SWITCH_ACTIONS)
         except ValueError as error:
             parser.error(str(error))
     else:
         action_ids = [args.action or "refresh-when-panel-opens"]
-    if args.actions and any(
+    if batch_requested and (args.portal or args.move_only or args.inspect_only):
+        parser.error("batch mode requires bridge input and cannot be combined with --portal/--move-only/--inspect-only")
+    if batch_requested and not args.bridge:
+        parser.error("batch mode requires explicit --bridge input")
+    if batch_requested and any(
             WAYLAND_SWITCH_ACTIONS[name].get("kind") in ("manual", "button", "provider_switch")
             for name in action_ids):
         parser.error("batch mode accepts only preference and Hooks switches")
-    if args.actions and (args.switch_x is not None or args.switch_y is not None):
+    if batch_requested and (args.switch_x is not None or args.switch_y is not None):
         parser.error("batch mode uses measured AT-SPI geometry; coordinate overrides are unavailable")
     action = WAYLAND_SWITCH_ACTIONS[action_ids[0]]
     preference_key = action.get("preference")
@@ -1349,7 +1472,7 @@ def main():
     bridge_command = None
     if args.move_only and not use_bridge:
         parser.error("--move-only requires --bridge")
-    if args.actions and not use_bridge:
+    if batch_requested and not use_bridge:
         parser.error("AT-SPI-measured batches require --bridge; portal mode remains single-action")
     if use_bridge:
         try:
@@ -1396,38 +1519,7 @@ def main():
         hooks_enabled.write_text("true" if needs_hooks else "false")
         if is_provider_action or needs_hooks:
             provider_enabled.write_text(provider_enabled_file_text(True))
-            fake_source = '''#!/bin/sh
-set -eu
-case "${1-}/${2-}" in
-  --version/*) printf '%s\\n' 'CodexBar synthetic fixture 0.82.0' ;;
-  hooks/list)
-    printf '{"enabled":%s,"events":[]}\\n' "$(cat "$FIXTURE_HOOKS_ENABLED")"
-    ;;
-  hooks/enable|hooks/disable)
-    printf '%s\\n' "$*" >> "$FIXTURE_CLI_CALLS"
-    if [ "${2-}" = "enable" ]; then printf 'true' > "$FIXTURE_HOOKS_ENABLED"; else printf 'false' > "$FIXTURE_HOOKS_ENABLED"; fi
-    printf '%s\\n' '{"ok":true}'
-    ;;
-  config/providers)
-    printf '%s\\n' "$*" >> "$FIXTURE_CLI_CALLS"
-    if [ "$(cat "$FIXTURE_PROVIDER_ENABLED")" = "true" ]; then
-      printf '%s\\n' 'codex: enabled (Codex)' 'claude: disabled (Claude)'
-    else
-      printf '%s\\n' 'codex: disabled (Codex)' 'claude: disabled (Claude)'
-    fi
-    ;;
-  config/enable|config/disable)
-    printf '%s\\n' "$*" >> "$FIXTURE_CLI_CALLS"
-    if [ "${4-}" = "codex" ]; then
-      printf '%s\\n' "$2" | sed 's/^enable$/true/;s/^disable$/false/' > "$FIXTURE_PROVIDER_ENABLED"
-    fi
-    printf '%s\\n' '{"ok":true}'
-    ;;
-  *) printf '%s\\n' "$*" >> "$FIXTURE_CLI_CALLS"; printf '%s\\n' '[]' ;;
-esac
-'''
-        else:
-            fake_source = "#!/bin/sh\ncase \"${1-}\" in --version) echo 'CodexBar synthetic fixture 0.82.0';; *) echo '[]';; esac\n"
+        fake_source = synthetic_cli_source(needs_hooks, is_provider_action)
         fake = scratch / "codexbar"
         fake.write_text(fake_source)
         fake.chmod(0o700)
@@ -1613,11 +1705,13 @@ esac
             baseline = wait_for_fresh_active_target(latest, app.pid)
         except RuntimeError as error:
             raise RuntimeError(f"{error} after portal consent") from error
-        if args.actions:
+        if batch_requested:
             evidence_dir = pathlib.Path(tempfile.mkdtemp(prefix="codexbar-settings-batch-evidence-"))
             evidence_dir.chmod(0o700)
             results = []
+            navigation = []
             current_page = "General"
+            expected_preferences = batch_expected_preferences(action_ids)
 
             def reactivate_fixture():
                 nonlocal focus_script_loaded
@@ -1664,13 +1758,29 @@ esac
                         nav_x, nav_y = point_from_bounds(tab_bounds)
                         if not target_window_contains(before_nav, nav_x, nav_y):
                             raise RuntimeError("measured page tab is outside exact synthetic window")
-                        guarded_input(app.pid, nav_x, nav_y)
+                        nav_state = guarded_input(app.pid, nav_x, nav_y)
+                        navigation.append({
+                            "from_page": current_page,
+                            "to_page": desired_page,
+                            "target_pid": app.pid,
+                            "input_method": "guarded_pointer_click",
+                            "control_bounds": tab_bounds,
+                            "sample_seq": nav_state.get("sample_seq"),
+                            "sample_age_seconds": round(nav_state.get("pre_click_age_seconds", 0), 3),
+                            "sample_received_monotonic": round(nav_state.get("received", 0), 6),
+                            "input_requested_monotonic": nav_state.get("input_requested_monotonic"),
+                            "input_outcome": nav_state.get("input_outcome"),
+                            "input_return_metadata": nav_state.get("input_return_metadata", {}),
+                        })
                         # A phase transition invalidates all prior bounds. Re-read focus,
                         # then resolve the exact action row on the new visible page.
                         reactivate_fixture()
                         current_page = desired_page
 
-                    control_bounds = resolve_atspi_bounds(bridge_application, app.pid, step["label"])
+                    expected_role = "button" if kind == "button" else "switch"
+                    control_bounds = resolve_atspi_bounds(
+                        bridge_application, app.pid, step["label"], expected_roles=(expected_role,)
+                    )
                     before_state = latest()
                     point_x, point_y = point_from_bounds(control_bounds)
                     if not target_window_contains(before_state, point_x, point_y):
@@ -1687,6 +1797,8 @@ esac
                     deadline = time.monotonic() + 8
                     after_preferences = before_preferences
                     if preference is not None:
+                        expected_unchanged = {key: value for key, value in before_preferences.items()
+                                              if key != preference}
                         while time.monotonic() < deadline:
                             after_preferences = json.loads(preferences.read_text())
                             if after_preferences.get(preference) is True:
@@ -1694,11 +1806,9 @@ esac
                             time.sleep(.05)
                         if after_preferences.get(preference) is not True:
                             raise RuntimeError(f"synthetic preference {preference} did not become true")
-                        expected_unchanged = {key: value for key, value in before_preferences.items()
-                                              if key != preference}
-                        if any(after_preferences.get(key) != value
-                               for key, value in expected_unchanged.items()):
-                            raise RuntimeError("action changed unrelated synthetic preferences")
+                        expected_preferences[preference] = True
+                        if not preferences_equal(expected_preferences, after_preferences):
+                            raise RuntimeError("action changed or omitted native synthetic Preferences values")
                         if step.get("requires_autostart_entry"):
                             autostart = home / ".config" / "autostart" / "codexbar-gtk.desktop"
                             if not autostart.is_file():
@@ -1731,21 +1841,24 @@ esac
                         "image": None,
                     })
                     (evidence_dir / "results.json").write_text(
-                        json.dumps({"actions": results}, indent=2) + "\n"
+                        json.dumps({"navigation": navigation, "actions": results}, indent=2) + "\n"
                     )
                     image_path = capture_fixture(action_id)
                     results[-1]["image"] = image_path.name
                     (evidence_dir / "results.json").write_text(
-                        json.dumps({"actions": results}, indent=2) + "\n"
+                        json.dumps({"navigation": navigation, "actions": results}, indent=2) + "\n"
                     )
                     print(f"PASS: {action_id}; synthetic evidence image {image_path}", flush=True)
                     reactivate_fixture()
-                print(f"PASS: Settings batch complete; bounded synthetic evidence at {evidence_dir}", flush=True)
+                click_total = len(results) + len(navigation)
+                print(f"PASS: Settings batch complete ({len(results)} action clicks, "
+                      f"{len(navigation)} navigation clicks; {click_total} total input calls); "
+                      f"bounded synthetic evidence at {evidence_dir}", flush=True)
                 return 0
             except Exception:
                 # Retain only fixture screenshots and allowlisted action metadata.
                 (evidence_dir / "results.json").write_text(
-                    json.dumps({"actions": results}, indent=2) + "\n"
+                    json.dumps({"navigation": navigation, "actions": results}, indent=2) + "\n"
                 )
                 print(f"Synthetic batch evidence retained at {evidence_dir}", file=sys.stderr, flush=True)
                 raise

@@ -80,17 +80,21 @@ class NativeServiceProofTests(unittest.TestCase):
     def test_stop_reap_kills_and_reaps_signal_ignoring_child_boundedly(self) -> None:
         library = ROOT / "scripts/native/no-python/service-proof-lib.sh"
         started = time.monotonic()
-        result = subprocess.run(
-            [
-                "bash", "-c",
-                'source "$1"; python3 -c "import signal,time; signal.signal(signal.SIGQUIT, signal.SIG_IGN); signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(60)" & child=$!; stop_reap "$child"',
-                "bash", str(library),
-            ],
-            text=True,
-            capture_output=True,
-            check=False,
-            timeout=7,
-        )
+        with tempfile.TemporaryDirectory() as temporary:
+            ready = Path(temporary) / "ready"
+            result = subprocess.run(
+                [
+                    "bash", "-c",
+                    'source "$1"; python3 -c "import signal,time; signal.signal(signal.SIGQUIT, signal.SIG_IGN); signal.signal(signal.SIGTERM, signal.SIG_IGN); print(1, flush=True); time.sleep(60)" > "$2" & child=$!; '
+                    'for _ in $(seq 1 100); do [[ -s "$2" ]] && break; sleep 0.01; done; '
+                    '[[ -s "$2" ]] || { kill -KILL "$child"; wait "$child"; exit 1; }; stop_reap "$child"',
+                    "bash", str(library), str(ready),
+                ],
+                text=True,
+                capture_output=True,
+                check=False,
+                timeout=7,
+            )
         elapsed = time.monotonic() - started
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertLess(elapsed, 6)

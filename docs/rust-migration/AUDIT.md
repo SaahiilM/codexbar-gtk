@@ -6752,3 +6752,10 @@ parity and shell syntax were rerun after the fixture preservation change.
   and no actual service activation, restart-policy, login-manager, desktop-shell
   or Settings autostart test. It does not pass C02, UG or cutover gates. Python
   remains default; Root owns review and publication.
+
+Root E205 publication review added the full command-target lifecycle smoke to
+the Python-free CI job, including a pinned historical source fetch and Cargo
+dependency preparation. Only synthetic logs and source/artifact hashes are
+uploaded. This is a configured check, not an observed CI pass; systemd policy
+and login-manager behavior remain untested. Review also made the signal-ignoring
+child regression wait for explicit handler readiness before cleanup escalation.

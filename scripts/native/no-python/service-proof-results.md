@@ -124,8 +124,10 @@ The focused Rust metadata test
 `cargo test --manifest-path rust-gtk/Cargo.toml --locked --lib
 version_metadata_tracks_the_root_version_file` passed 1/1.
 
-Focused CI was not added: this adds a historical source fetch and clean release
-build plus a second private Docker run to the existing Python-free runtime job.
+At the local handoff, focused CI had not been added. Root subsequently added
+the pinned historical source fetch, dependency preparation, clean release
+builds and private Docker proof to the Python-free runtime job. The new
+exact-head CI result remains pending.
 Reproduce in a Docker-enabled environment with pinned source commit available
 locally using `scripts/smoke-native-service.sh`. No systemd activation, service
 restart policy, login-manager activation, desktop-shell activation, or Settings

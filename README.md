@@ -152,7 +152,7 @@ Build 97 records seven guarded synthetic Wayland Settings actions across
 General, Notifications, Menu Bar and Hooks, with three verified Settings tab
 transitions. Notifications' four preference switches, General's automated
 refresh control, Menu Bar tray visibility and global Hooks disable passed;
-test-notification delivery, three Menu Bar combos, Hooks rule editing, whole-app
+test-notification delivery, three Menu Bar combos, Hooks rules display, whole-app
 parity and keyboard parity remain open. The native binary under test was build
 95; this evidence does not claim a build-97 application binary. UG remains
 **NOT PASSED**, and Python remains the default.

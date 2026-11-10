@@ -1078,13 +1078,13 @@ deciding any gate status.
 
 **Branch:** `orchestrated/luna-ug-settings-batch`.
 **Status: partial; seven scoped Wayland actions and three Settings tab
-transitions passed.** This branch records evidence only; it changes no runtime
-code. The synthetic Wayland run used the build-95 native binary. It verified
+transitions passed.** This branch updates the guarded test runner and records evidence; it changes
+no application runtime code. The synthetic Wayland run used the build-95 native binary. It verified
 General `refreshAllProvidersOnMenuOpen`, all four Notifications preference
 switches, Menu Bar `showTray`, and the global Hooks disable action. The full
 preferences map was checked for each preference action; Hooks used the fixture
 CLI and left preferences unchanged. See E200 and the scoped UG rows. Wayland
-test-notification delivery, three Menu Bar combos, Hooks rule editing, all
+test-notification delivery, three Menu Bar combos, Hooks rules display, all
 other Settings actions, whole-app parity and keyboard parity remain open.
 Python remains default and UG remains **NOT PASSED**.
 

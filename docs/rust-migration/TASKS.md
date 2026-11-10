@@ -10,11 +10,11 @@ history. A checked box means **verified and merged**, not merely implemented.
 | --- | --- |
 | Goal | Fully native Rust GTK4/libadwaita application with verified packaging and legacy runtime removal. |
 | Current phase | BG passed and U01–U08 implementation merged. UG **NOT PASSED**; Python default. |
-| Last observed merge | PR #95 merged normally at `d34840fe4d0ffa7a49f13b128890c1a3f0803a39` (build 93); exact head `db9d01b1237018c1b3de078d2ca094e46205cd6c` passed `test` and `tray-dbus` in run `42681791223`. |
-| Active publication | Draft PR #93, build 94, additive isolated-prefix installer preparation, reconciled with build-93 main. Fresh CI for the reconciled draft is pending; no publication or cutover is claimed. |
-| Installer verification | 13-case isolated local smoke exit 0 on the prior draft implementation. Separate local Docker debug/release no-Python runtime proof is documented in E197 as unpublished, scoped evidence; it is not integrated into this draft. These do not replace fresh draft CI or C-gate acceptance. |
+| Last observed merge | PR #95 merged normally at `d34840fe4d0ffa7a49f13b128890c1a3f0803a39` (build 93); exact head `db9d01b1237018c1b3de078d2ca094e46205cd6c` passed `test` and `tray-dbus` in run `42681791223`. PR #93's build-94 installer is part of current main per root's observed merge record. |
+| Active implementation | Build 95, branch `t3/native-no-python-harness`, local only; preserves the installed-prefix/no-Python prototype and adds Cargo JSON artifact discovery, focused fail-closed tests, and a required runtime-proof workflow job. No PR or merge is claimed. |
+| Installer/runtime verification | E197's local Docker debug/release/rollback evidence remains scoped prototype evidence. The installed-prefix lifecycle is now wired to exact-commit CI; fresh CI is pending. Neither result alone passes C02 or authorizes cutover. |
 | UI acceptance | E195 records one guarded synthetic Display action; other Wayland controls/navigation remain open. UG is **NOT PASSED** and Python remains the default; see `UG_GATE.md`. |
-| Next | Root owns publication and observes this draft's fresh CI/review. Continue the Wayland action matrix and handle runtime proof separately; C01–CG and default cutover remain open. |
+| Next | Root owns publication and exact-head CI/review. Continue the separate Wayland action matrix; UG remains **NOT PASSED**, Python remains default, and C01–CG/cutover are not accepted. |
 
 
 **First commands for a new model/session:**
@@ -1046,3 +1046,22 @@ run reported only the selected preference change.
 **Next:** root publishes this focused commit, observes CI, and handles PR/merge.
 Continue open UG interactions; keep Python default and all cutover gates closed.
 Packaging draft PR #93 is reserved for build 94 and is not part of this change.
+
+### C02 component-proof handoff — build 95 (E198)
+
+**Status: active, local commit only; root owns publication.** The existing
+`scripts/smoke-native-no-python.sh` and Docker runtime harness now have a
+required-CI mode, exact Cargo JSON artifact discovery, same-commit debug and
+release inputs, the existing native SVG test executable, and an explicit
+nonzero failure for the final installer invocation. Focused tests cover Cargo
+artifact selection/rejection, bad artifact input, and unavailable Docker in
+required mode. The CI job runs all application launches inside the
+network-disabled runtime image with private Xvfb and D-Bus; it does not launch
+the app on the host.
+
+This proves only the installed-prefix runtime slice recorded in E198. Genuine
+version upgrade, activation, service/autostart, full C02 settings/login/history
+coverage, UG acceptance, and the Python-default cutover remain open. Root's
+separate native activation-renderer Python-preparation removal is not part of
+this slice. Next exact step: root reviews and publishes this build-95 commit,
+then observes exact-head CI before deciding any gate status.

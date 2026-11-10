@@ -110,3 +110,45 @@ jobs:
       # Keep the comprehensive Settings smoke available for local verification.
       # Its fixed-coordinate native file chooser interaction failed twice in
       # CI at different points; the other native GTK Xvfb smokes remain enabled.
+
+  python-free-runtime-proof:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libgtk-4-dev libadwaita-1-dev librsvg2-common
+      - name: Build same-commit debug and release application artifacts
+        run: |
+          cargo build --manifest-path rust-gtk/Cargo.toml --locked --bin codexbar-gtk-native --message-format=json-render-diagnostics > "$RUNNER_TEMP/native-debug.json"
+          cargo build --manifest-path rust-gtk/Cargo.toml --locked --release --bin codexbar-gtk-native --message-format=json-render-diagnostics > "$RUNNER_TEMP/native-release.json"
+          echo "NATIVE_DEBUG=$(python3 scripts/native/no-python/cargo-artifact.py --json "$RUNNER_TEMP/native-debug.json" --target codexbar-gtk-native)" >> "$GITHUB_ENV"
+          echo "NATIVE_RELEASE=$(python3 scripts/native/no-python/cargo-artifact.py --json "$RUNNER_TEMP/native-release.json" --target codexbar-gtk-native)" >> "$GITHUB_ENV"
+      - name: Build SVG accessibility test executable without running host GUI
+        run: |
+          cargo test --manifest-path rust-gtk/Cargo.toml --locked --test a11y_assets --no-run --message-format=json-render-diagnostics > "$RUNNER_TEMP/a11y-assets.json"
+          echo "SVG_TEST_BINARY=$(python3 scripts/native/no-python/cargo-artifact.py --json "$RUNNER_TEMP/a11y-assets.json" --target a11y_assets)" >> "$GITHUB_ENV"
+      - name: Run installed-prefix and Python-free runtime proof in Docker
+        run: |
+          ./scripts/smoke-native-no-python.sh \
+            --artifact "$NATIVE_DEBUG" \
+            --installer-source "$GITHUB_WORKSPACE" \
+            --debug-artifact "$NATIVE_DEBUG" \
+            --release-artifact "$NATIVE_RELEASE" \
+            --svg-test-binary "$SVG_TEST_BINARY" \
+            --require-docker \
+            --evidence-dir "$RUNNER_TEMP/no-python-evidence"
+      - name: Retain sanitized synthetic proof log and hashes on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-free-runtime-proof-failure
+          if-no-files-found: warn
+          path: |
+            ${{ runner.temp }}/no-python-evidence/run.log
+            ${{ runner.temp }}/no-python-evidence/result.txt
+            ${{ runner.temp }}/no-python-evidence/work/image-id.txt
+            ${{ runner.temp }}/no-python-evidence/work/lifecycle-artifacts.sha256
+            ${{ runner.temp }}/no-python-evidence/work/installer-source.sha256

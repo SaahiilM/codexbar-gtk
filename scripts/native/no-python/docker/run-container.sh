@@ -131,7 +131,13 @@ if [ -f /work/installer/scripts/install-native.sh ]; then
   echo 'EVIDENCE:installer-data-preserved=1'
   RUNTIME_ARTIFACT=/app/codexbar-gtk-native
   if [ -x /artifacts/debug ]; then RUNTIME_ARTIFACT=/artifacts/debug; fi
-  "$INSTALLER" --artifact "$RUNTIME_ARTIFACT" --prefix "$PREFIX" --no-activate
+  if "$INSTALLER" --artifact "$RUNTIME_ARTIFACT" --prefix "$PREFIX" --no-activate; then
+    :
+  else
+    rc=$?
+    echo "FAIL: final runtime installer exited $rc" >&2
+    exit 1
+  fi
   APP_EXEC="$PREFIX/bin/codexbar-gtk-native"
   APP_EXPECTED_SHA=$(sha256sum "$APP_EXEC" | awk '{print $1}')
   grep -qx "binary_sha256=$APP_EXPECTED_SHA" "$PREFIX/share/codexbar-gtk/native-manifest" || { echo 'FAIL: installed runtime manifest hash'; exit 1; }

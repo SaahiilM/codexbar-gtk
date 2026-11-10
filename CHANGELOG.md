@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.82.0 (95) — 2026-11-10
+
+Tracks upstream CodexBar 0.82.0.
+
+### Added
+
+- Add a required CI job that installs the same-commit debug and release
+  artifacts into a spaced prefix and runs their lifecycle in a Python-free,
+  network-disabled runtime image. This component evidence does not pass C02 or
+  change the Python default.
+
+### Validation
+
+- The proof checks D-Bus owner PID, installed and running executable hashes,
+  refresh behavior, normal Gio quit, synthetic settings/history preservation,
+  and SVG decoding outside the repository working directory. Exact-head CI is
+  pending; see AUDIT E198.
+
 ## 0.82.0 (94) — 2026-11-09
 
 Tracks upstream CodexBar 0.82.0.

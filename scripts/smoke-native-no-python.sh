@@ -2,7 +2,8 @@
 # C02 — absent-Python runtime proof (single validated Docker path).
 # PASS requires observed runtime evidence: NameHasOwner + correct PID +
 # exe/hash match + CLI log delta + settings/about windows + quit exit 0.
-# Missing Docker -> SKIP exit 2. Any check failing -> FAIL exit 1.
+# Missing Docker -> SKIP exit 2 for local use; --require-docker makes it FAIL
+# exit 1 for required CI. Any runtime check failing -> FAIL exit 1.
 # Dry-run is never PASS. TERM/KILL is failure cleanup only.
 # Optional --installer-source adds a real --no-activate prefix lifecycle;
 # debug/release artifacts add a distinct build-profile install/rollback proof.
@@ -16,7 +17,7 @@ ARTIFACT="${ARTIFACT:-}"
 TIMEOUT="${TIMEOUT:-30}"
 EVIDENCE_DIR="${SMOKE_EVIDENCE:-}"
 DOCKER_IMAGE="${DOCKER_IMAGE:-codexbar-no-python:smoke}"
-KEEP=0; DRY=0
+KEEP=0; DRY=0; REQUIRE_DOCKER=0
 ORIGINAL_ARGS=("$@")
 INSTALLER_SOURCE=""; DEBUG_ARTIFACT=""; RELEASE_ARTIFACT=""; SVG_TEST_BINARY=""
 while [ $# -gt 0 ]; do
@@ -28,6 +29,7 @@ while [ $# -gt 0 ]; do
     --debug-artifact) DEBUG_ARTIFACT="$2"; shift 2;;
     --release-artifact) RELEASE_ARTIFACT="$2"; shift 2;;
     --svg-test-binary) SVG_TEST_BINARY="$2"; shift 2;;
+    --require-docker) REQUIRE_DOCKER=1; shift;;
     --keep) KEEP=1; shift;;
     --dry-run) DRY=1; shift;;
     -h|--help) sed -n '2,7p' "$0" | sed 's/^# \{0,1\}//'; exit 0;;
@@ -106,12 +108,16 @@ note "expected sha256: $EXPECTED_SHA"
 note "primary artifact sha256: $(sha256sum "$ARTIFACT" | awk '{print $1}')"
 note "harness source sha256: $(sha256sum "$0" | awk '{print $1}')"
 note "container runner source sha256: $(sha256sum "$REPO_ROOT/scripts/native/no-python/docker/run-container.sh" | awk '{print $1}')"
+note "Cargo artifact resolver source sha256: $(sha256sum "$REPO_ROOT/scripts/native/no-python/cargo-artifact.py" | awk '{print $1}')"
 printf -v ORIGINAL_INVOCATION '%q ' "$0" "${ORIGINAL_ARGS[@]}"
 note "invocation: ${ORIGINAL_INVOCATION% }"
 [ -z "$DEBUG_ARTIFACT" ] || note "debug artifact sha256: $(sha256sum "$DEBUG_ARTIFACT" | awk '{print $1}')"
 [ -z "$RELEASE_ARTIFACT" ] || note "release artifact sha256: $(sha256sum "$RELEASE_ARTIFACT" | awk '{print $1}')"
 if [ -n "$DEBUG_ARTIFACT" ]; then sha256sum "$DEBUG_ARTIFACT" "$RELEASE_ARTIFACT" > "$WORK/lifecycle-artifacts.sha256"; fi
 if ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
+  if [ "$REQUIRE_DOCKER" -eq 1 ]; then
+    echo "RESULT: FAIL — required Docker daemon unavailable. C02 NOT passed." | tee "$EVIDENCE_DIR/result.txt"; exit 1
+  fi
   echo "RESULT: SKIP — docker unavailable. C02 NOT passed." | tee "$EVIDENCE_DIR/result.txt"; exit 2
 fi
 if [ $DRY -eq 1 ]; then
@@ -119,6 +125,7 @@ if [ $DRY -eq 1 ]; then
 fi
 note "--- docker build ---"
 DOCKERFILE="$REPO_ROOT/scripts/native/no-python/docker/Dockerfile.runtime"
+note "runtime Dockerfile source sha256: $(sha256sum "$DOCKERFILE" | awk '{print $1}')"
 if ! docker build -t "$DOCKER_IMAGE" -f "$DOCKERFILE" "$REPO_ROOT" >"$WORK/docker-build.log" 2>&1; then
   cat "$WORK/docker-build.log"; echo "RESULT: FAIL — image build failed. C02 NOT passed." | tee "$EVIDENCE_DIR/result.txt"; exit 1
 fi

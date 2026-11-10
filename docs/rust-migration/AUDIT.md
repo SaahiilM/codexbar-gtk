@@ -6172,3 +6172,67 @@ unverified; UG and C gates remain open and Python remains default.
 - Current handoff now records the observed, user-authorized additive PR #93 merge at `473a083676dc23152a9b42203a1fae9b527e3721`, exact head `1c033312942b45eaf594b6ec55648406bbaac979`, both checks successful in run `42683841325`. It does not pass UG or C01–CG. Fresh published-head checks remain pending.
 
 - Root verification before publication: the four focused harness tests passed; `py_compile`, both shell syntax checks, YAML parsing, and `git diff --check` passed. The existing native version-metadata regression passed (1 test). These do not replace exact-head remote execution of the new runtime-proof job.
+
+
+### E199 — 2026-11-10: Python-free native installer activation rendering (build 96)
+
+- **Base and observed dependency:** the implementation branch
+  `orchestrated/luna-native-activation-no-python` began clean at
+  `7f006b66fabe2deb359cff84252f1ad65831fc54` and merged fetched `origin/main`
+  `b6437353365b1826b08e2929f78b8309ae623222` with a normal merge commit
+  (`f32455c`); there were no conflicts. PR #96's exact head
+  `943e2f4927840a32c8cfd38e4add80db30d7e876` passed `test`, `tray-dbus`, and
+  `python-free-runtime-proof` in run `42843160132`; no reviews, comments, or
+  inline threads were present. This records the observed dependency only; it
+  does not claim checks for this build-96 implementation.
+- **Scope:** reserve build 96 on this branch for the additive activation
+  renderer change. `VERSION`, `codexbar_gtk/version.py`, README's quoted About
+  string, and the leading CHANGELOG entry are synchronized. The active
+  handoff now identifies this branch/build and keeps UG NOT PASSED and Python
+  as the default. `UG_GATE.md` was not changed.
+- **Code paths:** `scripts/native/render_activation.py` is replaced by
+  `scripts/native/render_activation.sh`; `scripts/install-native.sh` invokes
+  the shell renderer, and `scripts/test-native-activation-renderer.sh` plus
+  case 12 in `scripts/smoke-native-install.sh` cover the renderer and install
+  failure behavior. `.github/workflows/rust-core.yml` tracks the new renderer
+  path. The existing runtime-proof job continues to stage the installer with
+  `--no-activate`; that path does not invoke the renderer.
+- **Behavior:** the Bash renderer independently validates the template,
+  absolute binary path and exactly one expected command key, then uses separate
+  desktop `Exec` and systemd `ExecStart` encodings. Both activation templates
+  are rendered into private temporary files before binary, backup, or manifest
+  mutation. Existing ownership/provenance checks are unchanged. Activation
+  writes only desktop and service files; it does not start or enable a service
+  and does not create an autostart entry.
+- **Prior local verification:** root independently reran renderer tests. The
+  13-case `scripts/smoke-native-install.sh` run in the Python-free runtime
+  container passed at
+  `/tmp/native-activation-pythonless-final-20261110T151026Z-3004231/run.log`.
+  Case 12 tested invalid first and second templates during fresh install and
+  upgrade, verified existing binary/manifest/activation/backups were preserved,
+  and confirmed a retry succeeds. The initial proof attempt stopped because
+  the image lacked `file`; the portable `od`/`ldd` check passed. This limitation
+  is retained; the absent utility is not represented as a full failure of the
+  final proof. No full 13-case rerun was needed for this metadata/docs
+  reconciliation. On the reconciled head, `bash scripts/test-native-activation-renderer.sh`
+  passed; `bash -n` passed for the installer, renderer, renderer tests, both
+  smoke scripts, and the runtime container script. ShellCheck passed on the
+  installer, renderer and renderer-test files. A broader ShellCheck invocation
+  reported existing findings in the smoke/runtime harness files (SC2317,
+  SC2231, SC2002 and SC2034), so no clean broad-harness ShellCheck result is
+  claimed. The native version metadata regression passed (1 test),
+  `tests.test_no_python_harness` passed (4 tests), and `git diff --check`
+  passed. Workflow staging compatibility was checked: its changed-file filter
+  matches the renamed renderer, while the runtime container's installer calls
+  explicitly pass `--no-activate`; the four harness tests passed. The
+  previously observed Python-free 13-case result remains prior local evidence,
+  not a run on this reconciled head.
+- **Limits:** this is additive installer preparation only. It does not prove a
+  genuine version upgrade, C01/C02/CG acceptance, service/autostart behavior,
+  or a default-launcher switch. The Python test/development environment and
+  legacy launcher remain until their gates. No host GUI, native `--version`,
+  shared desktop, real systemd service, autostart, bridge, or VNC change was
+  used.
+- **Next:** root owns publication and exact-head CI. Continue the blocked
+  Settings/UG work separately; do not infer gate acceptance from this renderer
+  or from the earlier `--no-activate` runtime proof.

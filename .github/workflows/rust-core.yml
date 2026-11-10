@@ -21,7 +21,7 @@ on:
       - "scripts/native/**"
       - "rust-gtk/tests/python_free_linkage.rs"
       - "rust-gtk/tests/svg_loader_negative.rs"
-      - "scripts/native/render_activation.py"
+      - "scripts/native/render_activation.sh"
       - "scripts/capture-native-gtk-wayland.sh"
       - "codexbar_gtk/providers.py"
       - "codexbar_gtk/activity.py"

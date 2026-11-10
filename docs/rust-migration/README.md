@@ -350,3 +350,14 @@ no workspace commands are assumed.
   PyGObject or `_rust_core.so`; preferences/history survive the switch; native
   CI and packaging are proven. Remove bridge, fallback implementations, Python
   UI and obsolete Python tooling only with rollback documentation and tests.
+
+### Build 95 runtime-proof scope
+
+Build 95 adds a same-commit CI proof for the installed native prefix in a
+Python-free runtime image. Debug install, release install, and debug rollback
+exercise the installed executable through private D-Bus and Xvfb inside Docker;
+the runtime container has no network, Python, libpython, PyO3, or `_rust_core`
+mapping. This is component evidence only. It does not finish C02, verify
+activation/service/autostart, prove a genuine version migration, pass UG, or
+authorize the default-launcher cutover. Python remains the default. See
+AUDIT E198 for exact results and remaining scope.

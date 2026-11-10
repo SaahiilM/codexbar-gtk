@@ -1,0 +1,20 @@
+FROM ubuntu:24.04@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      libgtk-4-1 libadwaita-1-0 libgdk-pixbuf-2.0-0 librsvg2-2 librsvg2-common \
+      libglib2.0-0 libglib2.0-bin dbus-daemon dbus-x11 libfontconfig1 \
+      fonts-dejavu-core xvfb x11-utils \
+  && test -f /usr/bin/Xvfb && test -f /usr/bin/dbus-daemon \
+  && test -f /usr/bin/gdbus && test -f /usr/bin/xwininfo \
+  && test -f /usr/lib/x86_64-linux-gnu/gdk-pixbuf-2.0/2.10.0/loaders/libpixbufloader-svg.so
+
+RUN test ! -e /usr/bin/python3 && test ! -e /usr/bin/python \
+  && test ! -e /usr/bin/python3.12 && test ! -e /usr/local/bin/python3 \
+  && test ! -d /usr/lib/python3.12 && test ! -d /usr/local/lib/python3 \
+  && test ! -d /usr/lib/python3/dist-packages/gi \
+  && test ! -d /usr/lib/python3/dist-packages/PyO3 \
+  && ! ls /usr/lib/x86_64-linux-gnu/libpython*.so* >/dev/null 2>&1
+
+ENTRYPOINT ["/bin/bash", "-c", "exec \"$@\"", "bash"]

@@ -6079,3 +6079,96 @@ unverified; UG and C gates remain open and Python remains default.
   C03/CG are unaccepted. Root owns draft body update, publication, fresh CI and
   any merge decision. Continue the UG matrix and keep the separate runtime
   proof separate from this installer draft.
+
+
+### E198 — 2026-11-10: Build-95 installed-prefix Python-free runtime proof
+
+- **Base/ownership:** this worktree began clean on
+  `t3/native-no-python-harness` at required local prototype commit
+  `87b52d824c4d21f18e4e1a824c8062d09ed152fb`. It merged current
+  `origin/main` `473a083676dc23152a9b42203a1fae9b527e3721` with a normal merge
+  (merge commit `b9d3907`); there were no conflicts. The published main state
+  recorded by root includes PR #93's build-94 installer. The older draft wording
+  in this file is retained as history; current TASKS now identifies the build-94
+  installer as merged and build 95 as local, with no PR or merge claimed.
+- **Implementation commit:** `7babb4f67f3f856f2b69713a20956199869cb00a`
+  increments build 95 and adds exact-target Cargo JSON artifact discovery,
+  focused harness tests, a required `python-free-runtime-proof` CI job, and
+  failure-only retention for sanitized synthetic logs and hashes. Cargo
+  discovery rejects malformed JSON, missing or ambiguous target matches, and
+  a missing/non-executable artifact; it never picks the first hash-suffixed
+  file. Local Docker-unavailable behavior remains SKIP/2, invalid input remains
+  exit 3, and runtime failures remain FAIL/1. CI passes `--require-docker`, so
+  an unavailable daemon is FAIL/1. The container runner now checks the final
+  reinstall's exit status explicitly.
+- **Code paths:** `.github/workflows/rust-core.yml`,
+  `scripts/native/no-python/cargo-artifact.py`,
+  `scripts/native/no-python/docker/run-container.sh`,
+  `scripts/smoke-native-no-python.sh`, `tests/test_no_python_harness.py`,
+  `VERSION`, `codexbar_gtk/version.py`, `README.md`, `CHANGELOG.md`,
+  `docs/rust-migration/README.md`, and `docs/rust-migration/TASKS.md`.
+  `UG_GATE.md` was not edited; root reserved it for ledger corrections.
+- **Validation before commit:** four focused tests passed (Cargo artifact exact
+  selection; missing/ambiguous/malformed Cargo output; bad artifact exit 3;
+  required Docker unavailable exit 1). `py_compile`, `bash -n` for both changed
+  shell scripts, `git diff --check`, and build/version/README/changelog
+  consistency passed. The first metadata check found the displayed About
+  example still at build 94; it was corrected to 95 and the check then passed.
+  `actionlint` was not installed, so no actionlint result is claimed.
+- **Fresh committed-source artifacts:** from empty
+  `/tmp/codexbar-build95-commit-target` using locked Cargo commands, debug and
+  release `codexbar-gtk-native` builds passed; the `a11y_assets` test executable
+  was compiled with `cargo test --no-run` and not launched on the host. SHA-256:
+  debug `993dbb2a4e1f95fc9845b785957c439ee4013f4d96dbe7252d494d0908c51eef`,
+  release `33a2d29d572990e98214f0eaa633034e3ca360ce2d1464373130b3d49d1eae51`,
+  SVG test `8008e1a25d6526827246bd6d73e5e909f20110a0322e1b9ac3b60328f5e0d28c`.
+- **Observed full Docker proof:**
+  `/tmp/codexbar-build95-committed-proof/run.log` and `result.txt` report PASS.
+  Docker image ID/digest is
+  `sha256:0666be210e207477f7deb65cf4b93224d481f431e5af997571879efed65059e6`;
+  container ID was
+  `fb6ed011b7b4af6e05de7ee31be596c36d905c82763ce271273000c91fccc2f3` and was
+  removed after the run. Its runtime network mode was `none`; Xvfb and the
+  session D-Bus were private to the container. The runtime image had no Python
+  interpreter, Python library directory, or libpython; the running app had zero
+  libpython, PyO3, and `_rust_core` mappings. The SVG loader was present, and
+  the actual bundled-artwork decode test passed (1 test) from `/tmp` outside
+  the repository.
+- **Installed-prefix behavior:** the real `--no-activate` installer used
+  `/work/prefix with spaces`. Debug install, release install, and debug rollback
+  each verified installed manifest hash, actual D-Bus owner PID, `/proc/PID/exe`
+  path and hash, fixture CLI refresh increase, and Gio quit exit 0. Refresh call
+  counts were 5→9, 14→18, and 23→27. The final installed-prefix run also proved
+  owner PID/executable hash, refresh increase, Settings/About window presence,
+  and Gio quit exit 0. Synthetic settings and seeded history were semantically
+  preserved. No real account data, credentials, OAuth output, screenshots, or
+  host desktop/app launches were used. GTK emitted a missing accessibility-bus
+  warning in the private test container; the SVG test and application probes
+  still passed.
+- **Scope and limits:** this is installed-prefix runtime component evidence.
+  It is not a genuine version upgrade, activation/rendering, systemd service or
+  autostart proof, full settings/login/history behavior coverage, C01/C02
+  acceptance, UG acceptance, or a default-launcher cutover. Python remains the
+  default. The CI job and exact-head CI are pending root publication; no GitHub
+  check or review result is claimed. C03 must retain Python-reference
+  assertions until mapped native coverage exists; do not blanket-delete
+  `test_app.py`. Root owns the separate activation-renderer work.
+- **UG handoff note (peer read-only review, not changed here):** root reserved
+  `UG_GATE.md`. Reconcile the duplicate Display rows for E183 manual navigation
+  and E195's single guarded `hidePersonalInfo` action without counting two
+  control passes. The Spend wait is currently
+  `wait_cost_calls_at_least(..., 4)` (one successful seed plus three failing
+  fallback attempts); four ranges and three heatmap modes remain unverified live
+  actions. These findings do not alter this proof or UG's **NOT PASSED** state.
+- **Next:** root reviews and publishes this focused build-95 change, then
+  observes exact-head CI. Continue UG corrections separately; activation,
+  service/autostart, genuine migration and all remaining C-gate work stay open.
+
+
+#### E198 root publication review — 2026-11-10
+
+- Pin the runtime-proof build job to Ubuntu 24.04, matching its Ubuntu 24.04 runtime image ABI, rather than a moving `ubuntu-latest` image. Resolve Cargo executable paths in standalone assignments before writing GITHUB_ENV, so resolver failure is not masked by a successful `echo`. No app or harness behavior changed in this review.
+- Consolidate the duplicate Display ledger rows: E183 manual navigation and E195 guarded bridge evidence describe the same `hidePersonalInfo` control. Preserve both histories without counting two distinct control passes. Correct the retained-error fixture wait to four total calls (one successful seed plus three failing fallback attempts); range and mode pointer interactions remain separate, open evidence.
+- Current handoff now records the observed, user-authorized additive PR #93 merge at `473a083676dc23152a9b42203a1fae9b527e3721`, exact head `1c033312942b45eaf594b6ec55648406bbaac979`, both checks successful in run `42683841325`. It does not pass UG or C01–CG. Fresh published-head checks remain pending.
+
+- Root verification before publication: the four focused harness tests passed; `py_compile`, both shell syntax checks, YAML parsing, and `git diff --check` passed. The existing native version-metadata regression passed (1 test). These do not replace exact-head remote execution of the new runtime-proof job.

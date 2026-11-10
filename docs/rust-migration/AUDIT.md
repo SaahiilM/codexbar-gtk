@@ -6238,3 +6238,91 @@ unverified; UG and C gates remain open and Python remains default.
   or from the earlier `--no-activate` runtime proof.
 
 - Root publication review: renderer behavior checks and the four runtime-proof harness tests independently passed. Add the standalone renderer test script to the workflow path filter so test-only changes also trigger CI. Installer code is unchanged from the previously observed 13-case Python-free smoke; final published-head CI remains pending.
+
+
+### E200 — 2026-11-10: build 97 guarded Settings batch evidence
+
+- **Base and observed dependency:** started clean at runner commit
+  `f33009dc9a783b5f196ebdef7df8768178bccee0` on
+  `orchestrated/luna-ug-settings-batch`. Merged fetched `origin/main`
+  `44e5c9b1d253d885c5b14c6bb00a1d135254a157` normally with history preserved;
+  integration merge is `b2e57427506ba5acc0b8e65b0d8f137a2faaf97c`, with no
+  conflicts. This base is PR #97's merge. Root observed PR #97 exact head
+  `056375d498c6ac86b66ea5014823876ebf39c1b2` pass all three jobs (`test`,
+  `tray-dbus`, `python-free-runtime-proof`) in run `42852332621`; PR state is
+  MERGED at `44e5c9b1d253d885c5b14c6bb00a1d135254a157`. Reviews, issue
+  comments, review comments and review threads were empty. These results are
+  base evidence, not checks for this build-97 commit.
+- **Scope and code paths:** evidence/docs/metadata only. No application or
+  runner source behavior changed. Updated `VERSION`, `codexbar_gtk/version.py`,
+  the README displayed build and build summary, `CHANGELOG.md`, this audit,
+  `TASKS.md`, and the four relevant scoped Settings rows plus evidence note in
+  `UG_GATE.md`. Added seven window-only PNGs and a bounded sanitized JSON at
+  `docs/rust-migration/screenshots/build97-settings-wayland/`. The full raw
+  70 KB results, `/tmp/codexbar-settings-batch-run.log`, and scratch home were
+  not added to git. Settings/default application code remains unchanged through
+  the installer-only build-96 change. The live app was from source commit
+  `7babb4f`, native build 95, binary SHA-256
+  `993dbb2a4e1f95fc9845b785957c439ee4013f4d96dbe7252d494d0908c51eef`; no
+  build-97 app binary is claimed. Runner was the f33009d source; SHA-256
+  `d1990781cc03146f3134c71b94475a77a806e402b637666be0209bb9d3f1aa7d`.
+- **Live synthetic Wayland result:** `/tmp/codexbar-settings-batch-evidence-3q50z4pd/results.json`
+  and `/tmp/codexbar-settings-batch-run.log` record all seven action lines as
+  PASS. Guarded pointer actions changed General
+  `refreshAllProvidersOnMenuOpen=false→true`; Notifications
+  `sessionQuotaNotificationsEnabled`, `quotaWarningNotificationsEnabled`,
+  `limitResetNotificationsEnabled`, and `predictivePaceNotificationsEnabled`
+  each `false→true`; Menu Bar `showTray=false→true`; and Hooks global enable
+  `true→false`, with the synthetic CLI call `hooks disable` and preferences
+  unchanged. The complete preference map was compared against the Rust
+  `PreferencesStore` default map at each preference action; the expected value
+  changes/default materialization were checked and unrelated values retained.
+  The CLI result and visible OFF state were independently checked for Hooks.
+  Three guarded tab transitions passed: General → Notifications → Menu Bar →
+  Hooks. The run made 10 guarded moves and 10 guarded clicks (7 control actions
+  plus 3 tab changes); each input call returned and the resulting persisted
+  state/CLI state was independently verified.
+- **Guard, geometry and role decisions:** exact synthetic app ID
+  `codexbar-gtk-native`, window title `CodexBar Settings`, and process PID
+  `3371378` were matched. KWin geometry `[364,149,1000,740]` was independently
+  checked against translated window-local AT-SPI geometry at all 10 measured
+  points; zero geometry failures. Live roles were `page tab` for navigation
+  and `check box` for toggle controls; the runner accepted the measured GTK
+  checkbox role rather than requiring the alternate `switch` role. All samples
+  were fresh (ages 0.151–0.216 s), with sample sequences and monotonic input
+  request times retained in the sanitized JSON. Each call's API outcome is
+  `returned`. No action/geometry failure was reported by the final run.
+- **Captured evidence:** all seven PNGs were personally inspected. The images
+  show synthetic Settings windows only. The copied
+  `screenshots/build97-settings-wayland/results.json` is a bounded summary; it
+  omits raw AT-SPI object paths and geometry dumps, and contains relative image
+  filenames. The original raw JSON remains outside the repository.
+- **Verification:** `python3 -m unittest tests.test_wayland_smoke_guard` — 59
+  passed. `python3 -m unittest discover -s tests` — 303 run, OK, 21 skipped.
+  `CODEXBAR_RUST_CORE=1 python3 -m unittest discover -s tests` — 303 run, OK,
+  no skips. `py_compile` passed for the Wayland runner, its guard tests, and
+  version module. Native metadata regression
+  `cargo test --manifest-path rust-gtk/Cargo.toml --locked --lib
+  tests::version_metadata_tracks_the_root_version_file -- --exact` — 1 passed.
+  Version consistency, Markdown-relative image links, JSON/image references,
+  PNG inventory, and sanitized-result checks passed. Final `git diff --check`
+  passed. One earlier diff check correctly flagged an extra blank line at EOF
+  in `UG_GATE.md`; it was removed and the final check passed. No new GUI run,
+  desktop/app/input/portal action, Rust build, or full migration-guide runtime
+  smoke or native application build was done in this docs/evidence turn. The
+  requested Cargo unit-test target compiled as part of its passing regression
+  command; no native GUI was launched.
+- **Limits and cleanup:** the batch covers only these three Settings
+  transitions and seven actions. Wayland test-notification delivery remains
+  OPEN; no test notification was sent. Three Menu Bar combos and Hooks rule
+  editing were not attempted. This is not whole-Settings, whole-app, or
+  keyboard parity and does not pass UG; Python remains default. Final cleanup
+  was verified: owned app/capture resources were gone, the unrelated
+  `codexbar-linux` process and watcher were untouched, and the scratch home was
+  removed. No account, key, OAuth value, authentication output, or credential-
+  bearing URL is included in the tracked evidence.
+- **Handoff:** root owns publication, exact-head checks, PR and merge. Next
+  requested v0.84 slices are provider catalog/artwork (root has started this
+  independently from build-96 main), then the safe Claude warning, then
+  ClaudePlatform stdin login. Keep those feature changes separate from this
+  evidence-only commit.

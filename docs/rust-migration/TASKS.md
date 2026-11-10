@@ -1073,3 +1073,23 @@ login/history coverage, UG acceptance, and the Python-default cutover remain
 open. Python remains the launcher default. Next exact step: root reviews and
 publishes the local build-96 implementation, then observes exact-head CI before
 deciding any gate status.
+
+### U05-UG15 handoff — build 97 guarded Settings batch (E200)
+
+**Branch:** `orchestrated/luna-ug-settings-batch`.
+**Status: partial; seven scoped Wayland actions and three Settings tab
+transitions passed.** This branch updates the guarded test runner and records evidence; it changes
+no application runtime code. The synthetic Wayland run used the build-95 native binary. It verified
+General `refreshAllProvidersOnMenuOpen`, all four Notifications preference
+switches, Menu Bar `showTray`, and the global Hooks disable action. The full
+preferences map was checked for each preference action; Hooks used the fixture
+CLI and left preferences unchanged. See E200 and the scoped UG rows. Wayland
+test-notification delivery, three Menu Bar combos, Hooks rules display, all
+other Settings actions, whole-app parity and keyboard parity remain open.
+Python remains default and UG remains **NOT PASSED**.
+
+**Next requested v0.84 slices:** root has started the provider catalog/artwork
+slice independently from build-96 `main`. Continue afterward with the safe
+Claude warning slice, then the ClaudePlatform stdin-login slice. Keep these as
+separate reviewable changes; do not mix their feature code into this evidence
+commit. Root owns the PR, push and merge for this build-97 batch.

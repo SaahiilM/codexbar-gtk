@@ -14,6 +14,7 @@ import inspect
 import json
 import os
 import pathlib
+import re
 import shutil
 import select
 import signal
@@ -33,6 +34,48 @@ REMOTE = "org.freedesktop.portal.RemoteDesktop"
 SESSION_IFACE = "org.freedesktop.portal.Session"
 APP_ID = "codexbar-gtk-synthetic-wayland-test"
 BRIDGE_DEFAULT_COMMAND = "linux-agent-access"
+# Native GTK exposes the measured preference toggles as AT-SPI "check box"
+# controls. Keep this list limited to verified toggle roles; rows, labels, and
+# toggle buttons are not safe pointer targets. "switch" remains supported for
+# GTK/platform variants that expose that role directly.
+AT_SPI_TOGGLE_ROLES = ("check box", "switch")
+AT_SPI_TARGET_ROLES = ("page tab", "button", *AT_SPI_TOGGLE_ROLES)
+
+
+def _valid_atspi_identity(bus_name, object_path):
+    """Accept only a D-Bus unique/well-known name and an absolute object path."""
+    if not isinstance(bus_name, str) or not isinstance(object_path, str):
+        return False
+    components = bus_name[1:].split(".") if bus_name.startswith(":") else bus_name.split(".")
+    component_ok = all(component and
+                       re.fullmatch(r"[A-Za-z0-9_-]+", component) is not None and
+                       (bus_name.startswith(":") or
+                        re.match(r"[A-Za-z_-]", component) is not None)
+                       for component in components)
+    bus_ok = (len(bus_name) <= 255 and component_ok and
+              (bus_name.startswith(":") or len(components) >= 2))
+    path_parts = object_path.split("/")[1:] if isinstance(object_path, str) else []
+    path_ok = (isinstance(object_path, str) and len(object_path) <= 1024 and
+               object_path.startswith("/") and
+               (object_path == "/" or all(part and part.isascii() and
+                                            re.fullmatch(r"[A-Za-z0-9_]+", part)
+                                            for part in path_parts)))
+    return bus_ok and path_ok
+
+
+def _unique_atspi_records(records, expected_bus, description):
+    """Collapse only repeated remote identities; reject invalid/contradictory rows."""
+    unique = {}
+    for record in records:
+        bus, path = record.get("bus_name"), record.get("object_path")
+        if not _valid_atspi_identity(bus, path) or bus != expected_bus:
+            raise GeometryResolutionError(f"AT-SPI {description} has missing, invalid, or wrong-application identity", {})
+        key = (bus, path)
+        previous = unique.get(key)
+        if previous is not None and previous != record:
+            raise GeometryResolutionError(f"AT-SPI {description} has contradictory records for one remote identity", {})
+        unique[key] = record
+    return list(unique.values())
 WAYLAND_SWITCH_ACTIONS = {
     "refresh-when-panel-opens": {
         "preference": "refreshAllProvidersOnMenuOpen",
@@ -210,6 +253,13 @@ WAYLAND_SWITCH_ACTIONS = {
         "cli_action": "login",
         "provider_id": "codex",
     },
+    # Fixture CLI state, deliberately not a Preferences JSON field.
+    "disable-global-hooks": {
+        "preference": None,
+        "label": "Enable hooks",
+        "page": "Hooks",
+        "kind": "hooks_switch",
+    },
 }
 PAGE_TAB_FRACTIONS = {"Display": (0.325, 0.968)}
 """Window-relative bottom-tab-bar centers, pixel-measured from the kept
@@ -257,6 +307,384 @@ def fresh_active_target(state, expected_pid, now=None):
     except (TypeError, ValueError):
         return False
     return 0.15 <= age <= 0.35 and active_target(state, expected_pid)
+
+
+def parse_action_batch(spec, allowed_actions, maximum=8):
+    """Validate a bounded, deterministic comma-separated Settings action list."""
+    if not isinstance(spec, str) or not spec.strip():
+        raise ValueError("batch action list is empty")
+    actions = [part.strip() for part in spec.split(",")]
+    if len(actions) > maximum:
+        raise ValueError(f"batch exceeds the {maximum}-action limit")
+    if any(not item for item in actions):
+        raise ValueError("batch contains an empty action")
+    if len(set(actions)) != len(actions):
+        raise ValueError("batch actions must be unique")
+    unknown = [item for item in actions if item not in allowed_actions]
+    if unknown:
+        raise ValueError("batch contains an unknown action")
+    return actions
+
+
+def rust_default_preferences():
+    """Read the Rust store's JSON-compatible default map without duplicating it."""
+    source = pathlib.Path(__file__).resolve().parents[1] / "rust-core/src/preferences.rs"
+    text = source.read_text()
+    defaults_at = text.find("pub fn default_values() -> Map<String, Value>")
+    macro_at = text.find("json!({", defaults_at)
+    if defaults_at < 0 or macro_at < 0:
+        raise RuntimeError("could not locate native Preferences defaults")
+    start = macro_at + len("json!(")
+    depth = 0
+    in_string = False
+    escaped = False
+    end = None
+    for index in range(start, len(text)):
+        char = text[index]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+        elif char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                end = index + 1
+                break
+    if end is None:
+        raise RuntimeError("native Preferences defaults have unbalanced braces")
+    body = text[start:end]
+    body = re.sub(r"(?m)(^|[{,]\s*)([A-Za-z_][A-Za-z0-9_]*)\s*:",
+                  lambda match: f'{match.group(1)}"{match.group(2)}":', body)
+    body = re.sub(r",\s*}", "}", body)
+    try:
+        values = json.loads(body)
+    except json.JSONDecodeError as error:
+        raise RuntimeError("native Preferences defaults are no longer JSON-compatible") from error
+    if not isinstance(values, dict):
+        raise RuntimeError("native Preferences defaults are not an object")
+    return values
+
+
+def synthetic_cli_source(include_hooks, include_provider=False):
+    """Generate the bounded fake CLI used by the synthetic Hooks fixture."""
+    if not include_hooks and not include_provider:
+        return "#!/bin/sh\ncase \"${1-}\" in --version) printf '%s\\n' 'CodexBar synthetic fixture 0.82.0';; *) printf '%s\\n' '[]';; esac\n"
+    return '''#!/bin/sh
+set -eu
+case "${1-}/${2-}" in
+  --version/*) printf '%s\\n' 'CodexBar synthetic fixture 0.82.0' ;;
+  hooks/list)
+    printf '{"enabled":%s,"events":[]}\\n' "$(cat "$FIXTURE_HOOKS_ENABLED")"
+    ;;
+  hooks/enable|hooks/disable)
+    printf '%s\\n' "$*" >> "$FIXTURE_CLI_CALLS"
+    if [ "${2-}" = "enable" ]; then printf 'true' > "$FIXTURE_HOOKS_ENABLED"; else printf 'false' > "$FIXTURE_HOOKS_ENABLED"; fi
+    printf '%s\\n' '{"ok":true}'
+    ;;
+  config/providers)
+    printf '%s\\n' "$*" >> "$FIXTURE_CLI_CALLS"
+    if [ "$(cat "$FIXTURE_PROVIDER_ENABLED")" = "true" ]; then
+      printf '%s\\n' 'codex: enabled (Codex)' 'claude: disabled (Claude)'
+    else
+      printf '%s\\n' 'codex: disabled (Codex)' 'claude: disabled (Claude)'
+    fi
+    ;;
+  config/enable|config/disable)
+    printf '%s\\n' "$*" >> "$FIXTURE_CLI_CALLS"
+    if [ "${4-}" = "codex" ]; then
+      printf '%s\\n' "$2" | sed 's/^enable$/true/;s/^disable$/false/' > "$FIXTURE_PROVIDER_ENABLED"
+    fi
+    printf '%s\\n' '{"ok":true}'
+    ;;
+  *) printf '%s\\n' '[]' ;;
+esac
+'''
+
+
+def batch_expected_preferences(action_ids):
+    """Rust defaults with just the selected batch switches seeded false."""
+    expected = rust_default_preferences()
+    for action_id in action_ids:
+        key = WAYLAND_SWITCH_ACTIONS[action_id].get("preference")
+        if key is not None:
+            expected[key] = False
+    return expected
+
+
+def preferences_equal(expected, actual):
+    """Require complete native preference-map equality, including key set."""
+    return isinstance(actual, dict) and actual == expected
+
+
+def batch_page_phases(action_ids, action_map=WAYLAND_SWITCH_ACTIONS):
+    """Preserve user-specified order while marking only actual page changes."""
+    phases = []
+    for action_id in action_ids:
+        action = action_map[action_id]
+        page = action.get("page", "General")
+        if phases and phases[-1]["page"] == page:
+            phases[-1]["actions"].append(action_id)
+        else:
+            phases.append({"page": page, "actions": [action_id]})
+    return phases
+
+
+def safe_action_evidence(action_id, state, target_pid, control, bounds, before, after):
+    """Return only synthetic, allowlisted metadata; never serialize CLI output."""
+    rect = state.get("target_geometry")
+    if not (isinstance(rect, list) and len(rect) == 4 and
+            all(type(v) is int for v in rect)):
+        raise ValueError("missing target geometry")
+    if not isinstance(bounds, list) or len(bounds) != 4 or any(type(v) is not int for v in bounds):
+        raise ValueError("missing measured control geometry")
+    x, y = point_from_bounds(bounds)
+    try:
+        recorded_age = float(state["pre_click_age_seconds"])
+        recorded_time = float(state["received"]) + recorded_age
+    except (KeyError, TypeError, ValueError) as error:
+        raise ValueError("missing pre-click compositor timing") from error
+    if not guard_target(state, target_pid, x, y, now=recorded_time):
+        raise ValueError("pre-click sample does not identify the exact active control")
+    if not target_window_contains(state, x, y):
+        raise ValueError("pre-click control falls outside the synthetic Settings window")
+    if type(state.get("sample_seq")) is not int or state["sample_seq"] < 1:
+        raise ValueError("missing ordered compositor sample sequence")
+    return {
+        "action": action_id,
+        "target_pid": int(state["pid"]),
+        "control": str(control)[:100],
+        "control_bounds": bounds,
+        "coordinate_space": state.get("coordinate_space"),
+        "calculated_point": state.get("calculated_point"),
+        "raw_geometry": state.get("raw_geometry"),
+        "target_geometry": rect,
+        "input_method": "guarded_pointer_click",
+        "sample_seq": int(state["sample_seq"]),
+        "sample_age_seconds": round(recorded_age, 3),
+        "sample_received_monotonic": round(float(state["received"]), 6),
+        "input_requested_monotonic": state.get("input_requested_monotonic"),
+        "input_outcome": state.get("input_outcome"),
+        "input_return_metadata": state.get("input_return_metadata", {}),
+        "action_state_before": before,
+        "action_state_after": after,
+    }
+
+
+class GeometryResolutionError(RuntimeError):
+    """Fail-closed geometry error that carries bounded scoped evidence."""
+    def __init__(self, message, evidence):
+        super().__init__(message)
+        self.evidence = evidence
+
+
+def _valid_rect(rect, allow_local_origin=False):
+    return (
+        isinstance(rect, list) and len(rect) == 4 and
+        all(type(value) is int for value in rect) and
+        rect[2] > 0 and rect[3] > 0 and
+        (allow_local_origin and rect[:2] == [0, 0] or rect[0] >= 0 and rect[1] >= 0) and
+        rect != [0, 0, 0, 0] and rect != [-1, -1, -1, -1]
+    )
+
+
+def _rect_contains(outer, inner):
+    return (inner[0] >= outer[0] and inner[1] >= outer[1] and
+            inner[0] + inner[2] <= outer[0] + outer[2] and
+            inner[1] + inner[3] <= outer[1] + outer[3])
+
+
+def resolve_coordinate_geometry(raw, kwin, expected_pid, expected_application,
+                                expected_title="CodexBar Settings", desktop_scale_factors=(1,)):
+    """Validate one exact AT-SPI frame/control against exact focused KWin geometry.
+
+    AT-SPI SCREEN is global; WINDOW is relative to the component's top-level
+    window. We accept SCREEN only on exact frame equality, or WINDOW only when
+    the unique titled/PID-matched frame has an exact size match and its local
+    bounds are contained. No scale or decoration offset is inferred.
+    """
+    evidence = {"raw_geometry": raw, "kwin_geometry": kwin.get("target_geometry") if isinstance(kwin, dict) else None,
+                "coordinate_space": None, "calculated_point": None}
+    def reject(message):
+        raise GeometryResolutionError(message, evidence)
+    if not isinstance(raw, dict) or not isinstance(kwin, dict):
+        reject("missing AT-SPI or KWin geometry snapshot")
+    desktop_scale_factors = raw.get("desktop_scale_factors", desktop_scale_factors)
+    if desktop_scale_factors != [1] and desktop_scale_factors != (1,):
+        reject("unsupported or ambiguous desktop scale")
+    if raw.get("pid") != expected_pid or raw.get("application") != expected_application:
+        reject("AT-SPI application PID/name mismatch")
+    if (kwin.get("target_window_pid") != expected_pid or
+            kwin.get("target_window_title") != expected_title or
+            kwin.get("target_window_count") != 1 or
+            kwin.get("target_present") is not True or
+            kwin.get("active") is not True or kwin.get("pid") != expected_pid or
+            kwin.get("active_window_pid") != expected_pid or
+            kwin.get("active_window_title") != expected_title):
+        reject("KWin does not show one focused exact-PID/title Settings window")
+    frame_rows = raw.get("top_level_windows")
+    controls = raw.get("controls")
+    if not isinstance(frame_rows, list) or any(not isinstance(item, dict) for item in frame_rows):
+        reject("AT-SPI target has missing or malformed top-level windows")
+    app_bus = raw.get("application_bus_name")
+    if not _valid_atspi_identity(app_bus, "/"):
+        reject("AT-SPI application has missing or invalid D-Bus identity")
+    try:
+        frame_rows = _unique_atspi_records(frame_rows, app_bus, "frame")
+    except GeometryResolutionError as error:
+        reject(str(error))
+    if len(frame_rows) != 1:
+        reject("AT-SPI target has missing or multiple top-level windows")
+    if not isinstance(controls, list) or any(not isinstance(item, dict) for item in controls):
+        reject("AT-SPI exact label/role is missing or malformed")
+    frame = frame_rows[0]
+    if frame.get("name") != expected_title or frame.get("role") not in ("frame", "window"):
+        reject("AT-SPI top-level frame identity mismatch")
+    if frame.get("visible") is not True or frame.get("showing") is not True:
+        reject("AT-SPI top-level frame is hidden")
+    requested_label = raw.get("requested_label")
+    expected_roles = raw.get("expected_roles")
+    if (not isinstance(expected_roles, list) or not expected_roles or
+            any(role not in AT_SPI_TARGET_ROLES for role in expected_roles)):
+        reject("AT-SPI requested control roles are missing or not allowlisted")
+    # Exclude same-named list rows and text labels before requiring uniqueness.
+    # Only exact-label, visible nodes with an explicitly allowed role can be
+    # pointer targets. In particular, do not fall back to row clicks or a first
+    # matching name when GTK exports a compound row.
+    named_controls = [item for item in controls if item.get("name") == requested_label]
+    try:
+        named_controls = _unique_atspi_records(named_controls, app_bus, "named control")
+    except GeometryResolutionError as error:
+        reject(str(error))
+    candidates = [item for item in named_controls
+                  if item.get("role") in expected_roles
+                  and item.get("visible") is True
+                  and item.get("showing") is True]
+    if len(candidates) != 1:
+        reject("AT-SPI exact visible label/role control is missing or ambiguous")
+    control = candidates[0]
+    kwin_rect = kwin.get("target_geometry")
+    if not _valid_rect(kwin_rect):
+        reject("KWin target rectangle is missing or invalid")
+    screen_frame = frame.get("screen")
+    window_frame = frame.get("window")
+    screen_control = control.get("screen")
+    window_control = control.get("window")
+    # A direct global mapping is accepted only when AT-SPI and KWin describe
+    # the identical top-level rectangle, including origin and dimensions.
+    if (_valid_rect(screen_frame) and screen_frame == kwin_rect and
+            _valid_rect(screen_control) and _rect_contains(kwin_rect, screen_control)):
+        bounds = list(screen_control)
+        space = "screen"
+    else:
+        # Window-local fallback is allowed only for an unavailable/global-zero
+        # SCREEN origin and an exact local frame/KWin size correspondence.
+        screen_unavailable = (not _valid_rect(screen_frame) or screen_frame[:2] == [0, 0])
+        if not screen_unavailable:
+            reject("valid AT-SPI SCREEN frame disagrees with KWin frame")
+        if (not _valid_rect(window_frame, allow_local_origin=True) or
+                window_frame[:2] != [0, 0] or window_frame[2:] != kwin_rect[2:]):
+            reject("AT-SPI WINDOW frame size/origin is not proven against KWin")
+        if (not _valid_rect(window_control, allow_local_origin=True) or
+                not _rect_contains(window_frame, window_control)):
+            reject("AT-SPI WINDOW control is outside the verified local frame")
+        bounds = [kwin_rect[0] + window_control[0], kwin_rect[1] + window_control[1],
+                  window_control[2], window_control[3]]
+        if not _rect_contains(kwin_rect, bounds):
+            reject("translated window-local control falls outside KWin frame")
+        space = "window-local-translated"
+    point = list(point_from_bounds(bounds))
+    evidence.update({"coordinate_space": space, "control_bounds": bounds,
+                     "calculated_point": point})
+    return evidence
+
+
+def resolve_atspi_geometry(application, pid, label, kwin, runner=subprocess.run, timeout=8,
+                           expected_roles=(), expected_title="CodexBar Settings"):
+    """Collect exact synthetic frame/control extents in both spaces; never invoke DoAction."""
+    probe = r'''import json,sys,gi
+gi.require_version("Atspi","2.0")
+gi.require_version("Gdk","4.0")
+gi.require_version("Gtk","4.0")
+from gi.repository import Atspi,Gdk,Gtk
+Atspi.init()
+Gtk.init()
+want_pid=int(sys.argv[1]); want_name=sys.argv[2]; want_label=sys.argv[3]; roles=json.loads(sys.argv[4]); want_title=sys.argv[5]
+d=Atspi.get_desktop(0); frames=[]; controls=[]; app_match=None
+display=Gdk.Display.get_default(); monitors=display.get_monitors() if display else None
+scales=[int(monitors.get_item(i).get_scale_factor()) for i in range(monitors.get_n_items())] if monitors else []
+def rect(node, kind):
+ try:
+  comp=node.get_component_iface(); ext=comp.get_extents(Atspi.CoordType.SCREEN if kind=="screen" else Atspi.CoordType.WINDOW) if comp else None
+  return [int(ext.x),int(ext.y),int(ext.width),int(ext.height)] if ext else None
+ except Exception: return None
+def states(node):
+ try:
+  st=node.get_state_set()
+  return {"visible":bool(st.contains(Atspi.StateType.VISIBLE)),"showing":bool(st.contains(Atspi.StateType.SHOWING))}
+ except Exception: return {"visible":False,"showing":False}
+def identity(node):
+ try:
+  owner=node.app
+  bus=str(owner.bus_name) if owner is not None else None
+  path=str(node.path) if node.path is not None else None
+  return {"bus_name":bus,"object_path":path}
+ except Exception: return {"bus_name":None,"object_path":None}
+for i in range(min(d.get_child_count(),100)):
+ app=d.get_child_at_index(i)
+ try:
+  if app.get_name()!=want_name or int(app.get_process_id())!=want_pid: continue
+  app_bus=identity(app)["bus_name"]
+  app_match={"application":app.get_name(),"pid":int(app.get_process_id()),"application_bus_name":app_bus}; q=[app]; seen=0; visited=set()
+  while q and seen<3000:
+   n=q.pop(0); seen+=1
+   try:
+    ident=identity(n); key=(ident["bus_name"],ident["object_path"])
+    if ident["bus_name"] and ident["object_path"] and key in visited: continue
+    if ident["bus_name"] and ident["object_path"]: visited.add(key)
+    name=n.get_name()
+    role=n.get_role_name()
+    st=states(n)
+    if role in ("frame","window","dialog"):
+     frames.append({"name":name,"role":role,**st,**ident,"screen":rect(n,"screen"),"window":rect(n,"window")})
+    # Return every exact-name node: the parent resolver filters by the narrow
+    # role allowlist and visibility, so compound rows and labels cannot create
+    # false ambiguity or become click targets.
+    if name==want_label:
+     controls.append({"name":name,"role":role,**st,**ident,"screen":rect(n,"screen"),"window":rect(n,"window")})
+    count=min(n.get_child_count(),200)
+    q.extend(n.get_child_at_index(j) for j in range(count))
+   except Exception: pass
+  break
+ except Exception: pass
+print(json.dumps({**(app_match or {"application":want_name,"pid":want_pid}),"requested_label":want_label,"expected_roles":roles,"desktop_scale_factors":scales,"top_level_windows":frames,"controls":controls}))
+'''
+    result = runner([sys.executable, "-c", probe, str(int(pid)), str(application), str(label),
+                     json.dumps(list(expected_roles)), expected_title],
+                    capture_output=True, text=True, timeout=timeout, env=dict(os.environ))
+    failure_base = {"raw_geometry": None,
+                    "kwin_geometry": kwin.get("target_geometry") if isinstance(kwin, dict) else None,
+                    "coordinate_space": None, "calculated_point": None}
+    if result.returncode != 0:
+        raise GeometryResolutionError("AT-SPI geometry lookup failed", failure_base)
+    try:
+        raw = json.loads(result.stdout)
+    except (ValueError, AttributeError, TypeError) as error:
+        raise GeometryResolutionError("AT-SPI geometry lookup returned malformed data",
+                                      {**failure_base, "raw_geometry": result.stdout[:12000]}) from error
+    return resolve_coordinate_geometry(raw, kwin, int(pid), application, expected_title)
+
+
+def point_from_bounds(bounds):
+    x, y, width, height = bounds
+    return x + width // 2, y + height // 2
 
 
 def valid_kwin_observer_sample(sender, expected_sender, state, last_sequence):
@@ -1043,9 +1471,14 @@ def guarded_click(portal, app_pid, latest, x, y):
         time.sleep(.01)
     else:
         raise RuntimeError("target/focus hit-test unstable after motion; no click sent")
-    if not guard_target(latest(), app_pid, x, y):
+    pre_click_state = latest()
+    guard_time = time.monotonic()
+    if not guard_target(pre_click_state, app_pid, x, y, now=guard_time):
         raise RuntimeError("final target/focus guard failed; no click sent")
+    pre_click_state = dict(pre_click_state)
+    pre_click_state["pre_click_age_seconds"] = guard_time - pre_click_state["received"]
     portal.click()
+    return pre_click_state
 
 
 def guarded_click_bridge(bridge, app_pid, latest, x, y):
@@ -1072,9 +1505,18 @@ def guarded_click_bridge(bridge, app_pid, latest, x, y):
         time.sleep(.01)
     else:
         raise RuntimeError("target/focus hit-test unstable after motion; no click sent")
-    if not guard_target(latest(), app_pid, x, y):
+    pre_click_state = latest()
+    guard_time = time.monotonic()
+    if not guard_target(pre_click_state, app_pid, x, y, now=guard_time):
         raise RuntimeError("final target/focus guard failed; no click sent")
-    bridge.click(x, y)
+    pre_click_state = dict(pre_click_state)
+    pre_click_state["pre_click_age_seconds"] = guard_time - pre_click_state["received"]
+    requested_at = time.monotonic()
+    response = bridge.click(x, y)
+    pre_click_state["input_requested_monotonic"] = requested_at
+    pre_click_state["input_outcome"] = "returned"
+    pre_click_state["input_return_metadata"] = bridge_return_metadata(response)
+    return pre_click_state
 
 
 def move_only_diagnostic(bridge, app_pid, latest, preferences_path, telemetry,
@@ -1126,12 +1568,14 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--binary", type=pathlib.Path, required=True)
     parser.add_argument("--action", choices=tuple(WAYLAND_SWITCH_ACTIONS),
-                        default="refresh-when-panel-opens",
+                        default=None,
                         help="allowlisted switch action to exercise; hide-personal-info, "
                              "show-tray-icon and disable-codex-provider live on Display/Menu Bar/Providers "
                              "pages (only Display tab navigation is automated; manual "
                              "provider-source/provider-api-key/provider-login steps run "
                              "with --inspect-only first)")
+    parser.add_argument("--actions",
+                        help="comma-separated bounded batch of allowlisted preference switches; measured AT-SPI controls required")
     parser.add_argument("--inspect-only", action="store_true",
                         help="capture the synthetic Settings window and exit without requesting portal access")
     parser.add_argument("--move-only", action="store_true",
@@ -1156,7 +1600,27 @@ def main():
         parser.error("--move-only requires bridge mode and cannot be combined with --portal/--inspect-only")
     if (args.switch_x is None) != (args.switch_y is None):
         parser.error("--switch-x and --switch-y must be supplied together")
-    action = WAYLAND_SWITCH_ACTIONS[args.action]
+    batch_requested = args.actions is not None
+    if batch_requested and args.action is not None:
+        parser.error("use either --action or --actions, not both")
+    if batch_requested:
+        try:
+            action_ids = parse_action_batch(args.actions, WAYLAND_SWITCH_ACTIONS)
+        except ValueError as error:
+            parser.error(str(error))
+    else:
+        action_ids = [args.action or "refresh-when-panel-opens"]
+    if batch_requested and (args.portal or args.move_only or args.inspect_only):
+        parser.error("batch mode requires bridge input and cannot be combined with --portal/--move-only/--inspect-only")
+    if batch_requested and not args.bridge:
+        parser.error("batch mode requires explicit --bridge input")
+    if batch_requested and any(
+            WAYLAND_SWITCH_ACTIONS[name].get("kind") in ("manual", "button", "provider_switch")
+            for name in action_ids):
+        parser.error("batch mode accepts only preference and Hooks switches")
+    if batch_requested and (args.switch_x is not None or args.switch_y is not None):
+        parser.error("batch mode uses measured AT-SPI geometry; coordinate overrides are unavailable")
+    action = WAYLAND_SWITCH_ACTIONS[action_ids[0]]
     preference_key = action.get("preference")
     if action.get("kind") == "manual":
         parser.error(
@@ -1164,6 +1628,8 @@ def main():
             "to calibrate the Providers page, then perform it by hand against the "
             "synthetic fixture (see the runner comment). Refusing to drive it."
         )
+    if action.get("kind") == "hooks_switch" and not args.actions:
+        parser.error("global Hooks is supported only in a verified synthetic batch")
     is_provider_action = action.get("kind") == "provider_switch"
     is_button_action = action.get("kind") == "button" or (preference_key is None and not is_provider_action)
     if not os.environ.get("WAYLAND_DISPLAY") or not os.environ.get("XDG_RUNTIME_DIR"):
@@ -1190,6 +1656,8 @@ def main():
     bridge_command = None
     if args.move_only and not use_bridge:
         parser.error("--move-only requires --bridge")
+    if batch_requested and not use_bridge:
+        parser.error("AT-SPI-measured batches require --bridge; portal mode remains single-action")
     if use_bridge:
         try:
             bridge_command = resolve_bridge_command(args.bridge_cmd)
@@ -1223,36 +1691,19 @@ def main():
         # the synthetic Notifications monitor for their success check.
         # Provider actions also persist no preference: the fixture CLI
         # owns provider state (seeded ON so the runner clicks to disable).
-        seed = {} if preference_key is None else {preference_key: False}
+        preference_keys = [WAYLAND_SWITCH_ACTIONS[name].get("preference")
+                           for name in action_ids]
+        seed = {key: False for key in preference_keys if key is not None}
         preferences.write_text(json.dumps(seed) + "\n")
         cli_calls = scratch / "fixture-cli-calls.log"
         provider_enabled = scratch / "provider-codex-enabled"
-        if is_provider_action:
+        hooks_enabled = scratch / "hooks-enabled"
+        needs_hooks = any(WAYLAND_SWITCH_ACTIONS[name].get("kind") == "hooks_switch"
+                          for name in action_ids)
+        hooks_enabled.write_text("true" if needs_hooks else "false")
+        if is_provider_action or needs_hooks:
             provider_enabled.write_text(provider_enabled_file_text(True))
-            fake_source = '''#!/bin/sh
-set -eu
-case "${1-}/${2-}" in
-  --version/*) printf '%s\\n' 'CodexBar synthetic fixture 0.82.0' ;;
-  config/providers)
-    printf '%s\\n' "$*" >> "$FIXTURE_CLI_CALLS"
-    if [ "$(cat "$FIXTURE_PROVIDER_ENABLED")" = "true" ]; then
-      printf '%s\\n' 'codex: enabled (Codex)' 'claude: disabled (Claude)'
-    else
-      printf '%s\\n' 'codex: disabled (Codex)' 'claude: disabled (Claude)'
-    fi
-    ;;
-  config/enable|config/disable)
-    printf '%s\\n' "$*" >> "$FIXTURE_CLI_CALLS"
-    if [ "${4-}" = "codex" ]; then
-      printf '%s\\n' "$2" | sed 's/^enable$/true/;s/^disable$/false/' > "$FIXTURE_PROVIDER_ENABLED"
-    fi
-    printf '%s\\n' '{"ok":true}'
-    ;;
-  *) printf '%s\\n' "$*" >> "$FIXTURE_CLI_CALLS"; printf '%s\\n' '[]' ;;
-esac
-'''
-        else:
-            fake_source = "#!/bin/sh\ncase \"${1-}\" in --version) echo 'CodexBar synthetic fixture 0.82.0';; *) echo '[]';; esac\n"
+        fake_source = synthetic_cli_source(needs_hooks, is_provider_action)
         fake = scratch / "codexbar"
         fake.write_text(fake_source)
         fake.chmod(0o700)
@@ -1266,8 +1717,9 @@ esac
                    CODEXBAR_CLI=str(fake), GTK_USE_PORTAL="0",
                    GDK_BACKEND="wayland", GSK_RENDERER="cairo")
         env.pop("CODEXBAR_RUST_CORE", None)
-        if is_provider_action:
-            env.update(FIXTURE_CLI_CALLS=str(cli_calls), FIXTURE_PROVIDER_ENABLED=str(provider_enabled))
+        if is_provider_action or needs_hooks:
+            env.update(FIXTURE_CLI_CALLS=str(cli_calls), FIXTURE_PROVIDER_ENABLED=str(provider_enabled),
+                       FIXTURE_HOOKS_ENABLED=str(hooks_enabled))
         bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
         spectacle_owned = bus.call_sync(
             "org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus",
@@ -1365,6 +1817,16 @@ esac
             raise RuntimeError("synthetic Settings baseline capture failed; no portal request sent")
         print(f"Synthetic Settings baseline captured at {settings_capture}; verify the requested row.", flush=True)
         if args.inspect_only:
+            bridge_application = resolve_atspi_application(app.pid)
+            try:
+                measured = resolve_atspi_geometry(
+                    bridge_application, app.pid, "Notifications", settings_state,
+                    expected_roles=("page tab",),
+                )
+                print("READ_ONLY_GEOMETRY=" + json.dumps(measured, sort_keys=True), flush=True)
+            except GeometryResolutionError as error:
+                print("READ_ONLY_GEOMETRY_FAILURE=" + json.dumps(error.evidence, sort_keys=True), flush=True)
+                raise
             print("Inspection-only mode; no portal request or input sent.", flush=True)
             return 0
         if args.move_only:
@@ -1437,6 +1899,192 @@ esac
             baseline = wait_for_fresh_active_target(latest, app.pid)
         except RuntimeError as error:
             raise RuntimeError(f"{error} after portal consent") from error
+        if batch_requested:
+            evidence_dir = pathlib.Path(tempfile.mkdtemp(prefix="codexbar-settings-batch-evidence-"))
+            evidence_dir.chmod(0o700)
+            results = []
+            navigation = []
+            current_page = "General"
+            expected_preferences = batch_expected_preferences(action_ids)
+            geometry_failures = []
+            geometry_measurements = []
+
+            def measure_control(label, roles):
+                try:
+                    measurement = resolve_atspi_geometry(
+                        bridge_application, app.pid, label, latest(),
+                        expected_roles=roles,
+                    )
+                    geometry_measurements.append({"label": label, **measurement})
+                    return measurement
+                except GeometryResolutionError as error:
+                    geometry_failures.append({"label": label, **error.evidence})
+                    raise
+
+            def reactivate_fixture():
+                nonlocal focus_script_loaded
+                focus_js_path.write_text(activation_script(app.pid))
+                subprocess.run(["qdbus6", "org.kde.KWin", "/Scripting",
+                                "org.kde.kwin.Scripting.loadScript", str(focus_js_path), focus_plugin],
+                               check=True, capture_output=True, text=True, timeout=5)
+                if subprocess.run(["qdbus6", "org.kde.KWin", "/Scripting",
+                                   "org.kde.kwin.Scripting.isScriptLoaded", focus_plugin],
+                                  check=True, capture_output=True, text=True, timeout=5).stdout.strip() != "true":
+                    raise RuntimeError("synthetic Settings focus helper did not load; no input sent")
+                subprocess.run(["qdbus6", "org.kde.KWin", "/Scripting",
+                                "org.kde.kwin.Scripting.start"], check=True, capture_output=True, timeout=5)
+                focus_script_loaded = True
+                return wait_for_fresh_active_target(latest, app.pid, timeout_seconds=5)
+
+            def capture_fixture(label):
+                wait_for_fresh_active_target(latest, app.pid, timeout_seconds=5)
+                image_path = evidence_dir / f"{label}.png"
+                captured = subprocess.run(
+                    ["spectacle", "--background", "--activewindow", "--nonotify", "--output", str(image_path)],
+                    capture_output=True, text=True, timeout=8,
+                )
+                if (captured.returncode != 0 or not image_path.is_file() or
+                        image_path.stat().st_size > 8 * 1024 * 1024):
+                    image_path.unlink(missing_ok=True)
+                    raise RuntimeError("bounded synthetic Settings capture failed")
+                return image_path
+
+            try:
+                for action_id in action_ids:
+                    step = WAYLAND_SWITCH_ACTIONS[action_id]
+                    preference = step.get("preference")
+                    kind = step.get("kind", "preference")
+                    if kind not in ("preference", "hooks_switch"):
+                        raise RuntimeError("unsupported operation in batch; aborting before input")
+                    desired_page = step.get("page", "General")
+                    if desired_page != current_page:
+                        tab_measurement = measure_control(desired_page, ("page tab",))
+                        tab_bounds = tab_measurement["control_bounds"]
+                        before_nav = latest()
+                        nav_x, nav_y = tab_measurement["calculated_point"]
+                        if before_nav.get("target_geometry") != tab_measurement.get("kwin_geometry"):
+                            raise RuntimeError("KWin frame changed after AT-SPI tab measurement")
+                        if not target_window_contains(before_nav, nav_x, nav_y):
+                            raise RuntimeError("measured page tab is outside exact synthetic window")
+                        nav_state = guarded_input(app.pid, nav_x, nav_y)
+                        navigation.append({
+                            "from_page": current_page,
+                            "to_page": desired_page,
+                            "target_pid": app.pid,
+                            "input_method": "guarded_pointer_click",
+                            "control_bounds": tab_bounds,
+                            "coordinate_space": tab_measurement["coordinate_space"],
+                            "calculated_point": tab_measurement["calculated_point"],
+                            "raw_geometry": tab_measurement["raw_geometry"],
+                            "sample_seq": nav_state.get("sample_seq"),
+                            "sample_age_seconds": round(nav_state.get("pre_click_age_seconds", 0), 3),
+                            "sample_received_monotonic": round(nav_state.get("received", 0), 6),
+                            "input_requested_monotonic": nav_state.get("input_requested_monotonic"),
+                            "input_outcome": nav_state.get("input_outcome"),
+                            "input_return_metadata": nav_state.get("input_return_metadata", {}),
+                        })
+                        # A phase transition invalidates all prior bounds. Re-read focus,
+                        # then resolve the exact action row on the new visible page.
+                        reactivate_fixture()
+                        current_page = desired_page
+
+                    expected_roles = (("button",) if kind == "button" else AT_SPI_TOGGLE_ROLES)
+                    control_measurement = measure_control(step["label"], expected_roles)
+                    control_bounds = control_measurement["control_bounds"]
+                    before_state = latest()
+                    point_x, point_y = control_measurement["calculated_point"]
+                    if before_state.get("target_geometry") != control_measurement.get("kwin_geometry"):
+                        raise RuntimeError("KWin frame changed after AT-SPI control measurement")
+                    if not target_window_contains(before_state, point_x, point_y):
+                        raise RuntimeError("measured control is outside exact synthetic window")
+                    before_preferences = json.loads(preferences.read_text())
+                    if preference is not None and before_preferences.get(preference) is not False:
+                        raise RuntimeError(f"synthetic preference {preference} was not false before action")
+                    if kind == "hooks_switch" and hooks_enabled.read_text() != "true":
+                        raise RuntimeError("synthetic fixture hooks did not start enabled")
+
+                    # One action only. No screenshot, sleep, navigation, or other
+                    # operation is inserted between the final guard and the click.
+                    pre_click_state = guarded_input(app.pid, point_x, point_y)
+                    pre_click_state.update({
+                        "coordinate_space": control_measurement["coordinate_space"],
+                        "calculated_point": control_measurement["calculated_point"],
+                        "raw_geometry": control_measurement["raw_geometry"],
+                    })
+                    deadline = time.monotonic() + 8
+                    after_preferences = before_preferences
+                    if preference is not None:
+                        expected_unchanged = {key: value for key, value in before_preferences.items()
+                                              if key != preference}
+                        while time.monotonic() < deadline:
+                            after_preferences = json.loads(preferences.read_text())
+                            if after_preferences.get(preference) is True:
+                                break
+                            time.sleep(.05)
+                        if after_preferences.get(preference) is not True:
+                            raise RuntimeError(f"synthetic preference {preference} did not become true")
+                        expected_preferences[preference] = True
+                        if not preferences_equal(expected_preferences, after_preferences):
+                            raise RuntimeError("action changed or omitted native synthetic Preferences values")
+                        if step.get("requires_autostart_entry"):
+                            autostart = home / ".config" / "autostart" / "codexbar-gtk.desktop"
+                            if not autostart.is_file():
+                                raise RuntimeError("synthetic autostart entry did not persist")
+                        delta = {"preference": preference, "before": False, "after": True,
+                                 "unrelated_keys_retained": sorted(expected_unchanged),
+                                 "newly_materialized_default_keys": sorted(
+                                     set(after_preferences) - set(before_preferences) - {preference})}
+                    else:
+                        while time.monotonic() < deadline:
+                            calls = cli_calls.read_text() if cli_calls.exists() else ""
+                            if "hooks disable" in calls and hooks_enabled.read_text() == "false":
+                                break
+                            time.sleep(.05)
+                        calls = cli_calls.read_text() if cli_calls.exists() else ""
+                        if "hooks disable" not in calls or hooks_enabled.read_text() != "false":
+                            raise RuntimeError("synthetic hooks disable did not reach fixture CLI")
+                        if json.loads(preferences.read_text()) != before_preferences:
+                            raise RuntimeError("Hooks action changed unrelated Preferences JSON")
+                        delta = {"fixture_cli": "hooks disable", "before": True, "after": False,
+                                 "unrelated_keys_retained": sorted(before_preferences)}
+
+                    # Capture only after the mutation has been verified; then
+                    # reestablish exact focus and fresh compositor evidence.
+                    results.append({
+                        **safe_action_evidence(action_id, pre_click_state, app.pid,
+                                               step["label"], control_bounds,
+                                               delta.get("before"), delta.get("after")),
+                        "state_change": delta,
+                        "image": None,
+                    })
+                    (evidence_dir / "results.json").write_text(
+                        json.dumps({"navigation": navigation, "actions": results,
+                                    "geometry_measurements": geometry_measurements,
+                                    "geometry_failures": geometry_failures}, indent=2) + "\n"
+                    )
+                    image_path = capture_fixture(action_id)
+                    results[-1]["image"] = image_path.name
+                    (evidence_dir / "results.json").write_text(
+                        json.dumps({"navigation": navigation, "actions": results,
+                                    "geometry_measurements": geometry_measurements,
+                                    "geometry_failures": geometry_failures}, indent=2) + "\n"
+                    )
+                    print(f"PASS: {action_id}; synthetic evidence image {image_path}", flush=True)
+                    reactivate_fixture()
+                click_total = len(results) + len(navigation)
+                print(f"PASS: Settings batch complete ({len(results)} action clicks, "
+                      f"{len(navigation)} navigation clicks; {click_total} total input calls); "
+                      f"bounded synthetic evidence at {evidence_dir}", flush=True)
+                return 0
+            except Exception:
+                # Retain only fixture screenshots and allowlisted action metadata.
+                (evidence_dir / "results.json").write_text(
+                    json.dumps({"navigation": navigation, "actions": results,
+                                "geometry_measurements": geometry_measurements,
+                                "geometry_failures": geometry_failures}, indent=2) + "\n"
+                )
+                print(f"Synthetic batch evidence retained at {evidence_dir}", file=sys.stderr, flush=True)
+                raise
         if "page" in action:
             geometry = baseline.get("target_geometry")
             if not isinstance(geometry, list) or len(geometry) != 4:
@@ -1749,9 +2397,9 @@ Gio.bus_own_name_on_connection(bus,'org.codexbar.U05.Guard',Gio.BusNameOwnerFlag
 loop.run()
 '''
 
-KWIN_JS = r'''var TARGET_PID=__PID__, PORTAL_PID=__PORTAL_PID__, PLUGIN="__PLUGIN__", service="org.codexbar.U05.Guard", path="/org/codexbar/U05/Guard", iface="org.codexbar.U05.Guard";
+KWIN_JS = r'''var TARGET_PID=__PID__, PORTAL_PID=__PORTAL_PID__, TARGET_TITLE="CodexBar Settings", PLUGIN="__PLUGIN__", service="org.codexbar.U05.Guard", path="/org/codexbar/U05/Guard", iface="org.codexbar.U05.Guard";
 var SAMPLE_INTERVAL_MS=250, MAX_SAMPLES=2400, MAX_LIFETIME_MS=600000, startedAt=Date.now(), lastSampleAt=0, sampleSequence=0, sampleInFlight=false, sampler=null;
-function report(){var now=Date.now();if(now-startedAt>=MAX_LIFETIME_MS||sampleSequence>=MAX_SAMPLES){if(sampler)sampler.stop();return;}if(sampleInFlight||now-lastSampleAt<SAMPLE_INTERVAL_MS)return;sampleInFlight=true;lastSampleAt=now;var sequence=++sampleSequence;var p=workspace.cursorPos,h=workspace.windowAt(p,1),top=h&&h.length?h[0]:null,a=workspace.activeWindow,w=workspace.stackingOrder,t=null;for(var i=0;i<w.length;i++)if(Number(w[i].pid)===TARGET_PID)t=w[i];var g=t?{x:Number(t.x),y:Number(t.y),width:Number(t.width),height:Number(t.height)}:null;var s={sample_seq:sequence,pid:a?Number(a.pid):0,active:!!(a&&Number(a.pid)===TARGET_PID),top_hit:!!(top&&Number(top.pid)===TARGET_PID),target_present:!!t,target_geometry:g?[g.x,g.y,g.width,g.height]:null,cursor:[Number(p.x),Number(p.y)],portal_active:!!(a&&Number(a.pid)===PORTAL_PID)};callDBus(service,path,iface,"Record",JSON.stringify(s),function(){sampleInFlight=false;});}
+function report(){var now=Date.now();if(now-startedAt>=MAX_LIFETIME_MS||sampleSequence>=MAX_SAMPLES){if(sampler)sampler.stop();return;}if(sampleInFlight||now-lastSampleAt<SAMPLE_INTERVAL_MS)return;sampleInFlight=true;lastSampleAt=now;var sequence=++sampleSequence;var p=workspace.cursorPos,h=workspace.windowAt(p,1),top=h&&h.length?h[0]:null,a=workspace.activeWindow,w=workspace.stackingOrder,t=null,count=0;for(var i=0;i<w.length;i++)if(Number(w[i].pid)===TARGET_PID&&String(w[i].caption)===TARGET_TITLE){t=w[i];count++;}if(count!==1)t=null;var g=t?{x:Number(t.x),y:Number(t.y),width:Number(t.width),height:Number(t.height)}:null;var s={sample_seq:sequence,pid:a?Number(a.pid):0,active:!!(a&&Number(a.pid)===TARGET_PID),active_window_pid:a?Number(a.pid):0,active_window_title:a?String(a.caption):"",top_hit:!!(top&&Number(top.pid)===TARGET_PID),target_present:count===1,target_window_pid:t?TARGET_PID:0,target_window_title:t?String(t.caption):"",target_window_count:count,target_geometry:g?[g.x,g.y,g.width,g.height]:null,cursor:[Number(p.x),Number(p.y)],portal_active:!!(a&&Number(a.pid)===PORTAL_PID)};callDBus(service,path,iface,"Record",JSON.stringify(s),function(){sampleInFlight=false;});}
 sampler=new QTimer(this);sampler.timeout.connect(report);sampler.start(SAMPLE_INTERVAL_MS);report();workspace.cursorPosChanged.connect(report);workspace.windowActivated.connect(report);workspace.windowAdded.connect(report);workspace.windowRemoved.connect(report);'''
 
 

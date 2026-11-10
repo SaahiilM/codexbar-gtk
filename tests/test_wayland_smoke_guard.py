@@ -1,6 +1,11 @@
 import importlib.util
+import json
+import os
 import pathlib
+import subprocess
+import sys
 import tempfile
+import types
 import unittest
 import unittest.mock
 
@@ -23,8 +28,476 @@ class WaylandGuardTests(unittest.TestCase):
         state.update(overrides)
         return state
 
+    def geometry_fixture(self):
+        kwin = {
+            "pid": 4242, "active": True, "target_present": True,
+            "active_window_pid": 4242, "active_window_title": "CodexBar Settings",
+            "target_window_pid": 4242, "target_window_title": "CodexBar Settings",
+            "target_window_count": 1, "target_geometry": [364, 149, 1000, 740],
+        }
+        raw = {
+            "application": "codexbar-gtk-synthetic-wayland-test", "pid": 4242,
+            "requested_label": "Notifications", "expected_roles": ["page tab"],
+            "application_bus_name": "org.example.synthetic",
+            "desktop_scale_factors": [1],
+            "top_level_windows": [{
+                "name": "CodexBar Settings", "role": "frame", "visible": True,
+                "showing": True, "screen": [364, 149, 1000, 740],
+                "window": [0, 0, 1000, 740], "bus_name": "org.example.synthetic",
+                "object_path": "/org/example/window",
+            }],
+            "controls": [{
+                "name": "Notifications", "role": "page tab", "visible": True,
+                "showing": True, "screen": [500, 300, 80, 40],
+                "window": [136, 151, 80, 40], "bus_name": "org.example.synthetic",
+                "object_path": "/org/example/tab",
+            }],
+        }
+        return raw, kwin
+
+    def test_coordinate_geometry_accepts_verified_global_frame(self):
+        raw, kwin = self.geometry_fixture()
+        result = MODULE.resolve_coordinate_geometry(raw, kwin, 4242,
+                                                    "codexbar-gtk-synthetic-wayland-test")
+        self.assertEqual(result["coordinate_space"], "screen")
+        self.assertEqual(result["control_bounds"], [500, 300, 80, 40])
+        self.assertEqual(result["calculated_point"], [540, 320])
+
+    def test_coordinate_geometry_accepts_verified_window_local_translation(self):
+        raw, kwin = self.geometry_fixture()
+        raw["top_level_windows"][0]["screen"] = [0, 0, 1000, 740]
+        raw["controls"][0]["screen"] = [0, 0, 80, 40]
+        result = MODULE.resolve_coordinate_geometry(raw, kwin, 4242,
+                                                    "codexbar-gtk-synthetic-wayland-test")
+        self.assertEqual(result["coordinate_space"], "window-local-translated")
+        self.assertEqual(result["control_bounds"], [500, 300, 80, 40])
+        self.assertEqual(result["calculated_point"], [540, 320])
+
+    def test_coordinate_geometry_fails_closed_for_unverified_or_unsafe_evidence(self):
+        raw0, kwin0 = self.geometry_fixture()
+        mutations = (
+            (lambda raw, kwin: kwin.update(target_window_pid=99), "wrong PID"),
+            (lambda raw, kwin: kwin.update(target_window_count=2), "multiple KWin windows"),
+            (lambda raw, kwin: raw["top_level_windows"][0].update(showing=False), "hidden frame"),
+            (lambda raw, kwin: kwin.update(active_window_title="Other window"), "wrong focused window"),
+            (lambda raw, kwin: raw.update(application="other-app"), "wrong app name"),
+            (lambda raw, kwin: raw.update(expected_roles=["button"]), "wrong role"),
+            (lambda raw, kwin: raw["controls"][0].update(visible=False), "hidden control"),
+            (lambda raw, kwin: (raw["top_level_windows"][0].update(window=[0, 0, 999, 740]),
+                                raw["top_level_windows"][0].update(screen=[0, 0, 1000, 740])), "frame size"),
+            (lambda raw, kwin: raw.update(desktop_scale_factors=[2]), "unsupported scale"),
+            (lambda raw, kwin: (raw["top_level_windows"][0].update(screen=[0, 0, 1000, 740]),
+                                raw["controls"][0].update(window=[990, 720, 20, 20])), "outside"),
+            (lambda raw, kwin: raw["top_level_windows"][0].update(screen=[-1, -1, -1, -1], window=[-1, -1, -1, -1]), "sentinel"),
+            (lambda raw, kwin: raw["controls"].append({**raw["controls"][0], "object_path": "/org/example/tab2"}), "ambiguous"),
+            (lambda raw, kwin: raw["top_level_windows"].append({**raw["top_level_windows"][0], "object_path": "/org/example/window2"}), "multiple frames"),
+            (lambda raw, kwin: raw["top_level_windows"][0].update(screen=[10, 10, 1000, 740]), "unverified translation"),
+        )
+        for mutate, label in mutations:
+            with self.subTest(case=label):
+                raw, kwin = json.loads(json.dumps(raw0)), json.loads(json.dumps(kwin0))
+                mutate(raw, kwin)
+                with self.assertRaises(MODULE.GeometryResolutionError):
+                    MODULE.resolve_coordinate_geometry(raw, kwin, 4242,
+                                                        "codexbar-gtk-synthetic-wayland-test")
+
+    def test_atspi_identity_collapses_only_same_bus_and_path(self):
+        raw, kwin = self.geometry_fixture()
+        raw["controls"].append(dict(raw["controls"][0]))
+        result = MODULE.resolve_coordinate_geometry(raw, kwin, 4242,
+                                                    "codexbar-gtk-synthetic-wayland-test")
+        self.assertEqual(result["calculated_point"], [540, 320])
+        raw["controls"].append({**raw["controls"][0], "bus_name": "org.example.other"})
+        with self.assertRaises(MODULE.GeometryResolutionError):
+            MODULE.resolve_coordinate_geometry(raw, kwin, 4242,
+                                               "codexbar-gtk-synthetic-wayland-test")
+
+    def test_distinct_overlapping_checkboxes_remain_ambiguous(self):
+        raw, kwin = self.geometry_fixture()
+        raw["expected_roles"] = ["check box"]
+        raw["requested_label"] = "Notifications"
+        raw["controls"] = [{**raw["controls"][0], "role": "check box"},
+                            {**raw["controls"][0], "role": "check box",
+                             "object_path": "/org/example/checkbox2"}]
+        with self.assertRaises(MODULE.GeometryResolutionError):
+            MODULE.resolve_coordinate_geometry(raw, kwin, 4242,
+                                               "codexbar-gtk-synthetic-wayland-test")
+
+    def test_atspi_identity_rejects_missing_invalid_or_wrong_application(self):
+        raw0, kwin0 = self.geometry_fixture()
+        for field, value in (("object_path", None), ("object_path", "relative/path"),
+                             ("bus_name", "org.example.other")):
+            raw, kwin = json.loads(json.dumps(raw0)), json.loads(json.dumps(kwin0))
+            raw["controls"][0][field] = value
+            with self.subTest(field=field, value=value), self.assertRaises(MODULE.GeometryResolutionError):
+                MODULE.resolve_coordinate_geometry(raw, kwin, 4242,
+                                                   "codexbar-gtk-synthetic-wayland-test")
+
+    def test_atspi_same_identity_with_contradictory_record_is_rejected(self):
+        raw, kwin = self.geometry_fixture()
+        raw["controls"].append({**raw["controls"][0], "window": [137, 151, 80, 40]})
+        with self.assertRaises(MODULE.GeometryResolutionError):
+            MODULE.resolve_coordinate_geometry(raw, kwin, 4242,
+                                               "codexbar-gtk-synthetic-wayland-test")
+
+    def test_generated_probe_terminates_cycle_and_collapses_repeated_remote_reference(self):
+        raw, kwin = self.geometry_fixture()
+
+        class App:
+            path = "/org/example/app"
+            def __init__(self):
+                self.app = types.SimpleNamespace(bus_name="org.example.synthetic")
+                self.children = []
+            def get_name(self): return "codexbar-gtk-synthetic-wayland-test"
+            def get_process_id(self): return 4242
+            def get_role_name(self): return "application"
+            def get_state_set(self): return State()
+            def get_component_iface(self): return None
+            def get_child_count(self): return len(self.children)
+            def get_child_at_index(self, index): return self.children[index]
+
+        class State:
+            def contains(self, _state): return True
+
+        class Component:
+            def __init__(self, values): self.values = values
+            def get_extents(self, coord):
+                return types.SimpleNamespace(x=self.values[coord][0], y=self.values[coord][1],
+                                             width=self.values[coord][2], height=self.values[coord][3])
+
+        class Node:
+            def __init__(self, name, role, path, values=None):
+                self.app, self.path = app.app, path
+                self.name, self.role, self.children = name, role, []
+                self.component = Component(values or {})
+            def get_name(self): return self.name
+            def get_role_name(self): return self.role
+            def get_state_set(self): return State()
+            def get_component_iface(self): return self.component
+            def get_child_count(self): return len(self.children)
+            def get_child_at_index(self, index): return self.children[index]
+
+        app = App()
+        screen, window = "SCREEN", "WINDOW"
+        frame = Node("CodexBar Settings", "frame", "/org/example/window",
+                     {screen: [364, 149, 1000, 740], window: [0, 0, 1000, 740]})
+        target = Node("Notifications", "page tab", "/org/example/tab",
+                      {screen: [500, 300, 80, 40], window: [136, 151, 80, 40]})
+        frame.children = [target, target]
+        target.children = [frame]
+        app.children = [frame]
+        desktop = types.SimpleNamespace(get_child_count=lambda: 1,
+                                       get_child_at_index=lambda _index: app)
+        atspi = types.SimpleNamespace(init=lambda: None, get_desktop=lambda _index: desktop,
+            CoordType=types.SimpleNamespace(SCREEN=screen, WINDOW=window),
+            StateType=types.SimpleNamespace(VISIBLE=1, SHOWING=2))
+        monitor_model = types.SimpleNamespace(get_n_items=lambda: 1,
+            get_item=lambda _index: types.SimpleNamespace(get_scale_factor=lambda: 1))
+        gdk = types.SimpleNamespace(Display=types.SimpleNamespace(get_default=lambda:
+            types.SimpleNamespace(get_monitors=lambda: monitor_model)))
+        gtk = types.SimpleNamespace(init=lambda: None)
+
+        def fake_runner(command, **_kwargs):
+            repository = types.ModuleType("gi.repository")
+            repository.Atspi, repository.Gdk, repository.Gtk = atspi, gdk, gtk
+            gi = types.ModuleType("gi")
+            gi.require_version = lambda *_args: None
+            gi.repository = repository
+            with unittest.mock.patch.dict(sys.modules, {"gi": gi, "gi.repository": repository}):
+                old_argv, capture = sys.argv, __import__("io").StringIO()
+                try:
+                    sys.argv = ["-c", *command[3:]]
+                    with unittest.mock.patch("sys.stdout", capture):
+                        exec(compile(command[2], "<generated-atspi-probe>", "exec"), {})
+                finally:
+                    sys.argv = old_argv
+            return subprocess.CompletedProcess(command, 0, capture.getvalue(), "")
+
+        result = MODULE.resolve_atspi_geometry(
+            "codexbar-gtk-synthetic-wayland-test", 4242, "Notifications", kwin,
+            runner=fake_runner, expected_roles=("page tab",))
+        self.assertEqual(result["calculated_point"], [540, 320])
+
+        foreign_bus_alias = Node("Notifications", "page tab", "/org/example/tab",
+                                 {screen: [500, 300, 80, 40], window: [136, 151, 80, 40]})
+        foreign_bus_alias.app = types.SimpleNamespace(bus_name="org.example.other")
+        frame.children.append(foreign_bus_alias)
+        with self.assertRaises(MODULE.GeometryResolutionError):
+            MODULE.resolve_atspi_geometry(
+                "codexbar-gtk-synthetic-wayland-test", 4242, "Notifications", kwin,
+                runner=fake_runner, expected_roles=("page tab",))
+
     def test_accepts_fresh_stable_target(self):
         self.assertTrue(MODULE.guard_target(self.snapshot(), 4242, 810, 315, now=100.2))
+
+    def test_batch_parser_is_ordered_unique_bounded_and_allowlisted(self):
+        actions = ["session-quota-notifications", "quota-warning-notifications",
+                   "limit-reset-notifications", "predictive-pace-notifications",
+                   "show-tray-icon", "disable-global-hooks"]
+        self.assertEqual(MODULE.parse_action_batch(",".join(actions),
+                                                  MODULE.WAYLAND_SWITCH_ACTIONS), actions)
+        for value in ("", ",".join(actions + ["show-panel-on-start", "start-at-login", "hide-personal-info"]),
+                      "show-tray-icon,show-tray-icon", "show-tray-icon,not-allowlisted", "show-tray-icon,,hide-personal-info"):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                MODULE.parse_action_batch(value, MODULE.WAYLAND_SWITCH_ACTIONS)
+
+    def test_batch_cli_rejects_unsupported_routes_before_environment_or_input(self):
+        action = "session-quota-notifications"
+        cases = (
+            (["--actions", action, "--portal"], "cannot be combined"),
+            (["--actions", action, "--bridge", "--inspect-only"], "cannot be combined"),
+            (["--actions", action, "--bridge", "--move-only"], "cannot be combined"),
+            (["--actions", action], "requires explicit --bridge"),
+            (["--actions", "unknown", "--portal"], "unknown action"),
+            (["--actions", f"{action},{action}", "--portal"], "must be unique"),
+        )
+        for extra, expected in cases:
+            with self.subTest(extra=extra):
+                result = subprocess.run(
+                    [sys.executable, str(SCRIPT), "--binary", "/does/not/exist", *extra],
+                    capture_output=True, text=True, timeout=8,
+                )
+                self.assertEqual(result.returncode, 2)
+                self.assertIn(expected, result.stderr)
+                self.assertNotIn("--binary must name", result.stderr)
+
+    def test_synthetic_generated_cli_hooks_and_provider_readout(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            cli = root / "codexbar"
+            hooks_state = root / "hooks-enabled"
+            provider_state = root / "provider-enabled"
+            calls = root / "calls.log"
+            cli.write_text(MODULE.synthetic_cli_source(True, True))
+            cli.chmod(0o700)
+            env = dict(os.environ, HOME=str(root / "home"), FIXTURE_HOOKS_ENABLED=str(hooks_state),
+                       FIXTURE_PROVIDER_ENABLED=str(provider_state), FIXTURE_CLI_CALLS=str(calls))
+            (root / "home").mkdir()
+
+            for state in ("true", "false"):
+                hooks_state.write_text(state)
+                result = subprocess.run([str(cli), "hooks", "list"], env=env,
+                                        capture_output=True, text=True, timeout=3)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(json.loads(result.stdout), {"enabled": state == "true", "events": []})
+                self.assertFalse(result.stderr)
+
+            for command, expected in (("disable", "false"), ("enable", "true")):
+                result = subprocess.run([str(cli), "hooks", command], env=env,
+                                        capture_output=True, text=True, timeout=3)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(json.loads(result.stdout), {"ok": True})
+                self.assertEqual(hooks_state.read_text(), expected)
+            self.assertEqual(calls.read_text().splitlines(), ["hooks disable", "hooks enable"])
+
+            provider_state.write_text("true")
+            result = subprocess.run([str(cli), "config", "providers"], env=env,
+                                    capture_output=True, text=True, timeout=3)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout.splitlines(), [
+                "codex: enabled (Codex)", "claude: disabled (Claude)",
+            ])
+            self.assertEqual(calls.read_text().splitlines(), [
+                "hooks disable", "hooks enable", "config providers",
+            ])
+
+    def test_batch_preference_comparison_requires_full_native_default_map(self):
+        action = "session-quota-notifications"
+        expected = MODULE.batch_expected_preferences([action])
+        self.assertEqual(expected["sessionQuotaNotificationsEnabled"], False)
+        expected["sessionQuotaNotificationsEnabled"] = True
+        self.assertTrue(MODULE.preferences_equal(expected, dict(expected)))
+        invalid_maps = (
+            {**expected, "unknownAddedKey": False},
+            {**expected, "showTray": False},
+            {key: value for key, value in expected.items() if key != "debugMenuEnabled"},
+        )
+        for observed in invalid_maps:
+            with self.subTest(observed=observed):
+                self.assertFalse(MODULE.preferences_equal(expected, observed))
+
+    def test_batch_phase_plan_groups_only_adjacent_actions_on_same_page(self):
+        actions = ["session-quota-notifications", "quota-warning-notifications",
+                   "show-tray-icon", "disable-global-hooks", "predictive-pace-notifications"]
+        self.assertEqual(MODULE.batch_page_phases(actions), [
+            {"page": "Notifications", "actions": actions[:2]},
+            {"page": "Menu Bar", "actions": actions[2:3]},
+            {"page": "Hooks", "actions": actions[3:4]},
+            {"page": "Notifications", "actions": actions[4:]},
+        ])
+
+    def test_six_control_batch_counts_page_tabs_as_separate_input(self):
+        actions = ["session-quota-notifications", "quota-warning-notifications",
+                   "limit-reset-notifications", "predictive-pace-notifications",
+                   "show-tray-icon", "disable-global-hooks"]
+        phases = MODULE.batch_page_phases(actions)
+        navigation_clicks = len(phases)
+        self.assertEqual(navigation_clicks, 3)
+        self.assertEqual(len(actions) + navigation_clicks, 9)
+
+    def test_batch_hooks_maps_to_existing_global_cli_switch(self):
+        hooks = MODULE.WAYLAND_SWITCH_ACTIONS["disable-global-hooks"]
+        self.assertEqual(hooks["page"], "Hooks")
+        self.assertEqual(hooks["label"], "Enable hooks")
+        self.assertEqual(hooks["kind"], "hooks_switch")
+        self.assertIsNone(hooks["preference"])
+
+    def test_batch_control_probe_is_read_only_and_exact_pid_name_and_label(self):
+        raw, kwin = self.geometry_fixture()
+        raw["application"] = "synthetic-app"
+        raw["controls"][0].update(name="Pace warnings", screen=[850, 300, 28, 28],
+                                  window=[486, 151, 28, 28], role="switch")
+        raw.update(requested_label="Pace warnings", expected_roles=["switch"])
+        result = unittest.mock.Mock(returncode=0, stdout=json.dumps(raw))
+        calls = []
+
+        def runner(argv, **kwargs):
+            calls.append((argv, kwargs))
+            return result
+
+        geometry = MODULE.resolve_atspi_geometry("synthetic-app", 4242, "Pace warnings", kwin,
+                                                 runner=runner, expected_roles=("switch",))
+        self.assertEqual(geometry["control_bounds"], [850, 300, 28, 28])
+        argv, kwargs = calls[0]
+        self.assertEqual(argv[-5:], ["4242", "synthetic-app", "Pace warnings", '["switch"]', "CodexBar Settings"])
+        self.assertEqual(kwargs["timeout"], 8)
+        self.assertIn("int(app.get_process_id())!=want_pid", argv[2])
+        self.assertIn("app.get_name()!=want_name", argv[2])
+        self.assertIn("Atspi.CoordType.SCREEN", argv[2])
+        self.assertIn("Atspi.CoordType.WINDOW", argv[2])
+        self.assertIn("Gtk.init()", argv[2])
+        self.assertIn("get_scale_factor()", argv[2])
+        self.assertIn("if name==want_label", argv[2])
+        self.assertNotIn("role in roles", argv[2])
+        self.assertEqual(json.loads(argv[-2]), ["switch"])
+        self.assertNotIn("do_action", argv[2].lower())
+
+    def test_measured_checkbox_is_uniquely_selected_from_three_same_label_nodes(self):
+        kwin = self.geometry_fixture()[1]
+        raw = {
+            "application": "synthetic-app", "pid": 4242,
+            "application_bus_name": "org.example.synthetic",
+            "requested_label": "Refresh when the panel opens",
+            "expected_roles": list(MODULE.AT_SPI_TOGGLE_ROLES),
+            "desktop_scale_factors": [1],
+            "top_level_windows": [{
+                "name": "CodexBar Settings", "role": "frame", "visible": True,
+                "showing": True, "screen": [0, 0, 1000, 740],
+                "window": [0, 0, 1000, 740],
+                "bus_name": "org.example.synthetic", "object_path": "/org/example/window",
+            }],
+            # This mirrors the measured GTK export: one checkbox, its list row,
+            # and the text label all have the same accessible name.
+            "controls": [
+                {"name": "Refresh when the panel opens", "role": "check box",
+                 "visible": True, "showing": True,
+                 "labelled_by": "Refresh when the panel opens",
+                 "screen": [0, 0, 46, 26], "window": [731, 306, 46, 26],
+                 "bus_name": "org.example.synthetic", "object_path": "/org/example/checkbox"},
+                {"name": "Refresh when the panel opens", "role": "list item",
+                 "visible": True, "showing": True,
+                 "labelled_by": "Refresh when the panel opens",
+                 "described_by": "Refreshes provider data when the panel opens",
+                 "screen": [0, 0, 576, 58], "window": [214, 289, 576, 58],
+                 "bus_name": "org.example.synthetic", "object_path": "/org/example/list_row"},
+                {"name": "Refresh when the panel opens", "role": "label",
+                 "visible": True, "showing": True,
+                 "screen": [0, 0, 496, 21], "window": [226, 295, 496, 21],
+                 "bus_name": "org.example.synthetic", "object_path": "/org/example/label"},
+            ],
+        }
+        result = unittest.mock.Mock(returncode=0, stdout=json.dumps(raw))
+        calls = []
+        resolved = MODULE.resolve_atspi_geometry(
+            "synthetic-app", 4242, "Refresh when the panel opens", kwin,
+            runner=lambda argv, **kwargs: (calls.append((argv, kwargs)) or result),
+            expected_roles=MODULE.AT_SPI_TOGGLE_ROLES,
+        )
+        self.assertEqual(json.loads(calls[0][0][-2]), ["check box", "switch"])
+        self.assertEqual(len(raw["controls"]), 3)
+        self.assertEqual(resolved["control_bounds"], [1095, 455, 46, 26])
+        self.assertEqual(resolved["calculated_point"], [1118, 468])
+
+        rejected = []
+        wrong_label = json.loads(json.dumps(raw))
+        wrong_label["controls"][0]["name"] = "A different preference"
+        rejected.append((wrong_label, kwin))
+        hidden_checkbox = json.loads(json.dumps(raw))
+        hidden_checkbox["controls"][0]["showing"] = False
+        rejected.append((hidden_checkbox, kwin))
+        duplicate_checkbox = json.loads(json.dumps(raw))
+        duplicate_checkbox["controls"].append({**raw["controls"][0], "object_path": "/org/example/checkbox2"})
+        rejected.append((duplicate_checkbox, kwin))
+        wrong_pid = json.loads(json.dumps(raw))
+        wrong_pid["pid"] = 77
+        rejected.append((wrong_pid, kwin))
+        for forbidden_role in ("list item", "label", "toggle button"):
+            forbidden = json.loads(json.dumps(raw))
+            forbidden["expected_roles"] = [forbidden_role]
+            rejected.append((forbidden, kwin))
+        for evidence, compositor in rejected:
+            with self.subTest(evidence=evidence):
+                with self.assertRaises(MODULE.GeometryResolutionError):
+                    MODULE.resolve_coordinate_geometry(
+                        evidence, compositor, 4242, "synthetic-app")
+
+    def test_batch_control_probe_rejects_missing_ambiguous_invalid_and_failed(self):
+        _, kwin = self.geometry_fixture()
+        for result in (
+            unittest.mock.Mock(returncode=0, stdout='{"bounds":[]}'),
+            unittest.mock.Mock(returncode=0, stdout='{"bounds":[[1,2,20,20],[4,5,30,30]]}'),
+            unittest.mock.Mock(returncode=0, stdout='{"bounds":[[1,2,0,20]]}'),
+            unittest.mock.Mock(returncode=0, stdout='not-json'),
+            unittest.mock.Mock(returncode=1, stdout='{}'),
+        ):
+            with self.subTest(stdout=result.stdout), self.assertRaises(MODULE.GeometryResolutionError):
+                MODULE.resolve_atspi_geometry("synthetic-app", 4242, "exact control", kwin,
+                                              runner=lambda *_a, _result=result, **_k: _result)
+
+    def test_batch_evidence_contains_only_allowlisted_metadata(self):
+        state = self.snapshot(sample_seq=14, received=100.05, cursor=[864, 314],
+                              pre_click_age_seconds=0.2,
+                              target_geometry=[364, 149, 1000, 740],
+                              coordinate_space="screen", calculated_point=[864, 314],
+                              raw_geometry={"synthetic": True})
+        with unittest.mock.patch.object(MODULE.time, "monotonic", return_value=100.25):
+            evidence = MODULE.safe_action_evidence(
+                "predictive-pace-notifications", state, 4242, "Pace warnings",
+                [850, 300, 28, 28], False, True,
+            )
+        self.assertEqual(evidence["target_pid"], 4242)
+        self.assertEqual(evidence["input_method"], "guarded_pointer_click")
+        self.assertEqual(evidence["control_bounds"], [850, 300, 28, 28])
+        self.assertEqual(evidence["sample_seq"], 14)
+        self.assertEqual(evidence["sample_age_seconds"], 0.2)
+        self.assertEqual(evidence["sample_received_monotonic"], 100.05)
+        self.assertEqual(set(evidence), {
+            "action", "target_pid", "control", "control_bounds", "target_geometry",
+            "coordinate_space", "calculated_point", "raw_geometry",
+            "input_method", "sample_seq", "sample_age_seconds", "sample_received_monotonic",
+            "input_requested_monotonic", "input_outcome", "input_return_metadata",
+            "action_state_before", "action_state_after",
+        })
+        self.assertFalse(any("password" in key.lower() or "secret" in key.lower()
+                             for key in evidence))
+        self.assertNotIn("actual account", json.dumps(evidence))
+        for changes in ({"pid": 19}, {"active": False}, {"top_hit": False},
+                        {"cursor": [0, 0]}, {"pre_click_age_seconds": 0.8},
+                        {"sample_seq": 0}):
+            with self.subTest(changes=changes), self.assertRaises(ValueError):
+                MODULE.safe_action_evidence(
+                    "predictive-pace-notifications", {**state, **changes}, 4242,
+                    "Pace warnings", [850, 300, 28, 28], False, True,
+                )
+
+    def test_batch_preclick_guard_checks_unrounded_age(self):
+        for age in (0.1496, 0.3504):
+            state = self.snapshot(sample_seq=1, received=100.0,
+                                  pre_click_age_seconds=age,
+                                  target_geometry=[364, 149, 1000, 740], cursor=[864, 314])
+            with self.subTest(age=age), self.assertRaises(ValueError):
+                MODULE.safe_action_evidence("predictive-pace-notifications", state, 4242,
+                                            "Pace warnings", [850, 300, 28, 28], False, True)
 
     def test_read_only_baseline_requires_exact_active_target_but_not_pointer_hit(self):
         state = self.snapshot(top_hit=False, cursor=[1727, 2])
@@ -81,6 +554,9 @@ class WaylandGuardTests(unittest.TestCase):
         self.assertIn("SAMPLE_INTERVAL_MS=250", script)
         self.assertIn("sampler.start(SAMPLE_INTERVAL_MS)", script)
         self.assertIn("MAX_SAMPLES=2400", script)
+        self.assertIn("active_window_pid", script)
+        self.assertIn("active_window_title", script)
+        self.assertIn('String(a.caption)', script)
         self.assertIn("MAX_LIFETIME_MS=600000", script)
         self.assertIn("if(sampleInFlight||now-lastSampleAt<SAMPLE_INTERVAL_MS)return", script)
         self.assertIn("sample_seq:sequence", script)
@@ -109,10 +585,13 @@ class WaylandGuardTests(unittest.TestCase):
         # More than the 350 ms age limit elapsed in move(); only the timer
         # report received at 100.72 can make the exact-target guard pass.
         with unittest.mock.patch.object(
-                MODULE.time, "monotonic", side_effect=[100.80, 100.80, 100.91, 100.93]):
-            MODULE.guarded_click_bridge(SlowBridge(), 4242, lambda: dict(state), 810, 315)
+                MODULE.time, "monotonic", side_effect=[100.80, 100.80, 100.91, 100.93, 100.94]):
+            clicked = MODULE.guarded_click_bridge(SlowBridge(), 4242, lambda: dict(state), 810, 315)
         self.assertEqual(calls, [("move", 810, 315), ("click", 810, 315)])
         self.assertEqual(state["sample_seq"], 3)
+        self.assertEqual(clicked["input_requested_monotonic"], 100.94)
+        self.assertEqual(clicked["input_outcome"], "returned")
+        self.assertEqual(clicked["input_return_metadata"], {})
 
     def test_no_heartbeat_after_delayed_move_never_clicks(self):
         calls = []
@@ -179,7 +658,7 @@ class WaylandGuardTests(unittest.TestCase):
                 "limit-reset-notifications", "predictive-pace-notifications",
                 "test-notification", "show-tray-icon",
                 "disable-codex-provider", "provider-source", "provider-api-key",
-                "provider-login",
+                "provider-login", "disable-global-hooks",
             },
         )
         self.assertEqual(
@@ -236,7 +715,7 @@ class WaylandGuardTests(unittest.TestCase):
              "session-quota-notifications", "quota-warning-notifications",
              "limit-reset-notifications", "predictive-pace-notifications", "test-notification",
              "show-tray-icon", "disable-codex-provider", "provider-source",
-             "provider-api-key", "provider-login"},
+             "provider-api-key", "provider-login", "disable-global-hooks"},
         )
         self.assertEqual(
             actions["show-panel-on-start"]["preference"],

@@ -148,6 +148,15 @@ for the BG merge, B11 CI limitation and B15 compatibility bounds.
 
 Build 95 adds a required CI proof for the installed native prefix in a Python-free runtime image. It does not change the default launcher or pass a cutover gate.
 
+Build 97 records seven guarded synthetic Wayland Settings actions across
+General, Notifications, Menu Bar and Hooks, with three verified Settings tab
+transitions. Notifications' four preference switches, General's automated
+refresh control, Menu Bar tray visibility and global Hooks disable passed;
+test-notification delivery, three Menu Bar combos, Hooks rules display, whole-app
+parity and keyboard parity remain open. The native binary under test was build
+95; this evidence does not claim a build-97 application binary. UG remains
+**NOT PASSED**, and Python remains the default.
+
 Build 94 carries the additive isolated-prefix installer; its no-activation path does not change the default launcher.
 
 Build 93 records one guarded synthetic Wayland Display action: `hidePersonalInfo`
@@ -246,7 +255,7 @@ The GTK front-end uses the same version pair as the macOS bundle:
   this client is feature-compatible with (`0.82.0`).
 * `CURRENT_PROJECT_VERSION` is the build number of the Linux front-end.
 * `codexbar_gtk/version.py` turns the pair into the macOS-style
-  `"0.82.0 (96)"` string shown under Settings → About, in the tray menu and by
+  `"0.82.0 (97)"` string shown under Settings → About, in the tray menu and by
   `./run.sh --about`.
 
 Increment `CURRENT_PROJECT_VERSION` for each merged PR and keep it in sync with

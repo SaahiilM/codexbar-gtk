@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.82.0 (96) — 2026-11-10
+
+Tracks upstream CodexBar 0.82.0.
+
+### Changed
+
+- Replace the native installer's activation template renderer with a validated
+  Bash renderer, removing Python from this activation-preparation path. Both
+  desktop and service files are rendered before installer state is changed.
+
+### Validation
+
+- Renderer checks and the 13-case isolated installer smoke passed in a
+  Python-free runtime container before this metadata reconciliation; see
+  AUDIT E199 for provenance and limits. Activation only writes desktop and
+  service files; it does not start or enable the service or create autostart.
+- The additive `--no-activate` installed-prefix runtime proof remains separate
+  and does not constitute C-gate or default-launcher acceptance.
+
 ## 0.82.0 (95) — 2026-11-10
 
 Tracks upstream CodexBar 0.82.0.

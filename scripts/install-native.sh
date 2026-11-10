@@ -8,20 +8,17 @@
 # only PREFIX/bin/codexbar-gtk-native plus a manifest. It never creates
 # .pre-native backups unless --activate is requested.
 #
-# Activation rendering depends on scripts/native/render_activation.py
-# (python3). This is a C01 preparation-time requirement only; it is NOT
-# part of the installed runtime. C02 (absent-Python runtime proof) remains
-# unproven — the installed ELF is what runs without Python, the installer
-# helper is not shipped in the prefix.
+# Activation rendering uses a Bash helper and does not require Python.
+# Activation writes user desktop/service files only; it does not enable or
+# start the service, nor create an autostart entry.
 set -euo pipefail
 : "${HOME:?HOME must identify the installation user}"
 [[ "$HOME" == /* ]] || { echo "HOME must be absolute" >&2; exit 1; }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT="$(dirname "$SCRIPT_DIR")"
 STAGE_DESKTOP="$SCRIPT_DIR/native/stage/native.desktop"
 STAGE_SERVICE="$SCRIPT_DIR/native/stage/native.service"
-RENDERER="$SCRIPT_DIR/native/render_activation.py"
+RENDERER="$SCRIPT_DIR/native/render_activation.sh"
 
 ARTIFACT=""
 PREFIX_DIR="${PREFIX:-${HOME:-}/.local}"
@@ -197,12 +194,12 @@ do_install() {
   # Validate path before any side effect.
   validate_binary_path "$BIN_DEST"
 
-  # Rendering can fail (missing Python, broken template, or renderer error).
+  # Rendering can fail (broken template or renderer error).
   # Complete BOTH renders before replacing binaries, backups, or the manifest.
   if [[ "$ACTIVATE" == "1" ]]; then
     RENDER_DIR="$(mktemp -d)"
-    if ! python3 "$RENDERER" "$STAGE_DESKTOP" "$BIN_DEST" desktop > "$RENDER_DIR/desktop" ||
-       ! python3 "$RENDERER" "$STAGE_SERVICE" "$BIN_DEST" service > "$RENDER_DIR/service"; then
+    if ! bash "$RENDERER" "$STAGE_DESKTOP" "$BIN_DEST" desktop > "$RENDER_DIR/desktop" ||
+       ! bash "$RENDERER" "$STAGE_SERVICE" "$BIN_DEST" service > "$RENDER_DIR/service"; then
       echo "activation rendering failed; installation unchanged" >&2
       exit 1
     fi

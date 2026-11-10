@@ -16,6 +16,11 @@ history. A checked box means **verified and merged**, not merely implemented.
 | UI acceptance | E195 records one Display action; E200 records seven guarded Settings actions and three tab transitions. Broader Wayland controls/navigation remain open. UG is **NOT PASSED** and Python remains the default; see `UG_GATE.md`. |
 | Next | Root owns review and publication for BUILD102/E205. The proof remains command-target-only; systemd activation/restart policy and autostart are untested. UG remains **NOT PASSED**, Python remains default, and C01–CG/cutover are not accepted. |
 
+PR #103 correction: run `42918673780` on `7e16a47` passed tray and the full
+Python-free/activated command-target proof. The Rust-opt-in suite failed on a
+procfs process-disappearance race in the login cancellation test. E205 records
+the narrow observation fix; replacement exact-head CI is pending.
+
 ### BUILD102/E205 — bounded private installer command-target proof
 
 Owner: `orchestrated/luna-native-service-proof`, based on observed PR #102

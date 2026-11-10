@@ -108,7 +108,8 @@ class ClaudePlatformLoginTests(unittest.TestCase):
         else:
             try:
                 state = Path(f"/proc/{pid}/stat").read_text().split()[2]
-            except FileNotFoundError:
+            except (FileNotFoundError, ProcessLookupError):
+                # The child can disappear between kill(0) and reading procfs.
                 state = None
             self.assertIn(state, (None, "Z"), "fake descendant survived process-group cancellation")
 

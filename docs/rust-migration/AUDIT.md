@@ -6759,3 +6759,19 @@ dependency preparation. Only synthetic logs and source/artifact hashes are
 uploaded. This is a configured check, not an observed CI pass; systemd policy
 and login-manager behavior remain untested. Review also made the signal-ignoring
 child regression wait for explicit handler readiness before cleanup escalation.
+
+E205 exact-head CI correction: run `42918673780` on `7e16a47` passed
+`tray-dbus` and `python-free-runtime-proof`, including the new full activated
+command-target upgrade/rollback step. `test` failed in the Rust-opt-in Python
+suite at `test_cancel_kills_the_fake_process_group`: the already-terminated
+child disappeared between `kill(pid, 0)` and its procfs stat read, raising
+`ProcessLookupError` (ESRCH). The assertion now treats that disappearance like
+`FileNotFoundError`; a surviving non-zombie child still fails. This changes
+only observation of process termination, not cancellation behavior. Replacement
+head CI is required; the earlier successful component checks are not a pass
+for the replacement head.
+
+Correction verification: the cancellation process-group test passed 15
+consecutive local runs; all 10 focused login, command-target parser and proof
+regressions passed together. `git diff --check` passed. No runtime application
+code or cancellation policy changed.

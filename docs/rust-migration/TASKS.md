@@ -10,11 +10,26 @@ history. A checked box means **verified and merged**, not merely implemented.
 | --- | --- |
 | Goal | Fully native Rust GTK4/libadwaita application with verified packaging and legacy runtime removal. |
 | Current phase | BG passed and U01–U08 implementation merged. UG **NOT PASSED**; Python default. |
-| Last observed merge | PR #99 merged at `5e033f0f955441b278e7530ad40b712fde1b5c44` (build 98). Run `42866749612` completed with all three checks (`tray-dbus`, `test`, `python-free-runtime-proof`) successful on `7ab01624e2f37d16c1f8d027db1a9638b8d0ab4f`. The merge occurred at 17:37:54Z; the run completed at 17:49:55Z, so CI finished after merge. This is base-only evidence, not E202 branch CI. The merge did not accept UG or C gates. |
-| Active implementation | Build 100, branch `orchestrated/luna-upstream084-claudeplatform-login`, based on supplied build-99 commit `41d2fcf982aef52cd86a64cb769176b494abb63c`; **UP084-CLAUDEPLATFORM-LOGIN** implemented and locally verified; local commit only. No PR, push or CI is claimed. |
+| Last observed merge | PR #101 merged at `284ce9a` (build 100). Run `42891020528` completed with all three checks successful on exact head `68c67ed47202a2cb98d4694ed89aa09a4e98865f`; merge at 20:08:33Z. This is base-only evidence for BUILD101, not CI for this branch. The merge did not accept UG or C gates. |
+| Active implementation | BUILD101/E204 private Weston acceptance runner and CI/handoff update; branch `orchestrated/luna-isolated-wayland-acceptance`, based on merged PR #101 commit `284ce9a`. The runner/evidence commits `c88e868` and `23324db` were supplied for this slice; process ownership, regression, CI, and durable evidence work are local and unpushed. No PR or branch CI is claimed. |
 | Installer/runtime verification | E198 records the merged build-95 installed-prefix/Python-free runtime proof. E199 records prior local 13-case activation smoke evidence in a Python-free container; its first attempt lacked `file`, and the portable `od`/`ldd` check passed. These component results do not pass C02 or authorize cutover. |
 | UI acceptance | E195 records one Display action; E200 records seven guarded Settings actions and three tab transitions. Broader Wayland controls/navigation remain open. UG is **NOT PASSED** and Python remains the default; see `UG_GATE.md`. |
-| Next | Root `933fef41-7c9a-499d-9460-70e5d53f7bf3` owns architecture/review, push, PR, merge and gates for UP084-CLAUDEPLATFORM-LOGIN. UG remains **NOT PASSED**, Python remains default, and C01–CG/cutover are not accepted. |
+| Next | Root owns architecture/review and publication for BUILD101/E204. UG remains **NOT PASSED**, Python remains default, and C01–CG/cutover are not accepted. |
+
+### BUILD101/E204 — isolated private Weston interaction smoke
+
+Owner: current `orchestrated/luna-isolated-wayland-acceptance` branch, based on
+merged PR #101 build-100 commit `284ce9a`. The exact PR #101 head
+`68c67ed47202a2cb98d4694ed89aa09a4e98865f` passed all three checks in run
+`42891020528`; that is base-only evidence. This slice hardens the bounded
+Wayland runner's process-tree ownership, adds a real timeout child/grandchild
+cleanup regression, and adds its private Weston smoke to CI using the already
+built native executable. E204 accepts only the General refresh-on-panel-open
+control, the Dashboard route, Usage & Spend route, and 7-day selection through
+GAction/AT-SPI on private Weston. This is not physical input, KDE placement,
+portal behavior, keyboard parity or full UG acceptance. Python remains default.
+Root owns review and publication. See AUDIT E204 for exact local evidence and
+checks; branch CI has not been observed.
 
 ### Focused upstream compatibility claim — UP084-CLAUDEPLATFORM-LOGIN
 

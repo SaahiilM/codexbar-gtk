@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.82.0 (101) — 2026-11-10
+
+Tracks upstream CodexBar 0.82.0. Add bounded private Weston Wayland acceptance
+for native Settings and Spend actions; Python remains the default launcher.
+
+- Harden the isolated runner so wrapper, compositor, app and helpers share one
+  owned process group, with bounded TERM/KILL cleanup and retained failure logs.
+- CI now exercises the built native app on private Weston and retains only its
+  synthetic evidence directory. This is a focused interaction slice, not UG
+  acceptance; see migration audit E204.
+
 ## 0.82.0 (100) — 2026-11-10
 
 Tracks upstream CodexBar 0.82.0. Adds the focused v0.84 ClaudePlatform

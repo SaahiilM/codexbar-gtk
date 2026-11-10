@@ -1,0 +1,76 @@
+{
+  "status": "passed",
+  "build": "0.82.0 (101)",
+  "application_source_commit": "23324db3ed72a71ff145456abdb77c8929d62b1b",
+  "native_binary_sha256": "bf1171987f4ef6f8b25dcc16236c84640c7dd011eb08a400c0e16a7269e80311",
+  "runner_source_sha256": "4e7e75073fbe76799fdd653ada52229bdc91bf70a131e7ea3ef41838ecb5ec7d",
+  "compositor": {
+    "kind": "Weston",
+    "backend": "headless",
+    "renderer": "Pixman",
+    "installation": "rootless package extraction locally; system package in CI"
+  },
+  "display": {
+    "backend": "Wayland",
+    "gdk_type": "GdkWaylandDisplay",
+    "host_session_handles_removed": true,
+    "runtime_mode": "0700",
+    "wayland_socket_mode": "0600"
+  },
+  "actions": [
+    {
+      "kind": "GAction",
+      "action": "app.dashboard",
+      "result": "Dashboard window observed"
+    },
+    {
+      "kind": "GAction",
+      "action": "app.settings",
+      "result": "Settings window observed"
+    },
+    {
+      "kind": "AT-SPI AccessibleAction.DoAction",
+      "control": "Refresh when the panel opens",
+      "checked": "false -> true",
+      "synthetic_preference_persisted": true
+    },
+    {
+      "kind": "GAction",
+      "action": "app.dashboard",
+      "result": "Dashboard window observed after Settings"
+    },
+    {
+      "kind": "GAction",
+      "action": "app.page('spend')",
+      "result": "Usage & Spend window observed"
+    },
+    {
+      "kind": "GAction",
+      "action": "app.spend-range('7 days')",
+      "selected_control_role": "toggle button",
+      "AT-SPI_pressed_state": true
+    }
+  ],
+  "captures": {
+    "settings_after_toggle": {
+      "path": "settings-after-toggle.png",
+      "sha256": "a093fb8e7800411530afc84a1e1cec5dc794f77e0b5b3d32d7d9a7a103a2d147"
+    },
+    "spend_7_days": {
+      "path": "spend-7-days.png",
+      "sha256": "3c5743721d864a5d8d46b89f03f7bbd8768184a2945fab5f0044307cbd5a2333"
+    }
+  },
+  "cleanup": {
+    "app_exited": true,
+    "compositor_exited": true,
+    "private_runtime_removed": true,
+    "synthetic_home_removed": true,
+    "private_dbus_socket_removed": true
+  },
+  "limits": [
+    "GAction and AT-SPI are not physical pointer or keyboard input.",
+    "Private Weston does not establish KDE shell placement, portal input, or host compositor parity.",
+    "This narrow interaction slice does not pass UG."
+  ]
+}

@@ -10,11 +10,32 @@ history. A checked box means **verified and merged**, not merely implemented.
 | --- | --- |
 | Goal | Fully native Rust GTK4/libadwaita application with verified packaging and legacy runtime removal. |
 | Current phase | BG passed and U01–U08 implementation merged. UG **NOT PASSED**; Python default. |
-| Last observed merge | PR #101 merged at `284ce9a` (build 100). Run `42891020528` completed with all three checks successful on exact head `68c67ed47202a2cb98d4694ed89aa09a4e98865f`; merge at 20:08:33Z. This is base-only evidence for BUILD101, not CI for this branch. The merge did not accept UG or C gates. |
-| Active implementation | BUILD101/E204 private Weston acceptance runner and CI/handoff update; branch `orchestrated/luna-isolated-wayland-acceptance`, based on merged PR #101 commit `284ce9a`. The runner/evidence commits `c88e868` and `23324db` were supplied for this slice; process ownership, regression, CI, and durable evidence work are local and unpushed. No PR or branch CI is claimed. |
+| Last observed merge | PR #102 merged normally at `07e6fb2e6d9ed40d517c8c89b55c10e83466b049` (build 101). Its three required checks all succeeded on exact head `a4512a45f43992ba149ceae5aef0f4c7140e0800` in run `42914850286`; no reviews/comments/threads were reported. This is base-only evidence for BUILD102, not CI for this branch. The merge did not accept UG or C gates. |
+| Active implementation | BUILD102/E205 private native installer command-target proof hardening; branch `orchestrated/luna-native-service-proof`, based on PR #102 merge `07e6fb2e6d9ed40d517c8c89b55c10e83466b049`. Implementation commit `3153fac55f8bafb8cfbb6596b0db4cc114403028` and full local private proof passed; no PR or branch CI is claimed. |
 | Installer/runtime verification | E198 records the merged build-95 installed-prefix/Python-free runtime proof. E199 records prior local 13-case activation smoke evidence in a Python-free container; its first attempt lacked `file`, and the portable `od`/`ldd` check passed. These component results do not pass C02 or authorize cutover. |
 | UI acceptance | E195 records one Display action; E200 records seven guarded Settings actions and three tab transitions. Broader Wayland controls/navigation remain open. UG is **NOT PASSED** and Python remains the default; see `UG_GATE.md`. |
-| Next | Root owns architecture/review and publication for BUILD101/E204. UG remains **NOT PASSED**, Python remains default, and C01–CG/cutover are not accepted. |
+| Next | Root owns review and publication for BUILD102/E205. The proof remains command-target-only; systemd activation/restart policy and autostart are untested. UG remains **NOT PASSED**, Python remains default, and C01–CG/cutover are not accepted. |
+
+PR #103 correction: run `42918673780` on `7e16a47` passed tray and the full
+Python-free/activated command-target proof. The Rust-opt-in suite failed on a
+procfs process-disappearance race in the login cancellation test. E205 records
+the narrow observation fix; replacement exact-head CI is pending.
+
+### BUILD102/E205 — bounded private installer command-target proof
+
+Owner: `orchestrated/luna-native-service-proof`, based on observed PR #102
+merge `07e6fb2e6d9ed40d517c8c89b55c10e83466b049`. Build 102 keeps marketing
+version 0.82.0; build 99 and build 102 are component versions within that same
+supported upstream marketing version. The private synthetic smoke is labeled
+build 99 → build 102 → build 99 and proves installed command targets, process
+identity, refresh/quit actions, backup/rollback and preservation only. Systemd
+activation/restart policy and desktop autostart remain untested. E205 records
+the actual source/artifact identities, checks and exact command-target scope.
+Focused CI was not added: it would need a historical source fetch/build plus
+another runtime Docker pass. Reproduce in a Docker-enabled environment with
+the pinned source available using `scripts/smoke-native-service.sh`; Root owns
+review and publication. UG remains **NOT PASSED**, Python remains default, and
+C gates are not accepted.
 
 ### BUILD101/E204 — isolated private Weston interaction smoke
 

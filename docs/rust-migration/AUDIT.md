@@ -6694,3 +6694,84 @@ parity and shell syntax were rerun after the fixture preservation change.
   placement, portal behavior, host compositor compatibility, keyboard parity
   or full UG acceptance. UG remains **NOT PASSED**, Python remains default, and
   no C gate/cutover is accepted. Root owns review and publication.
+
+### E205 — 2026-11-10: hardened private installer command-target proof
+
+- **Claim/base/build:** BUILD102 / E205, branch
+  `orchestrated/luna-native-service-proof`, based on PR #102 merge
+  `07e6fb2e6d9ed40d517c8c89b55c10e83466b049`. Implementation commit
+  `3153fac55f8bafb8cfbb6596b0db4cc114403028` is local; no PR, push, branch CI,
+  merge, or gate acceptance is claimed. `VERSION`, Python metadata, README and
+  changelog use `0.82.0 (102)`. Build 99 is also marketing 0.82.0 (99): the
+  sequence is a frontend build-number comparison, not an upstream marketing
+  version migration.
+- **Harness changes:** `scripts/smoke-native-service.sh` always builds current
+  release source with `--locked --release` into a run-specific target directory
+  and resolves the artifact from Cargo JSON through the existing artifact
+  resolver. The default previous artifact is built from pinned source
+  `41d2fcf982aef52cd86a64cb769176b494abb63c`; source `VERSION` and artifact
+  hashes are recorded separately. An explicit `PREVIOUS_ARTIFACT` remains
+  supported but is labeled with unknown source/build identity; hash difference
+  alone is not represented as version evidence. The host wrapper bounds Docker
+  run duration, assigns a unique owned container name, and traps cleanup of only
+  that container and its image. The container trap is installed before Xvfb or
+  private D-Bus startup and uses bounded QUIT/TERM/KILL plus PID reaping.
+- **Private proof:** `scripts/smoke-native-service.sh` passed on exact current
+  source commit `3153fac55f8bafb8cfbb6596b0db4cc114403028`, source-file inventory
+  SHA-256 `68fc2896772d0d2f019497f356efc516e730f2d298ed3d83eb4c1075e9562853`.
+  It built build 99 from the pinned source and build 102 from current source,
+  then passed the private 99→102→99 sequence inside Docker `--network none`
+  using synthetic HOME, private Xvfb and private D-Bus. Build-99 artifact SHA-256
+  is `589fe72e1f6314939c207932d31f481f0554f5ebefca12af8201e07b2f05a97a`;
+  build-102 SHA-256 is
+  `542390b25616fe87ba5add941b056e33f00774d3bf01dc86c0853064866f8f7c`.
+  Each launched command target matched the observed owner PID, executable path
+  and artifact hash. Refresh D-Bus actions succeeded and increased the
+  synthetic CLI call count; quit actions succeeded, each app exited 0, and both
+  app/SNI names were absent before the following run. Installer backup/rollback
+  provenance, retention of the edited service entry, byte-preserved synthetic
+  settings/history and absence of duplicate autostart also passed.
+- **Regression/checks:** `python3 -m unittest
+  tests.test_native_service_proof -v` passed 3 tests for always rebuilding the
+  current artifact despite a prior shared build, required-action failure
+  visibility, and bounded cleanup/reaping of a child ignoring QUIT/TERM.
+  ShellCheck, `bash -n` for all changed scripts, and `git diff --check` passed.
+  The focused Rust metadata test
+  `cargo test --manifest-path rust-gtk/Cargo.toml --locked --lib
+  version_metadata_tracks_the_root_version_file` passed 1/1.
+  The first full-container attempt exposed a missing initial synthetic CLI log
+  file; that was initialized and the subsequent full private proof passed. The
+  local source-and-hash record is also appended to
+  `scripts/native/no-python/service-proof-results.md`; ephemeral process IDs and
+  `/tmp` evidence paths are not treated as durable evidence.
+- **CI/limits/handoff:** no CI job was added because the focused run requires a
+  historical source fetch/build and a second runtime Docker pass alongside the
+  existing Python-free proof job. Reproduce in a Docker-enabled environment
+  with the pinned source available using the exact invocation
+  `scripts/smoke-native-service.sh`. This is command-target proof only: there is no systemd manager
+  and no actual service activation, restart-policy, login-manager, desktop-shell
+  or Settings autostart test. It does not pass C02, UG or cutover gates. Python
+  remains default; Root owns review and publication.
+
+Root E205 publication review added the full command-target lifecycle smoke to
+the Python-free CI job, including a pinned historical source fetch and Cargo
+dependency preparation. Only synthetic logs and source/artifact hashes are
+uploaded. This is a configured check, not an observed CI pass; systemd policy
+and login-manager behavior remain untested. Review also made the signal-ignoring
+child regression wait for explicit handler readiness before cleanup escalation.
+
+E205 exact-head CI correction: run `42918673780` on `7e16a47` passed
+`tray-dbus` and `python-free-runtime-proof`, including the new full activated
+command-target upgrade/rollback step. `test` failed in the Rust-opt-in Python
+suite at `test_cancel_kills_the_fake_process_group`: the already-terminated
+child disappeared between `kill(pid, 0)` and its procfs stat read, raising
+`ProcessLookupError` (ESRCH). The assertion now treats that disappearance like
+`FileNotFoundError`; a surviving non-zombie child still fails. This changes
+only observation of process termination, not cancellation behavior. Replacement
+head CI is required; the earlier successful component checks are not a pass
+for the replacement head.
+
+Correction verification: the cancellation process-group test passed 15
+consecutive local runs; all 10 focused login, command-target parser and proof
+regressions passed together. `git diff --check` passed. No runtime application
+code or cancellation policy changed.

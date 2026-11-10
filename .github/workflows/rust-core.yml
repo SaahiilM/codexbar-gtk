@@ -162,6 +162,25 @@ jobs:
             --svg-test-binary "$SVG_TEST_BINARY" \
             --require-docker \
             --evidence-dir "$RUNNER_TEMP/no-python-evidence"
+      - name: Verify activated command targets across native build upgrade and rollback
+        timeout-minutes: 25
+        run: |
+          previous_commit=41d2fcf982aef52cd86a64cb769176b494abb63c
+          git fetch --no-tags --depth=1 origin "$previous_commit"
+          mkdir -p "$RUNNER_TEMP/native-service-dependencies"
+          git archive "$previous_commit" | tar -x -C "$RUNNER_TEMP/native-service-dependencies"
+          cargo fetch --locked --manifest-path "$RUNNER_TEMP/native-service-dependencies/rust-gtk/Cargo.toml"
+          SMOKE_EVIDENCE="$RUNNER_TEMP/native-service-evidence" ./scripts/smoke-native-service.sh
+      - name: Retain synthetic native command-target proof results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-command-target-proof-${{ github.run_id }}
+          if-no-files-found: warn
+          path: |
+            ${{ runner.temp }}/native-service-evidence/run.log
+            ${{ runner.temp }}/native-service-evidence/source-sha256.txt
+            ${{ runner.temp }}/native-service-evidence/work/docker-build.log
       - name: Retain sanitized synthetic proof log and hashes on failure
         if: failure()
         uses: actions/upload-artifact@v4

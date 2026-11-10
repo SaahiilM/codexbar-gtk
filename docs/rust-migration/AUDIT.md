@@ -6475,3 +6475,59 @@ parity and shell syntax were rerun after the fixture preservation change.
   `933fef41-7c9a-499d-9460-70e5d53f7bf3` owns review, push, PR, merge and all
   gates. The next compatibility slice is ClaudePlatform stdin login, kept
   separate from this warning work.
+
+#### E202 runtime refinement — rendered warning verification
+
+- **Claim:** continuation of build 99/E202 on
+  `orchestrated/luna-upstream084-claude-warning`; this closes the initial
+  display-evidence gap above. No version/build bump; BUILD remains 99. The
+  initial statement that no screenshot had yet been produced was accurate at
+  that point and is superseded by this appended observation.
+- **Changes:** `rust-gtk/src/dashboard_widget.rs` adds a display-required GTK
+  test that creates, presents and traverses a rendered dashboard window. It
+  runs the synthetic hostile row through Rust normalization, dashboard
+  projection and GTK rendering. It requires the exact safe label
+  `Some Claude models could not be identified.`, rendered primary and secondary
+  quota labels (`72%`, `31%`), and absence of the hostile marker from every
+  widget label; it also asserts that the normalized DTO retains the primary's
+  exact `72.5` input and unrelated detail row. The default synthetic Claude row
+  in `scripts/smoke-native-dashboard.sh` now includes known primary (72.5%)
+  and secondary (31%) quota windows, exact row ID `claude-model-breakdown` with
+  a hostile synthetic value, and an unrelated retained detail row. Existing
+  normalization regression checks establish exact-row removal, unrelated-row
+  retention, and raw DTO redaction. The Xvfb test is added to the existing
+  `rust-core.yml` test job.
+- **Checks passed:** GTK format check; GTK Clippy for all targets with
+  `-D warnings`; `bash -n scripts/smoke-native-dashboard.sh`; `git diff
+  --check`; and targeted display test:
+  `xvfb-run -a dbus-run-session -- cargo test --manifest-path
+  rust-gtk/Cargo.toml --locked --lib
+  rendered_dashboard_contains_safe_warning_and_both_quotas -- --ignored`
+  (1 passed). `cargo build --manifest-path rust-gtk/Cargo.toml --locked --bin
+  codexbar-gtk-native` passed. The complete
+  `scripts/smoke-native-dashboard.sh` passed with the synthetic CLI, temporary
+  HOME/runtime directories, private D-Bus and Xvfb. Local Xvfb/xdotool binaries
+  were extracted under `/tmp`; `LD_LIBRARY_PATH` included their private
+  `libxdo.so.3` directory. No system packages or host GUI/session were changed.
+- **Visual result:** captured and personally inspected
+  [build99-claude-warning-xvfb.png](screenshots/build99-claude-warning-xvfb.png).
+  The app window visibly contains Claude's rounded primary `72%` and secondary
+  `31%` quota values and the exact allowlisted warning. The display test checks
+  the unrounded typed primary value (`72.5`) and GTK's rendered `72%` label.
+  The screenshot was
+  captured after scrolling to the Claude card; it is X11-only and does not
+  establish Wayland behavior. No hostile marker appears in the rendered
+  window/test widget labels. Existing Rust/Python characterization
+  tests retain coverage for the exact row being removed and unrelated details
+  being kept.
+- **Checks not rerun:** Python default and Rust-opt-in suites were not rerun;
+  this refinement changes only the GTK test, workflow invocation, synthetic GTK
+  smoke fixture and documentation. No core/backend/PyO3 Rust source changed.
+  No exact-head CI, PR, publication, Wayland, provider request or authentication
+  is claimed. The observed PR #99 base CI reconciliation is recorded in
+  TASKS.md: all three checks in run `42866749612` succeeded on
+  `7ab01624e2f37d16c1f8d027db1a9638b8d0ab4f`, after the merge at 17:37:54Z;
+  the run completed at 17:49:55Z.
+- **Handoff:** root owns final review and publication. Keep ClaudePlatform
+  stdin login separate. UG remains **NOT PASSED**, Python remains the default,
+  and no C gate is accepted.

@@ -671,3 +671,106 @@ pub(crate) fn clear_box(container: &gtk::Box) {
         container.remove(&child);
     }
 }
+
+#[cfg(test)]
+mod display_tests {
+    use super::*;
+    use crate::dashboard::project_dashboard;
+    use codexbar_backend::{controller::ControllerSnapshot, BackendState, BackendStatus};
+    use codexbar_core::{currency::CurrencyCatalog, domain::provider_usage_from_value};
+    use serde_json::{json, Map};
+    use std::{sync::Arc, time::SystemTime};
+
+    fn labels(widget: &gtk::Widget, output: &mut Vec<String>) {
+        if let Ok(label) = widget.clone().downcast::<gtk::Label>() {
+            output.push(label.text().to_string());
+        }
+        let mut child = widget.first_child();
+        while let Some(current) = child {
+            labels(&current, output);
+            child = current.next_sibling();
+        }
+    }
+
+    #[test]
+    #[ignore = "requires a GTK display; run under Xvfb"]
+    fn rendered_dashboard_contains_safe_warning_and_both_quotas() {
+        gtk::init().expect("GTK display for rendered dashboard test");
+        let hostile = "SYNTHETIC-HOSTILE-NOTICE-DO-NOT-RENDER";
+        let payload = json!({
+            "provider": "claude",
+            "usage": {
+                "primary": {"usedPercent": 72.5, "windowMinutes": 300},
+                "secondary": {"usedPercent": 31, "windowMinutes": 10080},
+                "details": [{"title":"Synthetic details","rows":[
+                    {"id":"claude-model-breakdown","label":"Status","value":hostile},
+                    {"id":"unrelated","label":"Retained detail","value":"Synthetic retained detail"}
+                ]}]
+            }
+        });
+        let provider = provider_usage_from_value(&payload)
+            .expect("synthetic provider payload is valid")
+            .expect("synthetic Claude provider is present");
+        assert_eq!(provider.windows[0].used_percent, 72.5);
+        assert_eq!(provider.windows[1].used_percent, 31.0);
+        assert_eq!(provider.details[0].rows.len(), 1);
+        assert_eq!(
+            provider.details[0].rows[0].value,
+            "Synthetic retained detail"
+        );
+        assert!(!serde_json::to_string(&provider).unwrap().contains(hostile));
+        let snapshot = ControllerSnapshot {
+            revision: 1,
+            version: "0.82.0 (99)".into(),
+            updated_at: None,
+            last_error: None,
+            cost_error: None,
+            providers: vec![provider],
+            spend: None,
+            sessions: vec![],
+            session_scan_status: None,
+            history: vec![],
+            tray_selection: None,
+        };
+        let state = BackendState {
+            sequence: 1,
+            changed_at: SystemTime::now(),
+            status: BackendStatus::Ready,
+            snapshot: Some(Arc::new(snapshot)),
+            last_error: None,
+        };
+        let model = project_dashboard(
+            &state,
+            &Map::new(),
+            &CurrencyCatalog::default(),
+            chrono::Utc::now(),
+        );
+        assert_eq!(
+            model.providers[0].warnings,
+            ["Some Claude models could not be identified."]
+        );
+
+        let view = DashboardView::new();
+        view.render(&model);
+
+        let window = gtk::Window::new();
+        window.set_default_size(900, 600);
+        window.set_child(Some(&view.widget()));
+        window.present();
+        while gtk::glib::MainContext::default().pending() {
+            gtk::glib::MainContext::default().iteration(false);
+        }
+
+        let mut visible_labels = Vec::new();
+        labels(&window.clone().upcast(), &mut visible_labels);
+        assert!(visible_labels
+            .iter()
+            .any(|text| text == "Some Claude models could not be identified."));
+        assert!(visible_labels.iter().any(|text| text == "72%"));
+        assert!(visible_labels.iter().any(|text| text == "31%"));
+        assert!(!visible_labels
+            .iter()
+            .any(|text| text.contains("SYNTHETIC-HOSTILE")));
+        window.close();
+    }
+}

@@ -641,7 +641,7 @@ for i in range(min(d.get_child_count(),100)):
  app=d.get_child_at_index(i)
  try:
   if app.get_name()!=want_name or int(app.get_process_id())!=want_pid: continue
-  app_bus=str(app.bus_name)
+  app_bus=identity(app)["bus_name"]
   app_match={"application":app.get_name(),"pid":int(app.get_process_id()),"application_bus_name":app_bus}; q=[app]; seen=0; visited=set()
   while q and seen<3000:
    n=q.pop(0); seen+=1

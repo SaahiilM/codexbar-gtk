@@ -144,9 +144,10 @@ class WaylandGuardTests(unittest.TestCase):
         raw, kwin = self.geometry_fixture()
 
         class App:
-            bus_name = "org.example.synthetic"
             path = "/org/example/app"
-            def __init__(self): self.children = []
+            def __init__(self):
+                self.app = types.SimpleNamespace(bus_name="org.example.synthetic")
+                self.children = []
             def get_name(self): return "codexbar-gtk-synthetic-wayland-test"
             def get_process_id(self): return 4242
             def get_role_name(self): return "application"
@@ -166,7 +167,7 @@ class WaylandGuardTests(unittest.TestCase):
 
         class Node:
             def __init__(self, name, role, path, values=None):
-                self.app, self.path = app, path
+                self.app, self.path = app.app, path
                 self.name, self.role, self.children = name, role, []
                 self.component = Component(values or {})
             def get_name(self): return self.name

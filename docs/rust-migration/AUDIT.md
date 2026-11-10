@@ -6326,3 +6326,94 @@ unverified; UG and C gates remain open and Python remains default.
   independently from build-96 main), then the safe Claude warning, then
   ClaudePlatform stdin login. Keep those feature changes separate from this
   evidence-only commit.
+
+### E201 — 2026-11-10: v0.84 provider catalog and artwork compatibility
+
+- **Base and observed dependency:** this work began from PR #97's merge
+  `44e5c9b`. Root observed PR #98 (the build-97 Settings handoff) merge normally
+  at `f40307db189ce7fba97a0cc5da1aabd8c73b5f7c`; its exact head
+  `11ca6d3b6439a54f5a431a3e0b6cdd8bd02275f2` passed all three checks in run
+  `42861843557`, with zero reviews, comments and review threads. Fetched
+  `origin/main` matched that commit. This branch merged it without conflict or
+  history rewrite at `44e485f4685a8648b73a40e35107ca037fe35487`, preserving
+  implementation commit `fa7fe6df58800873c0509f8e557c8b575294ffc8` and both
+  parent histories. Those are base results, not CI results for this branch.
+- **Pinned upstream evidence:** release
+  [CodexBar v0.84.0](https://github.com/steipete/CodexBar/releases/tag/v0.84.0)
+  was published November 7, 2026. The annotated `v0.84.0` tag object is
+  `8a57704d0e0f2bff57e910c47293fd33b4893f6a`; its peeled source commit is
+  `5bebf9a05e68059eae11d5031c7239f1aa1d49ef`. The tagged
+  [provider manifest](https://raw.githubusercontent.com/steipete/CodexBar/v0.84.0/Sources/CodexBarCore/Providers/ProviderManifest.swift)
+  appends OpenDesign, SiliconFlow and Tripo in that order after the prior 110
+  descriptors. Their verified IDs/display names are `opendesign`/OpenDesign,
+  `siliconflow`/SiliconFlow and `tripo`/Tripo; only OpenDesign adds the alias
+  `open-design`. Accent colors are `#202020`, `#6E29F5` and `#F8CF00`.
+  OpenDesign uses Session/Weekly labels, its dashboard URL, unavailable
+  history, no burndown selection, no API detail, and label progress coloring
+  with automatic/primary/secondary menu metrics. SiliconFlow uses Balance for
+  both labels, its dashboard URL, balance-only mode, unavailable history, no
+  burndown selection, API detail and configured-key availability. Tripo uses
+  Credits for both labels, its billing dashboard and status URLs, balance-only
+  mode, unavailable history, no burndown selection, API detail and
+  configured-key availability. None of these descriptors adds provider
+  fetching, history services, credentials or login code to this application.
+- **Scope and paths:** `rust-core/src/providers.rs` adds the three sorted
+  catalog rows, exact descriptor facts and dashed alias; `rust-core/src/domain.rs`
+  tests ID/name/color normalization. `rust-backend/src/presentation.rs` and
+  `rust-gtk/src/dashboard.rs` exercise the generic tray and card projections.
+  `rust-gtk/src/icons.rs`, `rust-gtk/tests/a11y_assets.rs` and
+  `rust-gtk/build.rs` cover resource aliases, loading and asset discovery.
+  `codexbar_gtk/providers.py` keeps matching Python metadata, descriptor facts
+  and alias as the parity reference. Python and Rust tests compare all 113
+  catalog rows, ordering, details and aliases. The synthetic settings/dashboard
+  fixtures include all three names and keep their provider rows disabled.
+- **Artwork and license:** added the tagged monochrome SVGs
+  `ProviderIcon-opendesign.svg`, `ProviderIcon-siliconflow.svg` and
+  `ProviderIcon-tripo.svg` to `codexbar_gtk/assets/provider_icons/`. The
+  [upstream resource files](https://github.com/steipete/CodexBar/tree/5bebf9a05e68059eae11d5031c7239f1aa1d49ef/Sources/CodexBar/Resources)
+  are copied from the pinned tag. No brand-color files for these providers are
+  present there; the existing brand → monochrome → initial-letter fallback is
+  tested. [`UPSTREAM-PROVENANCE.md`](../../codexbar_gtk/assets/provider_icons/UPSTREAM-PROVENANCE.md)
+  records the exact asset URLs and retains the
+  [tagged MIT license](https://github.com/steipete/CodexBar/blob/5bebf9a05e68059eae11d5031c7239f1aa1d49ef/LICENSE)
+  notice and attribution. No invented or generated artwork was used.
+- **Build metadata and current handoff:** set `VERSION` and
+  `codexbar_gtk/version.py` to build 98 while preserving marketing version
+  0.82.0; updated the README's displayed build and compatibility note, prepended
+  the build-98 changelog entry, and updated the local UP084-PROVIDERS claim in
+  `TASKS.md`. This is upstream compatibility work, not C03 and not a claim of
+  full v0.84 support. UG remains **NOT PASSED**, Python remains default, and
+  warning and login compatibility remain separate next slices.
+- **Verification:** `cargo fmt --manifest-path rust-core/Cargo.toml -- --check`,
+  and the same command for `rust-backend` and `rust-gtk` — passed. Core tests —
+  87 passed. Backend tests — 86 unit plus 1 integration passed. GTK tests under
+  private D-Bus — 38 library tests, the main test and Python-free linkage test
+  passed; the default run skipped the two display-required artwork tests and
+  the negative loader test because its absent-loader precondition was false.
+  Core, backend and GTK Clippy with `--all-targets --all-features -- -D
+  warnings` passed. Both display-required artwork tests were then run under
+  private X11/Xvfb and private D-Bus; both passed, including actual SVG decode
+  and brand → monochrome → initial fallback. `cargo build --manifest-path
+  rust-gtk/Cargo.toml --locked` and `scripts/build-rust-core.sh` passed; the
+  extension was produced through the atomic helper. Python default mode ran 305
+  tests with 21 skips; `CODEXBAR_RUST_CORE=1` ran 305 tests with no skips.
+  The synthetic native dashboard and Settings smoke runs passed. The dashboard
+  screenshot `/tmp/codexbar-v084-xvfb/dashboard-v084-final.png` and Settings
+  screenshot `/tmp/codexbar-v084-xvfb/settings-providers.png` were personally
+  inspected: all three cards/names/artwork are visible and all three new
+  Settings provider rows are disabled. A repeated dashboard attempt initially
+  missed the window because the extracted temporary `xdotool` lacked its
+  private `libxdo.so.3` search path; the window was present in the X11 tree, and
+  the smoke passed after adding that library path. `git diff --check` and shell
+  syntax checks passed. These are local checks only; no exact-head CI or gate
+  acceptance is claimed.
+- **Display and limits:** the reviewed captures and both display tests used
+  private X11/Xvfb, not Wayland, the shared desktop or a live session. Fixtures
+  used synthetic CLI output and temporary homes; the three added providers were
+  disabled in Settings. No real provider account, credentials, provider HTTP
+  request or real login was used. Screenshots and transient logs remain in
+  `/tmp`, not committed evidence. `VERSION` remains `0.82.0`; the provider
+  catalog slice does not establish overall v0.84 compatibility.
+- **Handoff:** root owns review, publication, exact-head CI and merge. Keep the
+  warning classification and ClaudePlatform stdin login as separate
+  compatibility PRs. Do not change UG or any C-gate status from this slice.

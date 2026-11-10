@@ -6694,3 +6694,61 @@ parity and shell syntax were rerun after the fixture preservation change.
   placement, portal behavior, host compositor compatibility, keyboard parity
   or full UG acceptance. UG remains **NOT PASSED**, Python remains default, and
   no C gate/cutover is accepted. Root owns review and publication.
+
+### E205 — 2026-11-10: hardened private installer command-target proof
+
+- **Claim/base/build:** BUILD102 / E205, branch
+  `orchestrated/luna-native-service-proof`, based on PR #102 merge
+  `07e6fb2e6d9ed40d517c8c89b55c10e83466b049`. Implementation commit
+  `a75cc887b86ee9cebaddff0171136cf80e3bc2a4` is local; no PR, push, branch CI,
+  merge, or gate acceptance is claimed. `VERSION`, Python metadata, README and
+  changelog use `0.82.0 (102)`. Build 99 is also marketing 0.82.0 (99): the
+  sequence is a frontend build-number comparison, not an upstream marketing
+  version migration.
+- **Harness changes:** `scripts/smoke-native-service.sh` always builds current
+  release source with `--locked --release` into a run-specific target directory
+  and resolves the artifact from Cargo JSON through the existing artifact
+  resolver. The default previous artifact is built from pinned source
+  `41d2fcf982aef52cd86a64cb769176b494abb63c`; source `VERSION` and artifact
+  hashes are recorded separately. An explicit `PREVIOUS_ARTIFACT` remains
+  supported but is labeled with unknown source/build identity; hash difference
+  alone is not represented as version evidence. The host wrapper bounds Docker
+  run duration, assigns a unique owned container name, and traps cleanup of only
+  that container and its image. The container trap is installed before Xvfb or
+  private D-Bus startup and uses bounded QUIT/TERM/KILL plus PID reaping.
+- **Private proof:** `scripts/smoke-native-service.sh` passed on exact current
+  source commit `a75cc887b86ee9cebaddff0171136cf80e3bc2a4`, source-file inventory
+  SHA-256 `e224691ba52473e149679c4d5a45bc7f2b99c26c0140966a1af247bae490a71b`.
+  It built build 99 from the pinned source and build 102 from current source,
+  then passed the private 99→102→99 sequence inside Docker `--network none`
+  using synthetic HOME, private Xvfb and private D-Bus. Build-99 artifact SHA-256
+  is `589fe72e1f6314939c207932d31f481f0554f5ebefca12af8201e07b2f05a97a`;
+  build-102 SHA-256 is
+  `542390b25616fe87ba5add941b056e33f00774d3bf01dc86c0853064866f8f7c`.
+  Each launched command target matched the observed owner PID, executable path
+  and artifact hash. Refresh D-Bus actions succeeded and increased the
+  synthetic CLI call count; quit actions succeeded, each app exited 0, and both
+  app/SNI names were absent before the following run. Installer backup/rollback
+  provenance, retention of the edited service entry, byte-preserved synthetic
+  settings/history and absence of duplicate autostart also passed.
+- **Regression/checks:** `python3 -m unittest
+  tests.test_native_service_proof -v` passed 3 tests for always rebuilding the
+  current artifact despite a prior shared build, required-action failure
+  visibility, and bounded cleanup/reaping of a child ignoring QUIT/TERM.
+  ShellCheck, `bash -n` for all changed scripts, and `git diff --check` passed.
+  The focused Rust metadata test
+  `cargo test --manifest-path rust-gtk/Cargo.toml --locked --lib
+  version_metadata_tracks_the_root_version_file` passed 1/1.
+  The first full-container attempt exposed a missing initial synthetic CLI log
+  file; that was initialized and the subsequent full private proof passed. The
+  local source-and-hash record is also appended to
+  `scripts/native/no-python/service-proof-results.md`; ephemeral process IDs and
+  `/tmp` evidence paths are not treated as durable evidence.
+- **CI/limits/handoff:** no CI job was added because the focused run requires a
+  historical source fetch/build and a second runtime Docker pass alongside the
+  existing Python-free proof job. Reproduce in a Docker-enabled environment
+  with the pinned source available using the exact invocation
+  `scripts/smoke-native-service.sh`. This is command-target proof only: there is no systemd manager
+  and no actual service activation, restart-policy, login-manager, desktop-shell
+  or Settings autostart test. It does not pass C02, UG or cutover gates. Python
+  remains default; Root owns review and publication.

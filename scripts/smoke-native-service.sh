@@ -39,7 +39,10 @@ chmod 755 "$WORK/installer/scripts/install-native.sh"
 CURRENT_COMMIT=$(git -C "$ROOT" rev-parse HEAD)
 CURRENT_MARKETING=$(sed -n 's/^MARKETING_VERSION=//p' "$ROOT/VERSION")
 CURRENT_VERSION=$(sed -n 's/^CURRENT_PROJECT_VERSION=//p' "$ROOT/VERSION")
-PREVIOUS_VERSION=$(sed -n 's/^CURRENT_PROJECT_VERSION=//p' "$PREVIOUS_SOURCE/VERSION" 2>/dev/null || true)
+PREVIOUS_VERSION=
+if [[ -n "$PREVIOUS_SOURCE" ]]; then
+  PREVIOUS_VERSION=$(sed -n 's/^CURRENT_PROJECT_VERSION=//p' "$PREVIOUS_SOURCE/VERSION")
+fi
 CURRENT_SOURCE_DIFF=$(git -C "$ROOT" diff HEAD --binary | sha256sum | awk '{print $1}')
 CURRENT_SOURCE_TREE=$(cd "$ROOT" && git ls-files -co --exclude-standard -z | xargs -0 -r sha256sum | sha256sum | awk '{print $1}')
 CURRENT_ARTIFACT_SHA=$(sha256sum "$CURRENT_ARTIFACT" | awk '{print $1}')

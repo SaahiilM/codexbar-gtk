@@ -1,9 +1,14 @@
 # Private installer/service-target proof — 2026-11-10
 
+The original 99→100 observation below is retained as historical evidence. The
+current hardened 99→102 run is appended under E205; it supersedes the original
+artifact identities for the current script behavior without rewriting what was
+observed in that earlier run.
+
 Status: local proof passed within the scope below. This is not C02 acceptance,
 UG acceptance, service lifecycle proof, or authorization for a default cutover.
 
-## Invocation and artifacts
+## Historical invocation and artifacts — original build-100 run
 
 Reproducible local/CI command from the repository root:
 
@@ -74,3 +79,55 @@ No host desktop, input, portal, shared D-Bus, service, autostart, or configurati
 was touched. No provider HTTP, account, credential, or authentication fixture
 was used. UG remains **NOT PASSED**, Python remains the default, and C gates are
 unaccepted.
+
+## E205 supplemental run — build 99 → build 102 → build 99
+
+Implementation source: commit `a75cc887b86ee9cebaddff0171136cf80e3bc2a4`,
+`VERSION` `0.82.0 (102)`, source-file inventory SHA-256
+`e224691ba52473e149679c4d5a45bc7f2b99c26c0140966a1af247bae490a71b`. The
+pinned previous source is commit `41d2fcf982aef52cd86a64cb769176b494abb63c`,
+`VERSION` `0.82.0 (99)`. Both builds use upstream marketing version 0.82.0;
+build-number separation does not represent an upstream marketing-version
+migration.
+
+Artifact SHA-256 values from this run:
+
+- Build 99: `589fe72e1f6314939c207932d31f481f0554f5ebefca12af8201e07b2f05a97a`
+- Build 102: `542390b25616fe87ba5add941b056e33f00774d3bf01dc86c0853064866f8f7c`
+
+The wrapper always compiles the current source with locked offline Cargo into a
+run-specific target directory, resolves the executable from Cargo JSON via
+`scripts/native/no-python/cargo-artifact.py`, and independently archives/builds
+the pinned previous source unless `PREVIOUS_ARTIFACT` is supplied. When an
+explicit previous artifact is used, its source commit/build are labeled unknown
+unless the caller supplies a future identity mechanism; a differing hash alone
+is not version proof.
+
+The private Docker run passed with `--network none`, synthetic HOME, private
+Xvfb and private D-Bus. It verified the installed desktop target for build 99,
+the upgraded service `ExecStart` command target for build 102, then the build-99
+rollback desktop target; for each, owner PID/executable/hash matched, refresh
+action succeeded and increased synthetic CLI call count, quit action succeeded,
+exit status was zero, and app/SNI bus owners disappeared before the next launch.
+Legacy backup provenance, user-edited service-file retention, byte-preserved
+synthetic settings/history, and no duplicate autostart entry also passed. The
+private container had no systemd manager: this is command-target proof only.
+
+`python3 -m unittest tests.test_native_service_proof -v` passed 3 focused
+regressions (fresh current build despite a stale shared artifact, required
+action failure visibility, and bounded escalation/reaping of a signal-ignoring
+child). ShellCheck, Bash syntax checks, and `git diff --check` passed. The first
+runtime attempt exposed an uninitialized synthetic CLI log; after initialization
+was added, the full private proof passed. No host GUI/session was used.
+
+The focused Rust metadata test
+`cargo test --manifest-path rust-gtk/Cargo.toml --locked --lib
+version_metadata_tracks_the_root_version_file` passed 1/1.
+
+Focused CI was not added: this adds a historical source fetch and clean release
+build plus a second private Docker run to the existing Python-free runtime job.
+Reproduce in a Docker-enabled environment with pinned source commit available
+locally using `scripts/smoke-native-service.sh`. No systemd activation, service
+restart policy, login-manager activation, desktop-shell activation, or Settings
+autostart behavior was tested. This does not pass C02, UG or authorize cutover;
+Python remains the default.

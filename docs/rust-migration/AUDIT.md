@@ -6531,3 +6531,89 @@ parity and shell syntax were rerun after the fixture preservation change.
 - **Handoff:** root owns final review and publication. Keep ClaudePlatform
   stdin login separate. UG remains **NOT PASSED**, Python remains the default,
   and no C gate is accepted.
+
+### E203 — 2026-11-10: v0.84 ClaudePlatform stdin login
+
+- **Claim/base/build:** `UP084-CLAUDEPLATFORM-LOGIN`, branch
+  `orchestrated/luna-upstream084-claudeplatform-login`, build `0.82.0 (100)`,
+  based on supplied build-99 commit
+  `41d2fcf982aef52cd86a64cb769176b494abb63c`. `VERSION`,
+  `codexbar_gtk/version.py`, README's displayed build, CHANGELOG and TASKS
+  record build 100. Marketing version remains 0.82.0 pending root's compatibility
+  review. Implementation is locally committed; no PR, push, exact-head CI or
+  merge is claimed.
+- **Pinned source contract:** upstream tag v0.84.0 resolves to
+  `5bebf9a05e68059eae11d5031c7239f1aa1d49ef`. Its
+  [CLIConfigLoginCommand.swift](https://github.com/steipete/CodexBar/blob/5bebf9a05e68059eae11d5031c7239f1aa1d49ef/Sources/CodexBarCLI/CLIConfigLoginCommand.swift)
+  reads stdin through EOF as UTF-8, accepts an explicit ClaudePlatform stdin
+  login, delegates cookie normalization/validation to the CLI, and emits JSON
+  `{"status":"authorized"}` only after the CLI saves the configuration. The
+  same command performs provider-side validation within the external CLI;
+  this application adds no provider HTTP or authentication implementation.
+  The upstream
+  [CookieHeaderNormalizer.swift](https://github.com/steipete/CodexBar/blob/5bebf9a05e68059eae11d5031c7239f1aa1d49ef/Sources/CodexBarCore/CookieHeaderNormalizer.swift)
+  accepts raw cookies and Cookie/curl spellings, trims outer whitespace and
+  parses cookie pairs. Upstream
+  [CLIClaudePlatformLoginTests.swift](https://github.com/steipete/CodexBar/blob/5bebf9a05e68059eae11d5031c7239f1aa1d49ef/Tests/CodexBarTests/CLIClaudePlatformLoginTests.swift)
+  covers malformed candidates, one-candidate/no-fallback behavior, and the
+  authorized JSON result. Local code intentionally does not duplicate that
+  normalization or persistence policy.
+- **Rust operation/lifecycle:** new `rust-backend/src/claudeplatform_login.rs`
+  runs the exact argv `config login --provider claudeplatform --stdin --json`
+  with the submitted one-line UTF-8 value only on a piped stdin, then closes
+  stdin to deliver EOF. The operation bounds input to 16 KiB, bounds retained
+  stdout/stderr to 64 KiB while draining, enforces a 60-second timeout, requires
+  successful exit and an exact authorized JSON object, and exposes typed
+  sanitized status/errors only. Timeout, cancellation, stdin failure, and
+  shutdown kill the process group, wait for the CLI and join output tasks. A
+  dedicated actor is polled on the GLib bridge and joined during backend
+  shutdown. Success requests the existing settings serializer load and the
+  existing provider refresh; secrets never enter preferences, settings files,
+  exports, events, command arguments, environment variables or UI diagnostics.
+  Existing Codex/Claude PTY login is unchanged.
+- **UI/Python parity:** native Settings adds a ClaudePlatform session-cookie
+  row and masked ephemeral password dialog. Submit and close clear the entry;
+  cancel leaves a sanitized cancelled state, and failure/success are static
+  status text. The default Python Settings path invokes a bounded stdlib
+  subprocess adapter with the same argv/stdin/EOF and exact JSON-success
+  contract; it clears the entry, kills and joins the process group on cancel,
+  and does not require `CODEXBAR_RUST_CORE=1`.
+- **Synthetic coverage:** backend fake-CLI tests verify exact argv, stdin bytes
+  and EOF, exact success JSON, nonzero exit, malformed/trailing/oversized
+  output, input bounds/newline rejection, sanitized stdin-write failure,
+  timeout and cancellation descendant cleanup. Actor shutdown coverage checks
+  cancellation/join and that typed events do not contain the candidate. Python
+  fake-CLI tests cover the same success/failure/input/timeout/cancel boundaries
+  and descendant cleanup. No real account, cookie, authentication or provider
+  request was used.
+- **Checks passed:** `cargo fmt --check` for `rust-core`, `rust-python`,
+  `rust-backend` and `rust-gtk`; strict Clippy (`--all-targets
+  --all-features -- -D warnings`) for all four crates; backend tests (95 unit
+  and 1 integration), core tests (88), GTK tests under private D-Bus (38
+  library, 1 main, 1 Python-free linkage). The GTK default run ignored two
+  display-required library tests, one display-required accessibility test and
+  the negative librsvg-precondition test. The targeted existing rendered
+  dashboard Xvfb test passed 1/1. `scripts/build-rust-core.sh`, native binary
+  build, Python bytecode compilation, `git diff --check` and shell syntax check
+  passed. Python default suite passed 313 tests with 22 skips; Rust-opt-in suite
+  passed 313 with no skips.
+- **GTK smoke and screenshot:** private extracted Xvfb/X11 tools and private
+  D-Bus ran the synthetic Settings CLI. The focused invocation
+  `NATIVE_SETTINGS_CLAUDEPLATFORM_ONLY=1 scripts/smoke-native-settings.sh
+  <native-binary>` passed, including exact stdin receipt, sanitized success,
+  absence of the synthetic value in settings/log/export targets, and joined
+  application shutdown. The visually inspected, tracked
+  [build100-claudeplatform-login-xvfb.png](../../screenshots/build100-claudeplatform-login-xvfb.png)
+  shows only the sanitized success text and an empty masked entry. It is an
+  X11-only synthetic capture; no Wayland/shared desktop was accessed. The
+  unscoped full Settings script reached and verified this flow but later failed
+  an unrelated Display assertion (`usageBarsShowUsed=False`, observed `True`);
+  the focused login smoke isolates this feature and passed. Initial attempts
+  also caught a relative binary path and an incorrect synthetic click, both
+  corrected before the focused pass.
+- **Limits/handoff:** no real-provider login, provider HTTP, Python-default
+  desktop runtime, Wayland control action, exact-head CI, push, PR, merge,
+  marketing-version bump or gate acceptance is claimed. Python remains the
+  default; UG is **NOT PASSED**, and C gates/cutover remain unaccepted. Root
+  `933fef41-7c9a-499d-9460-70e5d53f7bf3` owns architecture/review, push, PR,
+  merge and gates.

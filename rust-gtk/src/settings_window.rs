@@ -12,6 +12,10 @@ use std::{
 
 use adw::prelude::*;
 use codexbar_backend::{
+    claudeplatform_login::{
+        LoginActor as ClaudePlatformLoginActor, LoginEvent as ClaudePlatformLoginEvent,
+        LoginRequest as ClaudePlatformLoginRequest, LoginStatus as ClaudePlatformLoginStatus,
+    },
     login::{LoginActor, LoginRequest, LoginUiEvent},
     settings::{
         HookSettings, PluginInfo, ProviderAction, ProviderSource, SettingsActor, SettingsError,
@@ -66,6 +70,7 @@ pub struct SettingsWindow {
     window: adw::PreferencesWindow,
     actor: SettingsActor,
     login: LoginActor,
+    claudeplatform_login: ClaudePlatformLoginActor,
     preferences: Arc<PreferencesStore>,
     metadata_version: String,
     controls: RefCell<HashMap<String, Vec<PreferenceControl>>>,
@@ -85,6 +90,7 @@ pub struct SettingsWindow {
     timezone_values: RefCell<Vec<String>>,
     cli_version_rows: RefCell<Vec<adw::ActionRow>>,
     login_dialog: RefCell<Option<LoginDialog>>,
+    claudeplatform_dialog: RefCell<Option<ClaudePlatformDialog>>,
     file_chooser: RefCell<Option<gtk::FileChooserNative>>,
 }
 
@@ -93,6 +99,7 @@ impl SettingsWindow {
         application: &adw::Application,
         actor: SettingsActor,
         login: LoginActor,
+        claudeplatform_login: ClaudePlatformLoginActor,
         preferences: Arc<PreferencesStore>,
         version: String,
         currency_catalog: &codexbar_core::currency::CurrencyCatalog,
@@ -112,6 +119,7 @@ impl SettingsWindow {
             window,
             actor,
             login,
+            claudeplatform_login,
             preferences,
             metadata_version: version,
             controls: RefCell::new(HashMap::new()),
@@ -131,6 +139,7 @@ impl SettingsWindow {
             timezone_values: RefCell::new(Vec::new()),
             cli_version_rows: RefCell::new(Vec::new()),
             login_dialog: RefCell::new(None),
+            claudeplatform_dialog: RefCell::new(None),
             file_chooser: RefCell::new(None),
         });
         view.build_pages(currency_catalog);
@@ -254,6 +263,69 @@ impl SettingsWindow {
                     .set_text(&format!("Sign-in unavailable ({kind:?})."));
                 dialog.close_button.set_label("Close");
             }
+        }
+    }
+
+    pub fn handle_claudeplatform_login_event(&self, event: ClaudePlatformLoginEvent) {
+        let mut success = false;
+        if let Some(dialog) = self.claudeplatform_dialog.borrow().as_ref() {
+            #[cfg(debug_assertions)]
+            let report = match event {
+                ClaudePlatformLoginEvent::Started => "Sending cookie to CodexBar CLI…",
+                ClaudePlatformLoginEvent::Finished(ClaudePlatformLoginStatus::Succeeded) => {
+                    "Claude Platform sign-in completed."
+                }
+                ClaudePlatformLoginEvent::Finished(ClaudePlatformLoginStatus::Cancelled) => {
+                    "Sign-in cancelled."
+                }
+                ClaudePlatformLoginEvent::Finished(_) => "Sign-in did not complete.",
+                ClaudePlatformLoginEvent::Failed(_) => {
+                    "Could not complete sign-in. Check the CLI and try again."
+                }
+            };
+            match event {
+                ClaudePlatformLoginEvent::Started => {
+                    dialog.status.set_text("Sending cookie to CodexBar CLI…");
+                    dialog.cancel.set_sensitive(true);
+                }
+                ClaudePlatformLoginEvent::Finished(ClaudePlatformLoginStatus::Succeeded) => {
+                    dialog.status.set_text("Claude Platform sign-in completed.");
+                    dialog.submit.set_sensitive(false);
+                    dialog.cancel.set_sensitive(false);
+                    success = true;
+                }
+                ClaudePlatformLoginEvent::Finished(ClaudePlatformLoginStatus::Cancelled) => {
+                    dialog.status.set_text("Sign-in cancelled.");
+                    dialog.submit.set_sensitive(false);
+                    dialog.cancel.set_sensitive(false);
+                }
+                ClaudePlatformLoginEvent::Finished(_) => {
+                    dialog.status.set_text("Sign-in did not complete.");
+                    dialog.submit.set_sensitive(true);
+                    dialog.cancel.set_sensitive(false);
+                }
+                ClaudePlatformLoginEvent::Failed(_) => {
+                    dialog
+                        .status
+                        .set_text("Could not complete sign-in. Check the CLI and try again.");
+                    dialog.submit.set_sensitive(true);
+                    dialog.cancel.set_sensitive(false);
+                }
+            }
+            #[cfg(debug_assertions)]
+            if let Some(path) =
+                std::env::var_os("CODEXBAR_NATIVE_SETTINGS_CLAUDEPLATFORM_STATUS_REPORT")
+            {
+                let _ = fs::write(path, report);
+            }
+        }
+        if success {
+            self.request(
+                SettingsOperation::Load {
+                    timeout: Duration::from_secs(20),
+                },
+                PendingAction::Load,
+            );
         }
     }
 
@@ -1236,6 +1308,22 @@ impl SettingsWindow {
                     sign_in.add_suffix(&sign_in_button);
                     row.add_row(&sign_in);
                 }
+                if provider.provider_id == "claudeplatform" {
+                    let sign_in = adw::ActionRow::builder()
+                        .title("Sign in with a session cookie")
+                        .subtitle("The CodexBar CLI validates and saves the cookie; the app keeps it only in memory during sign-in.")
+                        .build();
+                    let button = gtk::Button::with_label("Sign in…");
+                    button.set_valign(gtk::Align::Center);
+                    let weak = Rc::downgrade(self);
+                    button.connect_clicked(move |_| {
+                        if let Some(view) = weak.upgrade() {
+                            view.show_claudeplatform_login();
+                        }
+                    });
+                    sign_in.add_suffix(&button);
+                    row.add_row(&sign_in);
+                }
                 let api_key = adw::PasswordEntryRow::builder().title("API key").build();
                 api_key.set_show_apply_button(true);
                 let provider_id = provider.provider_id.clone();
@@ -1548,6 +1636,115 @@ impl SettingsWindow {
             if let Some(dialog) = self.login_dialog.borrow().as_ref() {
                 dialog.status.set_text("Sign-in service is busy or closed.");
             }
+        }
+    }
+
+    fn show_claudeplatform_login(self: &Rc<Self>) {
+        if let Some(dialog) = self.claudeplatform_dialog.borrow().as_ref() {
+            dialog.window.present();
+            return;
+        }
+        let dialog = ClaudePlatformDialog::new(&self.window, &self.claudeplatform_login);
+        let weak = Rc::downgrade(self);
+        let actor = self.claudeplatform_login.clone();
+        let entry = dialog.entry.clone();
+        dialog.window.connect_close_request(move |_| {
+            entry.set_text("");
+            let _ = actor.try_send(ClaudePlatformLoginRequest::Cancel);
+            if let Some(view) = weak.upgrade() {
+                view.claudeplatform_dialog.borrow_mut().take();
+            }
+            glib::Propagation::Proceed
+        });
+        dialog.window.present();
+        self.claudeplatform_dialog.replace(Some(dialog));
+    }
+}
+
+struct ClaudePlatformDialog {
+    window: gtk::Window,
+    entry: gtk::PasswordEntry,
+    status: gtk::Label,
+    submit: gtk::Button,
+    cancel: gtk::Button,
+}
+
+impl ClaudePlatformDialog {
+    fn new(parent: &adw::PreferencesWindow, actor: &ClaudePlatformLoginActor) -> Self {
+        let window = gtk::Window::builder()
+            .title("Sign in to Claude Platform")
+            .default_width(500)
+            .transient_for(parent)
+            .modal(true)
+            .build();
+        let content = gtk::Box::new(gtk::Orientation::Vertical, 12);
+        content.set_margin_top(20);
+        content.set_margin_bottom(20);
+        content.set_margin_start(20);
+        content.set_margin_end(20);
+        let status = gtk::Label::new(Some(
+            "Paste the session cookie. It will be sent to the CodexBar CLI over stdin.",
+        ));
+        status.set_wrap(true);
+        status.set_xalign(0.0);
+        content.append(&status);
+        let entry = gtk::PasswordEntry::new();
+        entry.set_show_peek_icon(false);
+        entry.set_placeholder_text(Some("Session cookie (one line)"));
+        content.append(&entry);
+        let actions = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        actions.set_halign(gtk::Align::End);
+        let submit = gtk::Button::with_label("Sign in");
+        submit.add_css_class("suggested-action");
+        let input = entry.clone();
+        let status_submit = status.clone();
+        let submit_button = submit.clone();
+        let actor_submit = actor.clone();
+        submit.connect_clicked(move |_| {
+            let value = input.text().to_string();
+            input.set_text("");
+            if value.is_empty() {
+                status_submit.set_text("Enter a session cookie to continue.");
+                return;
+            }
+            if actor_submit
+                .try_send(ClaudePlatformLoginRequest::Submit(value))
+                .is_ok()
+            {
+                status_submit.set_text("Sending cookie to CodexBar CLI…");
+                submit_button.set_sensitive(false);
+            } else {
+                status_submit.set_text("Sign-in service is busy or closed.");
+            }
+        });
+        actions.append(&submit);
+        let cancel = gtk::Button::with_label("Cancel sign-in");
+        cancel.set_sensitive(false);
+        let entry_cancel = entry.clone();
+        let status_cancel = status.clone();
+        let submit_cancel = submit.clone();
+        let cancel_button = cancel.clone();
+        let actor_cancel = actor.clone();
+        cancel.connect_clicked(move |_| {
+            entry_cancel.set_text("");
+            status_cancel.set_text("Cancelling sign-in…");
+            submit_cancel.set_sensitive(false);
+            cancel_button.set_sensitive(false);
+            let _ = actor_cancel.try_send(ClaudePlatformLoginRequest::Cancel);
+        });
+        actions.append(&cancel);
+        let close = gtk::Button::with_label("Close");
+        let window_close = window.clone();
+        close.connect_clicked(move |_| window_close.close());
+        actions.append(&close);
+        content.append(&actions);
+        window.set_child(Some(&content));
+        Self {
+            window,
+            entry,
+            status,
+            submit,
+            cancel,
         }
     }
 }

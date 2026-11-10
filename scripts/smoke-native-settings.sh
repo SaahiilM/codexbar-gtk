@@ -95,6 +95,8 @@ login_code_file="$scratch/login-code-value"
 login_started_file="$scratch/login-started"
 login_complete_file="$scratch/login-complete"
 login_status_file="$scratch/login-status"
+claudeplatform_cookie_file="$scratch/claudeplatform-cookie-received"
+claudeplatform_status_file="$scratch/claudeplatform-status"
 plugins_request_count_file="$scratch/plugins-request-count"
 hooks_served_file="$scratch/hooks-served-mode"
 update_request_file="$scratch/update-requested"
@@ -127,12 +129,12 @@ case "${1-}/${2-}" in
       printf '%s\n' 'codex: enabled (Codex)' 'claude: disabled (Claude)' \
         'opendesign: disabled (OpenDesign)' \
         'siliconflow: disabled (SiliconFlow)' \
-        'tripo: disabled (Tripo)'
+        'tripo: disabled (Tripo)' 'claudeplatform: disabled (Claude Platform)'
     else
       printf '%s\n' 'codex: disabled (Codex)' 'claude: disabled (Claude)' \
         'opendesign: disabled (OpenDesign)' \
         'siliconflow: disabled (SiliconFlow)' \
-        'tripo: disabled (Tripo)'
+        'tripo: disabled (Tripo)' 'claudeplatform: disabled (Claude Platform)'
     fi
     ;;
   config/enable|config/disable)
@@ -152,6 +154,14 @@ case "${1-}/${2-}" in
       : > "$NATIVE_SETTINGS_API_KEY_RECEIVED"
     fi
     printf '%s\n' '{"ok":true}'
+    ;;
+  config/login)
+    cat > "$NATIVE_SETTINGS_CLAUDEPLATFORM_COOKIE_RECEIVED"
+    if [ "$(cat "$NATIVE_SETTINGS_CLAUDEPLATFORM_COOKIE_RECEIVED")" = "sessionKey=synthetic-cookie-candidate" ]; then
+      printf '%s\n' '{"status":"authorized"}'
+    else
+      exit 1
+    fi
     ;;
   auth/login|login/)
     : > "$NATIVE_SETTINGS_LOGIN_STARTED"
@@ -317,6 +327,8 @@ export NATIVE_SETTINGS_LOGIN_CODE_FILE="$login_code_file"
 export NATIVE_SETTINGS_LOGIN_STARTED="$login_started_file"
 export NATIVE_SETTINGS_LOGIN_COMPLETE="$login_complete_file"
 export CODEXBAR_NATIVE_SETTINGS_LOGIN_STATUS_REPORT="$login_status_file"
+export NATIVE_SETTINGS_CLAUDEPLATFORM_COOKIE_RECEIVED="$claudeplatform_cookie_file"
+export CODEXBAR_NATIVE_SETTINGS_CLAUDEPLATFORM_STATUS_REPORT="$claudeplatform_status_file"
 export NATIVE_SETTINGS_NOTIFICATION_LOG="$scratch/notifications"
 export CODEXBAR_NATIVE_SETTINGS_ICON_REPORT=1
 export GTK_A11Y=none GTK_USE_PORTAL=0 GDK_BACKEND=x11 GSK_RENDERER=cairo
@@ -860,6 +872,51 @@ for log_file in "$preferences_file" "$NATIVE_SETTINGS_CALLS" "$scratch/app.log" 
     fi
 done
 capture "$settings_window" "${NATIVE_SETTINGS_PROVIDERS_LOGIN_COMPLETE_SCREENSHOT:-}"
+
+# Exercise the ClaudePlatform one-shot stdin flow with synthetic input. Only
+# status-only dialog frames are retained; the password field is cleared on
+# submit and the masked input frame is never written as an artifact.
+xdotool mousemove --window "$settings_window" 700 600 click --repeat 12 --delay 35 5
+sleep 0.3
+capture "$settings_window" "${NATIVE_SETTINGS_CLAUDEPLATFORM_ROW_SCREENSHOT:-}"
+xdotool mousemove --window "$settings_window" 520 620 click 1
+sleep 0.2
+xdotool mousemove --window "$settings_window" 700 720 click 5
+sleep 0.2
+capture "$settings_window" "${NATIVE_SETTINGS_CLAUDEPLATFORM_EXPANDED_SCREENSHOT:-}"
+xdotool mousemove --window "$settings_window" 790 693 click 1
+claudeplatform_window=$(wait_for_window '^Sign in to Claude Platform$')
+capture_native_size "$claudeplatform_window" "${NATIVE_SETTINGS_CLAUDEPLATFORM_PROMPT_SCREENSHOT:-}"
+xdotool mousemove --window "$claudeplatform_window" 220 68 click 1
+xdotool type --clearmodifiers --delay 1 'sessionKey=synthetic-cookie-candidate'
+xdotool mousemove --window "$claudeplatform_window" 230 114 click 1
+wait_for_file "$claudeplatform_cookie_file" "synthetic ClaudePlatform stdin submission"
+wait_for_file "$claudeplatform_status_file" "ClaudePlatform sanitized completion status"
+[[ "$(cat "$claudeplatform_status_file")" == "Claude Platform sign-in completed." ]] || {
+    echo "ClaudePlatform login did not display sanitized success status" >&2
+    exit 1
+}
+sleep 0.2
+capture_native_size "$claudeplatform_window" "${NATIVE_SETTINGS_CLAUDEPLATFORM_STATUS_SCREENSHOT:-}"
+for log_file in "$preferences_file" "${export_file:-$HOME/preferences-export.json}" "$NATIVE_SETTINGS_CALLS" "$scratch/app.log" "$NATIVE_SETTINGS_NOTIFICATION_LOG"; do
+    if [[ -f "$log_file" ]] && grep -Fq 'synthetic-cookie-candidate' "$log_file"; then
+        echo "synthetic ClaudePlatform input escaped into persisted or logged output" >&2
+        exit 1
+    fi
+done
+[[ "$(cat "$NATIVE_SETTINGS_CLAUDEPLATFORM_COOKIE_RECEIVED")" == 'sessionKey=synthetic-cookie-candidate' ]] || {
+    echo "synthetic ClaudePlatform CLI did not receive the exact stdin value" >&2
+    exit 1
+}
+xdotool key Escape
+sleep 0.2
+if [[ "${NATIVE_SETTINGS_CLAUDEPLATFORM_ONLY:-0}" == "1" ]]; then
+    gapplication action com.steipete.CodexBarGTK quit
+    wait "$app_pid"
+    app_pid=
+    printf 'native ClaudePlatform synthetic stdin login and joined shutdown smoke passed\n'
+    exit 0
+fi
 xdotool mousemove --window "$settings_window" 365 800 click 1
 sleep 0.3
 capture "$settings_window" "${NATIVE_SETTINGS_DISPLAY_SCREENSHOT:-}"

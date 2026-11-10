@@ -34,6 +34,12 @@ REMOTE = "org.freedesktop.portal.RemoteDesktop"
 SESSION_IFACE = "org.freedesktop.portal.Session"
 APP_ID = "codexbar-gtk-synthetic-wayland-test"
 BRIDGE_DEFAULT_COMMAND = "linux-agent-access"
+# Native GTK exposes the measured preference toggles as AT-SPI "check box"
+# controls. Keep this list limited to verified toggle roles; rows, labels, and
+# toggle buttons are not safe pointer targets. "switch" remains supported for
+# GTK/platform variants that expose that role directly.
+AT_SPI_TOGGLE_ROLES = ("check box", "switch")
+AT_SPI_TARGET_ROLES = ("page tab", "button", *AT_SPI_TOGGLE_ROLES)
 WAYLAND_SWITCH_ACTIONS = {
     "refresh-when-panel-opens": {
         "preference": "refreshAllProvidersOnMenuOpen",
@@ -492,21 +498,30 @@ def resolve_coordinate_geometry(raw, kwin, expected_pid, expected_application,
     if (not isinstance(frame_rows, list) or len(frame_rows) != 1 or
             not isinstance(frame_rows[0], dict)):
         reject("AT-SPI target has missing or multiple top-level windows")
-    if (not isinstance(controls, list) or len(controls) != 1 or
-            not isinstance(controls[0], dict)):
-        reject("AT-SPI exact label/role is missing or ambiguous")
+    if not isinstance(controls, list) or any(not isinstance(item, dict) for item in controls):
+        reject("AT-SPI exact label/role is missing or malformed")
     frame = frame_rows[0]
-    control = controls[0]
     if frame.get("name") != expected_title or frame.get("role") not in ("frame", "window"):
         reject("AT-SPI top-level frame identity mismatch")
     if frame.get("visible") is not True or frame.get("showing") is not True:
         reject("AT-SPI top-level frame is hidden")
-    if control.get("visible") is not True or control.get("showing") is not True:
-        reject("AT-SPI target control is hidden")
-    if (control.get("name") != raw.get("requested_label") or
-            not isinstance(raw.get("expected_roles"), list) or
-            control.get("role") not in raw.get("expected_roles")):
-        reject("AT-SPI target control label/role does not match the request")
+    requested_label = raw.get("requested_label")
+    expected_roles = raw.get("expected_roles")
+    if (not isinstance(expected_roles, list) or not expected_roles or
+            any(role not in AT_SPI_TARGET_ROLES for role in expected_roles)):
+        reject("AT-SPI requested control roles are missing or not allowlisted")
+    # Exclude same-named list rows and text labels before requiring uniqueness.
+    # Only exact-label, visible nodes with an explicitly allowed role can be
+    # pointer targets. In particular, do not fall back to row clicks or a first
+    # matching name when GTK exports a compound row.
+    candidates = [item for item in controls
+                  if item.get("name") == requested_label
+                  and item.get("role") in expected_roles
+                  and item.get("visible") is True
+                  and item.get("showing") is True]
+    if len(candidates) != 1:
+        reject("AT-SPI exact visible label/role control is missing or ambiguous")
+    control = candidates[0]
     kwin_rect = kwin.get("target_geometry")
     if not _valid_rect(kwin_rect):
         reject("KWin target rectangle is missing or invalid")
@@ -580,7 +595,10 @@ for i in range(min(d.get_child_count(),100)):
     st=states(n)
     if role in ("frame","window","dialog"):
      frames.append({"name":name,"role":role,**st,"screen":rect(n,"screen"),"window":rect(n,"window")})
-    if name==want_label and (not roles or role in roles):
+    # Return every exact-name node: the parent resolver filters by the narrow
+    # role allowlist and visibility, so compound rows and labels cannot create
+    # false ambiguity or become click targets.
+    if name==want_label:
      controls.append({"name":name,"role":role,**st,"screen":rect(n,"screen"),"window":rect(n,"window")})
     count=min(n.get_child_count(),200)
     q.extend(n.get_child_at_index(j) for j in range(count))
@@ -1911,8 +1929,8 @@ def main():
                         reactivate_fixture()
                         current_page = desired_page
 
-                    expected_role = "button" if kind == "button" else "switch"
-                    control_measurement = measure_control(step["label"], (expected_role,))
+                    expected_roles = (("button",) if kind == "button" else AT_SPI_TOGGLE_ROLES)
+                    control_measurement = measure_control(step["label"], expected_roles)
                     control_bounds = control_measurement["control_bounds"]
                     before_state = latest()
                     point_x, point_y = control_measurement["calculated_point"]

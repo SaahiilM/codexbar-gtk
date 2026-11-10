@@ -237,9 +237,74 @@ class WaylandGuardTests(unittest.TestCase):
         self.assertIn("Atspi.CoordType.WINDOW", argv[2])
         self.assertIn("Gtk.init()", argv[2])
         self.assertIn("get_scale_factor()", argv[2])
-        self.assertIn("role in roles", argv[2])
+        self.assertIn("if name==want_label", argv[2])
+        self.assertNotIn("role in roles", argv[2])
         self.assertEqual(json.loads(argv[-2]), ["switch"])
         self.assertNotIn("do_action", argv[2].lower())
+
+    def test_measured_checkbox_is_uniquely_selected_from_three_same_label_nodes(self):
+        kwin = self.geometry_fixture()[1]
+        raw = {
+            "application": "synthetic-app", "pid": 4242,
+            "requested_label": "Refresh when the panel opens",
+            "expected_roles": list(MODULE.AT_SPI_TOGGLE_ROLES),
+            "desktop_scale_factors": [1],
+            "top_level_windows": [{
+                "name": "CodexBar Settings", "role": "frame", "visible": True,
+                "showing": True, "screen": [0, 0, 1000, 740],
+                "window": [0, 0, 1000, 740],
+            }],
+            # This mirrors the measured GTK export: one checkbox, its list row,
+            # and the text label all have the same accessible name.
+            "controls": [
+                {"name": "Refresh when the panel opens", "role": "check box",
+                 "visible": True, "showing": True,
+                 "labelled_by": "Refresh when the panel opens",
+                 "screen": [0, 0, 46, 26], "window": [731, 306, 46, 26]},
+                {"name": "Refresh when the panel opens", "role": "list item",
+                 "visible": True, "showing": True,
+                 "labelled_by": "Refresh when the panel opens",
+                 "described_by": "Refreshes provider data when the panel opens",
+                 "screen": [0, 0, 576, 58], "window": [214, 289, 576, 58]},
+                {"name": "Refresh when the panel opens", "role": "label",
+                 "visible": True, "showing": True,
+                 "screen": [0, 0, 496, 21], "window": [226, 295, 496, 21]},
+            ],
+        }
+        result = unittest.mock.Mock(returncode=0, stdout=json.dumps(raw))
+        calls = []
+        resolved = MODULE.resolve_atspi_geometry(
+            "synthetic-app", 4242, "Refresh when the panel opens", kwin,
+            runner=lambda argv, **kwargs: (calls.append((argv, kwargs)) or result),
+            expected_roles=MODULE.AT_SPI_TOGGLE_ROLES,
+        )
+        self.assertEqual(json.loads(calls[0][0][-2]), ["check box", "switch"])
+        self.assertEqual(len(raw["controls"]), 3)
+        self.assertEqual(resolved["control_bounds"], [1095, 455, 46, 26])
+        self.assertEqual(resolved["calculated_point"], [1118, 468])
+
+        rejected = []
+        wrong_label = json.loads(json.dumps(raw))
+        wrong_label["controls"][0]["name"] = "A different preference"
+        rejected.append((wrong_label, kwin))
+        hidden_checkbox = json.loads(json.dumps(raw))
+        hidden_checkbox["controls"][0]["showing"] = False
+        rejected.append((hidden_checkbox, kwin))
+        duplicate_checkbox = json.loads(json.dumps(raw))
+        duplicate_checkbox["controls"].append(json.loads(json.dumps(raw["controls"][0])))
+        rejected.append((duplicate_checkbox, kwin))
+        wrong_pid = json.loads(json.dumps(raw))
+        wrong_pid["pid"] = 77
+        rejected.append((wrong_pid, kwin))
+        for forbidden_role in ("list item", "label", "toggle button"):
+            forbidden = json.loads(json.dumps(raw))
+            forbidden["expected_roles"] = [forbidden_role]
+            rejected.append((forbidden, kwin))
+        for evidence, compositor in rejected:
+            with self.subTest(evidence=evidence):
+                with self.assertRaises(MODULE.GeometryResolutionError):
+                    MODULE.resolve_coordinate_geometry(
+                        evidence, compositor, 4242, "synthetic-app")
 
     def test_batch_control_probe_rejects_missing_ambiguous_invalid_and_failed(self):
         _, kwin = self.geometry_fixture()

@@ -6417,3 +6417,11 @@ unverified; UG and C gates remain open and Python remains default.
 - **Handoff:** root owns review, publication, exact-head CI and merge. Keep the
   warning classification and ClaudePlatform stdin login as separate
   compatibility PRs. Do not change UG or any C-gate status from this slice.
+
+Root review of E201: retained the pre-existing synthetic Codex identity in the
+dashboard fixture so this catalog change does not remove identity coverage.
+The two inspected, synthetic X11 captures are tracked as
+[dashboard](screenshots/build98-providers-xvfb/dashboard.png) and
+[Settings](screenshots/build98-providers-xvfb/settings.png). These establish
+rendering only on X11; no new Wayland run is claimed. Focused catalog/icon
+parity and shell syntax were rerun after the fixture preservation change.

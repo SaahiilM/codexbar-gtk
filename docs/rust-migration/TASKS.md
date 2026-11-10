@@ -13,7 +13,7 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Last observed merge | PR #98 merged normally at `f40307db189ce7fba97a0cc5da1aabd8c73b5f7c` (build 97). Exact head `11ca6d3b6439a54f5a431a3e0b6cdd8bd02275f2` passed all three checks in run `42861843557`; reviews, comments and threads were zero. This merge did not accept UG or C gates. |
 | Active implementation | Build 98, branch `orchestrated/luna-upstream084-providers`, implementation commit `fa7fe6d` plus a normal merge of the observed build-97 `origin/main`; provider catalog/artwork and Python parity are locally verified. No PR, publication, or exact-head CI is claimed. |
 | Installer/runtime verification | E198 records the merged build-95 installed-prefix/Python-free runtime proof. E199 records prior local 13-case activation smoke evidence in a Python-free container; its first attempt lacked `file`, and the portable `od`/`ldd` check passed. These component results do not pass C02 or authorize cutover. |
-| UI acceptance | E195 records one guarded synthetic Display action; other Wayland controls/navigation remain open. UG is **NOT PASSED** and Python remains the default; see `UG_GATE.md`. |
+| UI acceptance | E195 records one Display action; E200 records seven guarded Settings actions and three tab transitions. Broader Wayland controls/navigation remain open. UG is **NOT PASSED** and Python remains the default; see `UG_GATE.md`. |
 | Next | Root owns review, publication and exact-head CI for UP084-PROVIDERS. Then continue the separate warning and login compatibility slices; UG remains **NOT PASSED**, Python remains default, and C01–CG/cutover are not accepted. |
 
 ### Focused upstream compatibility claim — UP084-PROVIDERS
@@ -45,8 +45,8 @@ run separately under private X11/Xvfb with private D-Bus and passed. Synthetic
 dashboard and Settings smokes passed; personally inspected captures show the
 three provider cards/artwork and three disabled Settings rows. Python default
 mode passed 305 tests with 21 skips; Rust opt-in passed 305 tests without
-skips. The Rust extension was built using the atomic build helper. Screenshots
-remain in `/tmp`; no Wayland, real provider account, provider endpoint,
+skips. The Rust extension was built using the atomic build helper. Two reviewed synthetic X11 captures are tracked under
+`screenshots/build98-providers-xvfb/`; no Wayland, real provider account, provider endpoint,
 credential or real login was used. No exact-head CI or gate acceptance is
 claimed.
 

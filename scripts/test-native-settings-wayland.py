@@ -420,6 +420,9 @@ def safe_action_evidence(action_id, state, target_pid, control, bounds, before, 
         "target_pid": int(state["pid"]),
         "control": str(control)[:100],
         "control_bounds": bounds,
+        "coordinate_space": state.get("coordinate_space"),
+        "calculated_point": state.get("calculated_point"),
+        "raw_geometry": state.get("raw_geometry"),
         "target_geometry": rect,
         "input_method": "guarded_pointer_click",
         "sample_seq": int(state["sample_seq"]),
@@ -433,69 +436,173 @@ def safe_action_evidence(action_id, state, target_pid, control, bounds, before, 
     }
 
 
-def resolve_atspi_bounds(application, pid, label, runner=subprocess.run, timeout=8,
-                         expected_roles=()):
-    """Find one exact labelled component in the exact synthetic PID, read-only.
+class GeometryResolutionError(RuntimeError):
+    """Fail-closed geometry error that carries bounded scoped evidence."""
+    def __init__(self, message, evidence):
+        super().__init__(message)
+        self.evidence = evidence
 
-    AT-SPI DoAction is never used. The returned extents are used only to target
-    the existing row/tab with the guarded bridge pointer path.
+
+def _valid_rect(rect, allow_local_origin=False):
+    return (
+        isinstance(rect, list) and len(rect) == 4 and
+        all(type(value) is int for value in rect) and
+        rect[2] > 0 and rect[3] > 0 and
+        (allow_local_origin and rect[:2] == [0, 0] or rect[0] >= 0 and rect[1] >= 0) and
+        rect != [0, 0, 0, 0] and rect != [-1, -1, -1, -1]
+    )
+
+
+def _rect_contains(outer, inner):
+    return (inner[0] >= outer[0] and inner[1] >= outer[1] and
+            inner[0] + inner[2] <= outer[0] + outer[2] and
+            inner[1] + inner[3] <= outer[1] + outer[3])
+
+
+def resolve_coordinate_geometry(raw, kwin, expected_pid, expected_application,
+                                expected_title="CodexBar Settings", desktop_scale_factors=(1,)):
+    """Validate one exact AT-SPI frame/control against exact focused KWin geometry.
+
+    AT-SPI SCREEN is global; WINDOW is relative to the component's top-level
+    window. We accept SCREEN only on exact frame equality, or WINDOW only when
+    the unique titled/PID-matched frame has an exact size match and its local
+    bounds are contained. No scale or decoration offset is inferred.
     """
+    evidence = {"raw_geometry": raw, "kwin_geometry": kwin.get("target_geometry") if isinstance(kwin, dict) else None,
+                "coordinate_space": None, "calculated_point": None}
+    def reject(message):
+        raise GeometryResolutionError(message, evidence)
+    if not isinstance(raw, dict) or not isinstance(kwin, dict):
+        reject("missing AT-SPI or KWin geometry snapshot")
+    desktop_scale_factors = raw.get("desktop_scale_factors", desktop_scale_factors)
+    if desktop_scale_factors != [1] and desktop_scale_factors != (1,):
+        reject("unsupported or ambiguous desktop scale")
+    if raw.get("pid") != expected_pid or raw.get("application") != expected_application:
+        reject("AT-SPI application PID/name mismatch")
+    if (kwin.get("target_window_pid") != expected_pid or
+            kwin.get("target_window_title") != expected_title or
+            kwin.get("target_window_count") != 1 or
+            kwin.get("target_present") is not True or
+            kwin.get("active") is not True or kwin.get("pid") != expected_pid or
+            kwin.get("active_window_pid") != expected_pid or
+            kwin.get("active_window_title") != expected_title):
+        reject("KWin does not show one focused exact-PID/title Settings window")
+    frame_rows = raw.get("top_level_windows")
+    controls = raw.get("controls")
+    if (not isinstance(frame_rows, list) or len(frame_rows) != 1 or
+            not isinstance(frame_rows[0], dict)):
+        reject("AT-SPI target has missing or multiple top-level windows")
+    if (not isinstance(controls, list) or len(controls) != 1 or
+            not isinstance(controls[0], dict)):
+        reject("AT-SPI exact label/role is missing or ambiguous")
+    frame = frame_rows[0]
+    control = controls[0]
+    if frame.get("name") != expected_title or frame.get("role") not in ("frame", "window"):
+        reject("AT-SPI top-level frame identity mismatch")
+    if frame.get("visible") is not True or frame.get("showing") is not True:
+        reject("AT-SPI top-level frame is hidden")
+    if control.get("visible") is not True or control.get("showing") is not True:
+        reject("AT-SPI target control is hidden")
+    if (control.get("name") != raw.get("requested_label") or
+            not isinstance(raw.get("expected_roles"), list) or
+            control.get("role") not in raw.get("expected_roles")):
+        reject("AT-SPI target control label/role does not match the request")
+    kwin_rect = kwin.get("target_geometry")
+    if not _valid_rect(kwin_rect):
+        reject("KWin target rectangle is missing or invalid")
+    screen_frame = frame.get("screen")
+    window_frame = frame.get("window")
+    screen_control = control.get("screen")
+    window_control = control.get("window")
+    # A direct global mapping is accepted only when AT-SPI and KWin describe
+    # the identical top-level rectangle, including origin and dimensions.
+    if (_valid_rect(screen_frame) and screen_frame == kwin_rect and
+            _valid_rect(screen_control) and _rect_contains(kwin_rect, screen_control)):
+        bounds = list(screen_control)
+        space = "screen"
+    else:
+        # Window-local fallback is allowed only for an unavailable/global-zero
+        # SCREEN origin and an exact local frame/KWin size correspondence.
+        screen_unavailable = (not _valid_rect(screen_frame) or screen_frame[:2] == [0, 0])
+        if not screen_unavailable:
+            reject("valid AT-SPI SCREEN frame disagrees with KWin frame")
+        if (not _valid_rect(window_frame, allow_local_origin=True) or
+                window_frame[:2] != [0, 0] or window_frame[2:] != kwin_rect[2:]):
+            reject("AT-SPI WINDOW frame size/origin is not proven against KWin")
+        if (not _valid_rect(window_control, allow_local_origin=True) or
+                not _rect_contains(window_frame, window_control)):
+            reject("AT-SPI WINDOW control is outside the verified local frame")
+        bounds = [kwin_rect[0] + window_control[0], kwin_rect[1] + window_control[1],
+                  window_control[2], window_control[3]]
+        if not _rect_contains(kwin_rect, bounds):
+            reject("translated window-local control falls outside KWin frame")
+        space = "window-local-translated"
+    point = list(point_from_bounds(bounds))
+    evidence.update({"coordinate_space": space, "control_bounds": bounds,
+                     "calculated_point": point})
+    return evidence
+
+
+def resolve_atspi_geometry(application, pid, label, kwin, runner=subprocess.run, timeout=8,
+                           expected_roles=(), expected_title="CodexBar Settings"):
+    """Collect exact synthetic frame/control extents in both spaces; never invoke DoAction."""
     probe = r'''import json,sys,gi
 gi.require_version("Atspi","2.0")
-from gi.repository import Atspi
+gi.require_version("Gdk","4.0")
+gi.require_version("Gtk","4.0")
+from gi.repository import Atspi,Gdk,Gtk
 Atspi.init()
-want_pid=int(sys.argv[1]); want_name=sys.argv[2]; want_label=sys.argv[3]; roles=json.loads(sys.argv[4])
-d=Atspi.get_desktop(0); found=[]
+Gtk.init()
+want_pid=int(sys.argv[1]); want_name=sys.argv[2]; want_label=sys.argv[3]; roles=json.loads(sys.argv[4]); want_title=sys.argv[5]
+d=Atspi.get_desktop(0); frames=[]; controls=[]; app_match=None
+display=Gdk.Display.get_default(); monitors=display.get_monitors() if display else None
+scales=[int(monitors.get_item(i).get_scale_factor()) for i in range(monitors.get_n_items())] if monitors else []
+def rect(node, kind):
+ try:
+  comp=node.get_component_iface(); ext=comp.get_extents(Atspi.CoordType.SCREEN if kind=="screen" else Atspi.CoordType.WINDOW) if comp else None
+  return [int(ext.x),int(ext.y),int(ext.width),int(ext.height)] if ext else None
+ except Exception: return None
+def states(node):
+ try:
+  st=node.get_state_set()
+  return {"visible":bool(st.contains(Atspi.StateType.VISIBLE)),"showing":bool(st.contains(Atspi.StateType.SHOWING))}
+ except Exception: return {"visible":False,"showing":False}
 for i in range(min(d.get_child_count(),100)):
  app=d.get_child_at_index(i)
  try:
   if app.get_name()!=want_name or int(app.get_process_id())!=want_pid: continue
-  q=[app]; seen=0
+  app_match={"application":app.get_name(),"pid":int(app.get_process_id())}; q=[app]; seen=0
   while q and seen<3000:
    n=q.pop(0); seen+=1
    try:
     name=n.get_name()
     role=n.get_role_name()
-    if name==want_label:
-     candidates=[n]
-     descendants=[]
-     children=[n.get_child_at_index(j) for j in range(min(n.get_child_count(),50))]
-     while children and len(descendants)<200:
-      child=children.pop(0)
-      descendants.append(child)
-      children.extend(child.get_child_at_index(j) for j in range(min(child.get_child_count(),50)))
-     candidates.extend(descendants)
-     for candidate in candidates:
-      candidate_role=candidate.get_role_name()
-      if roles and candidate_role not in roles: continue
-      if not roles and candidate is not n: continue
-      comp=candidate.get_component_iface()
-      ext=comp.get_extents(Atspi.CoordType.SCREEN) if comp else None
-      st=candidate.get_state_set(); visible=st.contains(Atspi.StateType.VISIBLE) and st.contains(Atspi.StateType.SHOWING)
-      if ext and visible: found.append([int(ext.x),int(ext.y),int(ext.width),int(ext.height)])
+    st=states(n)
+    if role in ("frame","window","dialog"):
+     frames.append({"name":name,"role":role,**st,"screen":rect(n,"screen"),"window":rect(n,"window")})
+    if name==want_label and (not roles or role in roles):
+     controls.append({"name":name,"role":role,**st,"screen":rect(n,"screen"),"window":rect(n,"window")})
     count=min(n.get_child_count(),200)
     q.extend(n.get_child_at_index(j) for j in range(count))
    except Exception: pass
   break
  except Exception: pass
-print(json.dumps({"bounds":found}))
+print(json.dumps({**(app_match or {"application":want_name,"pid":want_pid}),"requested_label":want_label,"expected_roles":roles,"desktop_scale_factors":scales,"top_level_windows":frames,"controls":controls}))
 '''
     result = runner([sys.executable, "-c", probe, str(int(pid)), str(application), str(label),
-                     json.dumps(list(expected_roles))],
+                     json.dumps(list(expected_roles)), expected_title],
                     capture_output=True, text=True, timeout=timeout, env=dict(os.environ))
+    failure_base = {"raw_geometry": None,
+                    "kwin_geometry": kwin.get("target_geometry") if isinstance(kwin, dict) else None,
+                    "coordinate_space": None, "calculated_point": None}
     if result.returncode != 0:
-        raise RuntimeError("AT-SPI control lookup failed; no input sent")
+        raise GeometryResolutionError("AT-SPI geometry lookup failed", failure_base)
     try:
-        rows = json.loads(result.stdout).get("bounds")
+        raw = json.loads(result.stdout)
     except (ValueError, AttributeError, TypeError) as error:
-        raise RuntimeError("AT-SPI control lookup returned malformed data; no input sent") from error
-    if not isinstance(rows, list) or len(rows) != 1:
-        raise RuntimeError("AT-SPI control is missing or ambiguous; no input sent")
-    bounds = rows[0]
-    if (not isinstance(bounds, list) or len(bounds) != 4 or
-            any(type(value) is not int for value in bounds) or bounds[2] <= 0 or bounds[3] <= 0):
-        raise RuntimeError("AT-SPI control geometry is invalid; no input sent")
-    return bounds
+        raise GeometryResolutionError("AT-SPI geometry lookup returned malformed data",
+                                      {**failure_base, "raw_geometry": result.stdout[:12000]}) from error
+    return resolve_coordinate_geometry(raw, kwin, int(pid), application, expected_title)
 
 
 def point_from_bounds(bounds):
@@ -1633,6 +1740,16 @@ def main():
             raise RuntimeError("synthetic Settings baseline capture failed; no portal request sent")
         print(f"Synthetic Settings baseline captured at {settings_capture}; verify the requested row.", flush=True)
         if args.inspect_only:
+            bridge_application = resolve_atspi_application(app.pid)
+            try:
+                measured = resolve_atspi_geometry(
+                    bridge_application, app.pid, "Notifications", settings_state,
+                    expected_roles=("page tab",),
+                )
+                print("READ_ONLY_GEOMETRY=" + json.dumps(measured, sort_keys=True), flush=True)
+            except GeometryResolutionError as error:
+                print("READ_ONLY_GEOMETRY_FAILURE=" + json.dumps(error.evidence, sort_keys=True), flush=True)
+                raise
             print("Inspection-only mode; no portal request or input sent.", flush=True)
             return 0
         if args.move_only:
@@ -1712,6 +1829,20 @@ def main():
             navigation = []
             current_page = "General"
             expected_preferences = batch_expected_preferences(action_ids)
+            geometry_failures = []
+            geometry_measurements = []
+
+            def measure_control(label, roles):
+                try:
+                    measurement = resolve_atspi_geometry(
+                        bridge_application, app.pid, label, latest(),
+                        expected_roles=roles,
+                    )
+                    geometry_measurements.append({"label": label, **measurement})
+                    return measurement
+                except GeometryResolutionError as error:
+                    geometry_failures.append({"label": label, **error.evidence})
+                    raise
 
             def reactivate_fixture():
                 nonlocal focus_script_loaded
@@ -1750,12 +1881,12 @@ def main():
                         raise RuntimeError("unsupported operation in batch; aborting before input")
                     desired_page = step.get("page", "General")
                     if desired_page != current_page:
-                        tab_bounds = resolve_atspi_bounds(
-                            bridge_application, app.pid, desired_page,
-                            expected_roles=("page tab",)
-                        )
+                        tab_measurement = measure_control(desired_page, ("page tab",))
+                        tab_bounds = tab_measurement["control_bounds"]
                         before_nav = latest()
-                        nav_x, nav_y = point_from_bounds(tab_bounds)
+                        nav_x, nav_y = tab_measurement["calculated_point"]
+                        if before_nav.get("target_geometry") != tab_measurement.get("kwin_geometry"):
+                            raise RuntimeError("KWin frame changed after AT-SPI tab measurement")
                         if not target_window_contains(before_nav, nav_x, nav_y):
                             raise RuntimeError("measured page tab is outside exact synthetic window")
                         nav_state = guarded_input(app.pid, nav_x, nav_y)
@@ -1765,6 +1896,9 @@ def main():
                             "target_pid": app.pid,
                             "input_method": "guarded_pointer_click",
                             "control_bounds": tab_bounds,
+                            "coordinate_space": tab_measurement["coordinate_space"],
+                            "calculated_point": tab_measurement["calculated_point"],
+                            "raw_geometry": tab_measurement["raw_geometry"],
                             "sample_seq": nav_state.get("sample_seq"),
                             "sample_age_seconds": round(nav_state.get("pre_click_age_seconds", 0), 3),
                             "sample_received_monotonic": round(nav_state.get("received", 0), 6),
@@ -1778,11 +1912,12 @@ def main():
                         current_page = desired_page
 
                     expected_role = "button" if kind == "button" else "switch"
-                    control_bounds = resolve_atspi_bounds(
-                        bridge_application, app.pid, step["label"], expected_roles=(expected_role,)
-                    )
+                    control_measurement = measure_control(step["label"], (expected_role,))
+                    control_bounds = control_measurement["control_bounds"]
                     before_state = latest()
-                    point_x, point_y = point_from_bounds(control_bounds)
+                    point_x, point_y = control_measurement["calculated_point"]
+                    if before_state.get("target_geometry") != control_measurement.get("kwin_geometry"):
+                        raise RuntimeError("KWin frame changed after AT-SPI control measurement")
                     if not target_window_contains(before_state, point_x, point_y):
                         raise RuntimeError("measured control is outside exact synthetic window")
                     before_preferences = json.loads(preferences.read_text())
@@ -1794,6 +1929,11 @@ def main():
                     # One action only. No screenshot, sleep, navigation, or other
                     # operation is inserted between the final guard and the click.
                     pre_click_state = guarded_input(app.pid, point_x, point_y)
+                    pre_click_state.update({
+                        "coordinate_space": control_measurement["coordinate_space"],
+                        "calculated_point": control_measurement["calculated_point"],
+                        "raw_geometry": control_measurement["raw_geometry"],
+                    })
                     deadline = time.monotonic() + 8
                     after_preferences = before_preferences
                     if preference is not None:
@@ -1841,12 +1981,16 @@ def main():
                         "image": None,
                     })
                     (evidence_dir / "results.json").write_text(
-                        json.dumps({"navigation": navigation, "actions": results}, indent=2) + "\n"
+                        json.dumps({"navigation": navigation, "actions": results,
+                                    "geometry_measurements": geometry_measurements,
+                                    "geometry_failures": geometry_failures}, indent=2) + "\n"
                     )
                     image_path = capture_fixture(action_id)
                     results[-1]["image"] = image_path.name
                     (evidence_dir / "results.json").write_text(
-                        json.dumps({"navigation": navigation, "actions": results}, indent=2) + "\n"
+                        json.dumps({"navigation": navigation, "actions": results,
+                                    "geometry_measurements": geometry_measurements,
+                                    "geometry_failures": geometry_failures}, indent=2) + "\n"
                     )
                     print(f"PASS: {action_id}; synthetic evidence image {image_path}", flush=True)
                     reactivate_fixture()
@@ -1858,7 +2002,9 @@ def main():
             except Exception:
                 # Retain only fixture screenshots and allowlisted action metadata.
                 (evidence_dir / "results.json").write_text(
-                    json.dumps({"navigation": navigation, "actions": results}, indent=2) + "\n"
+                    json.dumps({"navigation": navigation, "actions": results,
+                                "geometry_measurements": geometry_measurements,
+                                "geometry_failures": geometry_failures}, indent=2) + "\n"
                 )
                 print(f"Synthetic batch evidence retained at {evidence_dir}", file=sys.stderr, flush=True)
                 raise
@@ -2174,9 +2320,9 @@ Gio.bus_own_name_on_connection(bus,'org.codexbar.U05.Guard',Gio.BusNameOwnerFlag
 loop.run()
 '''
 
-KWIN_JS = r'''var TARGET_PID=__PID__, PORTAL_PID=__PORTAL_PID__, PLUGIN="__PLUGIN__", service="org.codexbar.U05.Guard", path="/org/codexbar/U05/Guard", iface="org.codexbar.U05.Guard";
+KWIN_JS = r'''var TARGET_PID=__PID__, PORTAL_PID=__PORTAL_PID__, TARGET_TITLE="CodexBar Settings", PLUGIN="__PLUGIN__", service="org.codexbar.U05.Guard", path="/org/codexbar/U05/Guard", iface="org.codexbar.U05.Guard";
 var SAMPLE_INTERVAL_MS=250, MAX_SAMPLES=2400, MAX_LIFETIME_MS=600000, startedAt=Date.now(), lastSampleAt=0, sampleSequence=0, sampleInFlight=false, sampler=null;
-function report(){var now=Date.now();if(now-startedAt>=MAX_LIFETIME_MS||sampleSequence>=MAX_SAMPLES){if(sampler)sampler.stop();return;}if(sampleInFlight||now-lastSampleAt<SAMPLE_INTERVAL_MS)return;sampleInFlight=true;lastSampleAt=now;var sequence=++sampleSequence;var p=workspace.cursorPos,h=workspace.windowAt(p,1),top=h&&h.length?h[0]:null,a=workspace.activeWindow,w=workspace.stackingOrder,t=null;for(var i=0;i<w.length;i++)if(Number(w[i].pid)===TARGET_PID)t=w[i];var g=t?{x:Number(t.x),y:Number(t.y),width:Number(t.width),height:Number(t.height)}:null;var s={sample_seq:sequence,pid:a?Number(a.pid):0,active:!!(a&&Number(a.pid)===TARGET_PID),top_hit:!!(top&&Number(top.pid)===TARGET_PID),target_present:!!t,target_geometry:g?[g.x,g.y,g.width,g.height]:null,cursor:[Number(p.x),Number(p.y)],portal_active:!!(a&&Number(a.pid)===PORTAL_PID)};callDBus(service,path,iface,"Record",JSON.stringify(s),function(){sampleInFlight=false;});}
+function report(){var now=Date.now();if(now-startedAt>=MAX_LIFETIME_MS||sampleSequence>=MAX_SAMPLES){if(sampler)sampler.stop();return;}if(sampleInFlight||now-lastSampleAt<SAMPLE_INTERVAL_MS)return;sampleInFlight=true;lastSampleAt=now;var sequence=++sampleSequence;var p=workspace.cursorPos,h=workspace.windowAt(p,1),top=h&&h.length?h[0]:null,a=workspace.activeWindow,w=workspace.stackingOrder,t=null,count=0;for(var i=0;i<w.length;i++)if(Number(w[i].pid)===TARGET_PID&&String(w[i].caption)===TARGET_TITLE){t=w[i];count++;}if(count!==1)t=null;var g=t?{x:Number(t.x),y:Number(t.y),width:Number(t.width),height:Number(t.height)}:null;var s={sample_seq:sequence,pid:a?Number(a.pid):0,active:!!(a&&Number(a.pid)===TARGET_PID),active_window_pid:a?Number(a.pid):0,active_window_title:a?String(a.caption):"",top_hit:!!(top&&Number(top.pid)===TARGET_PID),target_present:count===1,target_window_pid:t?TARGET_PID:0,target_window_title:t?String(t.caption):"",target_window_count:count,target_geometry:g?[g.x,g.y,g.width,g.height]:null,cursor:[Number(p.x),Number(p.y)],portal_active:!!(a&&Number(a.pid)===PORTAL_PID)};callDBus(service,path,iface,"Record",JSON.stringify(s),function(){sampleInFlight=false;});}
 sampler=new QTimer(this);sampler.timeout.connect(report);sampler.start(SAMPLE_INTERVAL_MS);report();workspace.cursorPosChanged.connect(report);workspace.windowActivated.connect(report);workspace.windowAdded.connect(report);workspace.windowRemoved.connect(report);'''
 
 

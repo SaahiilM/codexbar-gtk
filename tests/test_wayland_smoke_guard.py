@@ -27,6 +27,76 @@ class WaylandGuardTests(unittest.TestCase):
         state.update(overrides)
         return state
 
+    def geometry_fixture(self):
+        kwin = {
+            "pid": 4242, "active": True, "target_present": True,
+            "active_window_pid": 4242, "active_window_title": "CodexBar Settings",
+            "target_window_pid": 4242, "target_window_title": "CodexBar Settings",
+            "target_window_count": 1, "target_geometry": [364, 149, 1000, 740],
+        }
+        raw = {
+            "application": "codexbar-gtk-synthetic-wayland-test", "pid": 4242,
+            "requested_label": "Notifications", "expected_roles": ["page tab"],
+            "desktop_scale_factors": [1],
+            "top_level_windows": [{
+                "name": "CodexBar Settings", "role": "frame", "visible": True,
+                "showing": True, "screen": [364, 149, 1000, 740],
+                "window": [0, 0, 1000, 740],
+            }],
+            "controls": [{
+                "name": "Notifications", "role": "page tab", "visible": True,
+                "showing": True, "screen": [500, 300, 80, 40],
+                "window": [136, 151, 80, 40],
+            }],
+        }
+        return raw, kwin
+
+    def test_coordinate_geometry_accepts_verified_global_frame(self):
+        raw, kwin = self.geometry_fixture()
+        result = MODULE.resolve_coordinate_geometry(raw, kwin, 4242,
+                                                    "codexbar-gtk-synthetic-wayland-test")
+        self.assertEqual(result["coordinate_space"], "screen")
+        self.assertEqual(result["control_bounds"], [500, 300, 80, 40])
+        self.assertEqual(result["calculated_point"], [540, 320])
+
+    def test_coordinate_geometry_accepts_verified_window_local_translation(self):
+        raw, kwin = self.geometry_fixture()
+        raw["top_level_windows"][0]["screen"] = [0, 0, 1000, 740]
+        raw["controls"][0]["screen"] = [0, 0, 80, 40]
+        result = MODULE.resolve_coordinate_geometry(raw, kwin, 4242,
+                                                    "codexbar-gtk-synthetic-wayland-test")
+        self.assertEqual(result["coordinate_space"], "window-local-translated")
+        self.assertEqual(result["control_bounds"], [500, 300, 80, 40])
+        self.assertEqual(result["calculated_point"], [540, 320])
+
+    def test_coordinate_geometry_fails_closed_for_unverified_or_unsafe_evidence(self):
+        raw0, kwin0 = self.geometry_fixture()
+        mutations = (
+            (lambda raw, kwin: kwin.update(target_window_pid=99), "wrong PID"),
+            (lambda raw, kwin: kwin.update(target_window_count=2), "multiple KWin windows"),
+            (lambda raw, kwin: raw["top_level_windows"][0].update(showing=False), "hidden frame"),
+            (lambda raw, kwin: kwin.update(active_window_title="Other window"), "wrong focused window"),
+            (lambda raw, kwin: raw.update(application="other-app"), "wrong app name"),
+            (lambda raw, kwin: raw.update(expected_roles=["button"]), "wrong role"),
+            (lambda raw, kwin: raw["controls"][0].update(visible=False), "hidden control"),
+            (lambda raw, kwin: (raw["top_level_windows"][0].update(window=[0, 0, 999, 740]),
+                                raw["top_level_windows"][0].update(screen=[0, 0, 1000, 740])), "frame size"),
+            (lambda raw, kwin: raw.update(desktop_scale_factors=[2]), "unsupported scale"),
+            (lambda raw, kwin: (raw["top_level_windows"][0].update(screen=[0, 0, 1000, 740]),
+                                raw["controls"][0].update(window=[990, 720, 20, 20])), "outside"),
+            (lambda raw, kwin: raw["top_level_windows"][0].update(screen=[-1, -1, -1, -1], window=[-1, -1, -1, -1]), "sentinel"),
+            (lambda raw, kwin: raw["controls"].append(dict(raw["controls"][0])), "ambiguous"),
+            (lambda raw, kwin: raw["top_level_windows"].append(dict(raw["top_level_windows"][0])), "multiple frames"),
+            (lambda raw, kwin: raw["top_level_windows"][0].update(screen=[10, 10, 1000, 740]), "unverified translation"),
+        )
+        for mutate, label in mutations:
+            with self.subTest(case=label):
+                raw, kwin = json.loads(json.dumps(raw0)), json.loads(json.dumps(kwin0))
+                mutate(raw, kwin)
+                with self.assertRaises(MODULE.GeometryResolutionError):
+                    MODULE.resolve_coordinate_geometry(raw, kwin, 4242,
+                                                        "codexbar-gtk-synthetic-wayland-test")
+
     def test_accepts_fresh_stable_target(self):
         self.assertTrue(MODULE.guard_target(self.snapshot(), 4242, 810, 315, now=100.2))
 
@@ -143,26 +213,36 @@ class WaylandGuardTests(unittest.TestCase):
         self.assertIsNone(hooks["preference"])
 
     def test_batch_control_probe_is_read_only_and_exact_pid_name_and_label(self):
-        result = unittest.mock.Mock(returncode=0, stdout=json.dumps({"bounds": [[850, 300, 28, 28]]}))
+        raw, kwin = self.geometry_fixture()
+        raw["application"] = "synthetic-app"
+        raw["controls"][0].update(name="Pace warnings", screen=[850, 300, 28, 28],
+                                  window=[486, 151, 28, 28], role="switch")
+        raw.update(requested_label="Pace warnings", expected_roles=["switch"])
+        result = unittest.mock.Mock(returncode=0, stdout=json.dumps(raw))
         calls = []
 
         def runner(argv, **kwargs):
             calls.append((argv, kwargs))
             return result
 
-        bounds = MODULE.resolve_atspi_bounds("synthetic-app", 4242, "Pace warnings",
-                                             runner=runner, expected_roles=("switch",))
-        self.assertEqual(bounds, [850, 300, 28, 28])
+        geometry = MODULE.resolve_atspi_geometry("synthetic-app", 4242, "Pace warnings", kwin,
+                                                 runner=runner, expected_roles=("switch",))
+        self.assertEqual(geometry["control_bounds"], [850, 300, 28, 28])
         argv, kwargs = calls[0]
-        self.assertEqual(argv[-4:], ["4242", "synthetic-app", "Pace warnings", '["switch"]'])
+        self.assertEqual(argv[-5:], ["4242", "synthetic-app", "Pace warnings", '["switch"]', "CodexBar Settings"])
         self.assertEqual(kwargs["timeout"], 8)
         self.assertIn("int(app.get_process_id())!=want_pid", argv[2])
         self.assertIn("app.get_name()!=want_name", argv[2])
-        self.assertIn("candidate_role not in roles", argv[2])
-        self.assertEqual(json.loads(argv[-1]), ["switch"])
+        self.assertIn("Atspi.CoordType.SCREEN", argv[2])
+        self.assertIn("Atspi.CoordType.WINDOW", argv[2])
+        self.assertIn("Gtk.init()", argv[2])
+        self.assertIn("get_scale_factor()", argv[2])
+        self.assertIn("role in roles", argv[2])
+        self.assertEqual(json.loads(argv[-2]), ["switch"])
         self.assertNotIn("do_action", argv[2].lower())
 
     def test_batch_control_probe_rejects_missing_ambiguous_invalid_and_failed(self):
+        _, kwin = self.geometry_fixture()
         for result in (
             unittest.mock.Mock(returncode=0, stdout='{"bounds":[]}'),
             unittest.mock.Mock(returncode=0, stdout='{"bounds":[[1,2,20,20],[4,5,30,30]]}'),
@@ -170,14 +250,16 @@ class WaylandGuardTests(unittest.TestCase):
             unittest.mock.Mock(returncode=0, stdout='not-json'),
             unittest.mock.Mock(returncode=1, stdout='{}'),
         ):
-            with self.subTest(stdout=result.stdout), self.assertRaises(RuntimeError):
-                MODULE.resolve_atspi_bounds("synthetic-app", 4242, "exact control",
-                                             runner=lambda *_a, _result=result, **_k: _result)
+            with self.subTest(stdout=result.stdout), self.assertRaises(MODULE.GeometryResolutionError):
+                MODULE.resolve_atspi_geometry("synthetic-app", 4242, "exact control", kwin,
+                                              runner=lambda *_a, _result=result, **_k: _result)
 
     def test_batch_evidence_contains_only_allowlisted_metadata(self):
         state = self.snapshot(sample_seq=14, received=100.05, cursor=[864, 314],
                               pre_click_age_seconds=0.2,
-                              target_geometry=[364, 149, 1000, 740])
+                              target_geometry=[364, 149, 1000, 740],
+                              coordinate_space="screen", calculated_point=[864, 314],
+                              raw_geometry={"synthetic": True})
         with unittest.mock.patch.object(MODULE.time, "monotonic", return_value=100.25):
             evidence = MODULE.safe_action_evidence(
                 "predictive-pace-notifications", state, 4242, "Pace warnings",
@@ -191,6 +273,7 @@ class WaylandGuardTests(unittest.TestCase):
         self.assertEqual(evidence["sample_received_monotonic"], 100.05)
         self.assertEqual(set(evidence), {
             "action", "target_pid", "control", "control_bounds", "target_geometry",
+            "coordinate_space", "calculated_point", "raw_geometry",
             "input_method", "sample_seq", "sample_age_seconds", "sample_received_monotonic",
             "input_requested_monotonic", "input_outcome", "input_return_metadata",
             "action_state_before", "action_state_after",
@@ -271,6 +354,9 @@ class WaylandGuardTests(unittest.TestCase):
         self.assertIn("SAMPLE_INTERVAL_MS=250", script)
         self.assertIn("sampler.start(SAMPLE_INTERVAL_MS)", script)
         self.assertIn("MAX_SAMPLES=2400", script)
+        self.assertIn("active_window_pid", script)
+        self.assertIn("active_window_title", script)
+        self.assertIn('String(a.caption)', script)
         self.assertIn("MAX_LIFETIME_MS=600000", script)
         self.assertIn("if(sampleInFlight||now-lastSampleAt<SAMPLE_INTERVAL_MS)return", script)
         self.assertIn("sample_seq:sequence", script)

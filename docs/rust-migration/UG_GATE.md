@@ -45,6 +45,21 @@ remaining work; backend unit tests do not count as GTK interaction evidence.
 - **UNSUPPORTED HERE** — the current host/compositor blocks the stated capture
   or input method. This does not mean the product feature is unsupported.
 
+## Private Weston action slice (E204)
+
+**PASS for this limited synthetic slice:** on a private Weston headless Pixman
+compositor, GAction opened Dashboard and Settings, AT-SPI `DoAction` changed
+the General **Refresh when the panel opens** control from off to on and the
+isolated preferences JSON recorded `true`; GAction then opened Usage & Spend
+and selected the **7 days** toggle, whose AT-SPI `pressed` state was observed.
+The native app and compositor exited, the temporary home/runtime and private
+D-Bus socket were removed, and two personally inspected captures are tracked
+at [`settings-after-toggle.png`](screenshots/build101-wayland-isolated/settings-after-toggle.png)
+and [`spend-7-days.png`](screenshots/build101-wayland-isolated/spend-7-days.png).
+This test uses fixture CLI data. GAction/AT-SPI proves accessible app actions,
+not physical input. Weston does not establish KDE shell placement, KDE portal
+input, keyboard parity, or full UG acceptance; the gate remains **NOT PASSED**.
+
 ## Page and action matrix
 
 The README feature list was cross-checked against the Python UI entry points

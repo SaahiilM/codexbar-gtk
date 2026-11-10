@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.82.0 (102) — 2026-11-10
+
+Hardens the private native installer command-target proof with fresh release
+builds, bounded cleanup and checked refresh/quit actions. This component smoke
+does not prove systemd service lifecycle or pass a migration gate; Python
+remains the default launcher.
+
+- See migration audit E205 for exact evidence and limits. UG remains **NOT PASSED**.
+
 ## 0.82.0 (101) — 2026-11-10
 
 Tracks upstream CodexBar 0.82.0. Add bounded private Weston Wayland acceptance

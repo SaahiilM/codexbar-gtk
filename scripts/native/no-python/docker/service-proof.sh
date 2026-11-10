@@ -8,6 +8,24 @@ CURRENT=/artifacts/current
 INSTALLER=/work/installer/scripts/install-native.sh
 PREFIX='/tmp/native prefix with spaces'
 HOME=/tmp/home
+APP_PID=
+XVFB_PID=
+DBUS_PID=
+fail() { echo "FAIL: $*" >&2; exit 1; }
+ok() { echo "PASS: $*"; }
+# shellcheck disable=SC1091
+source /work/service-proof-lib.sh
+trap 'exit 130' INT
+trap 'exit 143' TERM
+cleanup() {
+  local rc=$?
+  trap - EXIT INT TERM
+  stop_reap "$APP_PID" || echo 'cleanup: app process did not stop within bounded grace' >&2
+  stop_reap "$XVFB_PID" || echo 'cleanup: Xvfb did not stop within bounded grace' >&2
+  stop_reap "$DBUS_PID" || echo 'cleanup: private D-Bus did not stop within bounded grace' >&2
+  exit "$rc"
+}
+trap cleanup EXIT
 export HOME XDG_CONFIG_HOME="$HOME/.config" XDG_DATA_HOME="$HOME/.local/share" \
   XDG_CACHE_HOME="$HOME/.cache" XDG_RUNTIME_DIR=/tmp/runtime \
   DISPLAY=:99 GDK_BACKEND=x11 GTK_A11Y=none GTK_USE_PORTAL=0 GSK_RENDERER=cairo \
@@ -19,7 +37,8 @@ mkdir -p /tmp/runtime "$HOME/.config/codexbar-gtk" "$HOME/.config/systemd/user" 
 chmod 700 /tmp/runtime
 Xvfb :99 -screen 0 1280x800x24 >/tmp/xvfb.log 2>&1 &
 XVFB_PID=$!
-dbus-daemon --session --address="$DBUS_SESSION_BUS_ADDRESS" --fork
+dbus-daemon --session --address="$DBUS_SESSION_BUS_ADDRESS" --nofork >/tmp/dbus.log 2>&1 &
+DBUS_PID=$!
 for _ in $(seq 1 30); do
   gdbus call --session --dest org.freedesktop.DBus --object-path /org/freedesktop/DBus \
     --method org.freedesktop.DBus.ListNames --timeout 2 >/dev/null 2>&1 && break
@@ -27,25 +46,14 @@ for _ in $(seq 1 30); do
 done
 gdbus call --session --dest org.freedesktop.DBus --object-path /org/freedesktop/DBus \
   --method org.freedesktop.DBus.ListNames --timeout 2 >/dev/null 2>&1 || fail 'private D-Bus unavailable'
-cleanup() {
-  local rc=$?
-  if [[ -n ${APP_PID:-} ]] && kill -0 "$APP_PID" 2>/dev/null; then
-    kill -TERM "$APP_PID" 2>/dev/null || true
-    wait "$APP_PID" 2>/dev/null || true
-  fi
-  kill "$XVFB_PID" 2>/dev/null || true
-  exit "$rc"
-}
-trap cleanup EXIT INT TERM
 
+# shellcheck disable=SC1091
 source /work/service-targets.sh
-fail() { echo "FAIL: $*" >&2; exit 1; }
-ok() { echo "PASS: $*"; }
 dbus_call() { gdbus call --session --dest org.freedesktop.DBus --object-path /org/freedesktop/DBus --method "org.freedesktop.DBus.$1" "${@:2}" --timeout 3; }
 name_has_owner() { dbus_call NameHasOwner "$1" 2>/dev/null | grep -q '(true,)'; }
 wait_gone() {
-  local name=$1 i
-  for i in $(seq 1 30); do name_has_owner "$name" || return 0; sleep 0.2; done
+  local name=$1
+  for _ in $(seq 1 30); do name_has_owner "$name" || return 0; sleep 0.2; done
   return 1
 }
 cat > "$HOME/.local/bin/codexbar" <<'CLI'
@@ -54,6 +62,7 @@ printf '%s\n' "$*" >> "$HOME/cli.log"
 printf '{"ok":true,"providers":[]}\n'
 CLI
 chmod 755 "$HOME/.local/bin/codexbar"
+: > "$HOME/cli.log"
 printf '%s\n' '{"preferredCurrencyCode":"auto","refreshIntervalSeconds":300,"launchAtLogin":false,"synthetic":"service-proof"}' > "$HOME/.config/codexbar-gtk/settings.json"
 printf '%s\n' '{"t":1794009600.0,"p":"synthetic","w":"primary","u":0.0}' > "$HOME/.config/codexbar-gtk/history.jsonl"
 SETTINGS_SHA=$(sha256sum "$HOME/.config/codexbar-gtk/settings.json" | awk '{print $1}')
@@ -78,12 +87,12 @@ UNIT_TARGET=$(service_exec_target "$UNIT") || fail 'could not parse installed se
 ok "previous version activated; desktop and service targets agree ($DESKTOP_TARGET)"
 
 probe_target() {
-  local label=$1 target=$2 expected=$3 pid owner exe sha sni
+  local label=$1 target=$2 expected=$3 pid owner exe sha
   name_has_owner com.steipete.CodexBarGTK && fail "$label started while app ID already owned"
   name_has_owner org.kde.StatusNotifierItem-codexbar-gtk && fail "$label started while old SNI name owned"
   "$target" >"/tmp/$label.log" 2>&1 & pid=$!; APP_PID=$pid
-  local ready=0 i
-  for i in $(seq 1 40); do
+  local ready=0
+  for _ in $(seq 1 40); do
     if name_has_owner com.steipete.CodexBarGTK; then ready=1; break; fi
     kill -0 "$pid" 2>/dev/null || break
     sleep 0.25
@@ -94,10 +103,19 @@ probe_target() {
   exe=$(readlink -f "/proc/$owner/exe")
   sha=$(sha256sum "/proc/$owner/exe" | awk '{print $1}')
   [[ "$exe" == "$target" && "$sha" == "$expected" ]] || fail "$label executable identity/hash mismatch ($exe $sha)"
-  gdbus call --session --dest com.steipete.CodexBarGTK --object-path /com/steipete/CodexBarGTK --method org.gtk.Actions.Activate refresh '[]' '{}' --timeout 5 >/dev/null 2>&1 || true
-  gdbus call --session --dest com.steipete.CodexBarGTK --object-path /com/steipete/CodexBarGTK --method org.gtk.Actions.Activate quit '[]' '{}' --timeout 5 >/dev/null 2>&1 || true
-  for i in $(seq 1 40); do kill -0 "$pid" 2>/dev/null || break; sleep 0.25; done
-  if kill -0 "$pid" 2>/dev/null; then kill -TERM "$pid" 2>/dev/null || true; wait "$pid" || true; fail "$label quit timed out"; fi
+  local calls_before calls_after
+  calls_before=$(wc -l < "$HOME/cli.log")
+  run_required_action "$label refresh action" gdbus call --session --dest com.steipete.CodexBarGTK --object-path /com/steipete/CodexBarGTK --method org.gtk.Actions.Activate refresh '[]' '{}' --timeout 5 >/dev/null || fail "$label refresh action call failed"
+  for _ in $(seq 1 40); do
+    calls_after=$(wc -l < "$HOME/cli.log")
+    (( calls_after > calls_before )) && break
+    kill -0 "$pid" 2>/dev/null || fail "$label exited before CLI refresh was observed"
+    sleep 0.25
+  done
+  (( calls_after > calls_before )) || fail "$label refresh action did not increase synthetic CLI call count"
+  run_required_action "$label quit action" gdbus call --session --dest com.steipete.CodexBarGTK --object-path /com/steipete/CodexBarGTK --method org.gtk.Actions.Activate quit '[]' '{}' --timeout 5 >/dev/null || fail "$label quit action call failed"
+  for _ in $(seq 1 40); do kill -0 "$pid" 2>/dev/null || break; sleep 0.25; done
+  if kill -0 "$pid" 2>/dev/null; then fail "$label graceful quit timed out"; fi
   wait "$pid" || fail "$label exited nonzero"
   APP_PID=""
   wait_gone com.steipete.CodexBarGTK || fail "$label left app bus owner behind"

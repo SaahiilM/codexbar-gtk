@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.82.0 (97) — 2026-11-10
+
+Tracks upstream CodexBar 0.82.0.
+
+### Added
+
+- Record seven guarded synthetic Wayland Settings actions and three verified
+  Settings tab transitions. General refresh-on-panel-open, all four
+  Notifications preference switches, Menu Bar tray visibility and global Hooks
+  disable passed. The test-notification action, three Menu Bar combos, Hooks
+  rule editing, whole-app/keyboard parity and UG acceptance remain open. The
+  live app binary was build 95; this is not build-97 binary evidence.
+- Add sanitized, bounded live-run results and seven synthetic window captures
+  under `docs/rust-migration/screenshots/build97-settings-wayland/`.
+
+### Validation
+
+- See migration audit E200 for exact live evidence, check results and limits.
+
 ## 0.82.0 (96) — 2026-11-10
 
 Tracks upstream CodexBar 0.82.0.

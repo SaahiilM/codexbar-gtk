@@ -1,0 +1,170 @@
+{
+  "evidence_scope": "Synthetic native Settings UI on Wayland; bounded, sanitized summary of results.json.",
+  "runner": {
+    "commit": "f33009dc9a783b5f196ebdef7df8768178bccee0",
+    "sha256": "d1990781cc03146f3134c71b94475a77a806e402b637666be0209bb9d3f1aa7d",
+    "source": "scripts/test-native-settings-wayland.py"
+  },
+  "application": {
+    "source_commit": "7babb4f",
+    "binary_build": 95,
+    "binary_sha256": "993dbb2a4e1f95fc9845b785957c439ee4013f4d96dbe7252d494d0908c51eef",
+    "build97_binary_used": false
+  },
+  "identity_and_guards": {
+    "application_id": "codexbar-gtk-native",
+    "window_title": "CodexBar Settings",
+    "synthetic_pid": 3371378,
+    "window_geometry": [
+      364,
+      149,
+      1000,
+      740
+    ],
+    "accessibility_roles": {
+      "tabs": "page tab",
+      "switches": "check box"
+    },
+    "switch_role_note": "The live GTK/AT-SPI role was check box; the runner accepted this measured role.",
+    "coordinate_space": "window-local-translated; KWin geometry independently measured",
+    "moves": 10,
+    "clicks": 10,
+    "geometry_measurements": 10,
+    "geometry_failures": 0
+  },
+  "navigation": [
+    {
+      "from_page": "General",
+      "to_page": "Notifications",
+      "target_pid": 3371378,
+      "sample_seq": 19,
+      "sample_age_seconds": 0.191,
+      "input_requested_monotonic": 439062.446861184,
+      "input_outcome": "returned"
+    },
+    {
+      "from_page": "Notifications",
+      "to_page": "Menu Bar",
+      "target_pid": 3371378,
+      "sample_seq": 68,
+      "sample_age_seconds": 0.169,
+      "input_requested_monotonic": 439078.673741311,
+      "input_outcome": "returned"
+    },
+    {
+      "from_page": "Menu Bar",
+      "to_page": "Hooks",
+      "target_pid": 3371378,
+      "sample_seq": 89,
+      "sample_age_seconds": 0.156,
+      "input_requested_monotonic": 439085.161598746,
+      "input_outcome": "returned"
+    }
+  ],
+  "actions": [
+    {
+      "action": "refresh-when-panel-opens",
+      "control": "Refresh when the panel opens",
+      "target_pid": 3371378,
+      "sample_seq": 10,
+      "sample_age_seconds": 0.154,
+      "input_requested_monotonic": 439059.158811504,
+      "input_outcome": "returned",
+      "image": "refresh-when-panel-opens.png",
+      "preference": "refreshAllProvidersOnMenuOpen",
+      "before": false,
+      "after": true
+    },
+    {
+      "action": "session-quota-notifications",
+      "control": "Session quota notifications",
+      "target_pid": 3371378,
+      "sample_seq": 27,
+      "sample_age_seconds": 0.151,
+      "input_requested_monotonic": 439065.406263947,
+      "input_outcome": "returned",
+      "image": "session-quota-notifications.png",
+      "preference": "sessionQuotaNotificationsEnabled",
+      "before": false,
+      "after": true
+    },
+    {
+      "action": "quota-warning-notifications",
+      "control": "Quota warning notifications",
+      "target_pid": 3371378,
+      "sample_seq": 38,
+      "sample_age_seconds": 0.157,
+      "input_requested_monotonic": 439068.911987328,
+      "input_outcome": "returned",
+      "image": "quota-warning-notifications.png",
+      "preference": "quotaWarningNotificationsEnabled",
+      "before": false,
+      "after": true
+    },
+    {
+      "action": "limit-reset-notifications",
+      "control": "Limit reset notifications",
+      "target_pid": 3371378,
+      "sample_seq": 48,
+      "sample_age_seconds": 0.216,
+      "input_requested_monotonic": 439072.222767459,
+      "input_outcome": "returned",
+      "image": "limit-reset-notifications.png",
+      "preference": "limitResetNotificationsEnabled",
+      "before": false,
+      "after": true
+    },
+    {
+      "action": "predictive-pace-notifications",
+      "control": "Pace warnings",
+      "target_pid": 3371378,
+      "sample_seq": 58,
+      "sample_age_seconds": 0.157,
+      "input_requested_monotonic": 439075.412101923,
+      "input_outcome": "returned",
+      "image": "predictive-pace-notifications.png",
+      "preference": "predictivePaceNotificationsEnabled",
+      "before": false,
+      "after": true
+    },
+    {
+      "action": "show-tray-icon",
+      "control": "Show the tray icon",
+      "target_pid": 3371378,
+      "sample_seq": 77,
+      "sample_age_seconds": 0.159,
+      "input_requested_monotonic": 439081.663682712,
+      "input_outcome": "returned",
+      "image": "show-tray-icon.png",
+      "preference": "showTray",
+      "before": false,
+      "after": true
+    },
+    {
+      "action": "disable-global-hooks",
+      "control": "Enable hooks",
+      "target_pid": 3371378,
+      "sample_seq": 98,
+      "sample_age_seconds": 0.156,
+      "input_requested_monotonic": 439088.411419425,
+      "input_outcome": "returned",
+      "image": "disable-global-hooks.png",
+      "fixture_cli": "hooks disable",
+      "before": true,
+      "after": false,
+      "preferences_unchanged": true
+    }
+  ],
+  "verification": {
+    "result": "PASS for all seven requested actions",
+    "full_preferences_map": "Compared against the Rust PreferencesStore default map; all expected keys and values checked, with unrelated keys retained.",
+    "hooks": "Synthetic fixture CLI recorded hooks disable; preferences map stayed unchanged.",
+    "limitations": [
+      "No test-notification delivery was exercised.",
+      "No Menu Bar combo was changed.",
+      "No Hooks rule was edited.",
+      "This is not whole-app parity or keyboard parity."
+    ],
+    "source_results_json_sha256": "11dae489a953373dde174301aedca8561062e2aff64b7353ed76b908c2361e1c"
+  }
+}

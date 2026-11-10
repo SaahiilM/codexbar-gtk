@@ -1,10 +1,14 @@
+import contextlib
 import importlib.util
+import io
 import json
 import os
 import pathlib
 import subprocess
+import sys
 import tempfile
 import unittest
+from unittest import mock
 
 
 SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts/test-native-wayland-isolated.py"
@@ -14,6 +18,59 @@ SPEC.loader.exec_module(MODULE)
 
 
 class NativeWaylandIsolatedHarnessTests(unittest.TestCase):
+    def test_failed_atspi_probe_and_capture_fail_closed(self):
+        with self.assertRaisesRegex(RuntimeError, "AT-SPI missing probe failed"):
+            MODULE.atspi_probe(sys.executable, "missing", 1, "")
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            screenshooter = root / "screenshooter"
+            screenshooter.write_text("#!/bin/sh\nexit 7\n", encoding="utf-8")
+            screenshooter.chmod(0o700)
+            with self.assertRaisesRegex(RuntimeError, "private Weston screenshot failed"):
+                MODULE.capture_screen(screenshooter, {}, root / "capture", root / "out.png")
+
+    def test_runner_failure_exits_nonzero_and_retains_failure_evidence(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            artifact_dir = root / "artifacts"
+            argv = [str(SCRIPT), "--inside-private-bus", "--binary",
+                    str(root / "missing-native-binary"), "--artifact-dir", str(artifact_dir)]
+            with mock.patch.object(sys, "argv", argv), \
+                    contextlib.redirect_stdout(io.StringIO()), \
+                    contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(MODULE.main(), 1)
+            failure = json.loads((artifact_dir / "failure-evidence.json").read_text())
+            self.assertEqual(failure["status"], "failed")
+            self.assertIn("not executable", failure["message"])
+
+    @unittest.skipUnless(pathlib.Path("/proc").is_dir(), "requires Linux procfs")
+    def test_outer_timeout_kills_owned_child_and_grandchild_process_group(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            child_pid = root / "child.pid"
+            grandchild_pid = root / "grandchild.pid"
+            child_code = (
+                "import os,signal,subprocess,sys,time; "
+                "signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+                "g=subprocess.Popen([sys.executable,'-c',"
+                "'import os,signal,sys,time; open(sys.argv[1],\\\"w\\\").write(str(os.getpid())); "
+                "signal.signal(signal.SIGTERM,signal.SIG_IGN); time.sleep(60)',sys.argv[2]]); "
+                "open(sys.argv[1],'w').write(str(os.getpid())); time.sleep(60)"
+            )
+            with self.assertRaises(subprocess.TimeoutExpired):
+                MODULE.run_owned_process_group(
+                    [sys.executable, "-c", child_code, str(child_pid), str(grandchild_pid)],
+                    env=dict(os.environ), timeout=1.5,
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            self.assertTrue(child_pid.exists())
+            self.assertTrue(grandchild_pid.exists())
+            for pid_file in (child_pid, grandchild_pid):
+                pid = int(pid_file.read_text(encoding="utf-8"))
+                proc_stat = pathlib.Path(f"/proc/{pid}/stat")
+                if proc_stat.exists():
+                    # A zombie is dead; it cannot continue running the fixture.
+                    self.assertEqual(proc_stat.read_text(encoding="utf-8").split()[2], "Z")
+
     def test_client_environment_drops_host_display_and_bus_handles(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = pathlib.Path(temporary)
@@ -25,6 +82,10 @@ class NativeWaylandIsolatedHarnessTests(unittest.TestCase):
                 "DBUS_STARTER_BUS_TYPE": "session",
                 "DBUS_SYSTEM_BUS_ADDRESS": "unix:path=/host/system-bus",
                 "AT_SPI_BUS_ADDRESS": "unix:path=/host/a11y",
+                "XDG_DESKTOP_PORTAL_DIR": "/run/host/portal",
+                "PORTAL_BUS_ADDRESS": "unix:path=/host/portal-bus",
+                "GIO_LAUNCHED_DESKTOP_FILE_PID": "12345",
+                "SESSION_MANAGER": "local/host:@/tmp/session",
                 "XDG_RUNTIME_DIR": "/run/user/1000", "GDK_BACKEND": "x11",
                 "GSK_RENDERER": "gl", "GTK_USE_PORTAL": "1",
             }, root / "home", root / "runtime", "wayland-private",

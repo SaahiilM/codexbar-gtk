@@ -12,6 +12,7 @@ import hashlib
 import json
 import os
 import pathlib
+import re
 import shutil
 import signal
 import subprocess
@@ -28,9 +29,15 @@ HOST_SESSION_KEYS = (
     "DBUS_SESSION_BUS_ADDRESS", "DBUS_SESSION_BUS_PID", "DBUS_SYSTEM_BUS_ADDRESS",
     "DBUS_STARTER_ADDRESS", "DBUS_STARTER_BUS_TYPE",
     "AT_SPI_BUS_ADDRESS", "XDG_RUNTIME_DIR", "XDG_SESSION_TYPE", "XDG_SESSION_ID",
-    "XDG_CURRENT_DESKTOP", "KDE_FULL_SESSION", "KDE_SESSION_VERSION",
+    "XDG_CURRENT_DESKTOP", "XDG_DESKTOP_PORTAL_DIR", "KDE_FULL_SESSION", "KDE_SESSION_VERSION",
+    "SESSION_MANAGER", "DESKTOP_STARTUP_ID", "GIO_LAUNCHED_DESKTOP_FILE",
+    "GIO_LAUNCHED_DESKTOP_FILE_PID",
     "NO_AT_BRIDGE",
 )
+HOST_HANDLE_PARTS = re.compile(r"DISPLAY|WAYLAND|XAUTHORITY|DBUS|AT_SPI|"
+                              r"XDG_SESSION|XDG_RUNTIME|XDG_DESKTOP_PORTAL|PORTAL_BUS|"
+                              r"KDE_|SESSION_MANAGER|DESKTOP_STARTUP_ID|"
+                              r"GIO_LAUNCHED_DESKTOP_FILE")
 AT_SPI_PROBE = r'''
 import json, sys, time
 import gi
@@ -147,6 +154,9 @@ def sanitized_environment(source: dict[str, str], home: pathlib.Path,
                           private_bus_address: str) -> dict[str, str]:
     """Return a private client environment with host display/session handles removed."""
     env = dict(source)
+    for key in tuple(env):
+        if HOST_HANDLE_PARTS.search(key):
+            env.pop(key, None)
     for key in (
         "DISPLAY", "WAYLAND_DISPLAY", "WAYLAND_SOCKET", "XAUTHORITY",
         "DBUS_SESSION_BUS_ADDRESS", "DBUS_SESSION_BUS_PID", "DBUS_SYSTEM_BUS_ADDRESS",
@@ -180,9 +190,73 @@ def sanitized_environment(source: dict[str, str], home: pathlib.Path,
 def private_bus_environment(source: dict[str, str]) -> dict[str, str]:
     """Drop inherited display/session handles before creating the private bus."""
     env = dict(source)
-    for key in HOST_SESSION_KEYS:
-        env.pop(key, None)
+    for key in tuple(env):
+        if HOST_HANDLE_PARTS.search(key):
+            env.pop(key, None)
     return env
+
+
+def _write_failure_evidence(artifact_dir: pathlib.Path, message: str,
+                            error_type: str, details: dict | None = None) -> None:
+    """Leave a small synthetic-only failure record for local and CI diagnosis."""
+    try:
+        artifact_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        path = artifact_dir / "failure-evidence.json"
+        path.write_text(json.dumps({"status": "failed", "error_type": error_type,
+                                    "message": message[:2000],
+                                    "details": details or {}}, indent=2) + "\n",
+                        encoding="utf-8")
+        path.chmod(0o600)
+    except OSError:
+        pass
+
+
+def _write_failure_log(artifact_dir: pathlib.Path, name: str, content: str) -> None:
+    try:
+        artifact_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        path = artifact_dir / name
+        path.write_text(content[-12_000:], encoding="utf-8", errors="replace")
+        path.chmod(0o600)
+    except OSError:
+        pass
+
+
+def stop_owned_process_group(process: subprocess.Popen, grace: float = 2.0) -> None:
+    """Stop only the process group created for this private runner and reap it."""
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        pass
+    try:
+        process.wait(timeout=grace)
+    except subprocess.TimeoutExpired:
+        pass
+    # The wrapper may have exited while one of its descendants ignored TERM.
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    try:
+        process.wait(timeout=3)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=3)
+
+
+def run_owned_process_group(command: list[str], *, env: dict[str, str],
+                            timeout: float, stdout, stderr) -> subprocess.CompletedProcess:
+    """Run a private wrapper and clean its entire inherited process group on failure."""
+    process = subprocess.Popen(command, env=env, stdout=stdout, stderr=stderr,
+                               start_new_session=True)
+    try:
+        return_code = process.wait(timeout=timeout)
+    except (subprocess.TimeoutExpired, KeyboardInterrupt):
+        stop_owned_process_group(process)
+        raise
+    if return_code != 0:
+        # On failures, dbus-run-session may have left descendants behind.
+        stop_owned_process_group(process)
+    return subprocess.CompletedProcess(command, return_code)
 
 
 def _symlink_if_missing(path: pathlib.Path, target: pathlib.Path) -> None:
@@ -369,7 +443,9 @@ def inside_run(args) -> dict:
         # the private bus and private Wayland socket rather than host handles.
         os.environ.clear()
         os.environ.update(env)
-        weston_log = scratch / "weston.log"
+        weston_log = artifact_dir / "weston.log"
+        weston_log.touch(mode=0o600)
+        weston_log.chmod(0o600)
         weston_config = scratch / "weston.ini"
         weston_config.write_text(
             "[shell]\n"
@@ -386,7 +462,6 @@ def inside_run(args) -> dict:
              "--idle-time=0", "--debug",
              f"--log={weston_log}"],
             env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            start_new_session=True,
         )
         app = None
         evidence = {"compositor": "rootless Weston headless Pixman",
@@ -425,16 +500,19 @@ def inside_run(args) -> dict:
                 "DBUS_SESSION_BUS_ADDRESS",
             }
             evidence["host_session_handles_removed"] = (
-                all(key not in env for key in HOST_SESSION_KEYS if key not in private_handles)
+                all(key not in env for key in env if HOST_HANDLE_PARTS.search(key)
+                    and key not in private_handles)
                 and env.get("XDG_RUNTIME_DIR") == str(runtime)
                 and env.get("WAYLAND_DISPLAY") == "wayland-private"
                 and env.get("DBUS_SESSION_BUS_ADDRESS") == os.environ.get("DBUS_SESSION_BUS_ADDRESS")
             )
             # Enable an isolated AT-SPI bus and make a private fixture preference
             # observable through the real native Settings control.
-            app_log = scratch / "native-app.log"
+            app_log = artifact_dir / "native-app.log"
+            app_log.touch(mode=0o600)
+            app_log.chmod(0o600)
             app = subprocess.Popen([str(binary)], env=env, stdout=app_log.open("w"),
-                                   stderr=subprocess.STDOUT, start_new_session=True)
+                                   stderr=subprocess.STDOUT)
             wait_until("native app D-Bus ownership", lambda: subprocess.run(
                 ["gdbus", "call", "--session", "--dest", "org.freedesktop.DBus",
                  "--object-path", "/org/freedesktop/DBus", "--method",
@@ -616,13 +694,27 @@ def main() -> int:
                    "--inside-private-bus", "--binary", args.binary,
                    "--artifact-dir", args.artifact_dir]
         with tempfile.TemporaryFile(mode="w+b") as private_stderr:
-            result = subprocess.run(command, env=private_env, stdout=subprocess.DEVNULL,
-                                    stderr=private_stderr, timeout=240)
+            try:
+                result = run_owned_process_group(
+                    command, env=private_env, stdout=subprocess.DEVNULL,
+                    stderr=private_stderr, timeout=240)
+            except (subprocess.TimeoutExpired, KeyboardInterrupt) as error:
+                private_stderr.seek(0, os.SEEK_END)
+                size = private_stderr.tell()
+                private_stderr.seek(max(0, size - 12_000))
+                stderr_tail = private_stderr.read().decode("utf-8", errors="replace")
+                _write_failure_evidence(pathlib.Path(args.artifact_dir),
+                                        "outer runner timeout or interrupt",
+                                        type(error).__name__,
+                                        {"stderr_tail": stderr_tail[-12_000:]})
+                raise
             private_stderr.seek(0, os.SEEK_END)
             size = private_stderr.tell()
             private_stderr.seek(max(0, size - 12_000))
             stderr_tail = private_stderr.read().decode("utf-8", errors="replace")
         if result.returncode:
+            _write_failure_log(pathlib.Path(args.artifact_dir), "wrapper-stderr.log",
+                               stderr_tail)
             print(f"isolated native Wayland run failed (exit {result.returncode}); "
                   f"artifacts: {pathlib.Path(args.artifact_dir).resolve()}", file=sys.stderr)
             if stderr_tail:
@@ -651,6 +743,8 @@ def main() -> int:
     try:
         evidence = inside_run(args)
     except Exception as exc:
+        _write_failure_evidence(pathlib.Path(args.artifact_dir), str(exc),
+                                type(exc).__name__)
         print(f"isolated native Wayland smoke failed: {exc}", file=sys.stderr)
         return 1
     print(json.dumps(evidence, indent=2))

@@ -6617,3 +6617,80 @@ parity and shell syntax were rerun after the fixture preservation change.
   default; UG is **NOT PASSED**, and C gates/cutover remain unaccepted. Root
   `933fef41-7c9a-499d-9460-70e5d53f7bf3` owns architecture/review, push, PR,
   merge and gates.
+
+### E204 — 2026-11-10: private Weston Wayland action smoke and owned cleanup
+
+- **Claim/base/build:** BUILD101 / E204, branch
+  `orchestrated/luna-isolated-wayland-acceptance`, based on merged PR #101
+  build-100 commit `284ce9a`. Exact base head
+  `68c67ed47202a2cb98d4694ed89aa09a4e98865f` passed all three checks in run
+  `42891020528`; that is base-only CI evidence. Build is `0.82.0 (101)`;
+  marketing version remains 0.82.0. This branch has no observed CI, PR, push,
+  merge or gate acceptance.
+- **Runner lifecycle fix:** `scripts/test-native-wayland-isolated.py` now starts
+  `dbus-run-session` in one owned process group. Weston, the native app and
+  their helpers inherit that group. On timeout, interrupt or nonzero wrapper
+  exit, the runner sends TERM, waits a bounded interval, sends KILL to only
+  that group, and reaps the wrapper. Normal app/compositor cleanup remains in
+  place. Host display, session, bus, portal and launch handles are scrubbed by
+  key pattern before installing private values. App and Weston logs, plus
+  failure JSON, live in the synthetic artifact directory so wrapper failure
+  retains diagnostics.
+- **Regression/runtime:** the executable regression starts a blocking child
+  and grandchild that ignore TERM, forces the owned wrapper timeout, and checks
+  both are no longer running after group cleanup. The full harness was run with
+  the newly built build-101 native binary
+  (`rust-gtk/target/debug/codexbar-gtk-native`, SHA-256
+  `bf1171987f4ef6f8b25dcc16236c84640c7dd011eb08a400c0e16a7269e80311`). It ran
+  under a private D-Bus and private Weston headless Pixman compositor after
+  rebuilding with `VERSION` set to build 101; its app source otherwise matches
+  the supplied 23324db3 runner/evidence source. Final runner source SHA-256 is
+  `4e7e75073fbe76799fdd653ada52229bdc91bf70a131e7ea3ef41838ecb5ec7d`. Weston
+  was rootlessly extracted locally because the host has no installed Weston;
+  CI installs and uses the Ubuntu 24.04 Weston package. The observed GDK type
+  was `GdkWaylandDisplay`; `host_session_handles_removed` was true. The runner
+  passed Dashboard GAction, Settings GAction, AT-SPI `DoAction` for General
+  “Refresh when the panel opens” (`false`→`true`, persisted in synthetic JSON),
+  Dashboard GAction, Spend route and 7-day range selection verified through
+  the toggle button's AT-SPI `pressed` state. All five cleanup results passed:
+  app exit, compositor exit, temporary runtime removal, synthetic home removal
+  and private D-Bus socket removal.
+- **Reviewed artifacts:** the two personally inspected synthetic captures are
+  [`settings-after-toggle.png`](screenshots/build101-wayland-isolated/settings-after-toggle.png)
+  (General switch visibly on, SHA-256
+  `a093fb8e7800411530afc84a1e1cec5dc794f77e0b5b3d32d7d9a7a103a2d147`) and
+  [`spend-7-days.png`](screenshots/build101-wayland-isolated/spend-7-days.png)
+  (Usage & Spend, 7 days visibly selected, SHA-256
+  `3c5743721d864a5d8d46b89f03f7bbd8768184a2945fab5f0044307cbd5a2333`). Relative, sanitized
+  [`evidence.json`](screenshots/build101-wayland-isolated/evidence.json) records
+  action outcomes, hashes and cleanup without temporary socket paths, PIDs,
+  account data or credentials. Screenshot file SHA-256 values are
+  `a093fb8e7800411530afc84a1e1cec5dc794f77e0b5b3d32d7d9a7a103a2d147` and
+  `3c5743721d864a5d8d46b89f03f7bbd8768184a2945fab5f0044307cbd5a2333`.
+- **CI:** `.github/workflows/rust-core.yml` pins the native `test` job to
+  `ubuntu-24.04`, installs Weston, Wayland utilities and AT-SPI dependencies,
+  then runs this same harness against the already-built debug executable with a
+  six-minute step bound. An `always()` upload includes only the harness's
+  synthetic evidence directory. Existing Xvfb/private-bus/Python-free jobs are
+  retained. Workflow syntax was reviewed locally; branch CI has not run.
+- **Checks:** `python3 -m unittest tests.test_native_wayland_isolated_harness
+  -q` passed all 9 focused tests, including timeout cleanup, retained failure
+  evidence, fail-closed AT-SPI/capture and host-handle sanitization. The final
+  runner execution also passed after persisting nonzero wrapper stderr and
+  setting the native-app log to mode 0600.
+  `python3 -m py_compile` passed for the runner and test. Python version metadata
+  regression passed; Rust `version_metadata_tracks_the_root_version_file`
+  passed 1/1. `scripts/build-rust-core.sh` passed and atomically created the
+  extension; default Python suite passed 322 tests with 22 skips; Rust-opt-in
+  suite passed 322 tests with no skips. One earlier default-suite attempt hit a
+  race in the unrelated ClaudePlatform cancellation test while reading `/proc`
+  after its child had exited; the retry and final 322-test run both passed.
+  Native debug binary build passed and the final full private Weston action run
+  passed. PyYAML parsed the workflow; evidence JSON, both PNG decodes/hashes
+  and the new UG/AUDIT relative links validated. `git diff --check` passed.
+  No GUI was opened on the host desktop.
+- **Limits/handoff:** this is GAction/AT-SPI accessible-action evidence, not
+  physical pointer/keyboard input. Weston does not establish KDE shell
+  placement, portal behavior, host compositor compatibility, keyboard parity
+  or full UG acceptance. UG remains **NOT PASSED**, Python remains default, and
+  no C gate/cutover is accepted. Root owns review and publication.

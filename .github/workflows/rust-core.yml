@@ -51,7 +51,7 @@ jobs:
         run: /usr/bin/python3 -m unittest discover -s tests -p test_tray_signals.py -v
 
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -60,7 +60,7 @@ jobs:
       - name: Install native GTK build and smoke dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libgtk-4-dev libadwaita-1-dev librsvg2-common xvfb xauth xdotool x11-utils x11-apps xfwm4 ffmpeg libglib2.0-bin dbus-daemon python3-dbus python3-gi
+          sudo apt-get install -y --no-install-recommends libgtk-4-dev libadwaita-1-dev librsvg2-common xvfb xauth xdotool x11-utils x11-apps xfwm4 ffmpeg libglib2.0-bin dbus-daemon python3-dbus python3-gi weston wayland-utils at-spi2-core gir1.2-atspi-2.0
       - name: Check Rust formatting
         run: |
           cargo fmt --manifest-path rust-core/Cargo.toml -- --check
@@ -101,6 +101,13 @@ jobs:
         run: ./scripts/smoke-native-dashboard.sh
       - name: Exercise native dashboard keyboard navigation at 2x display scale
         run: NATIVE_GTK_SCALE=2 ./scripts/smoke-native-dashboard.sh
+      - name: Exercise native GTK routes and actions on private Weston Wayland
+        timeout-minutes: 6
+        run: |
+          mkdir -m 700 -p "$RUNNER_TEMP/native-wayland-evidence"
+          /usr/bin/python3 scripts/test-native-wayland-isolated.py \
+            --binary rust-gtk/target/debug/codexbar-gtk-native \
+            --artifact-dir "$RUNNER_TEMP/native-wayland-evidence"
       - name: Exercise native Spend and Sessions with synthetic data
         run: ./scripts/smoke-native-usage-pages.sh
       - name: Build native release artifact (C01 prototype)
@@ -113,6 +120,14 @@ jobs:
       # Keep the comprehensive Settings smoke available for local verification.
       # Its fixed-coordinate native file chooser interaction failed twice in
       # CI at different points; the other native GTK Xvfb smokes remain enabled.
+
+      - name: Retain synthetic private Wayland smoke evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-wayland-smoke-${{ github.run_id }}
+          if-no-files-found: warn
+          path: ${{ runner.temp }}/native-wayland-evidence/
 
   python-free-runtime-proof:
     # Match the runtime image ABI; do not build against a moving newer distro.

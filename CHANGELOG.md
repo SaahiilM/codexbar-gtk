@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.82.0 (98) — 2026-11-10
+
+Tracks upstream CodexBar 0.82.0. The provisional v0.84 provider catalog slice
+does not change the supported upstream version.
+
+### Added
+
+- Add the upstream v0.84 OpenDesign, SiliconFlow and Tripo descriptors,
+  aliases, generic catalog presentation and matching monochrome provider SVGs.
+  Python metadata remains the parity reference; provider fetching, accounts,
+  sign-in and authentication remain external CLI responsibilities.
+
+### Validation
+
+- See migration audit E201 for exact source pins, checks, synthetic smoke scope
+  and limits. UG remains **NOT PASSED**, and Python remains the default.
+
 ## 0.82.0 (97) — 2026-11-10
 
 Tracks upstream CodexBar 0.82.0.

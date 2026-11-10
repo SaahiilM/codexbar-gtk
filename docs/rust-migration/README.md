@@ -226,8 +226,9 @@ see the active handoff in TASKS.md.
 The Python implementations remain the default and unchanged parity references.
 In Rust opt-in mode, provider metadata and currency conversions read the Rust
 catalogs; the Python copies are used only by default mode and catalog parity
-tests. The known provider IDs are ASCII, and catalog parity tests cover all 110
-providers, aliases and supported currencies.
+tests. The known provider IDs are ASCII. B15 originally covered 110 providers;
+the current Rust/Python parity tests cover all 113 providers, aliases and
+supported currencies.
 
 - **Large numbers:** Python's `_optional_int` rejects booleans and non-numeric
   values, converts numeric values through `float`, then returns an integer.

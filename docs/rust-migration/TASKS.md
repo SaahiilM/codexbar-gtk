@@ -10,11 +10,51 @@ history. A checked box means **verified and merged**, not merely implemented.
 | --- | --- |
 | Goal | Fully native Rust GTK4/libadwaita application with verified packaging and legacy runtime removal. |
 | Current phase | BG passed and U01–U08 implementation merged. UG **NOT PASSED**; Python default. |
-| Last observed merge | PR #96 merged normally at `b6437353365b1826b08e2929f78b8309ae623222` (build 95). Exact head `943e2f4927840a32c8cfd38e4add80db30d7e876` passed `test`, `tray-dbus`, and `python-free-runtime-proof` in run `42843160132`; no reviews, comments, or inline threads were present. This merge did not accept UG or C gates. |
-| Active implementation | Build 96, branch `orchestrated/luna-native-activation-no-python`, local only; replaces the activation renderer with independently validated Bash and keeps both renders ahead of installer state mutation. No PR or merge is claimed. |
+| Last observed merge | PR #98 merged normally at `f40307db189ce7fba97a0cc5da1aabd8c73b5f7c` (build 97). Exact head `11ca6d3b6439a54f5a431a3e0b6cdd8bd02275f2` passed all three checks in run `42861843557`; reviews, comments and threads were zero. This merge did not accept UG or C gates. |
+| Active implementation | Build 98, branch `orchestrated/luna-upstream084-providers`, implementation commit `fa7fe6d` plus a normal merge of the observed build-97 `origin/main`; provider catalog/artwork and Python parity are locally verified. No PR, publication, or exact-head CI is claimed. |
 | Installer/runtime verification | E198 records the merged build-95 installed-prefix/Python-free runtime proof. E199 records prior local 13-case activation smoke evidence in a Python-free container; its first attempt lacked `file`, and the portable `od`/`ldd` check passed. These component results do not pass C02 or authorize cutover. |
-| UI acceptance | E195 records one guarded synthetic Display action; other Wayland controls/navigation remain open. UG is **NOT PASSED** and Python remains the default; see `UG_GATE.md`. |
-| Next | Root owns publication and exact-head CI/review. Continue the separate Wayland action matrix; UG remains **NOT PASSED**, Python remains default, and C01–CG/cutover are not accepted. |
+| UI acceptance | E195 records one Display action; E200 records seven guarded Settings actions and three tab transitions. Broader Wayland controls/navigation remain open. UG is **NOT PASSED** and Python remains the default; see `UG_GATE.md`. |
+| Next | Root owns review, publication and exact-head CI for UP084-PROVIDERS. Then continue the separate warning and login compatibility slices; UG remains **NOT PASSED**, Python remains default, and C01–CG/cutover are not accepted. |
+
+### Focused upstream compatibility claim — UP084-PROVIDERS
+
+Owner: current `orchestrated/luna-upstream084-providers` session, based on the
+observed PR #97 merge `44e5c9b`. **Status: implementation and local verification
+complete; build-97 `origin/main` is merged normally.** This is
+not a C03 gate task. The v0.84.0 tag resolves to `5bebf9a05e68059eae11d5031c7239f1aa1d49ef`;
+its manifest appends OpenDesign, SiliconFlow and Tripo, in that order. The
+verified descriptors record OpenDesign's `open-design` alias and dashboard
+URL, SiliconFlow/Tripo balance-only flags, dashboard URLs, Tripo status URL,
+history/burndown flags, and OpenDesign menu-bar metrics. Prior 110 provider
+entries and their relative order are preserved; Rust and Python now contain
+113 entries and seven aliases. Matching tagged monochrome SVGs are bundled
+with MIT attribution/provenance; no brand-color files exist for these IDs.
+
+The native code uses the existing generic CLI payload, card, tray and settings
+paths; it adds no provider fetching or credentials/login behavior. Synthetic
+dashboard data and disabled `config providers` rows cover all three IDs. Rust
+tests cover normalized names/colors, descriptor details, generic cards/tray,
+asset aliases and brand→monochrome→initial fallback.
+
+Local checks on the implementation after the normal build-97 merge: rustfmt
+passed for core/backend/gtk; core 87 tests and Clippy passed; backend 87 tests
+(86 unit + 1 integration) and Clippy passed; GTK 40 tests passed with two
+display-only tests skipped by default and one negative-loader test skipped by
+its absent-loader precondition, plus GTK Clippy passed. Both display tests were
+run separately under private X11/Xvfb with private D-Bus and passed. Synthetic
+dashboard and Settings smokes passed; personally inspected captures show the
+three provider cards/artwork and three disabled Settings rows. Python default
+mode passed 305 tests with 21 skips; Rust opt-in passed 305 tests without
+skips. The Rust extension was built using the atomic build helper. Two reviewed synthetic X11 captures are tracked under
+`screenshots/build98-providers-xvfb/`; no Wayland, real provider account, provider endpoint,
+credential or real login was used. No exact-head CI or gate acceptance is
+claimed.
+
+BUILD98/E201 is authorized for this slice after PR #98 merged build 97 at
+`f40307db189ce7fba97a0cc5da1aabd8c73b5f7c`; that `origin/main` is merged
+normally at local merge commit `44e485f`. Marketing remains 0.82.0 until the
+warning/login contracts are separately verified. Root owns publication
+and gate decisions; UG remains **NOT PASSED**, Python remains default.
 
 
 **First commands for a new model/session:**

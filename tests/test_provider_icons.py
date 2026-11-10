@@ -32,5 +32,18 @@ class ProviderIconTests(unittest.TestCase):
             "ProviderIcon-kimi.svg",
         )
 
+    def test_v084_provider_artwork_and_open_design_alias(self):
+        expected = {
+            "opendesign": "ProviderIcon-opendesign.svg",
+            "open-design": "ProviderIcon-opendesign.svg",
+            "siliconflow": "ProviderIcon-siliconflow.svg",
+            "tripo": "ProviderIcon-tripo.svg",
+        }
+        for provider_id, expected_name in expected.items():
+            with self.subTest(provider_id=provider_id):
+                path = provider_icon_path(provider_id)
+                self.assertIsNotNone(path)
+                self.assertEqual(path.name, expected_name)
+
     def test_unknown_provider_uses_no_bundled_icon(self):
         self.assertIsNone(provider_icon_path("provider-without-artwork"))

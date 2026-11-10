@@ -13,6 +13,72 @@ pub struct ProviderMetadata {
     pub accent_color: &'static str,
 }
 
+/// Additional checked-in descriptor facts used to pin upstream compatibility
+/// without putting provider fetching or configuration policy in this catalog.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ProviderDescriptorDetails {
+    pub id: &'static str,
+    pub session_label: &'static str,
+    pub weekly_label: &'static str,
+    pub dashboard_url: &'static str,
+    pub status_page_url: Option<&'static str>,
+    pub balance_only: bool,
+    pub history_available: bool,
+    pub burndown_widget_selectable: bool,
+    pub api_detail: bool,
+    pub availability: Option<&'static str>,
+    pub progress_color_style: Option<&'static str>,
+    pub menu_bar_metrics: Option<&'static [&'static str]>,
+}
+
+/// Details newly verified against the v0.84.0 upstream provider descriptors.
+/// Keep this list separate from display metadata because the native app renders
+/// the CLI's generic payload and does not reimplement provider behavior.
+pub const PROVIDER_DESCRIPTOR_DETAILS: &[ProviderDescriptorDetails] = &[
+    ProviderDescriptorDetails {
+        id: "opendesign",
+        session_label: "Session",
+        weekly_label: "Weekly",
+        dashboard_url: "https://open-design.ai/cloud/dashboard",
+        status_page_url: None,
+        balance_only: false,
+        history_available: false,
+        burndown_widget_selectable: false,
+        api_detail: false,
+        availability: None,
+        progress_color_style: Some("label"),
+        menu_bar_metrics: Some(&["automatic", "primary", "secondary"]),
+    },
+    ProviderDescriptorDetails {
+        id: "siliconflow",
+        session_label: "Balance",
+        weekly_label: "Balance",
+        dashboard_url: "https://cloud.siliconflow.cn",
+        status_page_url: None,
+        balance_only: true,
+        history_available: false,
+        burndown_widget_selectable: false,
+        api_detail: true,
+        availability: Some("configuredKey"),
+        progress_color_style: None,
+        menu_bar_metrics: None,
+    },
+    ProviderDescriptorDetails {
+        id: "tripo",
+        session_label: "Credits",
+        weekly_label: "Credits",
+        dashboard_url: "https://developers.tripo3d.ai/en/billing",
+        status_page_url: Some("https://tripo3d.statuspage.io"),
+        balance_only: true,
+        history_available: false,
+        burndown_widget_selectable: false,
+        api_detail: true,
+        availability: Some("configuredKey"),
+        progress_color_style: None,
+        menu_bar_metrics: None,
+    },
+];
+
 pub const FALLBACK_ACCENT_COLOR: &str = "#6366F1";
 
 /// Current provider ids and their user-facing metadata, sorted by id.
@@ -462,6 +528,12 @@ pub const PROVIDERS: &[ProviderMetadata] = &[
         accent_color: "#EC4899",
     },
     ProviderMetadata {
+        id: "opendesign",
+        name: "OpenDesign",
+        short_name: "OpenDesign",
+        accent_color: "#202020",
+    },
+    ProviderMetadata {
         id: "openrouter",
         name: "OpenRouter",
         short_name: "OpenRouter",
@@ -528,6 +600,12 @@ pub const PROVIDERS: &[ProviderMetadata] = &[
         accent_color: "#0F766E",
     },
     ProviderMetadata {
+        id: "siliconflow",
+        name: "SiliconFlow",
+        short_name: "SiliconFlow",
+        accent_color: "#6E29F5",
+    },
+    ProviderMetadata {
         id: "sofya",
         name: "Sofya",
         short_name: "Sofya",
@@ -580,6 +658,12 @@ pub const PROVIDERS: &[ProviderMetadata] = &[
         name: "Trae CN",
         short_name: "Trae CN",
         accent_color: "#4D7CFE",
+    },
+    ProviderMetadata {
+        id: "tripo",
+        name: "Tripo",
+        short_name: "Tripo",
+        accent_color: "#F8CF00",
     },
     ProviderMetadata {
         id: "typesafe",
@@ -679,13 +763,14 @@ pub const PROVIDERS: &[ProviderMetadata] = &[
     },
 ];
 
-const ALIASES: [(&str, &str); 6] = [
+const ALIASES: [(&str, &str); 7] = [
     ("azure-openai", "azureopenai"),
     ("abacusai", "abacus"),
     ("alibaba-coding-plan", "alibaba"),
     ("alibaba-token-plan", "alibabatokenplan"),
     ("qwen-cloud", "qwencloud"),
     ("groqcloud", "groq"),
+    ("open-design", "opendesign"),
 ];
 
 /// Resolve a configuration ID to the current ID used in usage payloads.
@@ -702,6 +787,13 @@ pub fn provider(provider_id: &str) -> Option<&'static ProviderMetadata> {
         .binary_search_by(|entry| entry.id.cmp(provider_id))
         .ok()
         .map(|index| &PROVIDERS[index])
+}
+
+pub fn descriptor_details(provider_id: &str) -> Option<&'static ProviderDescriptorDetails> {
+    let provider_id = canonical_id(provider_id);
+    PROVIDER_DESCRIPTOR_DETAILS
+        .iter()
+        .find(|details| details.id == provider_id)
 }
 
 pub fn display_name(provider_id: &str) -> String {
@@ -773,7 +865,7 @@ mod tests {
 
     #[test]
     fn catalog_is_sorted_and_all_ids_resolve() {
-        assert_eq!(PROVIDERS.len(), 110);
+        assert_eq!(PROVIDERS.len(), 113);
         assert!(PROVIDERS.windows(2).all(|pair| pair[0].id < pair[1].id));
         let ids = all_provider_ids();
         assert_eq!(ids.len(), PROVIDERS.len());
@@ -792,11 +884,56 @@ mod tests {
             ("alibaba-token-plan", "alibabatokenplan"),
             ("qwen-cloud", "qwencloud"),
             ("groqcloud", "groq"),
+            ("open-design", "opendesign"),
         ];
         for (alias, expected) in cases {
             assert_eq!(canonical_id(alias), expected);
             assert_eq!(provider(alias).unwrap().id, expected);
         }
+    }
+
+    #[test]
+    fn v084_provider_descriptor_details_match_the_tagged_contract() {
+        let opendesign = descriptor_details("open-design").unwrap();
+        assert_eq!(opendesign.id, "opendesign");
+        assert_eq!(
+            opendesign.dashboard_url,
+            "https://open-design.ai/cloud/dashboard"
+        );
+        assert_eq!(opendesign.status_page_url, None);
+        assert_eq!(opendesign.session_label, "Session");
+        assert_eq!(opendesign.weekly_label, "Weekly");
+        assert!(!opendesign.balance_only);
+        assert!(!opendesign.history_available);
+        assert!(!opendesign.burndown_widget_selectable);
+        assert!(!opendesign.api_detail);
+        assert_eq!(
+            opendesign.menu_bar_metrics,
+            Some(["automatic", "primary", "secondary"].as_slice())
+        );
+        assert_eq!(opendesign.availability, None);
+        assert_eq!(opendesign.progress_color_style, Some("label"));
+
+        let siliconflow = descriptor_details("siliconflow").unwrap();
+        assert_eq!(siliconflow.session_label, "Balance");
+        assert_eq!(siliconflow.weekly_label, "Balance");
+        assert_eq!(siliconflow.dashboard_url, "https://cloud.siliconflow.cn");
+        assert_eq!(siliconflow.availability, Some("configuredKey"));
+        assert!(siliconflow.balance_only && siliconflow.api_detail);
+        assert!(!siliconflow.history_available && !siliconflow.burndown_widget_selectable);
+
+        let tripo = descriptor_details("tripo").unwrap();
+        assert_eq!(tripo.session_label, "Credits");
+        assert_eq!(tripo.weekly_label, "Credits");
+        assert_eq!(
+            tripo.dashboard_url,
+            "https://developers.tripo3d.ai/en/billing"
+        );
+        assert_eq!(tripo.status_page_url, Some("https://tripo3d.statuspage.io"));
+        assert_eq!(tripo.availability, Some("configuredKey"));
+        assert!(tripo.balance_only && tripo.api_detail);
+        assert!(!tripo.history_available && !tripo.burndown_widget_selectable);
+        assert!(descriptor_details("codex").is_none());
     }
 
     #[test]

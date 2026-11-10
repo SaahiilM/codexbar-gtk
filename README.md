@@ -116,7 +116,9 @@ derived values, plus standard quota-window, extra rate-window, provider cost, de
 provider context (credits/status/error/plan), agent-session and spend payload
 normalization). GTK rendering and the rest of CLI/provider payload normalization
 remain in Python/the CodexBar CLI. The client targets upstream
-CodexBar 0.82.0 provider behavior; the provider catalog remains at 110 providers.
+CodexBar 0.82.0 provider behavior; the current catalog contains 113 providers.
+The provisional upstream v0.84 catalog additions do not change the supported
+CodexBar version or claim complete v0.84 compatibility.
 
 ### Native Rust migration roadmap
 
@@ -147,6 +149,12 @@ open. The Python launcher remains the default until the gate passes. See E086
 for the BG merge, B11 CI limitation and B15 compatibility bounds.
 
 Build 95 adds a required CI proof for the installed native prefix in a Python-free runtime image. It does not change the default launcher or pass a cutover gate.
+
+Build 98 adds three upstream v0.84 provider descriptors and matching
+monochrome artwork to the compatibility catalog. This catalog update does not
+change the supported upstream marketing version: it remains 0.82.0 until the
+separate warning and login compatibility work is verified. Python remains the
+default launcher and UG remains **NOT PASSED**.
 
 Build 97 records seven guarded synthetic Wayland Settings actions across
 General, Notifications, Menu Bar and Hooks, with three verified Settings tab
@@ -255,7 +263,7 @@ The GTK front-end uses the same version pair as the macOS bundle:
   this client is feature-compatible with (`0.82.0`).
 * `CURRENT_PROJECT_VERSION` is the build number of the Linux front-end.
 * `codexbar_gtk/version.py` turns the pair into the macOS-style
-  `"0.82.0 (97)"` string shown under Settings → About, in the tray menu and by
+  `"0.82.0 (98)"` string shown under Settings → About, in the tray menu and by
   `./run.sh --about`.
 
 Increment `CURRENT_PROJECT_VERSION` for each merged PR and keep it in sync with

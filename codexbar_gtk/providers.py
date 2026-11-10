@@ -84,6 +84,7 @@ PROVIDERS: dict[str, tuple[str, str, str]] = {
     "openai": ("OpenAI", "OpenAI", "#412991"),
     "opencode": ("OpenCode", "OpenCode", "#F59E0B"),
     "opencodego": ("OpenCode Go", "OC Go", "#EC4899"),
+    "opendesign": ("OpenDesign", "OpenDesign", "#202020"),
     "openrouter": ("OpenRouter", "OpenRouter", "#6467F2"),
     "parallel": ("Parallel", "Parallel", "#111111"),
     "perplexity": ("Perplexity", "Perplexity", "#20808D"),
@@ -95,6 +96,7 @@ PROVIDERS: dict[str, tuple[str, str, str]] = {
     "replicate": ("Replicate", "Replicate", "#111111"),
     "sailresearch": ("Sail Research", "Sail", "#2563EB"),
     "sakana": ("Sakana AI", "Sakana", "#0F766E"),
+    "siliconflow": ("SiliconFlow", "SiliconFlow", "#6E29F5"),
     "sofya": ("Sofya", "Sofya", "#EC4899"),
     "soniox": ("Soniox", "Soniox", "#253772"),
     "stepfun": ("StepFun", "StepFun", "#2563EB"),
@@ -104,6 +106,7 @@ PROVIDERS: dict[str, tuple[str, str, str]] = {
     "tavily": ("Tavily", "Tavily", "#2563EB"),
     "tinyapi": ("TinyApi", "TinyApi", "#64748B"),
     "traecn": ("Trae CN", "Trae CN", "#4D7CFE"),
+    "tripo": ("Tripo", "Tripo", "#F8CF00"),
     "typesafe": ("TypeSafe", "TypeSafe", "#2563EB"),
     "v0": ("v0", "v0", "#000000"),
     "venice": ("Venice", "Venice", "#111111"),
@@ -122,6 +125,50 @@ PROVIDERS: dict[str, tuple[str, str, str]] = {
     "zoommate": ("ZoomMate", "ZoomMate", "#2563EB"),
 }
 
+# Compatibility facts pinned from the tagged v0.84.0 upstream descriptors.
+# The CLI still owns all provider fetching, credentials and history behavior.
+PROVIDER_DESCRIPTOR_DETAILS: dict[str, dict[str, object]] = {
+    "opendesign": {
+        "session_label": "Session",
+        "weekly_label": "Weekly",
+        "dashboard_url": "https://open-design.ai/cloud/dashboard",
+        "status_page_url": None,
+        "balance_only": False,
+        "history_available": False,
+        "burndown_widget_selectable": False,
+        "api_detail": False,
+        "availability": None,
+        "progress_color_style": "label",
+        "menu_bar_metrics": ("automatic", "primary", "secondary"),
+    },
+    "siliconflow": {
+        "session_label": "Balance",
+        "weekly_label": "Balance",
+        "dashboard_url": "https://cloud.siliconflow.cn",
+        "status_page_url": None,
+        "balance_only": True,
+        "history_available": False,
+        "burndown_widget_selectable": False,
+        "api_detail": True,
+        "availability": "configuredKey",
+        "progress_color_style": None,
+        "menu_bar_metrics": None,
+    },
+    "tripo": {
+        "session_label": "Credits",
+        "weekly_label": "Credits",
+        "dashboard_url": "https://developers.tripo3d.ai/en/billing",
+        "status_page_url": "https://tripo3d.statuspage.io",
+        "balance_only": True,
+        "history_available": False,
+        "burndown_widget_selectable": False,
+        "api_detail": True,
+        "availability": "configuredKey",
+        "progress_color_style": None,
+        "menu_bar_metrics": None,
+    },
+}
+
 # Older CodexBar releases used dashed provider ids; map them onto the ids the
 # current CLI reports so cached payloads still resolve.
 ALIASES: dict[str, str] = {
@@ -131,6 +178,7 @@ ALIASES: dict[str, str] = {
     "alibaba-token-plan": "alibabatokenplan",
     "qwen-cloud": "qwencloud",
     "groqcloud": "groq",
+    "open-design": "opendesign",
 }
 
 

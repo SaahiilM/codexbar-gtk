@@ -124,9 +124,15 @@ case "${1-}/${2-}" in
   usage/*|cost/*|sessions/*) printf '%s\n' '[]' ;;
   config/providers)
     if [ "$(cat "$NATIVE_SETTINGS_PROVIDER_ENABLED")" = "true" ]; then
-      printf '%s\n' 'codex: enabled (Codex)' 'claude: disabled (Claude)'
+      printf '%s\n' 'codex: enabled (Codex)' 'claude: disabled (Claude)' \
+        'opendesign: disabled (OpenDesign)' \
+        'siliconflow: disabled (SiliconFlow)' \
+        'tripo: disabled (Tripo)'
     else
-      printf '%s\n' 'codex: disabled (Codex)' 'claude: disabled (Claude)'
+      printf '%s\n' 'codex: disabled (Codex)' 'claude: disabled (Claude)' \
+        'opendesign: disabled (OpenDesign)' \
+        'siliconflow: disabled (SiliconFlow)' \
+        'tripo: disabled (Tripo)'
     fi
     ;;
   config/enable|config/disable)

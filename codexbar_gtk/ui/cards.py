@@ -14,7 +14,7 @@ from gi.repository import GdkPixbuf, GLib, Gtk
 
 from .. import currency
 from ..charts import sparkline_coordinates
-from ..data import ProviderUsage, RateWindow
+from ..data import ProviderUsage, RateWindow, WARNING_TEXT
 from ..format import (
     format_countdown,
     format_credits,
@@ -851,6 +851,10 @@ class ProviderCard(Gtk.Box):
             )
 
         if not self.compact:
+            for code in provider.warnings:
+                text = WARNING_TEXT.get(code)
+                if text is not None:
+                    rows.append(("Warning", text, ""))
             for section in provider.details[:3]:
                 for row in section.rows[:4]:
                     value = row.value

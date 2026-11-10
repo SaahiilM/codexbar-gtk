@@ -1132,6 +1132,46 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn cli_usage_refresh_publishes_safe_claude_warning_and_both_quotas() {
+        let hostile = "SYNTHETIC-HOSTILE-NOTICE-DO-NOT-RENDER";
+        let payload = json!({
+            "provider":"claude",
+            "usage":{
+                "primary":{"usedPercent":12,"windowMinutes":300},
+                "secondary":{"usedPercent":34,"windowMinutes":10080},
+                "details":[{"title":"Models","rows":[
+                    {"id":"claude-model-breakdown","label":"Status","value":hostile}
+                ]}]
+            }
+        });
+        let fake = Arc::new(FakeCli::new());
+        fake.usage.lock().unwrap().clear();
+        fake.usage
+            .lock()
+            .unwrap()
+            .extend([Ok(vec![payload.clone()]), Ok(vec![payload])]);
+        let handle = RefreshControllerHandle::start(test_config(fake, "claude-warning"));
+        let mut state = handle.state();
+        wait_revision(&mut state, 1).await;
+        let state_value = state.borrow();
+        let snapshot = state_value.snapshot.as_ref().unwrap();
+        let claude = snapshot
+            .providers
+            .iter()
+            .find(|p| p.provider_id == "claude")
+            .unwrap_or_else(|| panic!("provider missing: {:?}", snapshot.providers));
+        assert_eq!(claude.windows.len(), 2);
+        assert_eq!(
+            claude.warnings[0].safe_text(),
+            Some("Some Claude models could not be identified.")
+        );
+        let serialized = serde_json::to_string(snapshot.as_ref()).unwrap();
+        assert!(!serialized.contains(hostile));
+        drop(state_value);
+        handle.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
     async fn failed_cost_fallback_retains_prior_spend_and_session_without_losing_usage() {
         let fake = Arc::new(FakeCli::new());
         fake.usage.lock().unwrap().extend([

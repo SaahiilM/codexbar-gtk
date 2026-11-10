@@ -48,6 +48,7 @@ pub struct ProviderCardModel {
     pub detail_charts: Vec<BarChartModel>,
     pub credit_chart: Option<BarChartModel>,
     pub error: Option<String>,
+    pub warnings: Vec<String>,
     pub windows: Vec<QuotaWindowModel>,
 }
 
@@ -608,6 +609,12 @@ fn project_provider(
         detail_charts,
         credit_chart,
         error: provider.error.clone(),
+        warnings: provider
+            .warnings
+            .iter()
+            .filter_map(|warning| warning.safe_text())
+            .map(str::to_owned)
+            .collect(),
         windows,
     }
 }
@@ -919,6 +926,7 @@ mod tests {
             status_level: None,
             status_description: None,
             error: None,
+            warnings: vec![],
             details: vec![],
             reset_credits_available: 0,
             reset_credits: vec![],
@@ -1103,6 +1111,12 @@ mod tests {
         weekly.resets_at = Some(now + Duration::days(5));
 
         let mut fixture = provider("alpha", vec![primary, secondary]);
+        fixture.warnings = vec![
+            codexbar_core::domain::ProviderWarning(
+                codexbar_core::domain::ProviderWarning::CLAUDE_MODEL_BREAKDOWN_UNAVAILABLE.into(),
+            ),
+            codexbar_core::domain::ProviderWarning("future-hostile-code".into()),
+        ];
         fixture.cost = Some(CostInfo {
             used: 25.0,
             limit: 100.0,
@@ -1150,6 +1164,10 @@ mod tests {
             now,
         );
         let card = &model.providers[0];
+        assert_eq!(
+            card.warnings,
+            ["Some Claude models could not be identified."]
+        );
         let primary = &card.windows[0];
         let trend = primary.trend.as_ref().expect("three recent readings");
         assert_eq!(trend.points.len(), 3);

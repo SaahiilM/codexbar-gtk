@@ -8,6 +8,7 @@ provider specific detail sections.
 
 from __future__ import annotations
 
+import copy
 import json
 import math
 from dataclasses import dataclass, field
@@ -18,6 +19,34 @@ from . import providers as provider_meta
 from .rust_bridge import extension
 
 WINDOW_KEYS = ("primary", "secondary", "tertiary")
+CLAUDE_MODEL_BREAKDOWN_ROW_ID = "claude-model-breakdown"
+CLAUDE_MODEL_BREAKDOWN_WARNING = "model-breakdown-unavailable"
+WARNING_TEXT = {
+    CLAUDE_MODEL_BREAKDOWN_WARNING: "Some Claude models could not be identified."
+}
+
+
+def _sanitize_warning_details(payload: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
+    """Copy a provider payload and redact only the recognized Claude diagnostic row."""
+    if payload.get("provider") != "claude":
+        return payload, []
+    sanitized = copy.deepcopy(payload)
+    usage = sanitized.get("usage")
+    details = usage.get("details") if isinstance(usage, dict) else None
+    if not isinstance(details, list):
+        return sanitized, []
+    found = False
+    for section in details:
+        if not isinstance(section, dict) or not isinstance(section.get("rows"), list):
+            continue
+        retained = []
+        for row in section["rows"]:
+            targeted = isinstance(row, dict) and row.get("id") == CLAUDE_MODEL_BREAKDOWN_ROW_ID
+            found |= targeted
+            if not targeted:
+                retained.append(row)
+        section["rows"] = retained
+    return sanitized, [CLAUDE_MODEL_BREAKDOWN_WARNING] if found else []
 
 
 def parse_timestamp(value: Any) -> datetime | None:
@@ -245,6 +274,7 @@ class ProviderUsage:
     status_level: str | None = None
     status_description: str | None = None
     error: str | None = None
+    warnings: list[str] = field(default_factory=list)
     details: list[DetailSection] = field(default_factory=list)
     reset_credits_available: int = 0
     reset_credits: list[dict[str, Any]] = field(default_factory=list)
@@ -505,6 +535,7 @@ def _reset_credits_from(payload: Any) -> list[dict[str, Any]]:
 
 def provider_usage_from_payload(payload: dict[str, Any]) -> ProviderUsage:
     """Convert one CLI ``ProviderPayload`` into a :class:`ProviderUsage`."""
+    payload, warnings = _sanitize_warning_details(payload)
     provider_id = str(payload.get("provider") or "unknown")
     usage = payload.get("usage") or {}
     labels = payload.get("rateWindowLabels") or {}
@@ -772,6 +803,7 @@ def provider_usage_from_payload(payload: dict[str, Any]) -> ProviderUsage:
         status_level=status_level,
         status_description=status_description,
         error=error_message,
+        warnings=warnings,
         details=_details_from(usage.get("details")),
         reset_credits_available=int(reset_credits_available or 0),
         credit_events=credit_events,

@@ -1314,6 +1314,8 @@ pub struct ProviderUsage {
     pub status_level: Option<String>,
     pub status_description: Option<String>,
     pub error: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub warnings: Vec<ProviderWarning>,
     pub details: Vec<DetailSection>,
     pub reset_credits_available: i64,
     pub reset_credits: Vec<Value>,
@@ -1322,6 +1324,62 @@ pub struct ProviderUsage {
     pub selected_account: Option<String>,
     pub accent_color: String,
     pub raw: Value,
+}
+
+/// Stable, allowlisted provider warning code. The code is data only; renderers
+/// must map it to fixed text and must never display provider-supplied strings.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct ProviderWarning(pub String);
+
+impl ProviderWarning {
+    pub const CLAUDE_MODEL_BREAKDOWN_UNAVAILABLE: &'static str = "model-breakdown-unavailable";
+
+    pub fn safe_text(&self) -> Option<&'static str> {
+        match self.0.as_str() {
+            Self::CLAUDE_MODEL_BREAKDOWN_UNAVAILABLE => {
+                Some("Some Claude models could not be identified.")
+            }
+            _ => None,
+        }
+    }
+}
+
+const CLAUDE_MODEL_BREAKDOWN_ROW_ID: &str = "claude-model-breakdown";
+
+/// Remove the exact Claude diagnostic row before retaining or rendering a
+/// normalized payload. Other provider details remain untouched.
+fn sanitize_claude_model_breakdown(payload: &mut Value) -> bool {
+    let Some(object) = payload.as_object_mut() else {
+        return false;
+    };
+    if object.get("provider").and_then(Value::as_str) != Some("claude") {
+        return false;
+    }
+    let Some(details) = object
+        .get_mut("usage")
+        .and_then(Value::as_object_mut)
+        .and_then(|usage| usage.get_mut("details"))
+        .and_then(Value::as_array_mut)
+    else {
+        return false;
+    };
+    let mut found = false;
+    for section in details.iter_mut() {
+        if let Some(rows) = section
+            .as_object_mut()
+            .and_then(|section| section.get_mut("rows"))
+            .and_then(Value::as_array_mut)
+        {
+            rows.retain(|row| {
+                let targeted =
+                    row.get("id").and_then(Value::as_str) == Some(CLAUDE_MODEL_BREAKDOWN_ROW_ID);
+                found |= targeted;
+                !targeted
+            });
+        }
+    }
+    found
 }
 
 impl ProviderUsage {
@@ -1371,9 +1429,12 @@ impl ProviderUsage {
 /// consumed by the refresh controller. This composes the B02 field parsers so
 /// the backend does not need Python to assemble provider state.
 pub fn provider_usage_from_value(payload: &Value) -> Result<Option<ProviderUsage>, NumericError> {
-    let Some(object) = payload.as_object() else {
+    if !payload.is_object() {
         return Ok(None);
-    };
+    }
+    let mut sanitized_payload = payload.clone();
+    let has_model_warning = sanitize_claude_model_breakdown(&mut sanitized_payload);
+    let object = sanitized_payload.as_object().expect("object preserved");
     let provider_id = object
         .get("provider")
         .and_then(Value::as_str)
@@ -1525,7 +1586,13 @@ pub fn provider_usage_from_value(payload: &Value) -> Result<Option<ProviderUsage
         accounts: Vec::new(),
         selected_account: None,
         accent_color: crate::providers::accent_color(&provider_id).to_owned(),
-        raw: payload.clone(),
+        warnings: has_model_warning
+            .then(|| {
+                ProviderWarning(ProviderWarning::CLAUDE_MODEL_BREAKDOWN_UNAVAILABLE.to_owned())
+            })
+            .into_iter()
+            .collect(),
+        raw: sanitized_payload,
     }))
 }
 
@@ -2478,6 +2545,86 @@ mod tests {
         assert!(provider.credits_available);
         assert_eq!(provider.cost.as_ref().map(|cost| cost.used), Some(0.0));
         assert_eq!(provider.raw, payload);
+    }
+
+    #[test]
+    fn claude_model_breakdown_warning_is_allowlisted_and_redacted() {
+        let hostile = "SYNTHETIC-HOSTILE-NOTICE-DO-NOT-RENDER";
+        let payload = json!({
+            "provider": "claude",
+            "status": {"indicator":"ok","description":"synthetic status"},
+            "error": {"message":"synthetic error"},
+            "usage": {
+                "primary": {"usedPercent": 12, "windowMinutes": 300},
+                "secondary": {"usedPercent": 34, "windowMinutes": 10080},
+                "details": [{"title":"Models","rows":[
+                    {"id":"claude-model-breakdown","label":"Status","value":hostile},
+                    {"id":"unrelated","label":"Other","value":"Keep me"}
+                ]}]
+            }
+        });
+        let provider = provider_usage_from_value(&payload).unwrap().unwrap();
+        assert_eq!(provider.warnings.len(), 1);
+        assert_eq!(
+            provider.warnings[0].safe_text(),
+            Some("Some Claude models could not be identified.")
+        );
+        assert_eq!(provider.windows.len(), 2);
+        assert_eq!(provider.windows[0].used_percent, 12.0);
+        assert_eq!(provider.windows[1].used_percent, 34.0);
+        assert_eq!(
+            provider.status_description.as_deref(),
+            Some("synthetic status")
+        );
+        assert_eq!(provider.error.as_deref(), Some("synthetic error"));
+        assert_eq!(provider.details[0].rows.len(), 1);
+        assert_eq!(provider.details[0].rows[0].value, "Keep me");
+        let serialized = serde_json::to_string(&provider).unwrap();
+        assert!(!serialized.contains(hostile));
+        assert!(serialized.contains("Keep me"));
+        assert!(serialized.contains(ProviderWarning::CLAUDE_MODEL_BREAKDOWN_UNAVAILABLE));
+
+        let unknown_code: ProviderWarning =
+            serde_json::from_value(json!("future-warning")).unwrap();
+        assert_eq!(unknown_code.safe_text(), None);
+        let unrelated = provider_usage_from_value(&json!({
+            "provider":"codex", "usage":{"details":[{"rows":[
+                {"id":"claude-model-breakdown","label":"Status","value":hostile}
+            ]}]}
+        }))
+        .unwrap()
+        .unwrap();
+        assert!(unrelated.warnings.is_empty());
+        assert!(serde_json::to_string(&unrelated).unwrap().contains(hostile));
+        let unknown_row = provider_usage_from_value(&json!({
+            "provider":"claude", "usage":{"details":[{"rows":[
+                {"id":"other-warning","label":"Status","value":hostile}
+            ]}]}
+        }))
+        .unwrap()
+        .unwrap();
+        assert!(unknown_row.warnings.is_empty());
+        assert!(serde_json::to_string(&unknown_row)
+            .unwrap()
+            .contains(hostile));
+
+        let mut old_dto = serde_json::to_value(&provider).unwrap();
+        old_dto.as_object_mut().unwrap().remove("warnings");
+        let old_roundtrip: ProviderUsage = serde_json::from_value(old_dto).unwrap();
+        assert!(old_roundtrip.warnings.is_empty());
+        assert!(serde_json::to_value(&old_roundtrip)
+            .unwrap()
+            .get("warnings")
+            .is_none());
+
+        let malformed = provider_usage_from_value(&json!({
+            "provider":"claude",
+            "usage":{"details":{"rows":[{"id":"claude-model-breakdown","value":hostile}]}}
+        }))
+        .unwrap()
+        .unwrap();
+        assert!(malformed.warnings.is_empty());
+        assert!(malformed.details.is_empty());
     }
 
     #[test]

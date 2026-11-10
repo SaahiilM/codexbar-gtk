@@ -372,6 +372,13 @@ fn provider_card(model: &ProviderCardModel) -> gtk::Widget {
         }
         body.append(&detail_row);
     }
+    for warning in &model.warnings {
+        let warning = label(warning, "caption");
+        warning.add_css_class("warning");
+        warning.set_xalign(0.0);
+        warning.set_wrap(true);
+        body.append(&warning);
+    }
     if let Some(error) = &model.error {
         let error = label(error, "error");
         error.set_xalign(0.0);

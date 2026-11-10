@@ -27,6 +27,28 @@ class RustProviderEnvelopeParityTests(unittest.TestCase):
 
         self.assertEqual(actual, expected)
 
+    @unittest.skipUnless(rust_bridge.extension() is not None, "Rust extension is opt-in")
+    def test_rust_pyo3_warning_dto_is_safe_and_python_view_uses_static_copy(self) -> None:
+        hostile = "SYNTHETIC-HOSTILE-NOTICE-DO-NOT-RENDER"
+        payload = {
+            "provider": "claude",
+            "usage": {
+                "primary": {"usedPercent": 12, "windowMinutes": 300},
+                "secondary": {"usedPercent": 34, "windowMinutes": 10080},
+                "details": [{"rows": [
+                    {"id": "claude-model-breakdown", "label": "Status", "value": hostile},
+                    {"id": "unrelated", "label": "Model", "value": "Synthetic model"},
+                ]}],
+            },
+        }
+        core = rust_bridge.extension()
+        dto = json.loads(core.provider_usage_from_json(json.dumps(payload)))
+        view = _provider_from_dto(dto)
+        self.assertEqual(view.warnings, ["model-breakdown-unavailable"])
+        self.assertEqual([window.used_percent for window in view.windows], [12.0, 34.0])
+        self.assertEqual(view.details[0].rows[0].value, "Synthetic model")
+        self.assertNotIn(hostile, json.dumps(dto))
+
 
 if __name__ == "__main__":
     unittest.main()

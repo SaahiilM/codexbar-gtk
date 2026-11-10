@@ -10,11 +10,23 @@ history. A checked box means **verified and merged**, not merely implemented.
 | --- | --- |
 | Goal | Fully native Rust GTK4/libadwaita application with verified packaging and legacy runtime removal. |
 | Current phase | BG passed and U01–U08 implementation merged. UG **NOT PASSED**; Python default. |
-| Last observed merge | PR #98 merged normally at `f40307db189ce7fba97a0cc5da1aabd8c73b5f7c` (build 97). Exact head `11ca6d3b6439a54f5a431a3e0b6cdd8bd02275f2` passed all three checks in run `42861843557`; reviews, comments and threads were zero. This merge did not accept UG or C gates. |
-| Active implementation | Build 98, branch `orchestrated/luna-upstream084-providers`, implementation commit `fa7fe6d` plus a normal merge of the observed build-97 `origin/main`; provider catalog/artwork and Python parity are locally verified. No PR, publication, or exact-head CI is claimed. |
+| Last observed merge | PR #99 merged at `5e033f0f955441b278e7530ad40b712fde1b5c44` (build 98). At the supplied handoff, run `42866749612` had `tray-dbus` successful while `test` and `python-free-runtime-proof` were in progress. This is base-only evidence; no result from that run is attributed to E202. This merge did not accept UG or C gates. |
+| Active implementation | Build 99, branch `orchestrated/luna-upstream084-claude-warning`, based on supplied merged build-98 `origin/main` `5e033f0`; **UP084-CLAUDE-WARNING** implemented and locally verified. Local commit only; no PR, publication, or exact-head CI is claimed. |
 | Installer/runtime verification | E198 records the merged build-95 installed-prefix/Python-free runtime proof. E199 records prior local 13-case activation smoke evidence in a Python-free container; its first attempt lacked `file`, and the portable `od`/`ldd` check passed. These component results do not pass C02 or authorize cutover. |
 | UI acceptance | E195 records one Display action; E200 records seven guarded Settings actions and three tab transitions. Broader Wayland controls/navigation remain open. UG is **NOT PASSED** and Python remains the default; see `UG_GATE.md`. |
-| Next | Root owns review, publication and exact-head CI for UP084-PROVIDERS. Then continue the separate warning and login compatibility slices; UG remains **NOT PASSED**, Python remains default, and C01–CG/cutover are not accepted. |
+| Next | Root `933fef41-7c9a-499d-9460-70e5d53f7bf3` owns review, push, PR, merge and gates for UP084-CLAUDE-WARNING. Then implement the separate ClaudePlatform stdin login slice. UG remains **NOT PASSED**, Python remains default, and C01–CG/cutover are not accepted. |
+
+### Focused upstream compatibility claim — UP084-CLAUDE-WARNING
+
+Owner: current `orchestrated/luna-upstream084-claude-warning` session, based
+on supplied build-98 merge `5e033f0`. **Status: implementation and local
+verification complete; local commit only.** Build 99/E202 is reserved. The
+upstream v0.84 contract is a Claude-only typed warning derived from the exact
+details row ID `claude-model-breakdown`; its status text is diagnostic input
+and must not be shown or serialized. Preserve unrelated details and both quota windows.
+Root owns review, push, PR, merge and gates. ClaudePlatform stdin login is a
+separate slice. Marketing version stays 0.82.0, Python remains default, and UG
+remains **NOT PASSED**.
 
 ### Focused upstream compatibility claim — UP084-PROVIDERS
 

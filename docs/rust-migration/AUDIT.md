@@ -6425,3 +6425,53 @@ The two inspected, synthetic X11 captures are tracked as
 [Settings](screenshots/build98-providers-xvfb/settings.png). These establish
 rendering only on X11; no new Wayland run is claimed. Focused catalog/icon
 parity and shell syntax were rerun after the fixture preservation change.
+
+### E202 — 2026-11-10: v0.84 Claude warning compatibility
+
+- **Claim/base:** build 99, branch
+  `orchestrated/luna-upstream084-claude-warning`, based on supplied merged
+  build-98 `origin/main` `5e033f0f955441b278e7530ad40b712fde1b5c44` (PR #99).
+  At handoff, run `42866749612` had `tray-dbus` successful and both `test` and
+  `python-free-runtime-proof` in progress. That is base context only and is not
+  E202 implementation evidence. No CI result for this branch is claimed.
+- **Pinned contract:** CodexBar v0.84.0 source commit
+  `5bebf9a05e68059eae11d5031c7239f1aa1d49ef`. The pinned
+  [DashboardSnapshotBuilder.swift](https://github.com/steipete/CodexBar/blob/5bebf9a05e68059eae11d5031c7239f1aa1d49ef/Sources/CodexBarCLI/DashboardSnapshotBuilder.swift)
+  recognizes only provider `claude` plus the exact model-breakdown detail row
+  ID and returns the fixed `model-breakdown-unavailable` code. The pinned
+  [DashboardPayloads.swift](https://github.com/steipete/CodexBar/blob/5bebf9a05e68059eae11d5031c7239f1aa1d49ef/Sources/CodexBarCLI/DashboardPayloads.swift)
+  makes warnings additive, omitted when empty and absent from shell detail.
+  The CLI usage contract remains raw `usage.details`; this slice does not add
+  dashboard API fetching or parse diagnostic text.
+- **Scope/behavior:** `rust-core/src/domain.rs` now computes an allowlisted
+  transparent warning-code DTO only for Claude plus row ID
+  `claude-model-breakdown`, then removes that exact row from normalized `raw`
+  and typed details. Empty warning arrays serialize absent; old DTOs missing
+  `warnings` deserialize with an empty list; unknown codes retain their string
+  value and have no user-facing text. Primary and secondary windows, knownness,
+  status and error fields remain independently normalized. Unrelated detail
+  rows are retained and the input payload is not mutated.
+  `codexbar_gtk/data.py` applies the same rule to a copy before the existing
+  PyO3 detail-row tuple adapter, whose tuple does not carry row IDs.
+  `codexbar_gtk/controller.py` preserves typed warning strings through the Rust
+  snapshot bridge, and `codexbar_gtk/ui/cards.py` maps only the known code to
+  fixed text. `rust-gtk/src/dashboard.rs` and `dashboard_widget.rs` use the same
+  fixed text allowlist for native cards. No provider text enters the warning
+  string. External CodexBar CLI remains responsible for fetching/auth/history;
+  no service history format is modified.
+- **Synthetic coverage:** core tests cover exact provider/row ID, non-Claude and
+  unknown row IDs, unknown warning codes, hostile notice redaction from the
+  serialized normalized DTO, unrelated row retention, both quota windows,
+  status/error preservation, malformed optional details and old DTO decoding.
+  Backend controller coverage feeds a synthetic CLI usage envelope through
+  refresh and checks warning plus both quotas. Python default tests verify
+  non-mutating input-copy behavior, safe fixed text, malformed details and
+  hostile text absence from normalized raw/details. Opt-in PyO3 tests verify
+  serialized DTO and Python view parity. Native GTK projection tests assert
+  only the known safe warning text appears in the card model.
+- **Checks:** `cargo fmt --manifest-path rust-core/Cargo.toml -- --check`, and the same check for `rust-backend`, `rust-python` and `rust-gtk` — passed; `git diff --check` — passed. Core `cargo test --locked` — 88 passed. Backend `cargo test --locked` — 87 unit plus 1 integration passed. GTK `dbus-run-session -- cargo test --locked` — 38 library tests, 1 main test and 1 Python-free linkage test passed. Three tests were ignored by their declared preconditions: two require a display, one requires `librsvg2-common` to be absent. Strict Clippy (`--all-targets --all-features -- -D warnings`) passed for core, backend, PyO3 and GTK. `scripts/build-rust-core.sh` built and atomically installed the extension. Python default suite: 308 passed, 22 skipped; Rust opt-in suite: 308 passed, no skips.
+- **UI/check limits:** Xvfb smoke/capture was not run because neither `xvfb-run` nor `Xvfb` is installed in this environment. No synthetic window screenshot was produced or personally inspected. GTK card-model/static-text checks passed but do not establish rendered-window behavior. No Wayland or shared desktop was accessed. Tests use synthetic payloads/CLI fixtures only; no accounts, provider HTTP, credentials or auth were used. A first GTK run outside a private D-Bus session failed its watcher-registration assertion; rerunning the full crate under fresh private D-Bus passed. No PR, push, merge, exact-head CI or gate acceptance is claimed. UG remains **NOT PASSED**; Python remains default; marketing version stays 0.82.0.
+- **Handoff:** root
+  `933fef41-7c9a-499d-9460-70e5d53f7bf3` owns review, push, PR, merge and all
+  gates. The next compatibility slice is ClaudePlatform stdin login, kept
+  separate from this warning work.

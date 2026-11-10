@@ -150,6 +150,12 @@ for the BG merge, B11 CI limitation and B15 compatibility bounds.
 
 Build 95 adds a required CI proof for the installed native prefix in a Python-free runtime image. It does not change the default launcher or pass a cutover gate.
 
+Build 99 adds a Claude-only typed warning for the exact upstream model-breakdown
+details row and suppresses its raw diagnostic text. The change preserves quota
+data and unrelated detail rows; it does not change the supported upstream
+marketing version, which remains 0.82.0. Python remains the default launcher and
+UG remains **NOT PASSED**.
+
 Build 98 adds three upstream v0.84 provider descriptors and matching
 monochrome artwork to the compatibility catalog. This catalog update does not
 change the supported upstream marketing version: it remains 0.82.0 until the
@@ -263,7 +269,7 @@ The GTK front-end uses the same version pair as the macOS bundle:
   this client is feature-compatible with (`0.82.0`).
 * `CURRENT_PROJECT_VERSION` is the build number of the Linux front-end.
 * `codexbar_gtk/version.py` turns the pair into the macOS-style
-  `"0.82.0 (98)"` string shown under Settings → About, in the tray menu and by
+  `"0.82.0 (99)"` string shown under Settings → About, in the tray menu and by
   `./run.sh --about`.
 
 Increment `CURRENT_PROJECT_VERSION` for each merged PR and keep it in sync with

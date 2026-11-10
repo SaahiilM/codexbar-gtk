@@ -392,6 +392,7 @@ mod tests {
             status_level: None,
             status_description: None,
             error: None,
+            warnings: Vec::new(),
             details: Vec::new(),
             reset_credits_available: 1,
             reset_credits: vec![json!({"expiresAt": (reset - Duration::hours(2)).to_rfc3339()})],

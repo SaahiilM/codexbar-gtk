@@ -13,6 +13,7 @@ This module implements the same flow with the Python standard library only.
 from __future__ import annotations
 
 import os
+import json
 import re
 import select
 import shutil
@@ -29,6 +30,8 @@ URL_RE = re.compile(r"https?://[^\s\"'<>)\]]+")
 
 CLAUDE_LOGIN_ARGS = ["auth", "login", "--claudeai"]
 MAX_LOGIN_OUTPUT_CHARS = 64 * 1024
+MAX_CLAUDEPLATFORM_INPUT_BYTES = 16 * 1024
+MAX_CLAUDEPLATFORM_OUTPUT_BYTES = 64 * 1024
 CLAUDE_SUCCESS_MARKERS = (
     "Successfully logged in",
     "Login successful",
@@ -90,6 +93,102 @@ def open_in_browser(url: str) -> bool:
         except (OSError, subprocess.SubprocessError):
             continue
     return False
+
+
+class ClaudePlatformLoginError(RuntimeError):
+    """Sanitized one-shot login failure; never contains CLI output or input."""
+
+
+def run_claudeplatform_login(
+    binary: str, cookie: str, timeout: float = 60.0,
+    cancelled: threading.Event | None = None,
+) -> None:
+    """Send one ephemeral candidate to the CLI over piped stdin and require its JSON success."""
+    encoded = cookie.encode("utf-8", errors="strict")
+    if not encoded or len(encoded) > MAX_CLAUDEPLATFORM_INPUT_BYTES or "\n" in cookie or "\r" in cookie:
+        raise ClaudePlatformLoginError("input")
+    argv = [binary, "config", "login", "--provider", "claudeplatform", "--stdin", "--json"]
+    try:
+        process = subprocess.Popen(
+            argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            start_new_session=True, close_fds=True,
+        )
+    except OSError as exc:
+        raise ClaudePlatformLoginError("process") from exc
+
+    output = bytearray()
+    overflow = threading.Event()
+
+    def drain_stdout() -> None:
+        assert process.stdout is not None
+        while True:
+            block = process.stdout.read(4096)
+            if not block:
+                return
+            room = MAX_CLAUDEPLATFORM_OUTPUT_BYTES - len(output)
+            if room > 0:
+                output.extend(block[:room])
+            if len(block) > room:
+                overflow.set()
+
+    reader = threading.Thread(target=drain_stdout, name="claudeplatform-login-output", daemon=True)
+    reader.start()
+    write_error: list[BaseException] = []
+
+    def feed_stdin() -> None:
+        try:
+            assert process.stdin is not None
+            process.stdin.write(encoded)
+            process.stdin.close()
+        except BaseException as exc:  # reported only as a sanitized process failure
+            write_error.append(exc)
+
+    writer = threading.Thread(target=feed_stdin, name="claudeplatform-login-input", daemon=True)
+    writer.start()
+    try:
+        deadline = time.monotonic() + timeout
+        while process.poll() is None:
+            if cancelled is not None and cancelled.is_set():
+                raise ClaudePlatformLoginError("cancelled")
+            if time.monotonic() >= deadline:
+                raise ClaudePlatformLoginError("timeout")
+            time.sleep(0.02)
+        writer.join(timeout=1)
+        # The CLI is expected to exit; remove any accidental descendants that
+        # inherited stdout so the bounded reader can always be joined.
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        reader.join(timeout=2)
+        if reader.is_alive() or writer.is_alive() or write_error or process.returncode != 0 or overflow.is_set():
+            raise ClaudePlatformLoginError("rejected")
+        payload = json.loads(bytes(output).decode("utf-8", errors="strict"))
+        if payload != {"status": "authorized"}:
+            raise ClaudePlatformLoginError("rejected")
+    except ClaudePlatformLoginError:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        if process.poll() is None:
+            process.wait()
+        raise
+    except (BrokenPipeError, OSError, UnicodeError, ValueError, json.JSONDecodeError) as exc:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        if process.poll() is None:
+            process.wait()
+        raise ClaudePlatformLoginError("process") from exc
+    finally:
+        writer.join(timeout=1)
+        reader.join(timeout=1)
+        if process.stdin is not None and not process.stdin.closed:
+            process.stdin.close()
+        if process.stdout is not None:
+            process.stdout.close()
 
 
 class ClaudeLoginSession:

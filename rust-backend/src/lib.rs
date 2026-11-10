@@ -97,6 +97,7 @@ pub fn event_channel() -> (EventPublisher, mpsc::Receiver<BackendEvent>) {
     )
 }
 
+pub mod claudeplatform_login;
 pub mod cli;
 
 /// Stable, non-sensitive categories for errors crossing the service boundary.

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.82.0 (100) — 2026-11-10
+
+Tracks upstream CodexBar 0.82.0. Adds the focused v0.84 ClaudePlatform
+stdin-login compatibility flow; Python remains the default launcher.
+
+- See migration audit E203 for exact checks and limits. UG remains **NOT PASSED**.
+
 ## 0.82.0 (99) — 2026-11-10
 
 Tracks upstream CodexBar 0.82.0. Adds the focused v0.84 Claude warning

@@ -285,6 +285,17 @@ class SettingsWindow(Adw.PreferencesWindow):
                 )
                 row.add_row(sign_in_row)
 
+            if provider_id == "claudeplatform":
+                sign_in_row = Adw.ActionRow(
+                    title="Sign in with a session cookie",
+                    subtitle="The CodexBar CLI validates and saves it; Settings keeps it only in memory during sign-in.",
+                )
+                sign_in_row.set_activatable(True)
+                sign_in_row.connect(
+                    "activated", lambda _r, pid=provider_id: self._sign_in(pid)
+                )
+                row.add_row(sign_in_row)
+
             api_row = Adw.PasswordEntryRow(title="API key")
             api_row.set_show_apply_button(True)
             api_row.connect(
@@ -680,6 +691,10 @@ class SettingsWindow(Adw.PreferencesWindow):
         Claude Code uses a browser flow, so the CLI runs in a pseudo terminal
         inside a dialog — the same approach the macOS app takes.
         """
+        if provider_id == "claudeplatform":
+            self._claudeplatform_sign_in()
+            return
+
         if provider_id == "claude":
             from .login_dialog import LoginDialog
 
@@ -690,6 +705,81 @@ class SettingsWindow(Adw.PreferencesWindow):
             return
 
         self._open_terminal_login(provider_id)
+
+    def _claudeplatform_sign_in(self) -> None:
+        from ..login import ClaudePlatformLoginError, run_claudeplatform_login
+
+        dialog = Gtk.Window(
+            title="Sign in to Claude Platform", transient_for=self, modal=True,
+            default_width=520, default_height=220,
+        )
+        content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12,
+                          margin_top=20, margin_bottom=20, margin_start=20, margin_end=20)
+        status = Gtk.Label(label="Paste a session cookie. The CodexBar CLI will validate and save it.")
+        status.set_xalign(0.0)
+        status.set_wrap(True)
+        content.append(status)
+        entry = Gtk.Entry()
+        entry.set_visibility(False)
+        entry.set_placeholder_text("Session cookie (one line)")
+        content.append(entry)
+        actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        actions.set_halign(Gtk.Align.END)
+        submit = Gtk.Button(label="Sign in")
+        submit.add_css_class("suggested-action")
+        cancel = threading.Event()
+
+        def finish(message: str, succeeded: bool = False) -> bool:
+            status.set_text(message)
+            submit.set_sensitive(True)
+            cancel_button.set_sensitive(False)
+            if succeeded:
+                self._reload_cli_settings()
+                self._request_refresh()
+            return False
+
+        def submit_cookie(_button) -> None:
+            cookie = entry.get_text()
+            entry.set_text("")
+            if not cookie:
+                status.set_text("Enter a session cookie to continue.")
+                return
+            cancel.clear()
+            submit.set_sensitive(False)
+            cancel_button.set_sensitive(True)
+            status.set_text("Sending cookie to CodexBar CLI…")
+
+            def run() -> None:
+                try:
+                    run_claudeplatform_login(self.controller.cli.executable, cookie, cancelled=cancel)
+                    GLib.idle_add(finish, "Claude Platform sign-in completed.", True)
+                except ClaudePlatformLoginError as exc:
+                    message = "Sign-in cancelled." if str(exc) == "cancelled" else "Sign-in did not complete. Check the CLI and try again."
+                    GLib.idle_add(finish, message)
+
+            threading.Thread(target=run, name="claudeplatform-login", daemon=True).start()
+
+        submit.connect("clicked", submit_cookie)
+        actions.append(submit)
+        cancel_button = Gtk.Button(label="Cancel sign-in")
+        cancel_button.set_sensitive(False)
+
+        def cancel_login(_button) -> None:
+            entry.set_text("")
+            cancel.set()
+            status.set_text("Cancelling sign-in…")
+            submit.set_sensitive(False)
+            cancel_button.set_sensitive(False)
+
+        cancel_button.connect("clicked", cancel_login)
+        actions.append(cancel_button)
+        close = Gtk.Button(label="Close")
+        close.connect("clicked", lambda _button: dialog.close())
+        actions.append(close)
+        content.append(actions)
+        dialog.set_child(content)
+        dialog.connect("close-request", lambda _window: (cancel.set(), entry.set_text(), False)[-1])
+        dialog.present()
 
     def _open_terminal_login(self, provider_id: str) -> None:
         """Open a terminal with the provider's login command."""

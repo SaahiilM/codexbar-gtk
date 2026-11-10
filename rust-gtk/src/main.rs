@@ -8,6 +8,9 @@ use std::{
 };
 
 use codexbar_backend::{
+    claudeplatform_login::{
+        LoginActor as ClaudePlatformLoginActor, LoginEvent as ClaudePlatformLoginEvent,
+    },
     cli::{discover_executable, CliService, SharedCliService},
     controller::{
         ControllerCommand, ControllerSnapshot, RefreshControllerConfig, RefreshControllerHandle,
@@ -71,6 +74,8 @@ struct BackendBridge {
     settings_responses: codexbar_backend::settings::SettingsResponseReceiver,
     login: LoginActor,
     login_events: codexbar_backend::login::LoginUiReceiver,
+    claudeplatform_login: ClaudePlatformLoginActor,
+    claudeplatform_events: codexbar_backend::claudeplatform_login::LoginEvents,
     preferences: std::sync::Arc<PreferencesStore>,
     currencies: std::sync::Arc<CurrencyService>,
     ui_operations: tokio_mpsc::UnboundedSender<BackendUiOperation>,
@@ -143,9 +148,12 @@ impl BackendWorker {
                                 currencies.clone(),
                             );
                         let (login, login_events) =
-                            LoginActor::start(&tokio::runtime::Handle::current(), shared_cli);
+                            LoginActor::start(&tokio::runtime::Handle::current(), shared_cli.clone());
+                        let (claudeplatform_login, claudeplatform_events) =
+                            ClaudePlatformLoginActor::start(&tokio::runtime::Handle::current(), shared_cli);
                         let settings_shutdown = settings.clone();
                         let login_shutdown = login.clone();
+                        let claudeplatform_shutdown = claudeplatform_login.clone();
                         let bridge = BackendBridge {
                             state: controller.state(),
                             events: controller
@@ -156,6 +164,8 @@ impl BackendWorker {
                             settings_responses,
                             login,
                             login_events,
+                            claudeplatform_login,
+                            claudeplatform_events,
                             preferences,
                             currencies,
                             ui_operations,
@@ -164,6 +174,7 @@ impl BackendWorker {
                         if ready_tx.send(Ok(bridge)).is_err() {
                             settings_shutdown.shutdown().await;
                             login_shutdown.shutdown().await;
+                            claudeplatform_shutdown.shutdown().await;
                             currency_refresh_task.abort();
                             let _ = currency_refresh_task.await;
                             let _ = controller.shutdown().await;
@@ -208,6 +219,7 @@ impl BackendWorker {
                         }
                         settings_shutdown.shutdown().await;
                         login_shutdown.shutdown().await;
+                        claudeplatform_shutdown.shutdown().await;
                         currency_refresh_task.abort();
                         let _ = currency_refresh_task.await;
                         let _ = controller.shutdown().await;
@@ -859,6 +871,7 @@ impl NativeApp {
         let mut latest_state = None;
         let mut settings_responses = Vec::<SettingsResponse>::new();
         let mut login_events = Vec::<LoginUiEvent>::new();
+        let mut claudeplatform_events = Vec::<ClaudePlatformLoginEvent>::new();
         let mut ui_results = Vec::<BackendUiResult>::new();
         if let Some(bridge) = &mut self.bridge {
             latest_state = Some(bridge.state.borrow_and_update().clone());
@@ -867,6 +880,9 @@ impl NativeApp {
             }
             while let Ok(event) = bridge.login_events.try_recv() {
                 login_events.push(event);
+            }
+            while let Ok(event) = bridge.claudeplatform_events.try_recv() {
+                claudeplatform_events.push(event);
             }
             while let Ok(result) = bridge.ui_results.try_recv() {
                 ui_results.push(result);
@@ -894,6 +910,18 @@ impl NativeApp {
             }
             for event in login_events {
                 settings.handle_login_event(event);
+            }
+            for event in claudeplatform_events {
+                settings.handle_claudeplatform_login_event(event);
+                if event
+                    == ClaudePlatformLoginEvent::Finished(
+                        codexbar_backend::claudeplatform_login::LoginStatus::Succeeded,
+                    )
+                {
+                    if let Some(bridge) = self.bridge.as_ref() {
+                        let _ = bridge.refresh.try_send(ControllerCommand::ForceRefresh);
+                    }
+                }
             }
         }
         if let (Some(state), Some(preferences)) = (latest_state, tray_preferences) {
@@ -1194,12 +1222,14 @@ impl NativeApp {
         }
         let settings_actor = bridge.settings.clone();
         let login_actor = bridge.login.clone();
+        let claudeplatform_login = bridge.claudeplatform_login.clone();
         let preferences = bridge.preferences.clone();
         let currencies = bridge.currencies.catalog();
         let window = settings_window::SettingsWindow::new(
             &self.application,
             settings_actor,
             login_actor,
+            claudeplatform_login,
             preferences,
             self.metadata.display(),
             &currencies,

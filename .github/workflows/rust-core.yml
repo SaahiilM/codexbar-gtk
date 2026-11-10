@@ -112,7 +112,8 @@ jobs:
       # CI at different points; the other native GTK Xvfb smokes remain enabled.
 
   python-free-runtime-proof:
-    runs-on: ubuntu-latest
+    # Match the runtime image ABI; do not build against a moving newer distro.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -124,12 +125,15 @@ jobs:
         run: |
           cargo build --manifest-path rust-gtk/Cargo.toml --locked --bin codexbar-gtk-native --message-format=json-render-diagnostics > "$RUNNER_TEMP/native-debug.json"
           cargo build --manifest-path rust-gtk/Cargo.toml --locked --release --bin codexbar-gtk-native --message-format=json-render-diagnostics > "$RUNNER_TEMP/native-release.json"
-          echo "NATIVE_DEBUG=$(python3 scripts/native/no-python/cargo-artifact.py --json "$RUNNER_TEMP/native-debug.json" --target codexbar-gtk-native)" >> "$GITHUB_ENV"
-          echo "NATIVE_RELEASE=$(python3 scripts/native/no-python/cargo-artifact.py --json "$RUNNER_TEMP/native-release.json" --target codexbar-gtk-native)" >> "$GITHUB_ENV"
+          native_debug="$(python3 scripts/native/no-python/cargo-artifact.py --json "$RUNNER_TEMP/native-debug.json" --target codexbar-gtk-native)"
+          printf 'NATIVE_DEBUG=%s\n' "$native_debug" >> "$GITHUB_ENV"
+          native_release="$(python3 scripts/native/no-python/cargo-artifact.py --json "$RUNNER_TEMP/native-release.json" --target codexbar-gtk-native)"
+          printf 'NATIVE_RELEASE=%s\n' "$native_release" >> "$GITHUB_ENV"
       - name: Build SVG accessibility test executable without running host GUI
         run: |
           cargo test --manifest-path rust-gtk/Cargo.toml --locked --test a11y_assets --no-run --message-format=json-render-diagnostics > "$RUNNER_TEMP/a11y-assets.json"
-          echo "SVG_TEST_BINARY=$(python3 scripts/native/no-python/cargo-artifact.py --json "$RUNNER_TEMP/a11y-assets.json" --target a11y_assets)" >> "$GITHUB_ENV"
+          svg_test_binary="$(python3 scripts/native/no-python/cargo-artifact.py --json "$RUNNER_TEMP/a11y-assets.json" --target a11y_assets)"
+          printf 'SVG_TEST_BINARY=%s\n' "$svg_test_binary" >> "$GITHUB_ENV"
       - name: Run installed-prefix and Python-free runtime proof in Docker
         run: |
           ./scripts/smoke-native-no-python.sh \

@@ -10,7 +10,7 @@ history. A checked box means **verified and merged**, not merely implemented.
 | --- | --- |
 | Goal | Fully native Rust GTK4/libadwaita application with verified packaging and legacy runtime removal. |
 | Current phase | BG passed and U01–U08 implementation merged. UG **NOT PASSED**; Python default. |
-| Last observed merge | PR #95 merged normally at `d34840fe4d0ffa7a49f13b128890c1a3f0803a39` (build 93); exact head `db9d01b1237018c1b3de078d2ca094e46205cd6c` passed `test` and `tray-dbus` in run `42681791223`. PR #93's build-94 installer is part of current main per root's observed merge record. |
+| Last observed merge | PR #93 merged normally at `473a083676dc23152a9b42203a1fae9b527e3721` (build 94), authorized by the user for additive installer preparation. Exact head `1c033312942b45eaf594b6ec55648406bbaac979` passed `test` and `tray-dbus` in run `42683841325`. This merge did not accept UG or C gates. |
 | Active implementation | Build 95, branch `t3/native-no-python-harness`, local only; preserves the installed-prefix/no-Python prototype and adds Cargo JSON artifact discovery, focused fail-closed tests, and a required runtime-proof workflow job. No PR or merge is claimed. |
 | Installer/runtime verification | E198 records a fresh clean-target build and Docker debug/release/rollback proof for commit `7babb4f67f3f856f2b69713a20956199869cb00a`. The workflow is wired to repeat it on the exact PR head; CI is pending. This component result does not pass C02 or authorize cutover. |
 | UI acceptance | E195 records one guarded synthetic Display action; other Wayland controls/navigation remain open. UG is **NOT PASSED** and Python remains the default; see `UG_GATE.md`. |

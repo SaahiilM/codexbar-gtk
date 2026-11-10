@@ -6163,3 +6163,12 @@ unverified; UG and C gates remain open and Python remains default.
 - **Next:** root reviews and publishes this focused build-95 change, then
   observes exact-head CI. Continue UG corrections separately; activation,
   service/autostart, genuine migration and all remaining C-gate work stay open.
+
+
+#### E198 root publication review — 2026-11-10
+
+- Pin the runtime-proof build job to Ubuntu 24.04, matching its Ubuntu 24.04 runtime image ABI, rather than a moving `ubuntu-latest` image. Resolve Cargo executable paths in standalone assignments before writing GITHUB_ENV, so resolver failure is not masked by a successful `echo`. No app or harness behavior changed in this review.
+- Consolidate the duplicate Display ledger rows: E183 manual navigation and E195 guarded bridge evidence describe the same `hidePersonalInfo` control. Preserve both histories without counting two distinct control passes. Correct the retained-error fixture wait to four total calls (one successful seed plus three failing fallback attempts); range and mode pointer interactions remain separate, open evidence.
+- Current handoff now records the observed, user-authorized additive PR #93 merge at `473a083676dc23152a9b42203a1fae9b527e3721`, exact head `1c033312942b45eaf594b6ec55648406bbaac979`, both checks successful in run `42683841325`. It does not pass UG or C01–CG. Fresh published-head checks remain pending.
+
+- Root verification before publication: the four focused harness tests passed; `py_compile`, both shell syntax checks, YAML parsing, and `git diff --check` passed. The existing native version-metadata regression passed (1 test). These do not replace exact-head remote execution of the new runtime-proof job.

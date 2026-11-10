@@ -21,6 +21,8 @@ class NativeWaylandIsolatedHarnessTests(unittest.TestCase):
                 "DISPLAY": ":42", "WAYLAND_DISPLAY": "wayland-0",
                 "WAYLAND_SOCKET": "13", "XAUTHORITY": "/host/auth",
                 "DBUS_SESSION_BUS_ADDRESS": "unix:path=/host/bus",
+                "DBUS_STARTER_ADDRESS": "unix:path=/host/starter-bus",
+                "DBUS_STARTER_BUS_TYPE": "session",
                 "DBUS_SYSTEM_BUS_ADDRESS": "unix:path=/host/system-bus",
                 "AT_SPI_BUS_ADDRESS": "unix:path=/host/a11y",
                 "XDG_RUNTIME_DIR": "/run/user/1000", "GDK_BACKEND": "x11",
@@ -28,14 +30,30 @@ class NativeWaylandIsolatedHarnessTests(unittest.TestCase):
             }, root / "home", root / "runtime", "wayland-private",
                root / "fake-codexbar", "unix:path=/private/session-bus")
             for key in ("DISPLAY", "WAYLAND_SOCKET", "XAUTHORITY", "DBUS_SYSTEM_BUS_ADDRESS",
-                        "AT_SPI_BUS_ADDRESS"):
+                        "DBUS_STARTER_ADDRESS", "DBUS_STARTER_BUS_TYPE", "AT_SPI_BUS_ADDRESS"):
                 self.assertNotIn(key, env)
             self.assertEqual(env["WAYLAND_DISPLAY"], "wayland-private")
             self.assertEqual(env["DBUS_SESSION_BUS_ADDRESS"], "unix:path=/private/session-bus")
             self.assertEqual(env["XDG_RUNTIME_DIR"], str(root / "runtime"))
             self.assertEqual(env["GDK_BACKEND"], "wayland")
             self.assertEqual(env["GSK_RENDERER"], "cairo")
+            self.assertEqual(env["GTK_A11Y"], "atspi")
             self.assertEqual(env["GTK_USE_PORTAL"], "0")
+
+    def test_private_bus_wrapper_does_not_inherit_host_session_handles(self):
+        env = MODULE.private_bus_environment({
+            "DISPLAY": ":42", "WAYLAND_DISPLAY": "wayland-0",
+            "WAYLAND_SOCKET": "13", "XAUTHORITY": "/host/auth",
+            "DBUS_SESSION_BUS_ADDRESS": "unix:path=/host/bus",
+            "DBUS_STARTER_ADDRESS": "unix:path=/host/starter-bus",
+            "DBUS_STARTER_BUS_TYPE": "session",
+            "DBUS_SYSTEM_BUS_ADDRESS": "unix:path=/host/system-bus",
+            "AT_SPI_BUS_ADDRESS": "unix:path=/host/a11y",
+            "XDG_RUNTIME_DIR": "/run/user/1000", "PATH": "/usr/bin",
+        })
+        for key in MODULE.HOST_SESSION_KEYS:
+            self.assertNotIn(key, env)
+        self.assertEqual(env["PATH"], "/usr/bin")
 
     def test_synthetic_cli_produces_valid_fixture_payloads_without_secrets(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -69,15 +87,22 @@ class NativeWaylandIsolatedHarnessTests(unittest.TestCase):
         self.assertIn('"--debug"', source)
         self.assertIn('"--backend=headless"', source)
         self.assertIn('"--renderer=pixman"', source)
-        self.assertIn('"--shell=kiosk-shell.so"', source)
+        self.assertIn('"--shell=desktop-shell.so"', source)
+        self.assertIn('evidence["private_runtime_permissions"]', source)
+        self.assertIn('evidence["private_wayland_socket_permissions"]', source)
+        self.assertIn('evidence["cleanup"]["private_dbus_socket_removed"]', source)
+        self.assertIn("client={desktop_client}", source)
         self.assertIn("weston-screenshooter", source)
         self.assertIn("candidates[0].stat().st_size < 1000", source)
 
     def test_preferences_seed_is_one_synthetic_preference_and_actions_are_allowlisted(self):
         self.assertEqual(MODULE.SETTING_KEY, "refreshAllProvidersOnMenuOpen")
         self.assertEqual(MODULE.SETTING_LABEL, "Refresh when the panel opens")
-        self.assertEqual(MODULE.SPEND_LABEL, "Spend history range: 7 days")
+        self.assertEqual(MODULE.SPEND_LABEL, "7 days")
         self.assertEqual(MODULE.APP_ID, "com.steipete.CodexBarGTK")
+        source = SCRIPT.read_text(encoding="utf-8")
+        self.assertIn('"pressed" in row["states"]', source)
+        self.assertIn('evidence["persisted_settings_json"]', source)
 
 
 if __name__ == "__main__":

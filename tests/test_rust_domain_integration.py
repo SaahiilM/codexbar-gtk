@@ -29,6 +29,49 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class DomainPrimitiveIntegrationTests(unittest.TestCase):
+    def test_claude_model_breakdown_warning_redacts_only_exact_known_row(self):
+        hostile = "SYNTHETIC-HOSTILE-NOTICE-DO-NOT-RENDER"
+        payload = {
+            "provider": "claude",
+            "usage": {
+                "primary": {"usedPercent": 12, "windowMinutes": 300},
+                "secondary": {"usedPercent": 34, "windowMinutes": 10080},
+                "details": [{"title": "Models", "rows": [
+                    {"id": "claude-model-breakdown", "label": "Status", "value": hostile},
+                    {"id": "unrelated", "label": "Other", "value": "Keep me"},
+                ]}],
+            },
+        }
+        usage = provider_usage_from_payload(payload)
+        self.assertEqual(usage.warnings, ["model-breakdown-unavailable"])
+        self.assertEqual([window.used_percent for window in usage.windows], [12.0, 34.0])
+        self.assertEqual(usage.details[0].rows[0].value, "Keep me")
+        self.assertNotIn(hostile, json.dumps(usage.raw))
+        self.assertEqual(payload["usage"]["details"][0]["rows"][0]["value"], hostile)
+
+        for provider_id, row_id in (("codex", "claude-model-breakdown"), ("claude", "other")):
+            ignored = provider_usage_from_payload({
+                "provider": provider_id,
+                "usage": {"details": [{"rows": [{"id": row_id, "label": "Status", "value": hostile}]}]},
+            })
+            self.assertEqual(ignored.warnings, [])
+
+    def test_unknown_warning_code_has_no_python_user_facing_text(self):
+        from codexbar_gtk.data import WARNING_TEXT
+        self.assertEqual(WARNING_TEXT.get("future-warning"), None)
+        self.assertEqual(
+            WARNING_TEXT["model-breakdown-unavailable"],
+            "Some Claude models could not be identified.",
+        )
+        malformed = provider_usage_from_payload({
+            "provider": "claude",
+            "usage": {"details": {"rows": [
+                {"id": "claude-model-breakdown", "value": "SYNTHETIC-MALFORMED"}
+            ]}},
+        })
+        self.assertEqual(malformed.warnings, [])
+        self.assertEqual(malformed.details, [])
+
     def test_timestamp_inputs_normalize_like_the_python_reference(self):
         cases = {
             "2026-10-21T14:56:53Z": datetime(2026, 10, 21, 14, 56, 53, tzinfo=timezone.utc),

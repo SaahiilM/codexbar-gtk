@@ -80,6 +80,15 @@ def _controller_error_text(error: dict | None) -> str | None:
 
 
 def _provider_from_dto(value: dict) -> ProviderUsage:
+    raw_warnings = value.get("warnings", [])
+    if not isinstance(raw_warnings, list):
+        raw_warnings = []
+    warnings = []
+    for item in raw_warnings:
+        if isinstance(item, str):
+            warnings.append(item)
+        elif isinstance(item, dict) and isinstance(item.get("code"), str):
+            warnings.append(item["code"])
     windows = [
         RateWindow(
             key=item["key"],
@@ -172,6 +181,7 @@ def _provider_from_dto(value: dict) -> ProviderUsage:
         status_level=value.get("status_level"),
         status_description=value.get("status_description"),
         error=value.get("error"),
+        warnings=warnings,
         details=details,
         reset_credits_available=value["reset_credits_available"],
         reset_credits=reset_credits,

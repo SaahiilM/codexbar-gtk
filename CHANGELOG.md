@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.82.0 (99) — 2026-11-10
+
+Tracks upstream CodexBar 0.82.0. Adds the focused v0.84 Claude warning
+compatibility slice without claiming overall v0.84 support.
+
+### Added
+
+- Classify the Claude model-breakdown status row by its exact stable ID, expose
+  a safe typed warning, and suppress its raw diagnostic from normalized UI data.
+  Python remains the default parity path; CLI fetching and authentication remain
+  external responsibilities.
+
+### Validation
+
+- See migration audit E202 for exact checks and limits. UG remains **NOT PASSED**.
+
 ## 0.82.0 (98) — 2026-11-10
 
 Tracks upstream CodexBar 0.82.0. The provisional v0.84 provider catalog slice

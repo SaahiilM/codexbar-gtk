@@ -327,6 +327,7 @@ fn notification_provider_from_json(value: &Value) -> Option<domain::ProviderUsag
         status_level: None,
         status_description: None,
         error: None,
+        warnings: Vec::new(),
         details: Vec::new(),
         reset_credits_available: reset_credits.len() as i64,
         reset_credits,

@@ -237,6 +237,7 @@ mod tests {
             status_level: None,
             status_description: None,
             error: None,
+            warnings: Vec::new(),
             details: Vec::new(),
             reset_credits_available: 0,
             reset_credits: Vec::new(),

@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import pathlib
 import tempfile
 import unittest
@@ -25,6 +26,96 @@ class WaylandGuardTests(unittest.TestCase):
 
     def test_accepts_fresh_stable_target(self):
         self.assertTrue(MODULE.guard_target(self.snapshot(), 4242, 810, 315, now=100.2))
+
+    def test_batch_parser_is_ordered_unique_bounded_and_allowlisted(self):
+        actions = ["session-quota-notifications", "quota-warning-notifications",
+                   "limit-reset-notifications", "predictive-pace-notifications",
+                   "show-tray-icon", "disable-global-hooks"]
+        self.assertEqual(MODULE.parse_action_batch(",".join(actions),
+                                                  MODULE.WAYLAND_SWITCH_ACTIONS), actions)
+        for value in ("", ",".join(actions + ["show-panel-on-start", "start-at-login", "hide-personal-info"]),
+                      "show-tray-icon,show-tray-icon", "show-tray-icon,not-allowlisted", "show-tray-icon,,hide-personal-info"):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                MODULE.parse_action_batch(value, MODULE.WAYLAND_SWITCH_ACTIONS)
+
+    def test_batch_phase_plan_groups_only_adjacent_actions_on_same_page(self):
+        actions = ["session-quota-notifications", "quota-warning-notifications",
+                   "show-tray-icon", "disable-global-hooks", "predictive-pace-notifications"]
+        self.assertEqual(MODULE.batch_page_phases(actions), [
+            {"page": "Notifications", "actions": actions[:2]},
+            {"page": "Menu Bar", "actions": actions[2:3]},
+            {"page": "Hooks", "actions": actions[3:4]},
+            {"page": "Notifications", "actions": actions[4:]},
+        ])
+
+    def test_batch_hooks_maps_to_existing_global_cli_switch(self):
+        hooks = MODULE.WAYLAND_SWITCH_ACTIONS["disable-global-hooks"]
+        self.assertEqual(hooks["page"], "Hooks")
+        self.assertEqual(hooks["label"], "Enable hooks")
+        self.assertEqual(hooks["kind"], "hooks_switch")
+        self.assertIsNone(hooks["preference"])
+
+    def test_batch_control_probe_is_read_only_and_exact_pid_name_and_label(self):
+        result = unittest.mock.Mock(returncode=0, stdout=json.dumps({"bounds": [[850, 300, 28, 28]]}))
+        calls = []
+
+        def runner(argv, **kwargs):
+            calls.append((argv, kwargs))
+            return result
+
+        bounds = MODULE.resolve_atspi_bounds("synthetic-app", 4242, "Pace warnings",
+                                             runner=runner)
+        self.assertEqual(bounds, [850, 300, 28, 28])
+        argv, kwargs = calls[0]
+        self.assertEqual(argv[-4:], ["4242", "synthetic-app", "Pace warnings", "[]"])
+        self.assertEqual(kwargs["timeout"], 8)
+        self.assertIn("int(app.get_process_id())!=want_pid", argv[2])
+        self.assertIn("app.get_name()!=want_name", argv[2])
+        self.assertNotIn("do_action", argv[2].lower())
+
+    def test_batch_control_probe_rejects_missing_ambiguous_invalid_and_failed(self):
+        for result in (
+            unittest.mock.Mock(returncode=0, stdout='{"bounds":[]}'),
+            unittest.mock.Mock(returncode=0, stdout='{"bounds":[[1,2,20,20],[4,5,30,30]]}'),
+            unittest.mock.Mock(returncode=0, stdout='{"bounds":[[1,2,0,20]]}'),
+            unittest.mock.Mock(returncode=0, stdout='not-json'),
+            unittest.mock.Mock(returncode=1, stdout='{}'),
+        ):
+            with self.subTest(stdout=result.stdout), self.assertRaises(RuntimeError):
+                MODULE.resolve_atspi_bounds("synthetic-app", 4242, "exact control",
+                                             runner=lambda *_a, _result=result, **_k: _result)
+
+    def test_batch_evidence_contains_only_allowlisted_metadata(self):
+        state = self.snapshot(sample_seq=14, received=100.05, cursor=[864, 314],
+                              pre_click_age_seconds=0.2,
+                              target_geometry=[364, 149, 1000, 740])
+        with unittest.mock.patch.object(MODULE.time, "monotonic", return_value=100.25):
+            evidence = MODULE.safe_action_evidence(
+                "predictive-pace-notifications", state, 4242, "Pace warnings",
+                [850, 300, 28, 28], False, True,
+            )
+        self.assertEqual(evidence["target_pid"], 4242)
+        self.assertEqual(evidence["input_method"], "guarded_pointer_click")
+        self.assertEqual(evidence["control_bounds"], [850, 300, 28, 28])
+        self.assertEqual(evidence["sample_seq"], 14)
+        self.assertEqual(evidence["sample_age_seconds"], 0.2)
+        self.assertEqual(evidence["sample_received_monotonic"], 100.05)
+        self.assertEqual(set(evidence), {
+            "action", "target_pid", "control", "control_bounds", "target_geometry",
+            "input_method", "sample_seq", "sample_age_seconds", "sample_received_monotonic",
+            "action_state_before", "action_state_after",
+        })
+        self.assertFalse(any("password" in key.lower() or "secret" in key.lower()
+                             for key in evidence))
+        self.assertNotIn("actual account", json.dumps(evidence))
+        for changes in ({"pid": 19}, {"active": False}, {"top_hit": False},
+                        {"cursor": [0, 0]}, {"pre_click_age_seconds": 0.8},
+                        {"sample_seq": 0}):
+            with self.subTest(changes=changes), self.assertRaises(ValueError):
+                MODULE.safe_action_evidence(
+                    "predictive-pace-notifications", {**state, **changes}, 4242,
+                    "Pace warnings", [850, 300, 28, 28], False, True,
+                )
 
     def test_read_only_baseline_requires_exact_active_target_but_not_pointer_hit(self):
         state = self.snapshot(top_hit=False, cursor=[1727, 2])
@@ -179,7 +270,7 @@ class WaylandGuardTests(unittest.TestCase):
                 "limit-reset-notifications", "predictive-pace-notifications",
                 "test-notification", "show-tray-icon",
                 "disable-codex-provider", "provider-source", "provider-api-key",
-                "provider-login",
+                "provider-login", "disable-global-hooks",
             },
         )
         self.assertEqual(
@@ -236,7 +327,7 @@ class WaylandGuardTests(unittest.TestCase):
              "session-quota-notifications", "quota-warning-notifications",
              "limit-reset-notifications", "predictive-pace-notifications", "test-notification",
              "show-tray-icon", "disable-codex-provider", "provider-source",
-             "provider-api-key", "provider-login"},
+             "provider-api-key", "provider-login", "disable-global-hooks"},
         )
         self.assertEqual(
             actions["show-panel-on-start"]["preference"],

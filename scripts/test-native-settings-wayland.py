@@ -210,6 +210,13 @@ WAYLAND_SWITCH_ACTIONS = {
         "cli_action": "login",
         "provider_id": "codex",
     },
+    # Fixture CLI state, deliberately not a Preferences JSON field.
+    "disable-global-hooks": {
+        "preference": None,
+        "label": "Enable hooks",
+        "page": "Hooks",
+        "kind": "hooks_switch",
+    },
 }
 PAGE_TAB_FRACTIONS = {"Display": (0.325, 0.968)}
 """Window-relative bottom-tab-bar centers, pixel-measured from the kept
@@ -257,6 +264,129 @@ def fresh_active_target(state, expected_pid, now=None):
     except (TypeError, ValueError):
         return False
     return 0.15 <= age <= 0.35 and active_target(state, expected_pid)
+
+
+def parse_action_batch(spec, allowed_actions, maximum=8):
+    """Validate a bounded, deterministic comma-separated Settings action list."""
+    if not isinstance(spec, str) or not spec.strip():
+        raise ValueError("batch action list is empty")
+    actions = [part.strip() for part in spec.split(",")]
+    if len(actions) > maximum:
+        raise ValueError(f"batch exceeds the {maximum}-action limit")
+    if any(not item for item in actions):
+        raise ValueError("batch contains an empty action")
+    if len(set(actions)) != len(actions):
+        raise ValueError("batch actions must be unique")
+    unknown = [item for item in actions if item not in allowed_actions]
+    if unknown:
+        raise ValueError("batch contains an unknown action")
+    return actions
+
+
+def batch_page_phases(action_ids, action_map=WAYLAND_SWITCH_ACTIONS):
+    """Preserve user-specified order while marking only actual page changes."""
+    phases = []
+    for action_id in action_ids:
+        action = action_map[action_id]
+        page = action.get("page", "General")
+        if phases and phases[-1]["page"] == page:
+            phases[-1]["actions"].append(action_id)
+        else:
+            phases.append({"page": page, "actions": [action_id]})
+    return phases
+
+
+def safe_action_evidence(action_id, state, target_pid, control, bounds, before, after):
+    """Return only synthetic, allowlisted metadata; never serialize CLI output."""
+    rect = state.get("target_geometry")
+    if not (isinstance(rect, list) and len(rect) == 4 and
+            all(type(v) is int for v in rect)):
+        raise ValueError("missing target geometry")
+    if not isinstance(bounds, list) or len(bounds) != 4 or any(type(v) is not int for v in bounds):
+        raise ValueError("missing measured control geometry")
+    x, y = point_from_bounds(bounds)
+    try:
+        recorded_age = float(state["pre_click_age_seconds"])
+        recorded_time = float(state["received"]) + recorded_age
+    except (KeyError, TypeError, ValueError) as error:
+        raise ValueError("missing pre-click compositor timing") from error
+    if not guard_target(state, target_pid, x, y, now=recorded_time):
+        raise ValueError("pre-click sample does not identify the exact active control")
+    if not target_window_contains(state, x, y):
+        raise ValueError("pre-click control falls outside the synthetic Settings window")
+    if type(state.get("sample_seq")) is not int or state["sample_seq"] < 1:
+        raise ValueError("missing ordered compositor sample sequence")
+    return {
+        "action": action_id,
+        "target_pid": int(state["pid"]),
+        "control": str(control)[:100],
+        "control_bounds": bounds,
+        "target_geometry": rect,
+        "input_method": "guarded_pointer_click",
+        "sample_seq": int(state["sample_seq"]),
+        "sample_age_seconds": round(recorded_age, 3),
+        "sample_received_monotonic": round(float(state["received"]), 6),
+        "action_state_before": before,
+        "action_state_after": after,
+    }
+
+
+def resolve_atspi_bounds(application, pid, label, runner=subprocess.run, timeout=8,
+                         expected_roles=()):
+    """Find one exact labelled component in the exact synthetic PID, read-only.
+
+    AT-SPI DoAction is never used. The returned extents are used only to target
+    the existing row/tab with the guarded bridge pointer path.
+    """
+    probe = r'''import json,sys,gi
+gi.require_version("Atspi","2.0")
+from gi.repository import Atspi
+Atspi.init()
+want_pid=int(sys.argv[1]); want_name=sys.argv[2]; want_label=sys.argv[3]; roles=json.loads(sys.argv[4])
+d=Atspi.get_desktop(0); found=[]
+for i in range(min(d.get_child_count(),100)):
+ app=d.get_child_at_index(i)
+ try:
+  if app.get_name()!=want_name or int(app.get_process_id())!=want_pid: continue
+  q=[app]; seen=0
+  while q and seen<3000:
+   n=q.pop(0); seen+=1
+   try:
+    name=n.get_name()
+    role=n.get_role_name()
+    if name==want_label and (not roles or role in roles):
+     comp=n.get_component_iface()
+     ext=comp.get_extents(Atspi.CoordType.SCREEN) if comp else None
+     st=n.get_state_set(); visible=st.contains(Atspi.StateType.VISIBLE) and st.contains(Atspi.StateType.SHOWING)
+     if ext and visible: found.append([int(ext.x),int(ext.y),int(ext.width),int(ext.height)])
+    count=min(n.get_child_count(),200)
+    q.extend(n.get_child_at_index(j) for j in range(count))
+   except Exception: pass
+  break
+ except Exception: pass
+print(json.dumps({"bounds":found}))
+'''
+    result = runner([sys.executable, "-c", probe, str(int(pid)), str(application), str(label),
+                     json.dumps(list(expected_roles))],
+                    capture_output=True, text=True, timeout=timeout, env=dict(os.environ))
+    if result.returncode != 0:
+        raise RuntimeError("AT-SPI control lookup failed; no input sent")
+    try:
+        rows = json.loads(result.stdout).get("bounds")
+    except (ValueError, AttributeError, TypeError) as error:
+        raise RuntimeError("AT-SPI control lookup returned malformed data; no input sent") from error
+    if not isinstance(rows, list) or len(rows) != 1:
+        raise RuntimeError("AT-SPI control is missing or ambiguous; no input sent")
+    bounds = rows[0]
+    if (not isinstance(bounds, list) or len(bounds) != 4 or
+            any(type(value) is not int for value in bounds) or bounds[2] <= 0 or bounds[3] <= 0):
+        raise RuntimeError("AT-SPI control geometry is invalid; no input sent")
+    return bounds
+
+
+def point_from_bounds(bounds):
+    x, y, width, height = bounds
+    return x + width // 2, y + height // 2
 
 
 def valid_kwin_observer_sample(sender, expected_sender, state, last_sequence):
@@ -1043,9 +1173,14 @@ def guarded_click(portal, app_pid, latest, x, y):
         time.sleep(.01)
     else:
         raise RuntimeError("target/focus hit-test unstable after motion; no click sent")
-    if not guard_target(latest(), app_pid, x, y):
+    pre_click_state = latest()
+    guard_time = time.monotonic()
+    if not guard_target(pre_click_state, app_pid, x, y, now=guard_time):
         raise RuntimeError("final target/focus guard failed; no click sent")
+    pre_click_state = dict(pre_click_state)
+    pre_click_state["pre_click_age_seconds"] = round(guard_time - pre_click_state["received"], 3)
     portal.click()
+    return pre_click_state
 
 
 def guarded_click_bridge(bridge, app_pid, latest, x, y):
@@ -1072,9 +1207,14 @@ def guarded_click_bridge(bridge, app_pid, latest, x, y):
         time.sleep(.01)
     else:
         raise RuntimeError("target/focus hit-test unstable after motion; no click sent")
-    if not guard_target(latest(), app_pid, x, y):
+    pre_click_state = latest()
+    guard_time = time.monotonic()
+    if not guard_target(pre_click_state, app_pid, x, y, now=guard_time):
         raise RuntimeError("final target/focus guard failed; no click sent")
+    pre_click_state = dict(pre_click_state)
+    pre_click_state["pre_click_age_seconds"] = round(guard_time - pre_click_state["received"], 3)
     bridge.click(x, y)
+    return pre_click_state
 
 
 def move_only_diagnostic(bridge, app_pid, latest, preferences_path, telemetry,
@@ -1126,12 +1266,14 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--binary", type=pathlib.Path, required=True)
     parser.add_argument("--action", choices=tuple(WAYLAND_SWITCH_ACTIONS),
-                        default="refresh-when-panel-opens",
+                        default=None,
                         help="allowlisted switch action to exercise; hide-personal-info, "
                              "show-tray-icon and disable-codex-provider live on Display/Menu Bar/Providers "
                              "pages (only Display tab navigation is automated; manual "
                              "provider-source/provider-api-key/provider-login steps run "
                              "with --inspect-only first)")
+    parser.add_argument("--actions",
+                        help="comma-separated bounded batch of allowlisted preference switches; measured AT-SPI controls required")
     parser.add_argument("--inspect-only", action="store_true",
                         help="capture the synthetic Settings window and exit without requesting portal access")
     parser.add_argument("--move-only", action="store_true",
@@ -1156,7 +1298,22 @@ def main():
         parser.error("--move-only requires bridge mode and cannot be combined with --portal/--inspect-only")
     if (args.switch_x is None) != (args.switch_y is None):
         parser.error("--switch-x and --switch-y must be supplied together")
-    action = WAYLAND_SWITCH_ACTIONS[args.action]
+    if args.actions and args.action is not None:
+        parser.error("use either --action or --actions, not both")
+    if args.actions:
+        try:
+            action_ids = parse_action_batch(args.actions, WAYLAND_SWITCH_ACTIONS)
+        except ValueError as error:
+            parser.error(str(error))
+    else:
+        action_ids = [args.action or "refresh-when-panel-opens"]
+    if args.actions and any(
+            WAYLAND_SWITCH_ACTIONS[name].get("kind") in ("manual", "button", "provider_switch")
+            for name in action_ids):
+        parser.error("batch mode accepts only preference and Hooks switches")
+    if args.actions and (args.switch_x is not None or args.switch_y is not None):
+        parser.error("batch mode uses measured AT-SPI geometry; coordinate overrides are unavailable")
+    action = WAYLAND_SWITCH_ACTIONS[action_ids[0]]
     preference_key = action.get("preference")
     if action.get("kind") == "manual":
         parser.error(
@@ -1164,6 +1321,8 @@ def main():
             "to calibrate the Providers page, then perform it by hand against the "
             "synthetic fixture (see the runner comment). Refusing to drive it."
         )
+    if action.get("kind") == "hooks_switch" and not args.actions:
+        parser.error("global Hooks is supported only in a verified synthetic batch")
     is_provider_action = action.get("kind") == "provider_switch"
     is_button_action = action.get("kind") == "button" or (preference_key is None and not is_provider_action)
     if not os.environ.get("WAYLAND_DISPLAY") or not os.environ.get("XDG_RUNTIME_DIR"):
@@ -1190,6 +1349,8 @@ def main():
     bridge_command = None
     if args.move_only and not use_bridge:
         parser.error("--move-only requires --bridge")
+    if args.actions and not use_bridge:
+        parser.error("AT-SPI-measured batches require --bridge; portal mode remains single-action")
     if use_bridge:
         try:
             bridge_command = resolve_bridge_command(args.bridge_cmd)
@@ -1223,16 +1384,30 @@ def main():
         # the synthetic Notifications monitor for their success check.
         # Provider actions also persist no preference: the fixture CLI
         # owns provider state (seeded ON so the runner clicks to disable).
-        seed = {} if preference_key is None else {preference_key: False}
+        preference_keys = [WAYLAND_SWITCH_ACTIONS[name].get("preference")
+                           for name in action_ids]
+        seed = {key: False for key in preference_keys if key is not None}
         preferences.write_text(json.dumps(seed) + "\n")
         cli_calls = scratch / "fixture-cli-calls.log"
         provider_enabled = scratch / "provider-codex-enabled"
-        if is_provider_action:
+        hooks_enabled = scratch / "hooks-enabled"
+        needs_hooks = any(WAYLAND_SWITCH_ACTIONS[name].get("kind") == "hooks_switch"
+                          for name in action_ids)
+        hooks_enabled.write_text("true" if needs_hooks else "false")
+        if is_provider_action or needs_hooks:
             provider_enabled.write_text(provider_enabled_file_text(True))
             fake_source = '''#!/bin/sh
 set -eu
 case "${1-}/${2-}" in
   --version/*) printf '%s\\n' 'CodexBar synthetic fixture 0.82.0' ;;
+  hooks/list)
+    printf '{"enabled":%s,"events":[]}\\n' "$(cat "$FIXTURE_HOOKS_ENABLED")"
+    ;;
+  hooks/enable|hooks/disable)
+    printf '%s\\n' "$*" >> "$FIXTURE_CLI_CALLS"
+    if [ "${2-}" = "enable" ]; then printf 'true' > "$FIXTURE_HOOKS_ENABLED"; else printf 'false' > "$FIXTURE_HOOKS_ENABLED"; fi
+    printf '%s\\n' '{"ok":true}'
+    ;;
   config/providers)
     printf '%s\\n' "$*" >> "$FIXTURE_CLI_CALLS"
     if [ "$(cat "$FIXTURE_PROVIDER_ENABLED")" = "true" ]; then
@@ -1266,8 +1441,9 @@ esac
                    CODEXBAR_CLI=str(fake), GTK_USE_PORTAL="0",
                    GDK_BACKEND="wayland", GSK_RENDERER="cairo")
         env.pop("CODEXBAR_RUST_CORE", None)
-        if is_provider_action:
-            env.update(FIXTURE_CLI_CALLS=str(cli_calls), FIXTURE_PROVIDER_ENABLED=str(provider_enabled))
+        if is_provider_action or needs_hooks:
+            env.update(FIXTURE_CLI_CALLS=str(cli_calls), FIXTURE_PROVIDER_ENABLED=str(provider_enabled),
+                       FIXTURE_HOOKS_ENABLED=str(hooks_enabled))
         bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
         spectacle_owned = bus.call_sync(
             "org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus",
@@ -1437,6 +1613,142 @@ esac
             baseline = wait_for_fresh_active_target(latest, app.pid)
         except RuntimeError as error:
             raise RuntimeError(f"{error} after portal consent") from error
+        if args.actions:
+            evidence_dir = pathlib.Path(tempfile.mkdtemp(prefix="codexbar-settings-batch-evidence-"))
+            evidence_dir.chmod(0o700)
+            results = []
+            current_page = "General"
+
+            def reactivate_fixture():
+                nonlocal focus_script_loaded
+                focus_js_path.write_text(activation_script(app.pid))
+                subprocess.run(["qdbus6", "org.kde.KWin", "/Scripting",
+                                "org.kde.kwin.Scripting.loadScript", str(focus_js_path), focus_plugin],
+                               check=True, capture_output=True, text=True, timeout=5)
+                if subprocess.run(["qdbus6", "org.kde.KWin", "/Scripting",
+                                   "org.kde.kwin.Scripting.isScriptLoaded", focus_plugin],
+                                  check=True, capture_output=True, text=True, timeout=5).stdout.strip() != "true":
+                    raise RuntimeError("synthetic Settings focus helper did not load; no input sent")
+                subprocess.run(["qdbus6", "org.kde.KWin", "/Scripting",
+                                "org.kde.kwin.Scripting.start"], check=True, capture_output=True, timeout=5)
+                focus_script_loaded = True
+                return wait_for_fresh_active_target(latest, app.pid, timeout_seconds=5)
+
+            def capture_fixture(label):
+                wait_for_fresh_active_target(latest, app.pid, timeout_seconds=5)
+                image_path = evidence_dir / f"{label}.png"
+                captured = subprocess.run(
+                    ["spectacle", "--background", "--activewindow", "--nonotify", "--output", str(image_path)],
+                    capture_output=True, text=True, timeout=8,
+                )
+                if (captured.returncode != 0 or not image_path.is_file() or
+                        image_path.stat().st_size > 8 * 1024 * 1024):
+                    image_path.unlink(missing_ok=True)
+                    raise RuntimeError("bounded synthetic Settings capture failed")
+                return image_path
+
+            try:
+                for action_id in action_ids:
+                    step = WAYLAND_SWITCH_ACTIONS[action_id]
+                    preference = step.get("preference")
+                    kind = step.get("kind", "preference")
+                    if kind not in ("preference", "hooks_switch"):
+                        raise RuntimeError("unsupported operation in batch; aborting before input")
+                    desired_page = step.get("page", "General")
+                    if desired_page != current_page:
+                        tab_bounds = resolve_atspi_bounds(
+                            bridge_application, app.pid, desired_page,
+                            expected_roles=("page tab",)
+                        )
+                        before_nav = latest()
+                        nav_x, nav_y = point_from_bounds(tab_bounds)
+                        if not target_window_contains(before_nav, nav_x, nav_y):
+                            raise RuntimeError("measured page tab is outside exact synthetic window")
+                        guarded_input(app.pid, nav_x, nav_y)
+                        # A phase transition invalidates all prior bounds. Re-read focus,
+                        # then resolve the exact action row on the new visible page.
+                        reactivate_fixture()
+                        current_page = desired_page
+
+                    control_bounds = resolve_atspi_bounds(bridge_application, app.pid, step["label"])
+                    before_state = latest()
+                    point_x, point_y = point_from_bounds(control_bounds)
+                    if not target_window_contains(before_state, point_x, point_y):
+                        raise RuntimeError("measured control is outside exact synthetic window")
+                    before_preferences = json.loads(preferences.read_text())
+                    if preference is not None and before_preferences.get(preference) is not False:
+                        raise RuntimeError(f"synthetic preference {preference} was not false before action")
+                    if kind == "hooks_switch" and hooks_enabled.read_text() != "true":
+                        raise RuntimeError("synthetic fixture hooks did not start enabled")
+
+                    # One action only. No screenshot, sleep, navigation, or other
+                    # operation is inserted between the final guard and the click.
+                    pre_click_state = guarded_input(app.pid, point_x, point_y)
+                    deadline = time.monotonic() + 8
+                    after_preferences = before_preferences
+                    if preference is not None:
+                        while time.monotonic() < deadline:
+                            after_preferences = json.loads(preferences.read_text())
+                            if after_preferences.get(preference) is True:
+                                break
+                            time.sleep(.05)
+                        if after_preferences.get(preference) is not True:
+                            raise RuntimeError(f"synthetic preference {preference} did not become true")
+                        expected_unchanged = {key: value for key, value in before_preferences.items()
+                                              if key != preference}
+                        if any(after_preferences.get(key) != value
+                               for key, value in expected_unchanged.items()):
+                            raise RuntimeError("action changed unrelated synthetic preferences")
+                        if step.get("requires_autostart_entry"):
+                            autostart = home / ".config" / "autostart" / "codexbar-gtk.desktop"
+                            if not autostart.is_file():
+                                raise RuntimeError("synthetic autostart entry did not persist")
+                        delta = {"preference": preference, "before": False, "after": True,
+                                 "unrelated_keys_retained": sorted(expected_unchanged),
+                                 "newly_materialized_default_keys": sorted(
+                                     set(after_preferences) - set(before_preferences) - {preference})}
+                    else:
+                        while time.monotonic() < deadline:
+                            calls = cli_calls.read_text() if cli_calls.exists() else ""
+                            if "hooks disable" in calls and hooks_enabled.read_text() == "false":
+                                break
+                            time.sleep(.05)
+                        calls = cli_calls.read_text() if cli_calls.exists() else ""
+                        if "hooks disable" not in calls or hooks_enabled.read_text() != "false":
+                            raise RuntimeError("synthetic hooks disable did not reach fixture CLI")
+                        if json.loads(preferences.read_text()) != before_preferences:
+                            raise RuntimeError("Hooks action changed unrelated Preferences JSON")
+                        delta = {"fixture_cli": "hooks disable", "before": True, "after": False,
+                                 "unrelated_keys_retained": sorted(before_preferences)}
+
+                    # Capture only after the mutation has been verified; then
+                    # reestablish exact focus and fresh compositor evidence.
+                    results.append({
+                        **safe_action_evidence(action_id, pre_click_state, app.pid,
+                                               step["label"], control_bounds,
+                                               delta.get("before"), delta.get("after")),
+                        "state_change": delta,
+                        "image": None,
+                    })
+                    (evidence_dir / "results.json").write_text(
+                        json.dumps({"actions": results}, indent=2) + "\n"
+                    )
+                    image_path = capture_fixture(action_id)
+                    results[-1]["image"] = image_path.name
+                    (evidence_dir / "results.json").write_text(
+                        json.dumps({"actions": results}, indent=2) + "\n"
+                    )
+                    print(f"PASS: {action_id}; synthetic evidence image {image_path}", flush=True)
+                    reactivate_fixture()
+                print(f"PASS: Settings batch complete; bounded synthetic evidence at {evidence_dir}", flush=True)
+                return 0
+            except Exception:
+                # Retain only fixture screenshots and allowlisted action metadata.
+                (evidence_dir / "results.json").write_text(
+                    json.dumps({"actions": results}, indent=2) + "\n"
+                )
+                print(f"Synthetic batch evidence retained at {evidence_dir}", file=sys.stderr, flush=True)
+                raise
         if "page" in action:
             geometry = baseline.get("target_geometry")
             if not isinstance(geometry, list) or len(geometry) != 4:

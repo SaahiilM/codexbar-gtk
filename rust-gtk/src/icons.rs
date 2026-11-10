@@ -494,7 +494,11 @@ mod tests {
         assert_eq!(icon_id("azureopenai"), "codex");
         assert_eq!(icon_id("moonshot"), "kimi");
         assert_eq!(icon_id("alibabatokenplan"), "alibaba");
-        assert!(embedded::PROVIDER_ASSETS.len() >= 107);
+        assert_eq!(icon_id("open-design"), "opendesign");
+        assert!(asset("ProviderIcon-opendesign.svg").is_some());
+        assert!(asset("ProviderIcon-siliconflow.svg").is_some());
+        assert!(asset("ProviderIcon-tripo.svg").is_some());
+        assert!(embedded::PROVIDER_ASSETS.len() >= 110);
         assert_eq!(icon_id("not-in-the-catalog"), "not-in-the-catalog");
     }
 }

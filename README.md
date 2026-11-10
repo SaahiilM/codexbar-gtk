@@ -116,7 +116,9 @@ derived values, plus standard quota-window, extra rate-window, provider cost, de
 provider context (credits/status/error/plan), agent-session and spend payload
 normalization). GTK rendering and the rest of CLI/provider payload normalization
 remain in Python/the CodexBar CLI. The client targets upstream
-CodexBar 0.82.0 provider behavior; the provider catalog remains at 110 providers.
+CodexBar 0.82.0 provider behavior; the current catalog contains 113 providers.
+The provisional upstream v0.84 catalog additions do not change the supported
+CodexBar version or claim complete v0.84 compatibility.
 
 ### Native Rust migration roadmap
 

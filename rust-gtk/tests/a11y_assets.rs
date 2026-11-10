@@ -23,6 +23,43 @@ fn provider_artwork_decodes_outside_repository_cwd_and_keeps_textual_fallback() 
     });
     assert!(claude_texture.width() > 0);
 
+    for (provider_id, artwork) in [
+        (
+            "opendesign",
+            include_bytes!("../../codexbar_gtk/assets/provider_icons/ProviderIcon-opendesign.svg")
+                .as_slice(),
+        ),
+        (
+            "siliconflow",
+            include_bytes!("../../codexbar_gtk/assets/provider_icons/ProviderIcon-siliconflow.svg")
+                .as_slice(),
+        ),
+        (
+            "tripo",
+            include_bytes!("../../codexbar_gtk/assets/provider_icons/ProviderIcon-tripo.svg")
+                .as_slice(),
+        ),
+    ] {
+        let texture = gtk::gdk::Texture::from_bytes(&gtk::glib::Bytes::from_static(artwork))
+            .unwrap_or_else(|error| panic!("GDK failed to decode {provider_id} SVG: {error}"));
+        assert!(texture.width() > 0, "{provider_id} artwork has no width");
+        let mark = codexbar_gtk_native::icons::provider_mark(
+            provider_id,
+            match provider_id {
+                "opendesign" => "OpenDesign",
+                "siliconflow" => "SiliconFlow",
+                _ => "Tripo",
+            },
+            "#202020",
+            30,
+        );
+        assert_eq!(
+            mark.type_().name(),
+            "GtkImage",
+            "{provider_id} mark fallback"
+        );
+    }
+
     let brand = codexbar_gtk_native::icons::provider_mark("codex", "Codex", "#10A37F", 38);
     assert_eq!(brand.type_().name(), "GtkImage");
     assert_eq!(brand.accessible_role(), gtk::AccessibleRole::Presentation);

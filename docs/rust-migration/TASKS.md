@@ -16,6 +16,45 @@ history. A checked box means **verified and merged**, not merely implemented.
 | UI acceptance | E195 records one guarded synthetic Display action; other Wayland controls/navigation remain open. UG is **NOT PASSED** and Python remains the default; see `UG_GATE.md`. |
 | Next | Root owns publication and exact-head CI/review. Continue the separate Wayland action matrix; UG remains **NOT PASSED**, Python remains default, and C01–CG/cutover are not accepted. |
 
+### Focused upstream compatibility claim — UP084-PROVIDERS
+
+Owner: current `orchestrated/luna-upstream084-providers` session, based on the
+observed PR #97 merge `44e5c9b`. **Status: implementation and local verification
+complete; normal merge into the released build-97 main is pending.** This is
+not a C03 gate task. The v0.84.0 tag resolves to `5bebf9a05e68059eae11d5031c7239f1aa1d49ef`;
+its manifest appends OpenDesign, SiliconFlow and Tripo, in that order. The
+verified descriptors record OpenDesign's `open-design` alias and dashboard
+URL, SiliconFlow/Tripo balance-only flags, dashboard URLs, Tripo status URL,
+history/burndown flags, and OpenDesign menu-bar metrics. Prior 110 provider
+entries and their relative order are preserved; Rust and Python now contain
+113 entries and seven aliases. Matching tagged monochrome SVGs are bundled
+with MIT attribution/provenance; no brand-color files exist for these IDs.
+
+The native code uses the existing generic CLI payload, card, tray and settings
+paths; it adds no provider fetching or credentials/login behavior. Synthetic
+dashboard data and disabled `config providers` rows cover all three IDs. Rust
+tests cover normalized names/colors, descriptor details, generic cards/tray,
+asset aliases and brand→monochrome→initial fallback.
+
+Local checks on the pre-merge implementation: rustfmt passed for core/backend/
+gtk; core 87 tests and Clippy passed; backend 87 tests (86 unit + 1 integration)
+and Clippy passed; GTK 38 tests passed, 1 display test skipped by default and
+one negative-loader test skipped by precondition, plus GTK Clippy passed. Both
+display tests were run separately under private X11/Xvfb with private D-Bus and
+passed. Synthetic dashboard and Settings smokes passed; personally inspected
+captures show the three provider cards/artwork and three disabled Settings
+rows. Python default mode passed 285 tests with 21 skips; Rust opt-in passed
+285 tests without skips. The Rust extension was built using the atomic build
+helper. Screenshots/logs remain in `/tmp`; no Wayland, real provider account,
+provider endpoint, credential or login was used. No exact-head CI or gate
+acceptance is claimed.
+
+BUILD98/E201 is now released for this slice, after PR #98 merged build97 at
+`f40307d`; the branch must merge that `origin/main` normally before metadata
+and the global E201 audit entry are finalized. Marketing remains 0.82.0 until
+the warning/login contracts are separately verified. Root owns publication
+and gate decisions; UG remains **NOT PASSED**, Python remains default.
+
 
 **First commands for a new model/session:**
 

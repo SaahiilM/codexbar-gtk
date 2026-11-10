@@ -35,9 +35,15 @@ case "${1-}" in
     : > "$NATIVE_VERSION_DONE"
     ;;
   usage)
-    cat <<'JSON'
-[{"provider":"codex","source":"synthetic","pace":{"primary":{"stage":"slightlyAhead","deltaPercent":18}},"credits":{"remaining":25.5,"creditsAvailable":true,"unit":"credits","events":[{"id":"fixture-credit-1","date":"2026-10-29","service":"synthetic","creditsUsed":8.5},{"id":"fixture-credit-2","date":"2026-10-30","service":"synthetic","creditsUsed":3.25}]},"usage":{"identity":{"accountEmail":"synthetic@example.invalid"},"updatedAt":"2026-10-31T12:00:00Z","primary":{"usedPercent":72.5,"resetsAt":"2026-11-01T18:00:00Z","windowMinutes":300},"secondary":{"usedPercent":0,"resetsAt":"2026-11-05T18:00:00Z","windowMinutes":10080},"details":[{"title":"Synthetic model usage","chart":{"kind":"bars","title":"Tokens by model","unit":"tokens","points":[{"label":"Model A","value":220},{"label":"Model B","value":145},{"label":"Model C","value":80}]}}],"codexResetCredits":{"credits":[{"status":"available","title":"Synthetic reset credit","expiresAt":"2026-11-01T18:00:00Z"}]},"providerCost":{"used":12.5,"limit":100,"currencyCode":"USD","period":"This month","balance":25,"resetsAt":"2026-11-30T00:00:00Z"}}},{"provider":"claude","source":"synthetic","usage":{"extraRateWindows":[{"id":"unknown","title":"Unknown usage","usageKnown":false,"window":{"usedPercent":0,"windowMinutes":300}}]}}]
+    if [ "${NATIVE_DASHBOARD_V084_ONLY:-0}" = "1" ]; then
+      cat <<'JSON'
+[{"provider":"opendesign","source":"synthetic","usage":{"primary":{"usedPercent":38,"windowMinutes":300},"secondary":{"usedPercent":22,"windowMinutes":10080}}},{"provider":"siliconflow","source":"synthetic","usage":{"credits":{"remaining":45,"creditsAvailable":true,"unit":"CNY"}}},{"provider":"tripo","source":"synthetic","usage":{"credits":{"remaining":12,"creditsAvailable":true,"unit":"credits"}}}]
 JSON
+    else
+      cat <<'JSON'
+[{"provider":"codex","source":"synthetic","pace":{"primary":{"stage":"slightlyAhead","deltaPercent":18}},"credits":{"remaining":25.5,"creditsAvailable":true,"unit":"credits","events":[{"id":"fixture-credit-1","date":"2026-10-29","service":"synthetic","creditsUsed":8.5},{"id":"fixture-credit-2","date":"2026-10-30","service":"synthetic","creditsUsed":3.25}]},"usage":{"updatedAt":"2026-10-31T12:00:00Z","primary":{"usedPercent":72.5,"resetsAt":"2026-11-01T18:00:00Z","windowMinutes":300},"secondary":{"usedPercent":0,"resetsAt":"2026-11-05T18:00:00Z","windowMinutes":10080},"details":[{"title":"Synthetic model usage","chart":{"kind":"bars","title":"Tokens by model","unit":"tokens","points":[{"label":"Model A","value":220},{"label":"Model B","value":145},{"label":"Model C","value":80}]}}],"codexResetCredits":{"credits":[{"status":"available","title":"Synthetic reset credit","expiresAt":"2026-11-01T18:00:00Z"}]},"providerCost":{"used":12.5,"limit":100,"currencyCode":"USD","period":"This month","balance":25,"resetsAt":"2026-11-30T00:00:00Z"}}},{"provider":"claude","source":"synthetic","usage":{"extraRateWindows":[{"id":"unknown","title":"Unknown usage","usageKnown":false,"window":{"usedPercent":0,"windowMinutes":300}}]}},{"provider":"opendesign","source":"synthetic","usage":{"primary":{"usedPercent":38,"windowMinutes":300},"secondary":{"usedPercent":22,"windowMinutes":10080}}},{"provider":"siliconflow","source":"synthetic","credits":{"remaining":45,"creditsAvailable":true,"unit":"CNY"}},{"provider":"tripo","source":"synthetic","credits":{"remaining":12,"creditsAvailable":true,"unit":"credits"}}]
+JSON
+    fi
     : > "$NATIVE_USAGE_DONE"
     ;;
   cost)

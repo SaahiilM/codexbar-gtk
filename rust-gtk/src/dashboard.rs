@@ -1293,6 +1293,61 @@ mod tests {
     }
 
     #[test]
+    fn v084_catalog_providers_project_as_generic_native_cards() {
+        let payloads = [
+            json!({
+                "provider": "opendesign",
+                "source": "synthetic",
+                "usage": {"primary": {"usedPercent": 38, "windowMinutes": 300}}
+            }),
+            json!({
+                "provider": "siliconflow",
+                "source": "synthetic",
+                "usage": {"credits": {"remaining": 45, "creditsAvailable": true, "unit": "CNY"}}
+            }),
+            json!({
+                "provider": "tripo",
+                "source": "synthetic",
+                "usage": {"credits": {"remaining": 12, "creditsAvailable": true, "unit": "credits"}}
+            }),
+        ];
+        let providers = payloads
+            .iter()
+            .map(|payload| {
+                codexbar_core::domain::provider_usage_from_value(payload)
+                    .unwrap()
+                    .unwrap()
+            })
+            .collect();
+        let model = project_dashboard(
+            &state(BackendStatus::Ready, Some(snapshot(providers))),
+            &Map::new(),
+            &CurrencyCatalog::default(),
+            Utc::now(),
+        );
+        assert_eq!(
+            model
+                .providers
+                .iter()
+                .map(|card| (
+                    card.provider_id.as_str(),
+                    card.name.as_str(),
+                    card.accent.as_str()
+                ))
+                .collect::<Vec<_>>(),
+            [
+                ("opendesign", "OpenDesign", "#202020"),
+                ("siliconflow", "SiliconFlow", "#6E29F5"),
+                ("tripo", "Tripo", "#F8CF00"),
+            ]
+        );
+        assert!(model
+            .providers
+            .iter()
+            .all(|card| !card.subtitle.contains('@')));
+    }
+
+    #[test]
     fn spend_partial_caption_and_unknown_state_are_preserved() {
         let prefs = Map::new();
         let catalog = CurrencyCatalog::default();

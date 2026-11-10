@@ -1341,6 +1341,24 @@ mod tests {
     }
 
     #[test]
+    fn v084_provider_metadata_reaches_generic_tray_projection() {
+        let provider = codexbar_core::domain::provider_usage_from_value(&json!({
+            "provider": "tripo",
+            "source": "synthetic",
+            "usage": {"primary": {"usedPercent": 62, "windowMinutes": 300}}
+        }))
+        .unwrap()
+        .unwrap();
+        let state = tray_state(snapshot(vec![provider], None));
+        let result = tray_summary(&state, &tray_request("first", "progress"));
+
+        assert_eq!(result.selected_provider_id.as_deref(), Some("tripo"));
+        assert_eq!(result.title, "CodexBar GTK · Tripo");
+        assert_eq!(result.accent_color.as_deref(), Some("#F8CF00"));
+        assert_eq!(result.initial.as_deref(), Some("T"));
+    }
+
+    #[test]
     fn automatic_unknown_selection_is_unavailable_not_known_zero() {
         let snapshot = tray_state(snapshot(
             vec![provider(

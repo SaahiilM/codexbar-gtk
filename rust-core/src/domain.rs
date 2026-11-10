@@ -2481,6 +2481,29 @@ mod tests {
     }
 
     #[test]
+    fn v084_provider_ids_normalize_to_catalog_names_and_accents() {
+        for (id, name, color) in [
+            ("opendesign", "OpenDesign", "#202020"),
+            ("siliconflow", "SiliconFlow", "#6E29F5"),
+            ("tripo", "Tripo", "#F8CF00"),
+            ("open-design", "OpenDesign", "#202020"),
+        ] {
+            let provider = provider_usage_from_value(&json!({
+                "provider": id,
+                "usage": {
+                    "primary": {"usedPercent": 25, "windowMinutes": 300}
+                }
+            }))
+            .unwrap()
+            .unwrap();
+            assert_eq!(provider.display_name, name, "{id}");
+            assert_eq!(provider.accent_color, color, "{id}");
+            assert_eq!(provider.windows[0].used_percent, 25.0, "{id}");
+            assert!(provider.windows[0].usage_known, "{id}");
+        }
+    }
+
+    #[test]
     fn shared_b10_provider_fixture_normalizes_full_envelope() {
         let payload: Value =
             serde_json::from_str(include_str!("../../tests/fixtures/b10/provider_usage.json"))

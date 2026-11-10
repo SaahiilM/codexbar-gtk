@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import threading
 
-from gi.repository import Adw, GLib, Gtk
+from gi.repository import Adw, Gio, GLib, Gtk
 
 from .. import login
 
@@ -23,7 +23,10 @@ class LoginDialog(Adw.Window):
         self.set_default_size(520, 320)
         self.set_modal(True)
         self.provider = provider
-        self.session = login.ClaudeLoginSession()
+        controller = getattr(parent, "controller", None)
+        self.session = login.ClaudeLoginSession(controller=controller)
+        self._last_url: str | None = None
+        self._last_needs_code = False
 
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
         box.set_margin_top(18)
@@ -71,25 +74,25 @@ class LoginDialog(Adw.Window):
     # -- flow --------------------------------------------------------------
 
     def start(self) -> None:
-        def on_url(url: str) -> None:
-            GLib.idle_add(self._set_url, url)
-
-        def on_output(text: str) -> None:
-            if "Paste code here" in text:
-                GLib.idle_add(self._need_code)
-
-        def finished() -> None:
-            result = self.session.result
-            if result is not None:
-                GLib.idle_add(self._finished, result)
+        GLib.timeout_add(75, self._poll_session)
 
         def run() -> None:
             self.session.start()
-            self.session.wait()
-            finished()
+            result = self.session.wait()
+            if result is not None:
+                GLib.idle_add(self._finished, result)
 
         self._thread = threading.Thread(target=run, name="login-dialog", daemon=True)
         self._thread.start()
+
+    def _poll_session(self) -> bool:
+        if self.session.url and self.session.url != self._last_url:
+            self._last_url = self.session.url
+            self._set_url(self.session.url)
+        if self.session.needs_code and not self._last_needs_code:
+            self._last_needs_code = True
+            self._need_code()
+        return self.session.result is None
 
     def _set_url(self, url: str) -> None:
         self.url_entry.set_text(url)
@@ -102,7 +105,13 @@ class LoginDialog(Adw.Window):
     def _open_browser(self) -> None:
         url = self.url_entry.get_text()
         if url and url.startswith("http"):
-            login.open_in_browser(url)
+            if self.session._rust_mode:
+                try:
+                    Gio.AppInfo.launch_default_for_uri(url, None)
+                except GLib.Error:
+                    self.status_label.set_text("Could not open the browser")
+            else:
+                login.open_in_browser(url)
 
     def _copy_link(self) -> None:
         url = self.url_entry.get_text()

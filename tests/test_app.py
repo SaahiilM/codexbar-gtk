@@ -11,12 +11,15 @@ are recorded fixtures.
 from __future__ import annotations
 
 import json
+from http.server import BaseHTTPRequestHandler, HTTPServer
 import os
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -41,7 +44,13 @@ from codexbar_gtk.data import (
 from codexbar_gtk.history import HistoryStore, Sample
 from codexbar_gtk.login import terminal_command_argv
 from codexbar_gtk.prefs import Preferences
-from codexbar_gtk.updates import parse_version_file, version_key
+from codexbar_gtk.updates import (
+    UpdateCheckError,
+    UpdateCheckRequest,
+    check_for_update,
+    parse_version_file,
+    version_key,
+)
 
 FIXTURES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures")
 
@@ -545,6 +554,36 @@ class CLITests(unittest.TestCase):
 
 
 class ControllerTests(unittest.TestCase):
+    def test_history_records_known_zero_but_skips_unknown_and_placeholder_windows(self):
+        with tempfile.TemporaryDirectory() as folder:
+            controller = Controller(Preferences(os.path.join(folder, "settings.json")), object())
+            controller.history = HistoryStore(os.path.join(folder, "history.jsonl"))
+            provider = provider_usage_from_payload(CODEX_PAYLOAD)
+            provider.windows = [
+                RateWindow(key="known-zero", title="Known zero", used_percent=0),
+                RateWindow(
+                    key="unknown", title="Unknown", used_percent=0, usage_known=False
+                ),
+                RateWindow(
+                    key="placeholder",
+                    title="Placeholder",
+                    used_percent=0,
+                    is_placeholder=True,
+                ),
+                RateWindow(
+                    key="non-finite",
+                    title="Non-finite",
+                    used_percent=float("nan"),
+                ),
+            ]
+            controller.state.providers = [provider]
+
+            controller._record_history()
+
+            samples = controller.history.read_all()
+            self.assertEqual([(sample.window, sample.used_percent) for sample in samples],
+                             [("known-zero", 0.0)])
+
     def test_refresh_fills_the_state(self):
         with tempfile.TemporaryDirectory() as folder:
             prefs = Preferences(os.path.join(folder, "settings.json"))
@@ -857,6 +896,29 @@ class TraySelectionTests(unittest.TestCase):
     def test_without_usable_windows_there_is_no_selection(self):
         self.assertIsNone(automatic_tray_selection([], now=self.NOW))
 
+    def test_unknown_usage_does_not_masquerade_as_known_zero(self):
+        unknown = self._provider("unknown", [self._window("primary", 0)])
+        unknown.windows[0].usage_known = False
+        known_zero = self._provider("known-zero", [self._window("primary", 0)])
+
+        with patch("codexbar_gtk.controller.extension", return_value=None):
+            self.assertIsNone(automatic_tray_selection([unknown], now=self.NOW))
+            selected = automatic_tray_selection([unknown, known_zero], now=self.NOW)
+
+        self.assertIsNotNone(selected)
+        self.assertIs(selected[0], known_zero)
+
+    def test_errored_provider_is_ineligible_but_known_zero_remains_selectable(self):
+        errored = self._provider("errored", [self._window("primary", 100)])
+        errored.error = "fixture error"
+        known_zero = self._provider("known-zero", [self._window("primary", 0)])
+
+        with patch("codexbar_gtk.controller.extension", return_value=None):
+            selected = automatic_tray_selection([errored, known_zero], now=self.NOW)
+
+        self.assertIsNotNone(selected)
+        self.assertIs(selected[0], known_zero)
+
 
 class PaceWarningTests(unittest.TestCase):
     """Predictive pace notifications, mirroring macOS PredictivePaceWarnings."""
@@ -1078,9 +1140,79 @@ class UpdateCheckTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             parse_version_file("MARKETING_VERSION=next\nCURRENT_PROJECT_VERSION=4\n")
 
+    def test_python_unicode_digit_characterization_is_preserved(self):
+        self.assertEqual(
+            parse_version_file("MARKETING_VERSION=0.⁸².0\nCURRENT_PROJECT_VERSION=4\n"),
+            ("0.⁸².0", 4),
+        )
+        with self.assertRaises(ValueError):
+            version_key("0.⁸².0", 4)
+        with self.assertRaises(ValueError):
+            parse_version_file("MARKETING_VERSION=0.82.0\nCURRENT_PROJECT_VERSION=⁴\n")
+
     def test_versions_compare_numerically_then_by_build(self):
         self.assertGreater(version_key("0.81.0", 1), version_key("0.80.99", 99))
         self.assertGreater(version_key("0.81.0", 4), version_key("0.81.0", 3))
+
+    def _check_fixture(self, body: bytes, status: int = 200):
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(status)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *_args):
+                pass
+
+        server = HTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        return f"http://127.0.0.1:{server.server_port}/VERSION", server, thread
+
+    def test_unicode_decimal_digits_match_python_int_and_numeric_ordering(self):
+        self.assertEqual(
+            parse_version_file(
+                "MARKETING_VERSION=٠.٨٢.٠\nCURRENT_PROJECT_VERSION=٤\n"
+            ),
+            ("٠.٨٢.٠", 4),
+        )
+        self.assertEqual(version_key("０.８２.０", 4), version_key("0.82.0", 4))
+        url, server, thread = self._check_fixture(
+            "MARKETING_VERSION=０.８２.０\nCURRENT_PROJECT_VERSION=８\n".encode()
+        )
+        try:
+            result = check_for_update(UpdateCheckRequest("٠.٨٢.٠", 7, url=url))
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=1)
+        self.assertEqual((result.relation, result.latest_version, result.latest_build),
+                         ("available", "０.８２.０", 8))
+
+    def test_service_sanitizes_invalid_oversized_and_network_failures(self):
+        cases = [
+            ("MARKETING_VERSION=0.82.0\nCURRENT_PROJECT_VERSION=⁴\n".encode(), 200, "invalid_marker"),
+            (b"x" * 4097, 200, "oversized"),
+            (b"", 503, "network"),
+        ]
+        for body, status, expected_kind in cases:
+            with self.subTest(kind=expected_kind):
+                url, server, thread = self._check_fixture(body, status)
+                try:
+                    with self.assertRaises(UpdateCheckError) as raised:
+                        check_for_update(UpdateCheckRequest("0.82.0", 7, url=url))
+                finally:
+                    server.shutdown()
+                    server.server_close()
+                    thread.join(timeout=1)
+                self.assertEqual(raised.exception.kind, expected_kind)
+        with self.assertRaises(UpdateCheckError) as raised:
+            check_for_update(UpdateCheckRequest("0.82.0", 7, url="http://127.0.0.1:0/VERSION"))
+        self.assertEqual(raised.exception.kind, "network")
+        with self.assertRaises(UpdateCheckError) as raised:
+            check_for_update(UpdateCheckRequest("0.82.0", 7, timeout=float("nan")))
+        self.assertEqual(raised.exception.kind, "timeout")
 
 
 class SparklineGeometryTests(unittest.TestCase):
@@ -1147,9 +1279,23 @@ class ActivityHeatmapTests(unittest.TestCase):
 
 
 class MonthlyDailyTargetTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls._original_tz = os.environ.get("TZ")
+        os.environ["TZ"] = "America/New_York"
+        time.tzset()
+
+    @classmethod
+    def tearDownClass(cls):
+        if cls._original_tz is None:
+            os.environ.pop("TZ", None)
+        else:
+            os.environ["TZ"] = cls._original_tz
+        time.tzset()
+
     @staticmethod
     def _local(*args):
-        return datetime(*args, tzinfo=datetime.now().astimezone().tzinfo)
+        return datetime(*args, tzinfo=ZoneInfo("America/New_York"))
 
     def test_only_month_long_windows_count(self):
         from codexbar_gtk.pace import is_monthly_window

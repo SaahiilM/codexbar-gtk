@@ -1,0 +1,92 @@
+{
+  "provider": "codex",
+  "source": "synthetic-fixture",
+  "version": "0.82.0",
+  "rateWindowLabels": {
+    "primary": "5h",
+    "secondary": "Weekly"
+  },
+  "usage": {
+    "updatedAt": "2026-10-30T12:00:00Z",
+    "primary": {
+      "usedPercent": 0,
+      "resetsAt": "2026-10-30T17:00:00Z",
+      "windowMinutes": 300,
+      "quotaLimit": 100,
+      "quotaUnit": "requests"
+    },
+    "secondary": {
+      "windowMinutes": 10080
+    },
+    "extraRateWindows": [
+      {
+        "id": "credits",
+        "title": "Credits",
+        "window": {
+          "usedPercent": 25,
+          "windowMinutes": 1440,
+          "quotaUnit": "credits"
+        }
+      }
+    ],
+    "identity": {
+      "accountEmail": "synthetic@example.invalid",
+      "loginMethod": "oauth",
+      "plan": "Pro"
+    },
+    "credits": {
+      "remaining": 0,
+      "creditsAvailable": true,
+      "events": [
+        {"id": "fixture-event", "date": "2026-10-29", "service": "test", "creditsUsed": 2}
+      ]
+    },
+    "providerCost": {
+      "used": 2.5,
+      "limit": 10,
+      "currencyCode": "USD",
+      "period": "month-to-date",
+      "resetsAt": "2026-11-01T00:00:00Z"
+    },
+    "codexResetCredits": {
+      "availableCount": 1,
+      "credits": [
+        {
+          "title": "Synthetic reset credit",
+          "grantedAt": "2026-10-29T12:00:00Z",
+          "expiresAt": "2026-11-01T12:00:00Z",
+          "description": "Fixture only"
+        }
+      ]
+    },
+    "details": [
+      {
+        "title": "Synthetic detail",
+        "rows": [
+          {"label": "Requests", "value": "0 / 100", "secondaryValue": "Fixture", "progress": {"usedPercent": 0}, "severity": "normal"}
+        ],
+        "chart": {
+          "kind": "bars",
+          "title": "Synthetic chart",
+          "unit": "requests",
+          "points": [{"label": "Today", "value": 1.5}]
+        }
+      }
+    ]
+  },
+  "pace": {
+    "primary": {
+      "stage": "onTrack",
+      "deltaPercent": 0,
+      "expectedUsedPercent": 30,
+      "willLastToReset": true,
+      "etaSeconds": null,
+      "runOutProbability": 0,
+      "summary": "Synthetic pace"
+    }
+  },
+  "status": {
+    "indicator": "ok",
+    "description": "Synthetic status"
+  }
+}

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 import math
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 from datetime import datetime, timezone
 
@@ -21,6 +23,9 @@ from codexbar_gtk.data import (
     _optional_int,
     parse_timestamp,
 )
+from codexbar_gtk.rust_bridge import extension
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 class DomainPrimitiveIntegrationTests(unittest.TestCase):
@@ -32,7 +37,7 @@ class DomainPrimitiveIntegrationTests(unittest.TestCase):
                 2026, 10, 21, 14, 56, 53, 125000, tzinfo=timezone.utc
             ),
             "2026-10-21": datetime(2026, 10, 21, tzinfo=timezone.utc),
-            # Python accepts this basic form; it exercises the compatibility fallback.
+            # Basic ISO date/time is parsed directly by the Rust contract.
             "20261021T145653": datetime(2026, 10, 21, 14, 56, 53, tzinfo=timezone.utc),
         }
         for value, expected in cases.items():
@@ -42,7 +47,10 @@ class DomainPrimitiveIntegrationTests(unittest.TestCase):
             with self.subTest(value=value):
                 self.assertIsNone(parse_timestamp(value))
 
-    def test_optional_number_contract_preserves_python_fallbacks(self):
+    def test_optional_number_contract_characterizes_large_integers(self):
+        limits = json.loads(
+            (ROOT / "tests/fixtures/b15/numeric_boundaries.json").read_text()
+        )
         self.assertEqual(_optional_float(12), 12.0)
         self.assertEqual(_optional_float(12.5), 12.5)
         self.assertIsNone(_optional_float(True))
@@ -52,10 +60,86 @@ class DomainPrimitiveIntegrationTests(unittest.TestCase):
         self.assertEqual(_optional_int(12.0), 12)
         self.assertIsNone(_optional_int(12.5))
         self.assertIsNone(_optional_int(True))
-        # Python's float-then-int behavior is intentionally kept for values
-        # outside the Rust i64 duration range.
-        self.assertEqual(_optional_int(2**70), 2**70)
         self.assertIsNone(_optional_int(math.inf))
+
+        import importlib
+
+        try:
+            core = importlib.import_module("codexbar_gtk._rust_core")
+        except ImportError:
+            core = None
+        rounded = limits["optional_int_rounding_result"]
+        with patch("codexbar_gtk.data.extension", return_value=None):
+            self.assertEqual(
+                _optional_int(limits["optional_int_rounding_input"]), rounded
+            )
+            self.assertEqual(
+                _optional_int(limits["wide_optional_int"]),
+                limits["wide_optional_int"],
+            )
+            self.assertEqual(
+                _optional_int(limits["optional_int_max_i64_input"]),
+                int(float(limits["optional_int_max_i64_input"])),
+            )
+            self.assertIsNone(_optional_int(10**1000))
+        if core is not None:
+            with patch("codexbar_gtk.data.extension", return_value=core):
+                self.assertEqual(
+                    _optional_int(limits["optional_int_rounding_input"]), rounded
+                )
+                with self.assertRaisesRegex(OverflowError, "signed 64-bit"):
+                    _optional_int(limits["wide_optional_int"])
+                with self.assertRaisesRegex(OverflowError, "signed 64-bit"):
+                    _optional_int(limits["optional_int_max_i64_input"])
+                self.assertIsNone(_optional_int(10**1000))
+
+        wide_window = RateWindow("wide", "Wide", window_minutes=2**70)
+        with patch("codexbar_gtk.data.extension", return_value=None):
+            self.assertEqual(wide_window.duration_label, f"{2**70}m window")
+        if core is not None:
+            with patch("codexbar_gtk.data.extension", return_value=core):
+                with self.assertRaises(OverflowError):
+                    _ = wide_window.duration_label
+
+    def test_timestamp_shapes_match_python_reference(self):
+        from unittest.mock import patch
+
+        import importlib
+
+        try:
+            core = importlib.import_module("codexbar_gtk._rust_core")
+        except ImportError:
+            self.skipTest("build the extension with scripts/build-rust-core.sh")
+        values = (
+            "2026-10-21T16:56:53+02:00:30",
+            "2026-10-21T16:56:53,125+02:00:30.5",
+            "2026-10-21T16:56:53.123456789012+02:00:30.123456789",
+            "20261021T145653",
+            "2026-W43-3",
+            "2026W433",
+            "2026-W43",
+            "2026W43",
+            "2026-10-21x14:56",
+            "2026-10-21T12",
+            "2026-10-21T12:30.5",
+            "2026-10-21T1230,5",
+            "2026-10-21T12:30:45+01:30.5",
+            "2026-10-21T12:30:45+01.5",
+            "2026-10-21T12:30:45-00:00:00.999999",
+            "2026-10-21🐢12:30:45Z",
+        )
+        for value in values:
+            with self.subTest(value=value):
+                expected = datetime.fromisoformat(value)
+                if expected.tzinfo is None:
+                    expected = expected.replace(tzinfo=timezone.utc)
+                expected = expected.astimezone(timezone.utc)
+                with patch("codexbar_gtk.data.extension", return_value=None):
+                    python_value = parse_timestamp(value)
+                with patch("codexbar_gtk.data.extension", return_value=core):
+                    rust_value = parse_timestamp(value)
+                self.assertEqual(rust_value, expected)
+                self.assertEqual(rust_value, python_value)
 
     def test_pace_payload_normalization_keeps_valid_values_and_python_fallbacks(self):
         parsed = provider_usage_from_payload(
@@ -496,6 +580,34 @@ class DomainPrimitiveIntegrationTests(unittest.TestCase):
         self.assertEqual(RateWindow("bad", "Bad", used_percent=math.nan).remaining_percent, 0)
 
 class SpendAggregationTests(unittest.TestCase):
+    def test_large_counts_keep_python_range_and_rust_reports_i64_limit(self):
+        import importlib
+        limits = json.loads(
+            (ROOT / "tests/fixtures/b15/numeric_boundaries.json").read_text()
+        )
+
+        payloads = [
+            {"provider": f"provider-{index}", "totalTokens": value}
+            for index, value in enumerate(limits["counter_aggregate_inputs"])
+        ]
+        with patch("codexbar_gtk.data.extension", return_value=None):
+            python_summary = spend_from_payloads(payloads)
+        self.assertEqual(
+            python_summary.total_tokens, limits["counter_aggregate_python_result"]
+        )
+
+        try:
+            core = importlib.import_module("codexbar_gtk._rust_core")
+        except ImportError:
+            self.skipTest("build the extension with scripts/build-rust-core.sh")
+        with patch("codexbar_gtk.data.extension", return_value=core):
+            with self.assertRaisesRegex(OverflowError, "spend counters must fit in signed 64-bit"):
+                spend_from_payloads(payloads)
+            with self.assertRaisesRegex(OverflowError, "spend counters must fit in signed 64-bit"):
+                spend_from_payloads(
+                    [{"provider": "wide", "totalTokens": limits["wide_optional_int"]}]
+                )
+
     def test_spend_aggregation_matches_python_reference(self):
         payloads = [
             {

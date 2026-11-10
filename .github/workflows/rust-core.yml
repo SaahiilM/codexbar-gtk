@@ -8,6 +8,21 @@ on:
       - "rust-core/**"
       - "rust-python/**"
       - "rust-backend/**"
+      - "rust-gtk/**"
+      - "codexbar_gtk/assets/provider_icons/**"
+      - "scripts/smoke-native-gtk.sh"
+      - "scripts/smoke-native-dashboard.sh"
+      - "scripts/smoke-native-wayland-assets.sh"
+      - "scripts/smoke-native-usage-pages.sh"
+      - "scripts/smoke-native-settings.sh"
+      - "scripts/build-native.sh"
+      - "scripts/install-native.sh"
+      - "scripts/smoke-native-install.sh"
+      - "scripts/native/**"
+      - "rust-gtk/tests/python_free_linkage.rs"
+      - "rust-gtk/tests/svg_loader_negative.rs"
+      - "scripts/native/render_activation.py"
+      - "scripts/capture-native-gtk-wayland.sh"
       - "codexbar_gtk/providers.py"
       - "codexbar_gtk/activity.py"
       - "codexbar_gtk/format.py"
@@ -41,15 +56,26 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+      - name: Install native GTK build and smoke dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libgtk-4-dev libadwaita-1-dev librsvg2-common xvfb xauth xdotool x11-utils x11-apps xfwm4 ffmpeg libglib2.0-bin dbus-daemon python3-dbus python3-gi
       - name: Check Rust formatting
         run: |
           cargo fmt --manifest-path rust-core/Cargo.toml -- --check
           cargo fmt --manifest-path rust-python/Cargo.toml -- --check
           cargo fmt --manifest-path rust-backend/Cargo.toml -- --check
+          cargo fmt --manifest-path rust-gtk/Cargo.toml -- --check
       - name: Run Rust core tests
         run: cargo test --manifest-path rust-core/Cargo.toml --locked
       - name: Run headless backend contract tests
         run: cargo test --manifest-path rust-backend/Cargo.toml --locked
+      - name: Test native GTK bootstrap contracts
+        run: dbus-run-session -- cargo test --manifest-path rust-gtk/Cargo.toml --locked
+      - name: Test provider artwork decode fallback on X11
+        run: xvfb-run -a dbus-run-session -- cargo test --manifest-path rust-gtk/Cargo.toml --locked --lib provider_artwork_prefers_decodable_brand_then_monochrome_then_label -- --ignored
+      - name: Smoke provider artwork decoding and accessibility roles on X11
+        run: xvfb-run -a dbus-run-session -- cargo test --manifest-path rust-gtk/Cargo.toml --locked --test a11y_assets -- --ignored
       - name: Build PyO3 extension
         run: ./scripts/build-rust-core.sh
       - name: Run Python tests with default backend
@@ -61,3 +87,26 @@ jobs:
           cargo clippy --manifest-path rust-core/Cargo.toml --all-targets --all-features -- -D warnings
           cargo clippy --manifest-path rust-python/Cargo.toml --all-targets --all-features -- -D warnings
           cargo clippy --manifest-path rust-backend/Cargo.toml --all-targets --all-features -- -D warnings
+          cargo clippy --manifest-path rust-gtk/Cargo.toml --all-targets -- -D warnings
+      - name: Build native GTK application
+        run: cargo build --manifest-path rust-gtk/Cargo.toml --locked --bin codexbar-gtk-native
+      - name: Exercise Gio routing and async in-flight shutdown
+        run: ./scripts/smoke-native-gtk.sh
+      - name: Exercise SNI panel toggle/open semantics and refresh preference
+        run: ./scripts/smoke-native-panel-parity.sh
+      - name: Exercise the native dashboard with synthetic provider data
+        run: ./scripts/smoke-native-dashboard.sh
+      - name: Exercise native dashboard keyboard navigation at 2x display scale
+        run: NATIVE_GTK_SCALE=2 ./scripts/smoke-native-dashboard.sh
+      - name: Exercise native Spend and Sessions with synthetic data
+        run: ./scripts/smoke-native-usage-pages.sh
+      - name: Build native release artifact (C01 prototype)
+        run: |
+          cargo build --manifest-path rust-gtk/Cargo.toml --locked --release --bin codexbar-gtk-native
+      - name: Exercise isolated native install/uninstall/upgrade/rollback smoke
+        run: ./scripts/smoke-native-install.sh
+      - name: Verify native binary has no Python linkage (linkage inspection only, C02 unproven)
+        run: cargo test --manifest-path rust-gtk/Cargo.toml --locked --test python_free_linkage
+      # Keep the comprehensive Settings smoke available for local verification.
+      # Its fixed-coordinate native file chooser interaction failed twice in
+      # CI at different points; the other native GTK Xvfb smokes remain enabled.

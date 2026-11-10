@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import unicodedata
 from pathlib import Path
 
 from codexbar_gtk import providers
@@ -103,3 +104,78 @@ print(json.dumps({
             )
         self.assertNotEqual(completed.returncode, 0)
         self.assertIn("run scripts/build-rust-core.sh first", completed.stderr)
+
+    def test_unknown_unicode_provider_titles_match_python_titlecase(self) -> None:
+        import importlib
+        from unittest.mock import patch
+
+        core = importlib.import_module("codexbar_gtk._rust_core")
+        provider_ids = (
+            "ß-provider",
+            "ǆ-provider",
+            "ǅFOO",
+            "ǈFOO",
+            "ǋFOO",
+            "ǲFOO",
+            "λ-provider",
+            "provider-猫",
+            "ΟΣ-provider",
+            "ΟΣΑ-provider",
+            "aΣ\u0301a",
+            "ΟΣ\u0301Α",
+            "AΣ.B",
+            "fooʼbar",
+        )
+        with patch.object(providers, "_RUST_CORE", None):
+            expected = [providers.display_name(provider_id) for provider_id in provider_ids]
+        with patch.object(providers, "_RUST_CORE", core):
+            actual = [providers.display_name(provider_id) for provider_id in provider_ids]
+        self.assertEqual(actual, expected)
+
+    def test_unicode_15_case_mappings_match_python_312_exhaustively(self) -> None:
+        """Keep Rust fallback casing aligned with the Python 3.12 UCD."""
+        import importlib
+        from unittest.mock import patch
+
+        if unicodedata.unidata_version != "15.0.0":
+            self.skipTest(
+                f"fixture targets Python 3.12 Unicode 15.0, got {unicodedata.unidata_version}"
+            )
+
+        core = importlib.import_module("codexbar_gtk._rust_core")
+        cased = []
+        for codepoint in range(0x110000):
+            character = chr(codepoint)
+            if character.islower() or character.isupper() or character.istitle():
+                cased.append(character)
+        with patch.object(providers, "_RUST_CORE", core):
+            for character in cased:
+                self.assertEqual(
+                    providers.display_name(character),
+                    character.title(),
+                    f"single-character titlecase U+{ord(character):04X}",
+                )
+                context = "A" + character
+                self.assertEqual(
+                    providers.display_name(context),
+                    context.title(),
+                    f"contextual lowercase U+{ord(character):04X}",
+                )
+
+            case_ignorable = (
+                "\u0301",  # Mn: COMBINING ACUTE ACCENT
+                "\u20dd",  # Me: COMBINING ENCLOSING CIRCLE
+                "\u00ad",  # Cf: SOFT HYPHEN
+                "\u02bc",  # Lm / MidLetter: MODIFIER LETTER APOSTROPHE
+                "^",  # Sk: CIRCUMFLEX ACCENT
+                ":",  # MidLetter
+                "'",  # Single_Quote
+            )
+            not_case_ignorable = (",", ".", ";")
+            for character in (*case_ignorable, *not_case_ignorable):
+                context = "A\u03a3" + character + "A"
+                self.assertEqual(
+                    providers.display_name(context),
+                    context.title(),
+                    f"final-sigma context around U+{ord(character):04X}",
+                )

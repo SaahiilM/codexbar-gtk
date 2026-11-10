@@ -20,6 +20,8 @@ def _candidate_paths() -> list[str]:
     here = os.path.dirname(os.path.abspath(__file__))
     roots = [
         os.path.join(here, "..", "..", ".deps"),
+        # The user install keeps its private bridge next to the copied package.
+        os.path.join(here, "..", "..", "deps"),
         os.path.join(here, "..", "deps"),
         os.path.join(here, "deps"),
         os.path.expanduser("~/.local/share/codexbar-gtk/deps"),

@@ -6,11 +6,6 @@
 use chrono::{DateTime, Local, NaiveTime, Utc};
 
 pub const MONTHLY_DAYS: [i64; 4] = [28, 29, 30, 31];
-pub const CURRENCY_CODES: [&str; 29] = [
-    "USD", "GBP", "EUR", "CZK", "CNY", "JPY", "KRW", "CAD", "AUD", "HKD", "TWD", "SGD", "INR",
-    "CHF", "AED", "TRY", "NZD", "SEK", "NOK", "DKK", "PLN", "BRL", "MXN", "ZAR", "THB", "IDR",
-    "VND", "UAH", "ILS",
-];
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct AllowanceWindow {
@@ -172,7 +167,10 @@ where
         format!("{} requests", format_number(target))
     } else {
         let source = normalized.to_uppercase();
-        if !CURRENCY_CODES.contains(&source.as_str()) {
+        if !crate::currency::CURRENCIES
+            .iter()
+            .any(|(code, _, _)| *code == source)
+        {
             return None;
         }
         let preferred = if preferred_currency.is_empty() {

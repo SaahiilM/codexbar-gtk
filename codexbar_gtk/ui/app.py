@@ -9,13 +9,18 @@ import threading
 
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk
 
-from .. import APP_ID, currency, display_string
+from .. import APP_ID, display_string
 from ..cli import CodexBarCLI
-from ..controller import Controller, automatic_tray_selection
+from ..controller import Controller
 from ..format import compact_window_label
 from ..prefs import Preferences
 from ..startup import wait_for_display
-from ..updates import PROJECT_URL, check_latest_version, version_key
+from ..updates import (
+    PROJECT_URL,
+    UpdateCheckError,
+    UpdateCheckRequest,
+    UpdateCheckResult,
+)
 from ..version import BUILD, SHORT_VERSION
 from . import icons
 from .popup import PopupWindow
@@ -55,6 +60,9 @@ class CodexBarApp(Adw.Application):
         self._pending_refresh = False
         self.extra_args: list[str] = []
         self._show_panel_when_ready = False
+        self._rust_spend_view_model: dict | None = None
+        self._rust_tray_summary: dict | None = None
+        self._update_dialog = None
 
     # -- lifecycle --------------------------------------------------------
 
@@ -67,7 +75,7 @@ class CodexBarApp(Adw.Application):
 
         self.controller.subscribe(self._on_state)
         self.controller.start()
-        currency.shared().ensure_rates(
+        self.controller.ensure_rates(
             str(self.prefs.get("preferredCurrencyCode") or "auto")
         )
 
@@ -77,6 +85,10 @@ class CodexBarApp(Adw.Application):
             self._apply_state(self.controller.state)
 
         GLib.timeout_add_seconds(TICK_SECONDS, self._tick)
+        if self.controller.uses_rust_controller:
+            # The Rust watch is polled without blocking the GTK main loop;
+            # callbacks and notification delivery stay on this thread.
+            GLib.timeout_add(250, self.controller.poll)
 
     def do_command_line(self, command_line: Gio.ApplicationCommandLine) -> int:
         """Handle our own flags.
@@ -129,8 +141,15 @@ class CodexBarApp(Adw.Application):
                 self.prefs,
                 self.controller.history,
                 on_open_settings=self._open_settings,
+                rust_presentation=self.controller.uses_rust_controller,
             )
             self.main_window.connect("close-request", self._on_main_closed)
+            if (
+                self._rust_spend_view_model is not None
+                and self._rust_spend_view_model.get("backend_sequence")
+                == self.controller.state.backend_sequence
+            ):
+                self.main_window.update_spend_projection(self._rust_spend_view_model)
         return self.main_window
 
     def _ensure_settings_window(self) -> SettingsWindow:
@@ -189,6 +208,9 @@ class CodexBarApp(Adw.Application):
 
     def _do_refresh(self) -> bool:
         self._pending_refresh = False
+        if self.controller.uses_rust_controller:
+            self.controller.refresh(force=True)
+            return False
         threading.Thread(
             target=self.controller.refresh,
             kwargs={"force": True},
@@ -248,6 +270,21 @@ class CodexBarApp(Adw.Application):
 
     def _restart(self) -> None:
         """Restart through the installed user unit, or re-exec in dev runs."""
+        if self.controller.uses_rust_controller:
+            def restart() -> None:
+                try:
+                    result = self.controller.restart_application()
+                    succeeded = result.get("mode") in {
+                        "systemd_restart_requested",
+                        "process_relaunch_started",
+                    }
+                except Exception:
+                    succeeded = False
+                GLib.idle_add(self._finish_rust_restart, succeeded)
+
+            threading.Thread(target=restart, name="codexbar-rust-restart", daemon=True).start()
+            return
+
         if os.environ.get("INVOCATION_ID"):
             try:
                 subprocess.Popen(
@@ -263,6 +300,14 @@ class CodexBarApp(Adw.Application):
         self.controller.stop()
         os.execv(sys.executable, [sys.executable, "-m", "codexbar_gtk", *sys.argv[1:]])
 
+    def _finish_rust_restart(self, succeeded: bool) -> bool:
+        if succeeded:
+            self.controller.stop()
+            self.quit()
+        else:
+            self._notify("CodexBar", "Could not restart CodexBar.")
+        return False
+
     def _check_for_updates(self) -> None:
         """Compare this build with the public VERSION marker without blocking GTK."""
         parent = self.get_active_window() or self.main_window or self.settings_window
@@ -273,45 +318,88 @@ class CodexBarApp(Adw.Application):
         dialog.set_default_response("close")
         dialog.connect("response", self._on_update_check_response)
         dialog.present()
+        self._update_dialog = dialog
 
         def check() -> None:
             try:
-                latest = check_latest_version()
-                result: tuple[str, tuple[str, int] | str] = ("ok", latest)
-            except Exception as error:
-                result = ("error", str(error))
+                checked = self.controller.check_update(UpdateCheckRequest(SHORT_VERSION, BUILD))
+                result: tuple[str, UpdateCheckResult | UpdateCheckError] = ("ok", checked)
+            except UpdateCheckError as error:
+                result = ("error", error)
             GLib.idle_add(self._finish_update_check, dialog, result)
 
         threading.Thread(target=check, name="codexbar-update-check", daemon=True).start()
 
-    def _finish_update_check(self, dialog, result: tuple[str, tuple[str, int] | str]) -> bool:
+    def _request_rust_icon_cache_refresh(self) -> None:
+        """Ask the facade to update the icon cache away from GTK's thread."""
+        def refresh() -> None:
+            try:
+                self.controller.refresh_icon_cache()
+            except Exception:
+                pass
+            GLib.idle_add(self._finish_rust_icon_cache_refresh)
+
+        threading.Thread(target=refresh, name="codexbar-icon-cache", daemon=True).start()
+
+    @staticmethod
+    def _finish_rust_icon_cache_refresh() -> bool:
+        # Cache refresh is intentionally best-effort and has no visible error.
+        return False
+
+    def _write_icons(self, accent: str) -> dict[int, str]:
+        if self.controller.uses_rust_controller:
+            return icons.write_icons(
+                accent,
+                refresh_cache=self._request_rust_icon_cache_refresh,
+            )
+        return icons.write_icons(accent)
+
+    def _finish_update_check(
+        self, dialog, result: tuple[str, UpdateCheckResult | UpdateCheckError]
+    ) -> bool:
         status, value = result
-        if status != "ok" or not isinstance(value, tuple):
-            error = value if isinstance(value, str) else "unexpected update-check response"
-            dialog.set_heading("Couldn’t check for updates")
-            dialog.set_body(
+        if status != "ok" or not isinstance(value, UpdateCheckResult):
+            error = value if isinstance(value, UpdateCheckError) else UpdateCheckError("network")
+            heading = "Couldn’t check for updates"
+            body = (
                 f"The update check failed: {error}\n\n"
                 "You can still open the project page and check manually."
             )
         else:
-            latest_version, latest_build = value
-            current_key = version_key(SHORT_VERSION, BUILD)
-            latest_key = version_key(latest_version, latest_build)
             current_display = display_string()
-            latest_display = f"{latest_version} ({latest_build})"
-            if latest_key > current_key:
-                dialog.set_heading(f"Update available: {latest_display}")
-                dialog.set_body(
+            latest_display = f"{value.latest_version} ({value.latest_build})"
+            if value.relation == "available":
+                heading = f"Update available: {latest_display}"
+                body = (
                     f"You have {current_display}. This client is distributed as source; "
                     "pull the latest changes in your checkout, run "
                     "./scripts/install.sh --no-autostart, then restart the app."
                 )
-            elif latest_key < current_key:
-                dialog.set_heading("This build is newer than the public version")
-                dialog.set_body(f"Installed: {current_display}\nPublic main: {latest_display}")
+            elif value.relation == "ahead":
+                heading = "This build is newer than the public version"
+                body = f"Installed: {current_display}\nPublic main: {latest_display}"
+            elif value.relation == "current":
+                heading = "You’re up to date"
+                body = f"CodexBar GTK {current_display} is the latest public build."
             else:
-                dialog.set_heading("You’re up to date")
-                dialog.set_body(f"CodexBar GTK {current_display} is the latest public build.")
+                heading = "Couldn’t check for updates"
+                body = "The update check returned an unknown result."
+
+        # Replace the progress surface after the worker completes. On Wayland,
+        # resizing the already-presented MessageDialog can leave its first
+        # buffer visible even though its GTK labels have changed.
+        if not dialog.get_visible():
+            return False
+        parent = dialog.get_transient_for()
+        completed = Adw.MessageDialog.new(parent, heading, body)
+        completed.add_response("open", "Open project")
+        completed.add_response("close", "Close")
+        completed.set_response_appearance("open", Adw.ResponseAppearance.SUGGESTED)
+        completed.set_default_response("close")
+        completed.connect("response", self._on_update_check_response)
+        dialog.close()
+        completed.present()
+        self._update_dialog = completed
         return False
 
     @staticmethod
@@ -338,42 +426,68 @@ class CodexBarApp(Adw.Application):
         if self.main_window is not None:
             self.main_window.update(state)
         self._update_tray(state)
+        if self.controller.uses_rust_controller:
+            self.controller.request_rust_presentation(self._on_rust_presentation)
         self._check_notifications(state)
+
+    def _show_tray_unavailable(self) -> None:
+        self.tray.update(
+            "codexbar-gtk",
+            "CodexBar GTK",
+            "Provider data unavailable\nUse Refresh to check again.",
+        )
+        self.tray.set_menu(
+            [
+                ("Show usage panel", self._toggle_popup),
+                ("Refresh", self._refresh_now),
+                ("Open Dashboard", self._open_dashboard),
+                (None, None),
+                ("Check for updates…", self._check_for_updates),
+                ("Restart CodexBar", self._restart),
+                ("Settings…", self._open_settings),
+                (None, None),
+                ("Quit CodexBar", self._quit),
+            ]
+        )
+        self.tray.register()
+
+    def _on_rust_presentation(self, spend: dict | None, tray: dict | None, error: str | None) -> None:
+        GLib.idle_add(self._apply_rust_presentation, spend, tray, error)
+
+    def _apply_rust_presentation(self, spend: dict | None, tray: dict | None, _error: str | None) -> bool:
+        sequence = self.controller.state.backend_sequence
+        if spend is not None and spend.get("backend_sequence") == sequence:
+            self._rust_spend_view_model = spend
+            if self.main_window is not None:
+                self.main_window.update_spend_projection(spend)
+        if tray is not None and tray.get("backend_sequence") == sequence:
+            self._rust_tray_summary = tray
+            self._update_tray(self.controller.state)
+        return False
 
     def _update_tray(self, state) -> None:
         if not self.tray.available:
             return
+        if self.controller.uses_rust_controller:
+            summary = self._rust_tray_summary
+            if summary is None or summary.get("backend_sequence") != state.backend_sequence:
+                summary = None
+            self._update_rust_tray(summary)
+            return
         providers = [p for p in state.providers if not p.has_error]
         if not providers:
-            self.tray.update(
-                "codexbar-gtk",
-                "CodexBar GTK",
-                "Provider data unavailable\nUse Refresh to check again.",
-            )
-            self.tray.set_menu(
-                [
-                    ("Show usage panel", self._toggle_popup),
-                    ("Refresh", self._refresh_now),
-                    ("Open Dashboard", self._open_dashboard),
-                    (None, None),
-                    ("Check for updates…", self._check_for_updates),
-                    ("Restart CodexBar", self._restart),
-                    ("Settings…", self._open_settings),
-                    (None, None),
-                    ("Quit CodexBar", self._quit),
-                ]
-            )
-            self.tray.register()
+            self._show_tray_unavailable()
             return
 
         source = str(self.prefs.get("unifiedIconSource") or "highest")
         tray_window = None
         if source == "automatic":
-            automatic = automatic_tray_selection(providers)
+            automatic = self.controller.automatic_tray_selection(providers)
             if automatic is not None:
                 highest, tray_window = automatic
             else:
-                highest = max(providers, key=lambda p: p.max_used_percent)
+                self._show_tray_unavailable()
+                return
         elif source == "first":
             highest = providers[0]
         else:
@@ -391,7 +505,7 @@ class CodexBarApp(Adw.Application):
                     tray_title = f"{highest.display_name} {label}"
         level = min(9, int(used_percent / 10.0))
         accent = highest.accent_color
-        levels = icons.write_icons(accent)
+        levels = self._write_icons(accent)
         icon_name = levels.get(level) or "codexbar-gtk"
 
         style = str(self.prefs.get("menuBarIconStyle") or "meter")
@@ -432,8 +546,12 @@ class CodexBarApp(Adw.Application):
         entries: list = []
         for provider in providers:
             if rows_option == "progress":
-                used = max((w.used_percent for w in provider.windows), default=0.0)
-                windows_at_used = [w for w in provider.windows if w.used_percent == used]
+                known_windows = [w for w in provider.windows if w.usage_known]
+                if not known_windows:
+                    entries.append((f"{provider.display_name} — Unavailable", self._open_dashboard))
+                    continue
+                used = max(w.used_percent for w in known_windows)
+                windows_at_used = [w for w in known_windows if w.used_percent == used]
                 used_window = next(
                     (w for w in windows_at_used if not w.is_placeholder),
                     windows_at_used[0] if windows_at_used else None,
@@ -454,7 +572,8 @@ class CodexBarApp(Adw.Application):
                             summary = f"{bar} {label} {used:.0f}%"
             else:
                 summary = " · ".join(
-                    f"{w.title} {w.used_percent:.0f}%" for w in provider.windows
+                    f"{w.title} {w.used_percent:.0f}%" if w.usage_known else f"{w.title} unavailable"
+                    for w in provider.windows
                 )
             entries.append((f"{provider.display_name} — {summary}", self._open_dashboard))
         entries += [
@@ -474,15 +593,55 @@ class CodexBarApp(Adw.Application):
         # The icon is in place now, so the item can be published to the host.
         self.tray.register()
 
+    def _update_rust_tray(self, summary: dict | None) -> None:
+        if summary is None:
+            self.tray.update(
+                "codexbar-gtk",
+                "CodexBar GTK",
+                "Provider data unavailable\nUse Refresh to check again.",
+            )
+            rows = []
+        else:
+            title = summary.get("title") or "CodexBar GTK"
+            tooltip = "\n".join(summary.get("tooltip_rows") or [])
+            used = summary.get("used_percent")
+            accent = summary.get("accent_color")
+            pixmap = None
+            icon_name = "codexbar-gtk"
+            if summary.get("available") and used is not None and accent:
+                if summary.get("menu_bar_icon_style") == "iconPercent":
+                    pixmap = icons.render_percent_pixmap(used, accent, summary.get("initial") or "?")
+                    icon_name = ""
+                else:
+                    level = summary.get("meter_level")
+                    levels = self._write_icons(accent)
+                    icon_name = levels.get(level, icon_name)
+                    pixmap = icons.render_meter_pixmap(level, accent) if level is not None else None
+            self.tray.update(icon_name, title, tooltip, pixmap)
+            rows = [
+                (item.get("text") or "", self._open_dashboard)
+                for item in summary.get("switcher_rows") or []
+            ]
+        rows += [
+            (None, None),
+            ("Show usage panel", self._toggle_popup),
+            ("Refresh", self._refresh_now),
+            ("Open Dashboard", self._open_dashboard),
+            (None, None),
+            ("Check for updates…", self._check_for_updates),
+            ("Restart CodexBar", self._restart),
+            ("Settings…", self._open_settings),
+            (f"About CodexBar GTK {display_string()}", self._open_about),
+            (None, None),
+            ("Quit CodexBar", self._quit),
+        ]
+        self.tray.set_menu(rows)
+        self.tray.register()
+
     def _check_notifications(self, state) -> None:
-        for title, message in self.controller.session_quota_events(state):
-            self._notify(title, message)
-        for provider_id, window_key, used, message in self.controller.quota_events(state):
-            self._notify("Quota warning", message)
-        for event in self.controller.predictive_pace_events(state):
-            self._notify(event["title"], event["body"], id=event["id"])
-        for event in self.controller.credit_expiry_events(state):
-            self._notify(event["title"], event["body"], id=event["id"])
+        for event in self.controller.notification_events(state):
+            identifier = event.get("id")
+            self._notify(event["title"], event["body"], id=identifier)
 
     def _notify(self, title: str, message: str, id: str | None = None) -> None:
         notification = Gio.Notification.new(title)

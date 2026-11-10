@@ -7,29 +7,50 @@ Pure Python (no GTK imports) so it can be exercised head-less.
 from __future__ import annotations
 
 import math
+import json
+import os
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Callable
 
-from .cli import CLIError, CodexBarCLI
+from .cli import CLIError, CodexBarCLI, ProviderStatusEntry, default_cli_path
 from .format import format_countdown
 from .history import HistoryStore, Sample
 from .data import (
     AgentSession,
+    CostInfo,
+    CreditEvent,
+    DetailChart,
+    DetailRow,
+    DetailSection,
+    Pace,
     ProviderUsage,
     RateWindow,
+    SpendProvider,
     SpendSummary,
     agent_sessions_from_payloads,
+    parse_timestamp,
     provider_usage_from_payload,
     spend_from_payloads,
 )
 from .prefs import Preferences
+from .rust_bridge import extension
+from . import rust_bridge
+from . import currency as currency_service
+from .updates import (
+    UpdateCheckError,
+    UpdateCheckRequest,
+    UpdateCheckResult,
+    check_for_update,
+)
 
 
 @dataclass
 class AppState:
+    backend_sequence: int = 0
     providers: list[ProviderUsage] = field(default_factory=list)
     spend: SpendSummary | None = None
     sessions: list[AgentSession] = field(default_factory=list)
@@ -46,6 +67,171 @@ class AppState:
 
 
 Listener = Callable[[AppState], None]
+
+
+def _controller_error_text(error: dict | None) -> str | None:
+    if not isinstance(error, dict):
+        return None
+    kind = error.get("kind")
+    operation = error.get("operation")
+    if not isinstance(kind, str) or not isinstance(operation, str):
+        return None
+    return f"{kind} ({operation})"
+
+
+def _provider_from_dto(value: dict) -> ProviderUsage:
+    windows = [
+        RateWindow(
+            key=item["key"],
+            title=item["title"],
+            used_percent=item["used_percent"],
+            resets_at=parse_timestamp(item.get("resets_at")),
+            reset_description=item.get("reset_description"),
+            window_minutes=item.get("window_minutes"),
+            next_regen_percent=item.get("next_regen_percent"),
+            is_placeholder=item["is_placeholder"],
+            quota_limit=item.get("quota_limit"),
+            quota_unit=item.get("quota_unit"),
+            usage_known=item["usage_known"],
+        )
+        for item in value.get("windows", [])
+    ]
+    pace = {
+        key: Pace(
+            stage=item["stage"],
+            delta_percent=item.get("delta_percent"),
+            expected_used_percent=item.get("expected_used_percent"),
+            will_last_to_reset=item["will_last_to_reset"],
+            eta_seconds=item.get("eta_seconds"),
+            run_out_probability=item.get("run_out_probability"),
+            summary=item.get("summary"),
+        )
+        for key, item in value.get("pace", {}).items()
+    }
+    cost_value = value.get("cost")
+    cost = (
+        CostInfo(
+            used=cost_value["used"],
+            limit=cost_value["limit"],
+            currency=cost_value["currency"],
+            period=cost_value.get("period"),
+            balance=cost_value.get("balance"),
+            personal_used=cost_value.get("personal_used"),
+            resets_at=parse_timestamp(cost_value.get("resets_at")),
+        )
+        if isinstance(cost_value, dict)
+        else None
+    )
+    details = []
+    for section in value.get("details", []):
+        rows = [
+            DetailRow(
+                label=row["label"],
+                value=row["value"],
+                secondary_value=row.get("secondary_value"),
+                used_percent=row.get("used_percent"),
+                severity=row["severity"],
+            )
+            for row in section.get("rows", [])
+        ]
+        chart_value = section.get("chart")
+        chart = (
+            DetailChart(
+                kind=chart_value["kind"],
+                title=chart_value.get("title"),
+                unit=chart_value.get("unit"),
+                points=[(point[0], point[1]) for point in chart_value.get("points", [])],
+            )
+            if isinstance(chart_value, dict)
+            else None
+        )
+        details.append(DetailSection(title=section.get("title"), rows=rows, chart=chart))
+    reset_credits = [
+        {
+            **item,
+            "granted_at": parse_timestamp(item.get("granted_at")),
+            "expires_at": parse_timestamp(item.get("expires_at")),
+        }
+        for item in value.get("reset_credits", [])
+    ]
+    return ProviderUsage(
+        provider_id=value["provider_id"],
+        display_name=value["display_name"],
+        source=value.get("source"),
+        version=value.get("version"),
+        updated_at=parse_timestamp(value.get("updated_at")),
+        account_email=value.get("account_email"),
+        plan=value.get("plan"),
+        login_method=value.get("login_method"),
+        windows=windows,
+        pace=pace,
+        credits_remaining=value.get("credits_remaining"),
+        credits_unit=value["credits_unit"],
+        credits_available=value["credits_available"],
+        cost=cost,
+        status_level=value.get("status_level"),
+        status_description=value.get("status_description"),
+        error=value.get("error"),
+        details=details,
+        reset_credits_available=value["reset_credits_available"],
+        reset_credits=reset_credits,
+        credit_events=[CreditEvent(**item) for item in value.get("credit_events", [])],
+        accounts=value.get("accounts", []),
+        selected_account=value.get("selected_account"),
+        accent_color=value["accent_color"],
+        raw=value.get("raw", {}),
+    )
+
+
+def _session_from_dto(value: dict) -> AgentSession:
+    return AgentSession(
+        id=value["id"],
+        provider=value["provider"],
+        state=value["state"],
+        project_name=value["project_name"],
+        cwd=value["cwd"],
+        pid=value["pid"],
+        started_at=parse_timestamp(value.get("started_at")),
+        last_activity_at=parse_timestamp(value.get("last_activity_at")),
+        host=value["host"],
+    )
+
+
+def _spend_from_dto(value: dict | None) -> SpendSummary | None:
+    if value is None:
+        return None
+    return SpendSummary(
+        total_cost=value["total_cost"],
+        cost_known=value["cost_known"],
+        cost_partial=value["cost_partial"],
+        currency=value["currency"],
+        total_tokens=value["total_tokens"],
+        total_tokens_known=value["total_tokens_known"],
+        total_tokens_partial=value["total_tokens_partial"],
+        coverage=value["coverage"],
+        provenance=value["provenance"],
+        reporting_period=value.get("reporting_period"),
+        history_label=value.get("history_label"),
+        history_coverage_established=value["history_coverage_established"],
+        daily=value["daily"],
+        projects=value["projects"],
+        models=value["models"],
+        session_cost=value["session_cost"],
+        session_cost_known=value["session_cost_known"],
+        session_cost_partial=value["session_cost_partial"],
+        session_tokens=value["session_tokens"],
+        session_tokens_known=value["session_tokens_known"],
+        session_tokens_partial=value["session_tokens_partial"],
+        last30_cost=value["last30_cost"],
+        last30_cost_known=value["last30_cost_known"],
+        last30_cost_partial=value["last30_cost_partial"],
+        last30_tokens=value["last30_tokens"],
+        last30_tokens_known=value["last30_tokens_known"],
+        last30_tokens_partial=value["last30_tokens_partial"],
+        incomplete_requests=value["incomplete_requests"],
+        error=value.get("error"),
+        providers=[SpendProvider(**item) for item in value["providers"]],
+    )
 
 
 class Controller:
@@ -68,6 +254,20 @@ class Controller:
         self._last_reset_seen: dict[tuple[str, str], float] = {}
         self._pace_notified: dict[tuple[str, str], tuple[int | None, float]] = {}
         self._credit_expiry_seen: set[tuple] = set()
+        self._notification_snapshot_seen: float | None = None
+        rust = rust_bridge.extension()
+        self._rust_notification_policy = rust.NotificationPolicy() if rust is not None else None
+        self._rust_controller = None
+        self._rust_sequence = -1
+        self._rust_events: list[dict] = []
+        self._rust_tray_selection: dict | None = None
+        self._presentation_executor = ThreadPoolExecutor(
+            max_workers=1, thread_name_prefix="codexbar-rust-presentation"
+        )
+        self._currency_executor = ThreadPoolExecutor(
+            max_workers=1, thread_name_prefix="codexbar-rust-currency"
+        )
+        self._presentation_request_id = 0
 
     # -- listeners --------------------------------------------------------
 
@@ -88,6 +288,29 @@ class Controller:
     # -- lifecycle --------------------------------------------------------
 
     def start(self) -> None:
+        rust = rust_bridge.extension()
+        if rust is not None:
+            if not hasattr(rust, "RefreshController"):
+                raise RuntimeError("Rust refresh controller is unavailable; rebuild the Rust extension")
+            if self.prefs._rust is None:
+                raise RuntimeError("Rust preferences are unavailable for the Rust refresh controller")
+            history_store = self.history._rust_store()
+            if history_store is None:
+                raise RuntimeError("Rust history store is unavailable for the Rust refresh controller")
+            shared_currency = currency_service.shared()._rust
+            if shared_currency is None:
+                raise RuntimeError("Rust currency service is unavailable for the Rust refresh controller")
+            self._rust_controller = rust.RefreshController(
+                self.cli.executable,
+                self.cli.timezone,
+                self.prefs._rust,
+                history_store,
+                shared_currency,
+                default_cli_path(),
+                os.path.dirname(os.path.abspath(__file__)),
+            )
+            currency_service.bind_facade(self)
+            return
         if self._thread and self._thread.is_alive():
             return
         self._stop.clear()
@@ -95,7 +318,396 @@ class Controller:
         self._thread.start()
 
     def stop(self) -> None:
+        if self._rust_controller is not None:
+            self._rust_controller.request_shutdown()
+            currency_service.unbind_facade(self)
+            self._presentation_executor.shutdown(wait=False, cancel_futures=True)
+            self._currency_executor.shutdown(wait=False, cancel_futures=True)
+            return
         self._stop.set()
+        self._currency_executor.shutdown(wait=False, cancel_futures=True)
+
+    @property
+    def uses_rust_controller(self) -> bool:
+        return self._rust_controller is not None
+
+    # -- shared currency facade ----------------------------------------
+
+    def catalog_async(self) -> list[tuple[str, str, float]]:
+        """Read the shared currency catalog through the central facade."""
+        rust = self._rust_controller
+        if rust is not None:
+            return rust.catalog_async()
+        return currency_service.shared().entries()
+
+    def rate_async(self, code: str) -> float | None:
+        """Read a rate from the shared cached/offline currency snapshot."""
+        rust = self._rust_controller
+        if rust is not None:
+            return rust.rate_async(code)
+        return currency_service.shared().rate(code)
+
+    def convert_async(self, amount: float, source: str, target: str) -> float | None:
+        """Convert using the shared currency snapshot without fetching rates."""
+        rust = self._rust_controller
+        if rust is not None:
+            return rust.convert_async(amount, source, target)
+        return currency_service.shared().convert(amount, source, target)
+
+    def status_async(self) -> dict | None:
+        """Return shared rate source/failure metadata when Rust is active."""
+        rust = self._rust_controller
+        if rust is None:
+            return None
+        return rust.status_async()
+
+    def ensure_rates(self, preferred: str):
+        """Refresh through the controller runtime without blocking GTK."""
+        rust = self._rust_controller
+        if rust is None:
+            return currency_service.shared().ensure_rates(preferred)
+        try:
+            return self._currency_executor.submit(rust.ensure_rates, preferred)
+        except RuntimeError:
+            # Shutdown races are best-effort, matching the currency fallback.
+            return None
+
+    def ensure_rates_at(self, preferred: str, now: float):
+        """Injectable-time refresh entry point, normally used by tests."""
+        rust = self._rust_controller
+        if rust is None:
+            return None
+        try:
+            return self._currency_executor.submit(rust.ensure_rates_at, preferred, now)
+        except RuntimeError:
+            return None
+
+    def start_claude_login(self, executable: str, timeout_seconds: int):
+        """Create the separate B11 login handle through the central facade."""
+        rust = self._rust_controller
+        if rust is None:
+            raise RuntimeError("login facade is unavailable")
+        return rust.start_claude_login(executable, int(timeout_seconds))
+
+    def check_update(self, request: UpdateCheckRequest) -> UpdateCheckResult:
+        """Use B12 through the shared Rust facade, or the Python parity service."""
+        rust = self._rust_controller
+        if rust is None:
+            return check_for_update(request)
+        try:
+            value = rust.check_update(
+                request.url,
+                request.current_version,
+                str(request.current_build),
+                request.timeout,
+            )
+        except (OSError, RuntimeError, ValueError) as error:
+            category = str(error).split(" ", 1)[0]
+            if category not in {"invalid_marker", "oversized", "network", "timeout"}:
+                category = "network"
+            raise UpdateCheckError(category) from None
+        try:
+            return UpdateCheckResult(
+                relation=str(value["relation"]),
+                latest_version=str(value["latest_version"]),
+                latest_build=int(value["latest_build"]),
+                current_version=str(value["current_version"]),
+                current_build=int(value["current_build"]),
+            )
+        except (KeyError, TypeError, ValueError):
+            raise UpdateCheckError("invalid_marker") from None
+
+    def launch_codex_login_terminal(self) -> dict[str, bool]:
+        rust = self._rust_controller
+        if rust is None:
+            raise RuntimeError("login facade is unavailable")
+        return rust.launch_codex_login_terminal()
+
+    def restart_application(self) -> dict[str, str]:
+        rust = self._rust_controller
+        if rust is None:
+            raise RuntimeError("restart facade is unavailable")
+        return rust.restart_application()
+
+    def refresh_icon_cache(self) -> dict[str, str]:
+        rust = self._rust_controller
+        if rust is None:
+            return {"status": "skipped_missing_tool"}
+        return rust.refresh_icon_cache()
+
+    def poll(self) -> bool:
+        """Poll Rust watch state/events without waiting; called on GTK's main loop."""
+        if self._rust_controller is None:
+            return False
+        new_events = json.loads(self._rust_controller.drain_events_json(256))
+        if new_events:
+            self._rust_events.extend(item["event"] for item in new_events)
+        changed = self._rust_controller.state_sequence() != self._rust_sequence
+        if changed:
+            envelope = json.loads(self._rust_controller.state_json())
+            self._rust_sequence = envelope["sequence"]
+            self.state.backend_sequence = int(envelope["sequence"])
+            snapshot = envelope.get("snapshot")
+            status = envelope.get("status")
+            self.state.refreshing = status == "refreshing"
+            if snapshot is not None:
+                self.state.providers = [_provider_from_dto(item) for item in snapshot["providers"]]
+                self.state.spend = _spend_from_dto(snapshot.get("spend"))
+                self.state.sessions = [_session_from_dto(item) for item in snapshot["sessions"]]
+                updated_at = parse_timestamp(snapshot.get("updated_at"))
+                self.state.last_updated = updated_at.timestamp() if updated_at else None
+                self.state.cli_version = snapshot.get("version", "unknown")
+                error = (
+                    envelope.get("last_error")
+                    if status == "refreshing"
+                    else snapshot.get("last_error") or envelope.get("last_error")
+                )
+                self.state.last_error = _controller_error_text(error)
+                self._rust_tray_selection = snapshot.get("tray_selection")
+            else:
+                self.state.last_error = _controller_error_text(envelope.get("last_error"))
+            self._notify()
+        elif new_events:
+            # Event delivery is lossless and independent of watch coalescing.
+            self._notify()
+        return True
+
+    def automatic_tray_selection(self, providers: list[ProviderUsage]):
+        """Resolve the stored Rust selection; Python mode retains its policy path."""
+        if self._rust_controller is None:
+            return automatic_tray_selection(providers)
+        selection = self._rust_tray_selection
+        if selection is None:
+            return None
+        provider_index = selection.get("provider_index")
+        window_index = selection.get("window_index")
+        if not isinstance(provider_index, int) or not 0 <= provider_index < len(self.state.providers):
+            return None
+        provider = self.state.providers[provider_index]
+        if provider.has_error or provider.provider_id != selection.get("provider_id") or not any(
+            item is provider for item in providers
+        ):
+            return None
+        if not isinstance(window_index, int) or not 0 <= window_index < len(provider.windows):
+            return None
+        window = provider.windows[window_index]
+        if (
+            window.key != selection.get("window_key")
+            or not window.usage_known
+            or window.is_placeholder
+            or not math.isfinite(window.used_percent)
+            or window.used_percent < 0.0
+        ):
+            return None
+        return provider, window
+
+    def request_rust_presentation(self, callback: Callable[[dict | None, dict | None, str | None], None]) -> bool:
+        """Project current spend/tray DTOs off GTK's thread, then return them to its caller."""
+        if self._rust_controller is None:
+            return False
+        with self._lock:
+            self._presentation_request_id += 1
+            request_id = self._presentation_request_id
+        controller = self._rust_controller
+
+        def project() -> tuple[dict | None, dict | None, str | None]:
+            try:
+                spend = json.loads(controller.spend_view_model_json())
+                tray = json.loads(controller.tray_summary_json())
+                return spend, tray, None
+            except Exception:
+                return None, None, "projection_unavailable"
+
+        future = self._presentation_executor.submit(project)
+
+        def complete(result) -> None:
+            try:
+                spend, tray, error = result.result()
+            except Exception:
+                spend, tray, error = None, None, "projection_unavailable"
+            with self._lock:
+                current = request_id == self._presentation_request_id
+            if current:
+                callback(spend, tray, error)
+
+        future.add_done_callback(complete)
+        return True
+
+    # -- settings facade -------------------------------------------------
+
+    @staticmethod
+    def _settings_error(category: str, operation: str) -> dict[str, str]:
+        return {"category": category, "operation": operation}
+
+    @classmethod
+    def _settings_section(cls, value=None, error: dict | None = None) -> dict:
+        return {"value": value if error is None else None, "error": error}
+
+    def settings_snapshot(self) -> dict:
+        """Return owned settings DTOs from the Rust facade or Python parity path.
+
+        GTK calls this from a worker and only marshals the completed snapshot
+        back to the main context.
+        """
+        rust = self._rust_controller
+        if rust is not None:
+            return json.loads(rust.settings_snapshot_json())
+
+        def load(operation: str, action):
+            try:
+                value = action()
+                return self._settings_section(value=value)
+            except Exception:
+                return self._settings_section(
+                    error=self._settings_error("cli_process", operation)
+                )
+
+        providers = load(
+            "settings_providers",
+            lambda: [
+                {
+                    "provider_id": entry.provider_id,
+                    "enabled": entry.enabled,
+                    "display_name": entry.display_name,
+                    "is_default": entry.is_default,
+                }
+                for entry in self.cli.config_providers()
+            ],
+        )
+        hooks = load("settings_hooks", self.cli.hooks)
+        plugins = load("settings_plugins", self.cli.plugins)
+        try:
+            home = os.path.expanduser("~")
+            launch_state = {"enabled": os.path.exists(os.path.join(
+                home, ".config", "autostart", "codexbar-gtk.desktop"
+            ))}
+            launch = self._settings_section(value=launch_state)
+        except Exception:
+            launch = self._settings_section(
+                error=self._settings_error("autostart_io", "settings_launch_at_login_state")
+            )
+        return {
+            "providers": providers,
+            "hooks": hooks,
+            "plugins": plugins,
+            "launch_at_login": launch,
+        }
+
+    @staticmethod
+    def _require_cli_success(result, operation: str) -> None:
+        if getattr(result, "returncode", 0) != 0:
+            raise RuntimeError(f"command_rejected ({operation})")
+
+    def settings_provider_action(self, action: str, provider_id: str, source: str | None = None) -> None:
+        rust = self._rust_controller
+        if rust is not None:
+            rust.settings_provider_action(action, provider_id, source)
+            return
+        if action == "enable":
+            result = self.cli.enable_provider(provider_id)
+        elif action == "disable":
+            result = self.cli.disable_provider(provider_id)
+        elif action == "set-source" and source is not None:
+            result = self.cli.set_source(provider_id, source)
+        else:
+            raise RuntimeError("invalid_input (settings_provider_action)")
+        self._require_cli_success(result, "settings_provider_action")
+
+    def settings_set_api_key(self, provider_id: str, secret: str) -> None:
+        rust = self._rust_controller
+        if rust is not None:
+            rust.settings_set_api_key(provider_id, secret)
+            return
+        self._require_cli_success(
+            self.cli.set_api_key(provider_id, secret), "settings_set_api_key"
+        )
+
+    def settings_set_hooks_enabled(self, enabled: bool) -> None:
+        rust = self._rust_controller
+        if rust is not None:
+            rust.settings_set_hooks_enabled(enabled)
+            return
+        self._require_cli_success(
+            self.cli.set_hooks_enabled(enabled), "settings_set_hooks_enabled"
+        )
+
+    def preferences_export_to(self, path: str) -> None:
+        rust = self._rust_controller
+        if rust is not None:
+            rust.preferences_export_to(path)
+            return
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(self.prefs.export_document(), handle, indent=2)
+
+    def preferences_import_from(self, path: str) -> None:
+        rust = self._rust_controller
+        if rust is not None:
+            rust.preferences_import_from(path)
+            return
+        with open(path, "r", encoding="utf-8") as handle:
+            self.prefs.import_document(json.load(handle))
+
+    def preferences_reset(self) -> None:
+        rust = self._rust_controller
+        if rust is not None:
+            rust.preferences_reset()
+            return
+        self.prefs.reset()
+
+    def launch_at_login_state(self) -> dict[str, bool]:
+        rust = self._rust_controller
+        if rust is not None:
+            return rust.launch_at_login_state()
+        home = os.path.expanduser("~")
+        return {
+            "enabled": os.path.exists(
+                os.path.join(home, ".config", "autostart", "codexbar-gtk.desktop")
+            )
+        }
+
+    def set_launch_at_login(self, enabled: bool, app_exec: str) -> dict[str, bool]:
+        rust = self._rust_controller
+        if rust is not None:
+            return rust.set_launch_at_login(enabled, app_exec)
+        home = os.path.expanduser("~")
+        autostart_dir = os.path.join(home, ".config", "autostart")
+        autostart_file = os.path.join(autostart_dir, "codexbar-gtk.desktop")
+        self.prefs.set("launchAtLogin", enabled)
+        if enabled:
+            os.makedirs(autostart_dir, exist_ok=True)
+            with open(autostart_file, "w", encoding="utf-8") as handle:
+                handle.write(
+                    "[Desktop Entry]\nType=Application\nName=CodexBar\n"
+                    f"Exec={app_exec}\nX-GNOME-Autostart-enabled=true\nTerminal=false\n"
+                )
+        elif os.path.exists(autostart_file):
+            os.remove(autostart_file)
+        return {"enabled": enabled}
+
+    def settings_reconfigure_cli(
+        self, cli_path: str | None, timezone: str | None
+    ) -> dict[str, bool]:
+        """Update CLI configuration and request an immediate refresh.
+
+        Rust mode commits both settings in its serialized facade actor. The
+        Python parity path deliberately retains its historical permissive
+        mutable service behavior, including accepting a missing executable.
+        """
+        if cli_path is None and timezone is None:
+            raise RuntimeError("invalid_input (settings_cli_reconfigure)")
+        rust = self._rust_controller
+        if rust is not None:
+            return rust.settings_reconfigure_cli(cli_path, timezone)
+
+        if cli_path is not None:
+            configured_path = cli_path.strip()
+            self.prefs.set("cliPath", configured_path)
+            self.cli.executable = configured_path or default_cli_path()
+        if timezone is not None:
+            self.prefs.set("costUsageBucketTimeZone", timezone)
+            self.cli.timezone = timezone or None
+        self.refresh(force=True)
+        return {"applied": True, "refresh_queued": True}
 
     def _loop(self) -> None:
         while not self._stop.is_set():
@@ -113,6 +725,10 @@ class Controller:
     # -- refreshing -------------------------------------------------------
 
     def refresh(self, force: bool = False) -> AppState:
+        if self._rust_controller is not None:
+            if force:
+                self._rust_controller.force_refresh()
+            return self.state
         with self._refresh_guard:
             if self._refreshing.is_set():
                 if force:
@@ -237,6 +853,15 @@ class Controller:
         samples: list[Sample] = []
         for provider in self.state.providers:
             for window in provider.windows:
+                # Match the Rust controller: unknown and placeholder windows
+                # must not become indistinguishable from a known 0% sample in
+                # the shared, compatibility-format history file.
+                if (
+                    not window.usage_known
+                    or window.is_placeholder
+                    or not math.isfinite(window.used_percent)
+                ):
+                    continue
                 samples.append(
                     Sample(
                         timestamp=now,
@@ -253,6 +878,18 @@ class Controller:
     def _ordered(self, providers: list[ProviderUsage]) -> list[ProviderUsage]:
         order = list(self.prefs.get("providerOrder") or [])
         hidden = set(self.prefs.get("hiddenProviders") or [])
+        rust = extension()
+        if rust is not None:
+            try:
+                indices = rust.provider_order_indices(
+                    [provider.provider_id for provider in providers],
+                    [provider_id for provider_id in order if isinstance(provider_id, str)],
+                    [provider_id for provider_id in hidden if isinstance(provider_id, str)],
+                )
+                return [providers[index] for index in indices]
+            except (OverflowError, TypeError, ValueError):
+                # Keep Python's broader handling for unusual preference values.
+                pass
         visible = [p for p in providers if p.provider_id not in hidden]
 
         if not order:
@@ -268,12 +905,94 @@ class Controller:
 
     # -- notifications ----------------------------------------------------
 
-    def quota_events(self, state: AppState) -> list[tuple[str, str, float, str]]:
+    def notification_events(self, state: AppState, now: datetime | None = None) -> list[dict]:
+        """Return typed policy outcomes; platform delivery remains a UI concern."""
+        if self._rust_controller is not None:
+            events = self._rust_events
+            self._rust_events = []
+            return events
+        if state.last_error is not None:
+            return []
+        if state.last_updated is not None:
+            if state.last_updated == self._notification_snapshot_seen:
+                return []
+            self._notification_snapshot_seen = state.last_updated
+        if self._rust_notification_policy is not None:
+            now = now or datetime.now(timezone.utc)
+            providers = []
+            for provider in state.providers:
+                windows = [{
+                    "key": window.key,
+                    "title": window.title,
+                    "used_percent": window.used_percent,
+                    "resets_at": window.resets_at.isoformat() if window.resets_at else None,
+                    "window_minutes": window.window_minutes,
+                    "is_placeholder": window.is_placeholder,
+                    "usage_known": window.usage_known,
+                } for window in provider.windows]
+                pace = {key: {
+                    "will_last_to_reset": value.will_last_to_reset,
+                    "eta_seconds": value.eta_seconds,
+                    "run_out_probability": value.run_out_probability,
+                } for key, value in provider.pace.items()}
+                credits = [{"expires_at": credit["expires_at"].isoformat() if credit.get("expires_at") else None}
+                           for credit in provider.reset_credits]
+                providers.append({
+                    "provider_id": provider.provider_id,
+                    "display_name": provider.display_name,
+                    "account_email": provider.account_email,
+                    "windows": windows,
+                    "pace": pace,
+                    "reset_credits": credits,
+                })
+            preferences = {key: self.prefs.get(key, default) for key, default in {
+                "quotaWarningNotificationsEnabled": True,
+                "quotaWarningSessionEnabled": True,
+                "quotaWarningWeeklyEnabled": True,
+                "quotaWarningSessionThresholds": [50, 20],
+                "quotaWarningWeeklyThresholds": [50, 20],
+                "sessionQuotaNotificationsEnabled": True,
+                "predictivePaceNotificationsEnabled": True,
+                "limitResetNotificationsEnabled": True,
+            }.items()}
+            encoded = self._rust_notification_policy.observe_json(
+                json.dumps(providers), json.dumps(preferences), now.timestamp()
+            )
+            return json.loads(encoded)
+
+        # Python remains the parity reference until the explicit cutover.
+        events = []
+        events.extend({
+            "kind": "quota_threshold", "provider_id": provider_id,
+            "account_email": account_email or None, "window_key": window_key,
+            "used_percent": used, "threshold_percent": threshold,
+            "title": "Quota warning", "body": message,
+        } for provider_id, account_email, window_key, used, threshold, message in self.quota_events(state))
+        events.extend({"kind": "session_exhausted", **event}
+                      for event in self._session_quota_event_records(state))
+        for event in self.predictive_pace_events(state, now=now):
+            identity = next(
+                ((provider.provider_id, provider.account_email, window.key)
+                 for provider in state.providers for window in provider.windows
+                 if event.get("id") == f"predictive-pace-{provider.provider_id}-{window.key}"),
+                (None, None, None),
+            )
+            events.append({"kind": "predictive_pace", "provider_id": identity[0],
+                           "account_email": identity[1] or None, "window_key": identity[2], **event})
+        for event in self.credit_expiry_events(state, now=now):
+            provider = next((provider for provider in state.providers
+                             if event.get("id") == f"reset-credit-expiry-{provider.provider_id}"), None)
+            events.append({"kind": "credit_expiry", "provider_id": provider.provider_id if provider else None, **event})
+        return events
+
+    def quota_events(self, state: AppState) -> list[tuple[str, str | None, str, float, float, str]]:
         """Return newly crossed quota warning thresholds.
 
-        Each entry is ``(provider_id, window_key, used_percent, message)``.
+        Each entry is ``(provider_id, account_email, window_key, used_percent,
+        threshold_percent, message)``. Account identity is carried in the typed
+        outcome; threshold deduplication keeps the Python provider/window key.
         """
-        events: list[tuple[str, str, float, str]] = []
+        events: list[tuple[str, str | None, str, float, float, str]] = []
         if not self.prefs.get("quotaWarningNotificationsEnabled", True):
             return events
 
@@ -282,6 +1001,8 @@ class Controller:
 
         for provider in state.providers:
             for window in provider.windows:
+                if not window.usage_known or window.is_placeholder or not math.isfinite(window.used_percent):
+                    continue
                 if window.key == "primary":
                     thresholds = session_thresholds if self.prefs.get("quotaWarningSessionEnabled", True) else []
                 elif window.key == "secondary":
@@ -298,8 +1019,10 @@ class Controller:
                         events.append(
                             (
                                 provider.provider_id,
+                                provider.account_email,
                                 window.key,
                                 used,
+                                threshold,
                                 f"{provider.display_name} {window.title} at {used:.0f}% "
                                 f"(threshold {threshold:.0f}%)",
                             )
@@ -311,9 +1034,9 @@ class Controller:
 
         return events
 
-    def session_quota_events(self, state: AppState) -> list[tuple[str, str]]:
-        """Return newly exhausted primary quota windows, once per exhaustion."""
-        events: list[tuple[str, str]] = []
+    def _session_quota_event_records(self, state: AppState) -> list[dict]:
+        """Return identity-preserving exhaustion outcomes for notification delivery."""
+        events: list[dict] = []
         enabled = bool(self.prefs.get("sessionQuotaNotificationsEnabled", True))
         seen: set[tuple[str, str, str]] = set()
         for provider in state.providers:
@@ -321,22 +1044,30 @@ class Controller:
                 if window.key != "primary":
                     continue
                 key = (provider.provider_id, provider.account_email or "", window.key)
+                seen.add(key)
+                if not window.usage_known or window.is_placeholder or not math.isfinite(window.used_percent):
+                    continue
                 exhausted = window.used_percent >= 100.0
                 was_exhausted = self._session_quota_seen.get(key, False)
                 self._session_quota_seen[key] = exhausted
-                seen.add(key)
                 if enabled and exhausted and not was_exhausted:
                     account = f" ({provider.account_email})" if provider.account_email else ""
-                    events.append(
-                        (
-                            "Session quota exhausted",
-                            f"{provider.display_name}{account} {window.title} is exhausted.",
-                        )
-                    )
+                    events.append({
+                        "provider_id": provider.provider_id,
+                        "account_email": provider.account_email or None,
+                        "window_key": window.key,
+                        "title": "Session quota exhausted",
+                        "body": f"{provider.display_name}{account} {window.title} is exhausted.",
+                    })
         # Drop disappeared accounts/providers so a later appearance can notify again.
         for key in self._session_quota_seen.keys() - seen:
             self._session_quota_seen.pop(key, None)
         return events
+
+    def session_quota_events(self, state: AppState) -> list[tuple[str, str]]:
+        """Return the legacy title/body pairs for Python parity callers."""
+        return [(event["title"], event["body"])
+                for event in self._session_quota_event_records(state)]
 
     # -- pace and reset-credit events ------------------------------------
 
@@ -483,15 +1214,64 @@ def automatic_tray_selection(
 ) -> tuple[ProviderUsage, RateWindow] | None:
     """Pick the quota the tray should represent, like the macOS Auto lane.
 
-    The ranking mirrors ``AutomaticQuotaSelection``: a fully depleted window
-    outranks everything, then a window forecast to deplete before its reset
-    outranks one that lasts, then the smallest ETA, then the highest usage.
+    Error providers, placeholders and unknown usage are excluded; known zero
+    remains eligible. The ranking mirrors ``AutomaticQuotaSelection``: a fully
+    depleted window outranks everything, then a window forecast to deplete
+    before its reset outranks one that lasts, then the smallest ETA, then the
+    highest usage.
     """
     now = now or datetime.now(timezone.utc)
+    rust = extension()
+    if rust is not None:
+        candidates: list[tuple[ProviderUsage, RateWindow]] = []
+        used_percent: list[float] = []
+        placeholders: list[bool] = []
+        candidate_eligible: list[bool] = []
+        window_minutes: list[int | None] = []
+        seconds_until_reset: list[float | None] = []
+        expected_used_percent: list[float | None] = []
+        eta_seconds: list[float | None] = []
+        for provider in providers:
+            provider_eligible = not provider.has_error
+            for window in provider.windows:
+                pace = provider.pace.get(window.key)
+                candidates.append((provider, window))
+                used_percent.append(float(window.used_percent))
+                placeholders.append(bool(window.is_placeholder))
+                candidate_eligible.append(provider_eligible and window.usage_known)
+                window_minutes.append(window.window_minutes)
+                seconds_until_reset.append(
+                    (window.resets_at - now).total_seconds()
+                    if window.resets_at is not None
+                    else None
+                )
+                expected_used_percent.append(
+                    pace.expected_used_percent if pace is not None else None
+                )
+                eta_seconds.append(pace.eta_seconds if pace is not None else None)
+        try:
+            index = rust.automatic_quota_candidate(
+                used_percent,
+                placeholders,
+                candidate_eligible,
+                window_minutes,
+                seconds_until_reset,
+                expected_used_percent,
+                eta_seconds,
+            )
+            return candidates[index] if index is not None else None
+        except (OverflowError, TypeError, ValueError):
+            # Keep Python's wider numeric/date support for out-of-contract data.
+            pass
     candidates: list[tuple[ProviderUsage, RateWindow, float | None]] = []
     for provider in providers:
+        if provider.has_error:
+            continue
         for window in provider.windows:
-            if window.is_placeholder:
+            # Older Python selection treated the model's default 0.0 as usage
+            # when a provider omitted the field. Keep known zero eligible, but
+            # do not select unknown usage as though it were a measured zero.
+            if window.is_placeholder or not window.usage_known:
                 continue
             if not math.isfinite(window.used_percent) or window.used_percent < 0:
                 continue

@@ -11,7 +11,7 @@ from codexbar_gtk.providers import ALIASES, PROVIDERS
 
 ROOT = Path(__file__).resolve().parents[1]
 RUST_PROVIDERS = ROOT / "rust-core" / "src" / "providers.rs"
-RUST_PACE = ROOT / "rust-core" / "src" / "pace.rs"
+RUST_CURRENCY = ROOT / "rust-core" / "src" / "currency.rs"
 
 
 class RustProviderCatalogParityTests(unittest.TestCase):
@@ -38,12 +38,17 @@ class RustProviderCatalogParityTests(unittest.TestCase):
         self.assertEqual(dict(pairs), ALIASES)
 
     def test_currency_codes_match_python_catalog(self) -> None:
-        pace_source = RUST_PACE.read_text(encoding="utf-8")
-        start = pace_source.index("pub const CURRENCY_CODES:")
-        end = pace_source.index("];", start)
-        rust_codes = re.findall(r'"([A-Z]{3})"', pace_source[start:end])
-        python_codes = [code for code, _symbol, _rate in CURRENCIES]
-        self.assertEqual(rust_codes, python_codes)
+        currency_source = RUST_CURRENCY.read_text(encoding="utf-8")
+        start = currency_source.index("pub const CURRENCIES:")
+        end = currency_source.index("];", start)
+        rust_catalog = [
+            (code, symbol, float(rate))
+            for code, symbol, rate in re.findall(
+                r'\("([A-Z]{3})", "([^"]*)", ([0-9.]+)\)',
+                currency_source[start:end],
+            )
+        ]
+        self.assertEqual(rust_catalog, CURRENCIES)
 
 
 if __name__ == "__main__":

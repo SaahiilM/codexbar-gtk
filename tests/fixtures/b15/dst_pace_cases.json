@@ -1,0 +1,26 @@
+{
+  "timezone": "America/New_York",
+  "cases": [
+    {
+      "description": "01:30 EST to midnight EDT across spring forward",
+      "now": "2026-03-08T06:30:00+00:00",
+      "reset": "2026-03-09T04:00:00+00:00",
+      "remaining": 300.0,
+      "expected": 300.0
+    },
+    {
+      "description": "00:30 EDT to midnight EST across fall back",
+      "now": "2026-11-01T04:30:00+00:00",
+      "reset": "2026-11-02T05:00:00+00:00",
+      "remaining": 300.0,
+      "expected": 300.0
+    },
+    {
+      "description": "second occurrence of 01:30 before reset one real hour later",
+      "now": "2026-11-01T05:30:00+00:00",
+      "reset": "2026-11-01T06:30:00+00:00",
+      "remaining": 300.0,
+      "expected": 300.0
+    }
+  ]
+}

@@ -1,0 +1,1763 @@
+#!/usr/bin/env python3
+"""Guarded Wayland Settings smoke using one RemoteDesktop portal connection.
+
+Run only in the intended KDE Wayland session and in the matching transient
+app scope documented in UG_GATE.md. The default portal mode requires the
+user to visually verify the consent prompt before approving. The optional
+``--bridge`` mode instead routes input through the agent-agnostic
+``linux-agent-access`` bridge, which restores a reusable KDE portal grant
+without a per-run consent prompt; the fail-closed KWin guard is unchanged.
+This script never falls back to X11 or fake input.
+"""
+import argparse
+import inspect
+import json
+import os
+import pathlib
+import shutil
+import select
+import signal
+import struct
+import subprocess
+import sys
+import tempfile
+import textwrap
+import time
+import uuid
+
+from gi.repository import Gio, GLib
+
+PORTAL = "org.freedesktop.portal.Desktop"
+PORTAL_PATH = "/org/freedesktop/portal/desktop"
+REMOTE = "org.freedesktop.portal.RemoteDesktop"
+SESSION_IFACE = "org.freedesktop.portal.Session"
+APP_ID = "codexbar-gtk-synthetic-wayland-test"
+BRIDGE_DEFAULT_COMMAND = "linux-agent-access"
+WAYLAND_SWITCH_ACTIONS = {
+    "refresh-when-panel-opens": {
+        "preference": "refreshAllProvidersOnMenuOpen",
+        "label": "Refresh when the panel opens",
+        "y_fraction": 0.40,
+    },
+    "show-panel-on-start": {
+        "preference": "showPopupOnStart",
+        "label": "Show the panel on start",
+        "y_offset": 488,
+    },
+    "start-at-login": {
+        "preference": "launchAtLogin",
+        "label": "Start at login",
+        "y_offset": 440,
+        "requires_autostart_entry": True,
+    },
+    "hide-personal-info": {
+        "preference": "hidePersonalInfo",
+        "label": "Hide account details",
+        "page": "Display",
+        "y_offset": 311,
+        "switch_x_fraction": 0.75,
+    },
+    # Notifications page: four preference switches + "Send a test notification"
+    # button (rust-gtk/src/settings_window.rs; python parity
+    # codexbar_gtk/ui/settings.py::_notifications_page). Row offsets are
+    # estimates for the 1000x740 window (cf. Xvfb smoke coordinates
+    # 810,142/197/252/307 and button at 800,362); calibrate from the
+    # --inspect-only baseline before a guarded live run. Defaults are
+    # y_offset + x_fraction=0.810 (810/1000) for switches; the test button
+    # is a centred tail control, so its point is 0.800 with lower y.
+    "session-quota-notifications": {
+        "preference": "sessionQuotaNotificationsEnabled",
+        "label": "Session quota notifications",
+        "page": "Notifications",
+        "page_check": "/tmp/codexbar-notifications-page-check.png",
+        "tab_x_fraction": 0.46,
+        "y_offset": 142,
+    },
+    "quota-warning-notifications": {
+        "preference": "quotaWarningNotificationsEnabled",
+        "label": "Quota warning notifications",
+        "page": "Notifications",
+        "page_check": "/tmp/codexbar-notifications-page-check.png",
+        "tab_x_fraction": 0.46,
+        "y_offset": 197,
+    },
+    "limit-reset-notifications": {
+        "preference": "limitResetNotificationsEnabled",
+        "label": "Limit reset notifications",
+        "page": "Notifications",
+        "page_check": "/tmp/codexbar-notifications-page-check.png",
+        "tab_x_fraction": 0.46,
+        "y_offset": 252,
+    },
+    "predictive-pace-notifications": {
+        "preference": "predictivePaceNotificationsEnabled",
+        "label": "Pace warnings",
+        "page": "Notifications",
+        "page_check": "/tmp/codexbar-notifications-page-check.png",
+        "tab_x_fraction": 0.46,
+        "y_offset": 307,
+    },
+    "test-notification": {
+        "preference": None,
+        "label": "Send a test notification",
+        "page": "Notifications",
+        "page_check": "/tmp/codexbar-notifications-page-check.png",
+        "tab_x_fraction": 0.46,
+        "y_offset": 362,
+        "kind": "button",
+        "requires_notification_delivery": True,
+    },
+    # Menu Bar page (settings_window.rs: Menu Bar group "Tray icon"):
+    #   Icon style        -> combo menuBarIconStyle   (meter / iconPercent)
+    #   Icon shows        -> combo unifiedIconSource  (automatic / highest / first)
+    #   Provider rows     -> combo switcherRowsOption (progress / details)
+    #   Show the tray icon -> switch showTray
+    # Only the switch is a safe guarded click; combos need dropdown selection
+    # and remain manual. showTray defaults to true in prefs.py, so the runner
+    # seeds false and clicks to true (same direction as every other action).
+    # NOTE: Menu Bar has no pixel-measured tab point yet, so (build-82
+    # pattern) the action carries a per-action tab estimate below and the
+    # runner's automated bottom-tab click applies; the post-click
+    # page-check capture is the page evidence. The y_offset (4th row of
+    # the Tray icon group, estimated from the Xvfb Menu Bar capture)
+    # must be live-measured via --inspect-only; use --switch-x/--switch-y
+    # overrides if the estimate is off.
+    "show-tray-icon": {
+        "preference": "showTray",
+        "label": "Show the tray icon",
+        "page": "Menu Bar",
+        "page_check": "/tmp/codexbar-menu-bar-page-check.png",
+        "tab_x_fraction": 0.29,
+        "y_offset": 320,
+        "switch_x_fraction": 0.90,
+    },
+    # Providers page (rust-gtk/src/settings_window.rs::populate_providers;
+    # python parity codexbar_gtk/ui/settings.py::_providers_page /
+    # _toggle_provider/_set_provider_source/_set_api_key/_sign_in;
+    # backend rust-backend/src/settings.rs::provider_action/set_api_key
+    # via rust-backend/src/cli.rs: `config enable|disable --provider P`
+    # and `config set-source --provider P --source S`).
+    #
+    # Each provider is an AdwExpanderRow (display name + provider_id):
+    #   "Provider enabled" switch -> Enable/Disable
+    #   "Source" combo            -> SetSource {auto,web,cli,oauth,api}
+    #   "Sign in with provider CLI" button (claude/codex only)
+    #                             -> native LoginDialog (B11 PTY: `auth
+    #                                login --claudeai` / `login ...`; auth
+    #                                events stay in memory, never persisted)
+    #   "API key" PasswordEntryRow with Apply -> SetApiKey (secret is
+    #                                trimmed, entry cleared, never saved)
+    #
+    # Only the enable/disable switch is a safe guarded click, and even it
+    # persists NO preference JSON (the CLI owns provider state), so its
+    # success check is the fake CLI's state file (seeded ON -> the runner
+    # clicks to disable -> `config disable --provider codex` must land
+    # and flip the file true->false), like the autostart-entry check.
+    # The Providers page has no pixel-measured tab or row geometry yet,
+    # so the action carries a per-action tab estimate plus the switch
+    # row estimate from the Xvfb smoke (window 1120x820: tab x 166,
+    # switch at 810,234 -- i.e. x fraction 0.810 with y_offset 234);
+    # both must be live-measured via --inspect-only before trusting a
+    # guarded click (--switch-x/--switch-y overrides if the estimate is
+    # off). Rows are per-provider ExpanderRows whose height depends on
+    # the fixture's provider list, so the check verifies the CLI call +
+    # state file rather than trusting geometry alone.
+    "disable-codex-provider": {
+        "preference": None,
+        "label": "Codex provider enabled switch",
+        "page": "Providers",
+        "page_check": "/tmp/codexbar-providers-page-check.png",
+        "tab_x_fraction": 0.12,
+        "y_offset": 234,
+        "switch_x_fraction": 0.81,
+        "kind": "provider_switch",
+        "cli_action": "disable",
+        "provider_id": "codex",
+        "seed_provider_enabled": True,
+    },
+    # The remaining Providers controls are intentionally NOT allowlisted
+    # as automated clicks -- dropdown selection (Source combo), typed
+    # secret entry (API key Apply) and PTY login have no safe synthetic
+    # guarded path in this runner and stay manual. Documented here so
+    # they are not silently faked; the Xvfb smoke already exercises them
+    # (scripts/smoke-native-settings.sh: set-source --source api,
+    # set-api-key with a randomized synthetic value checked absent from
+    # preferences/logs, and the synthetic PTY sign-in).
+    "provider-source": {
+        "preference": None,
+        "label": "Provider source combo (manual: dropdown selection)",
+        "page": "Providers",
+        "page_check": "/tmp/codexbar-providers-page-check.png",
+        "kind": "manual",
+        "cli_action": "set-source",
+        "provider_id": "codex",
+    },
+    "provider-api-key": {
+        "preference": None,
+        "label": "Provider API key entry (manual: type synthetic key, click Apply)",
+        "page": "Providers",
+        "page_check": "/tmp/codexbar-providers-page-check.png",
+        "kind": "manual",
+        "cli_action": "set-api-key",
+        "provider_id": "codex",
+    },
+    "provider-login": {
+        "preference": None,
+        "label": "Provider sign-in (manual: PTY dialog, synthetic code)",
+        "page": "Providers",
+        "page_check": "/tmp/codexbar-providers-page-check.png",
+        "kind": "manual",
+        "cli_action": "login",
+        "provider_id": "codex",
+    },
+}
+PAGE_TAB_FRACTIONS = {"Display": (0.325, 0.968)}
+"""Window-relative bottom-tab-bar centers, pixel-measured from the kept
+baseline/page-check captures (window image offset (61,55) == target_geometry).
+
+The Display pill spans window px x 283..367, y 697..736 of a 1000x740
+window, so its center is (325, 717) = (0.325, 0.968). The earlier estimate
+(0.34, 0.94) landed 1 px above the pill top edge (window y 696 vs pill
+top 697) on the tab-bar container, which AdwTabBar ignores -- the
+hypothesis-(a)/(d) root cause (E184). Asserted by
+tests/test_wayland_smoke_guard.py::test_display_tab_point_hits_measured_pill.
+Notifications has no pixel measurement yet; its actions keep the
+build-82 per-action estimate (tab_x_fraction 0.46) until live calibration.
+"""
+PORTAL_DESKTOP_ENTRY = (
+    "[Desktop Entry]\nType=Application\n"
+    "Name=CodexBar GTK synthetic Wayland test\n"
+    "Exec=/bin/true\nStartupWMClass=com.steipete.CodexBarGTK\n"
+)
+
+
+def guard_target(state, expected_pid, x, y, now=None):
+    """Fail closed unless recent compositor evidence identifies the exact target."""
+    now = time.monotonic() if now is None else now
+    age = now - state.get("received", 0)
+    return (
+        0.15 <= age <= 0.35
+        and state.get("pid") == expected_pid
+        and state.get("active") is True
+        and state.get("top_hit") is True
+        and state.get("cursor") == [x, y]
+    )
+
+
+def active_target(state, expected_pid):
+    """Require exact synthetic app focus for a read-only baseline capture."""
+    return state.get("pid") == expected_pid and state.get("active") is True
+
+
+def fresh_active_target(state, expected_pid, now=None):
+    """Require the exact active fixture and the established fresh-sample window."""
+    now = time.monotonic() if now is None else now
+    try:
+        age = now - state.get("received", 0)
+    except (TypeError, ValueError):
+        return False
+    return 0.15 <= age <= 0.35 and active_target(state, expected_pid)
+
+
+def valid_kwin_observer_sample(sender, expected_sender, state, last_sequence):
+    """Accept only well-formed, ordered reports from the compositor connection."""
+    if sender != expected_sender or not isinstance(state, dict):
+        return False
+    sequence = state.get("sample_seq")
+    if type(sequence) is not int or sequence <= last_sequence:
+        return False
+    if type(state.get("pid")) is not int:
+        return False
+    if any(type(state.get(key)) is not bool for key in
+           ("active", "top_hit", "target_present", "portal_active")):
+        return False
+    cursor = state.get("cursor")
+    if (not isinstance(cursor, list) or len(cursor) != 2 or
+            any(type(value) is not int for value in cursor)):
+        return False
+    geometry = state.get("target_geometry")
+    if geometry is not None and (
+            not isinstance(geometry, list) or len(geometry) != 4 or
+            any(type(value) is not int for value in geometry)):
+        return False
+    return True
+
+
+def activate_target_window(app_pid, focus_js_path, focus_plugin,
+                           runner=subprocess.run):
+    """Ask KWin to activate only the exact synthetic Settings PID/title."""
+    focus_js_path = pathlib.Path(focus_js_path)
+    focus_js_path.write_text(activation_script(app_pid))
+    runner(["qdbus6", "org.kde.KWin", "/Scripting",
+            "org.kde.kwin.Scripting.loadScript", str(focus_js_path), focus_plugin],
+           check=True, capture_output=True, text=True)
+    loaded = runner(["qdbus6", "org.kde.KWin", "/Scripting",
+                     "org.kde.kwin.Scripting.isScriptLoaded", focus_plugin],
+                    check=True, capture_output=True, text=True).stdout.strip()
+    if loaded != "true":
+        raise RuntimeError("KWin did not load the synthetic Settings focus helper; no input sent")
+    runner(["qdbus6", "org.kde.KWin", "/Scripting",
+            "org.kde.kwin.Scripting.start"], check=True, capture_output=True)
+
+
+def wait_for_fresh_active_target(latest, expected_pid, timeout_seconds=5.0):
+    """Wait a bounded interval for fresh focus evidence from the exact fixture."""
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        state = latest()
+        if fresh_active_target(state, expected_pid):
+            return state
+        time.sleep(.02)
+    raise RuntimeError("Settings did not regain stable focus; no input sent")
+
+
+def activate_and_wait_for_target(app_pid, focus_js_path, focus_plugin, latest,
+                                 runner=subprocess.run, timeout_seconds=5.0):
+    """Share the target-only activation and 0.15–0.35s focus gate across routes."""
+    activate_target_window(app_pid, focus_js_path, focus_plugin, runner=runner)
+    return wait_for_fresh_active_target(latest, app_pid, timeout_seconds=timeout_seconds)
+
+
+def read_acknowledgement(timeout_seconds=60.0):
+    """Read a bounded inspection acknowledgement from the runner's stdin."""
+    ready, _, _ = select.select([sys.stdin], [], [], timeout_seconds)
+    return sys.stdin.readline().strip() if ready else ""
+
+
+def target_window_contains(state, x, y):
+    """Check requested target lies inside the synthetic window's geometry."""
+    geometry = state.get("target_geometry")
+    if not isinstance(geometry, list) or len(geometry) != 4:
+        return False
+    gx, gy, width, height = geometry
+    return width > 0 and height > 0 and gx <= x < gx + width and gy <= y < gy + height
+
+
+class BoundedTelemetry:
+    """Synthetic-only timestamped diagnostic records with strict size bounds."""
+    MAX_ENTRIES = 64
+    MAX_SECONDS = 8.0
+
+    def __init__(self, path):
+        self.path = pathlib.Path(path)
+        self.started = time.monotonic()
+        self.entries = []
+
+    def add(self, event, **fields):
+        now = time.monotonic()
+        if len(self.entries) >= self.MAX_ENTRIES or now - self.started > self.MAX_SECONDS:
+            return False
+        item = {"timestamp_monotonic": now, "event": str(event)[:48]}
+        item.update(fields)
+        self.entries.append(item)
+        self.path.write_text(json.dumps(self.entries, separators=(",", ":")) + "\n")
+        return True
+
+
+def telemetry_snapshot(telemetry, state, expected_pid, requested=None):
+    """Record only allowed KWin diagnostic fields; never titles or content."""
+    now = time.monotonic()
+    age = now - state.get("received", 0)
+    safe = {
+        "target_pid": expected_pid,
+        "active_pid": state.get("pid") if isinstance(state.get("pid"), int) else None,
+        "active": state.get("active") is True,
+        "top_hit": state.get("top_hit") is True,
+        "cursor": state.get("cursor") if isinstance(state.get("cursor"), list) else None,
+        "geometry": state.get("target_geometry") if isinstance(state.get("target_geometry"), list) else None,
+        "state_age_seconds": round(age, 6),
+    }
+    if requested is not None:
+        safe["requested"] = list(requested)
+    telemetry.add("kwin_snapshot", **safe)
+
+
+def returned_image_dimensions(decoded):
+    """Read dimensions only from an image path explicitly returned by bridge."""
+    if not isinstance(decoded, dict):
+        return None
+    for key in ("image_path", "screenshot_path", "screenshot"):
+        value = decoded.get(key)
+        if isinstance(value, str):
+            try:
+                with open(value, "rb") as image_file:
+                    header = image_file.read(24)
+                if header[:8] == b"\x89PNG\r\n\x1a\n" and header[12:16] == b"IHDR":
+                    return {"width": struct.unpack(">I", header[16:20])[0],
+                            "height": struct.unpack(">I", header[20:24])[0]}
+            except OSError:
+                pass
+    return None
+
+
+def bridge_return_metadata(decoded):
+    """Copy only documented-looking scalar result metadata, never image/content."""
+    if not isinstance(decoded, dict):
+        return {}
+    metadata = {}
+    for key in ("sent", "action_count", "actions_sent", "image_width", "image_height"):
+        value = decoded.get(key)
+        if isinstance(value, (bool, int)) and not isinstance(value, str):
+            metadata[key] = value
+    dimensions = returned_image_dimensions(decoded)
+    if dimensions:
+        metadata["returned_image_dimensions"] = dimensions
+    return metadata
+
+
+def start_notification_monitor(log_path):
+    """Watch a synthetic Notifications service for a Notify delivery.
+
+    Returns a process speaking to the session bus, or None if gdbus-monitor
+    is unavailable. The monitor output is inspected for the synthetic test
+    summary after the guarded button click; absence of that summary means
+    the delivery check fails closed.
+    """
+    log_path = pathlib.Path(log_path)
+    if shutil.which("gdbus-monitor") is None:
+        return None
+    log_file = log_path.open("ab", buffering=0)
+    process = subprocess.Popen(
+        ["gdbus-monitor", "--session", "--dest", "org.freedesktop.Notifications"],
+        stdout=log_file, stderr=subprocess.STDOUT,
+    )
+    return process
+
+
+def stop_notification_monitor(process):
+    """Stop the monitor started by start_notification_monitor."""
+    if process is None:
+        return
+    try:
+        process.terminate()
+        process.wait(timeout=3)
+    except (ProcessLookupError, subprocess.TimeoutExpired):
+        try:
+            process.kill()
+        except ProcessLookupError:
+            pass
+
+
+def notification_delivered(log_path, summary="CodexBar GTK test notification"):
+    """Whether the synthetic service log records the test notification Notify."""
+    try:
+        output = pathlib.Path(log_path).read_text(errors="replace")
+    except OSError:
+        return False
+    return "Notify(" in output and summary in output
+
+
+def changed_preferences(before, after):
+    """Return preference keys whose persisted values changed."""
+    return sorted(key for key in set(before) | set(after) if before.get(key) != after.get(key))
+
+
+def provider_enabled_file_text(expected):
+    """State-file text the fake CLI's provider switch flips to."""
+    return "true\n" if expected else "false\n"
+
+
+def provider_cli_call(cli_action, provider_id, source=None):
+    """Exact fake-CLI call line a Providers control must produce."""
+    if cli_action == "set-source":
+        return f"config set-source --provider {provider_id} --source {source}"
+    return f"config {cli_action} --provider {provider_id}"
+
+
+def check_provider_state(calls_path, enabled_path, action, provider_id):
+    """Fail-closed check for a Providers switch action.
+
+    Returns True iff the fake CLI recorded the expected enable/disable
+    call and flipped its state file. Never logs secret values; provider
+    state is the fixture's own, not a user credential.
+    """
+    try:
+        calls = pathlib.Path(calls_path).read_text(errors="replace")
+        enabled_text = pathlib.Path(enabled_path).read_text()
+    except OSError:
+        return False
+    expected_call = provider_cli_call(action, provider_id)
+    expected_state = provider_enabled_file_text(action == "enable")
+    return expected_call + "\n" in calls and enabled_text == expected_state
+
+
+def switch_point_from_geometry(geometry, y_fraction=0.40, y_offset=None, x_fraction=0.50):
+    """Choose a measured General switch row from its window-relative Y point."""
+    if not isinstance(geometry, list) or len(geometry) != 4:
+        raise ValueError("Settings window geometry is unavailable")
+    gx, gy, width, height = geometry
+    if width <= 0 or height <= 0:
+        raise ValueError("Settings window geometry is invalid")
+    if y_offset is None:
+        if not 0.0 < y_fraction < 1.0:
+            raise ValueError("General switch row fraction is invalid")
+        local_y = round(height * y_fraction)
+    else:
+        if not isinstance(y_offset, int) or not 0 <= y_offset < height:
+            raise ValueError("General switch row offset is outside the Settings window")
+        local_y = y_offset
+    return round(gx + width * x_fraction), round(gy + local_y)
+
+
+def page_tab_point_from_geometry(geometry, page):
+    """Choose a measured bottom-tab-bar point from window geometry.
+
+    Fail-closed: unknown pages, missing/invalid geometry raise instead
+    of clicking an estimated point (cf. E176's coarse sidebar point).
+    """
+    if page not in PAGE_TAB_FRACTIONS:
+        raise ValueError(f"page {page!r} has no measured tab point")
+    if not isinstance(geometry, list) or len(geometry) != 4:
+        raise ValueError("Settings window geometry is unavailable")
+    gx, gy, width, height = geometry
+    if width <= 0 or height <= 0:
+        raise ValueError("Settings window geometry is invalid")
+    x_fraction, y_fraction = PAGE_TAB_FRACTIONS[page]
+    return round(gx + width * x_fraction), round(gy + height * y_fraction)
+
+
+def page_verified_from_capture(image_path, geometry):
+    """Return True iff the captured PNG proves the Display page is shown.
+
+    Two probes, either suffices to say Display, and neither fires on the
+    General baseline (both verified against the two kept captures):
+
+    1. Pill: the Display tab pill is the selected (brighter, bg 57 vs bar
+       36) tab. Sampled at window-relative (0.305, 0.969) -- the pill's
+       left-of-icon background, away from the glyph -- vs the General
+       tab (0.099, 0.969). Display selected: 57 vs 36 (gap +21); General
+       selected: 36 vs 57 (gap -21). Single-pixel values are noise-free
+       here (solid fills), so no averaging window is applied.
+    2. Switch pair: on the Display page "Show pace indicators" is ON
+       (white thumb 255) while "Hide account details" is OFF (bar 36);
+       on General the same two thumb-column positions read OFF/ON. The
+       signed gap (pace - hide) is +219 on Display, -182 on General.
+
+    Undecodable, wrongly-sized or ambiguous images fail closed (False),
+    so a non-Display page never reaches the toggle click. Needs only the
+    PNG decoder below (stdlib fallback when PIL is absent).
+    """
+    try:
+        pixels, width, height = decode_png_rgb(image_path)
+    except (OSError, ValueError):
+        return False
+    window = locate_window(pixels, width, height)
+    if not window:
+        return False
+    gx, gy, geometry_w, geometry_h = window_geometry(
+        pixels, width, height, window
+    )
+    if geometry_w <= 0 or geometry_h <= 0:
+        return False
+
+    def pixel(rel_x, rel_y):
+        px = int(round(gx + geometry_w * rel_x))
+        py = int(round(gy + geometry_h * rel_y))
+        return pixels[py * width + px]
+
+    def luminance(rel_x, rel_y):
+        red, green, blue = pixel(rel_x, rel_y)
+        return (red + green + blue) // 3
+
+    pace = luminance(0.761, 0.195)
+    hide = luminance(0.761, 0.426)
+    display_pill = luminance(0.305, 0.969)
+    general_pill = luminance(0.099, 0.969)
+    _ = geometry
+    signed_gap = pace - hide
+    pill_gap = display_pill - general_pill
+    if signed_gap > 40:
+        return True
+    return pill_gap >= 15 and signed_gap > -40
+
+
+def decode_png_rgb(path):
+    """Decode a Spectacle PNG to (pixels, width, height) with PIL if
+    importable, else a minimal stdlib decoder. Raises on failure -- the
+    caller in page_verified_from_capture converts that to False.
+    """
+    try:
+        from PIL import Image
+
+        image = Image.open(path).convert("RGB")
+        return list(image.getdata()), image.width, image.height
+    except ImportError:
+        return decode_png_rgb_stdlib(path)
+
+
+def decode_png_rgb_stdlib(path):
+    """Minimal truecolor/RGBA PNG decoder (stdlib only, fail-closed).
+
+    Handles the 8-bit, non-interlaced PNGs Spectacle emits (color types
+    2/6, bit depth 8). Anything else raises -- page_verified_from_capture
+    treats that as unverified, so an exotic capture never clicks.
+    """
+    import struct
+    import zlib
+
+    data = pathlib.Path(path).read_bytes()
+    if data[:8] != b"\x89PNG\r\n\x1a\n":
+        raise ValueError("not a PNG")
+    offset = 8
+    idat = b""
+    width = height = bit_depth = color_type = None
+    while offset < len(data):
+        (length,) = struct.unpack(">I", data[offset:offset + 4])
+        chunk_type = data[offset + 4:offset + 8]
+        chunk = data[offset + 8:offset + 8 + length]
+        if chunk_type == b"IHDR":
+            width, height, bit_depth, color_type = struct.unpack(
+                ">IIBB", chunk[:10]
+            )
+        elif chunk_type == b"IDAT":
+            idat += chunk
+        elif chunk_type == b"IEND":
+            break
+        offset += 12 + length
+    if width is None or bit_depth != 8 or color_type not in (2, 6):
+        raise ValueError(f"unsupported PNG depth/type: {bit_depth}/{color_type}")
+    channels = 3 if color_type == 2 else 4
+    raw = zlib.decompress(idat)
+    stride = width * channels
+    pixels = []
+    previous = bytearray(stride)
+    position = 0
+    for _y in range(height):
+        filter_type = raw[position]
+        position += 1
+        line = bytearray(raw[position:position + stride])
+        position += stride
+        if filter_type == 1:
+            for i in range(channels, stride):
+                line[i] = (line[i] + line[i - channels]) & 0xFF
+        elif filter_type == 2:
+            for i in range(stride):
+                line[i] = (line[i] + previous[i]) & 0xFF
+        elif filter_type == 3:
+            for i in range(stride):
+                left = line[i - channels] if i >= channels else 0
+                line[i] = (line[i] + ((left + previous[i]) >> 1)) & 0xFF
+        elif filter_type == 4:
+            for i in range(stride):
+                a = line[i - channels] if i >= channels else 0
+                b = previous[i]
+                c = previous[i - channels] if i >= channels else 0
+                predictor = a + b - c
+                pa, pb, pc = abs(predictor - a), abs(predictor - b), abs(predictor - c)
+                best = a if pa <= pb and pa <= pc else (b if pb <= pc else c)
+                line[i] = (line[i] + best) & 0xFF
+        elif filter_type != 0:
+            raise ValueError(f"unsupported PNG filter {filter_type}")
+        for x in range(width):
+            base = x * channels
+            pixels.append((line[base], line[base + 1], line[base + 2]))
+        previous = line
+    return pixels, width, height
+
+
+def locate_window(pixels, width, height):
+    """Locate the Settings window's image-space top-left, or None.
+
+    Spectacle's --activewindow PNG is 1:1 with the KWin window plus a
+    small margin; the dark card edge is the outermost non-shadow block.
+    Returns the top-left of the brightest large block -- sufficient for
+    window-relative sampling because every probe below is relative to
+    this origin and window size is taken from the block extent.
+    """
+    brightness = [sum(p) // 3 for p in pixels]
+    threshold = 24
+    inside = [b > threshold for b in brightness]
+    top = left = None
+    for row in range(height):
+        if any(inside[row * width:(row + 1) * width]):
+            top = row
+            break
+    if top is None:
+        return None
+    for col in range(width):
+        if any(inside[row * width + col] for row in range(top, height)):
+            left = col
+            break
+    if left is None:
+        return None
+    bottom = max(
+        (row for row in range(top, height)
+         if any(inside[row * width:(row + 1) * width])),
+        default=top,
+    )
+    right = max(
+        (col for col in range(left, width)
+         if any(inside[row * width + col] for row in range(top, bottom + 1))),
+        default=left,
+    )
+    if right - left < 100 or bottom - top < 100:
+        return None
+    return left, top
+
+
+def window_geometry(pixels, width, height, window):
+    """Window-relative box: re-derive extents at the located origin."""
+    left, top = window
+    brightness = [sum(p) // 3 for p in pixels]
+    inside = [b > 24 for b in brightness]
+    bottom = top
+    for row in range(top, height):
+        if any(inside[row * width:(row + 1) * width]):
+            bottom = row
+    right = left
+    for col in range(left, width):
+        if any(inside[row * width + col] for row in range(top, bottom + 1)):
+            right = col
+    return left, top, right - left + 1, bottom - top + 1
+
+
+def activation_script(expected_pid):
+    """Reactivate only the synthetic Settings window after consent confirmation."""
+    expected_pid = int(expected_pid)
+    return f'''var TARGET_PID={expected_pid};
+var target=null;
+var windows=workspace.stackingOrder;
+for(var i=0;i<windows.length;i++){{
+  if(Number(windows[i].pid)===TARGET_PID && String(windows[i].caption).indexOf("CodexBar Settings")>=0){{
+    if(target){{target=null;break;}}
+    target=windows[i];
+  }}
+}}
+if(target){{
+  if(target.minimized)target.minimized=false;
+  workspace.activeWindow=target;
+}}
+var p=workspace.cursorPos,h=workspace.windowAt(p,1),top=h&&h.length?h[0]:null,a=workspace.activeWindow;
+var targetState=null;
+for(var j=0;j<workspace.stackingOrder.length;j++)if(Number(workspace.stackingOrder[j].pid)===TARGET_PID)targetState=workspace.stackingOrder[j];
+var geometry=targetState?{{x:Number(targetState.x),y:Number(targetState.y),width:Number(targetState.width),height:Number(targetState.height)}}:null;
+var state={{pid:a?Number(a.pid):0,active:!!(a&&Number(a.pid)===TARGET_PID),top_hit:!!(top&&Number(top.pid)===TARGET_PID),target_present:!!targetState,target_geometry:geometry?[geometry.x,geometry.y,geometry.width,geometry.height]:null,cursor:[Number(p.x),Number(p.y)],portal_active:false}};
+callDBus("org.codexbar.U05.Guard","/org/codexbar/U05/Guard","org.codexbar.U05.Guard","Record",JSON.stringify(state));
+'''
+
+
+def create_portal_desktop_entry(path):
+    """Create the one temporary portal identity without replacing user data."""
+    path = pathlib.Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with path.open("x", encoding="utf-8") as desktop_file:
+            try:
+                desktop_file.write(PORTAL_DESKTOP_ENTRY)
+            except OSError:
+                path.unlink(missing_ok=True)
+                raise
+    except FileExistsError as error:
+        raise RuntimeError(f"refusing to replace existing desktop entry {path}") from error
+    return True
+
+
+class PortalDriver:
+    """Keep portal setup and granted input on one authenticated bus connection."""
+    def __init__(self, bus):
+        self.bus = bus
+        self.loop = GLib.MainLoop()
+        self.session = None
+        self.phase = "create"
+        self.response = None
+        self.subscription = None
+        self.request_token = None
+        self.sender = bus.get_unique_name().lstrip(":").replace(".", "_")
+
+    def request(self, method, signature, args, options_index):
+        token = "u05_" + uuid.uuid4().hex
+        args = list(args)
+        options = dict(args[options_index])
+        options["handle_token"] = GLib.Variant("s", token)
+        args[options_index] = options
+        path = f"/org/freedesktop/portal/desktop/request/{self.sender}/{token}"
+        self.request_token = token
+        self.subscription = self.bus.signal_subscribe(
+            PORTAL, "org.freedesktop.portal.Request", "Response", path,
+            None, Gio.DBusSignalFlags.NONE, self.on_response)
+        self.remote_call(method, signature, tuple(args))
+
+    def remote_call(self, method, signature, args, timeout=5000):
+        self.bus.call_sync(PORTAL, PORTAL_PATH, REMOTE, method,
+                           GLib.Variant(signature, args), None,
+                           Gio.DBusCallFlags.NONE, timeout, None)
+
+    def on_response(self, _bus, _sender, path, _iface, _signal, params):
+        code, values = params.unpack()
+        self.response = (code, values)
+        if self.subscription is not None:
+            self.bus.signal_unsubscribe(self.subscription)
+            self.subscription = None
+        if code:
+            self.loop.quit()
+            return
+        try:
+            if self.phase == "create":
+                self.session = values["session_handle"]
+                self.phase = "select"
+                self.request("SelectDevices", "(oa{sv})", (self.session, {
+                    "types": GLib.Variant("u", 3),
+                    "persist_mode": GLib.Variant("u", 0),
+                }), 1)
+            elif self.phase == "select":
+                self.phase = "start"
+                self.request("Start", "(osa{sv})", (self.session, "", {}), 2)
+            else:
+                self.phase = "approved"
+                self.loop.quit()
+        except Exception as error:
+            print(f"portal request failed: {error}", file=sys.stderr, flush=True)
+            self.loop.quit()
+
+    def start(self):
+        self.request("CreateSession", "(a{sv})", ({
+            "session_handle_token": GLib.Variant("s", "u05_" + uuid.uuid4().hex),
+        },), 0)
+        GLib.timeout_add_seconds(300, lambda: (self.loop.quit(), False)[1])
+        self.loop.run()
+        if self.phase != "approved" or not self.response or self.response[0] != 0:
+            raise RuntimeError("portal consent declined or timed out; no input sent")
+        if self.response[1].get("devices") != 3:
+            raise RuntimeError("portal did not grant pointer and keyboard only")
+
+    def move(self, dx, dy):
+        self.remote_call("NotifyPointerMotion", "(oa{sv}dd)",
+                         (self.session, {}, float(dx), float(dy)))
+
+    def click(self):
+        for state in (1, 0):
+            self.remote_call("NotifyPointerButton", "(oa{sv}iu)",
+                             (self.session, {}, 272, state))
+
+    def close(self):
+        if self.session:
+            try:
+                self.bus.call_sync(PORTAL, self.session, SESSION_IFACE, "Close", None,
+                                   None, Gio.DBusCallFlags.NONE, 5000, None)
+            except Exception:
+                pass
+
+def fixture_env(use_bridge, runner_env=None):
+    """Fixture env for the synthetic app; bridge flow needs AT-SPI on."""
+    env = dict(runner_env if runner_env is not None else os.environ)
+    env.pop("GTK_A11Y", None)
+    # Portal flow keeps a11y off; bridge flow must enable it so the
+    # bridge's AT-SPI focus check can see the synthetic app.
+    if not use_bridge:
+        env["GTK_A11Y"] = "none"
+    return env
+
+
+def resolve_atspi_application(pid, runner=subprocess.run, timeout=15):
+    """Exact AT-SPI name for pid, fail-closed when identity is unverified."""
+    pid = int(pid)
+    # AT-SPI through Atspi.get_desktop needs Atspi.init() and the session
+    # a11y bus. The probe only reads names + PIDs — never window contents.
+    need_env = dict(os.environ)
+    probe = (
+        "import sys,gi,json;gi.require_version('Atspi','2.0');"
+        "from gi.repository import Atspi\n"
+        "def main():\n"
+        " Atspi.init()\n"
+        " d=Atspi.get_desktop(0)\n"
+        " want=int(sys.argv[1]);names=[]\n"
+        " for i in range(min(d.get_child_count(),100)):\n"
+        "  c=d.get_child_at_index(i)\n"
+        "  try:\n"
+        "   pid_c=int(c.get_process_id());nm=c.get_name()\n"
+        "   names.append({'pid':pid_c,'name':nm})\n"
+        "   if pid_c==want:\n"
+        "    print(json.dumps({'found':nm,'children':names}));return 0\n"
+        "  except Exception as e:\n"
+        "   names.append({'error':str(e)[:200]})\n"
+        " print(json.dumps({'found':None,'children':names}));return 10\n"
+        "import sys as _s\n"
+        "try:\n"
+        " _s.exit(main())\n"
+        "except SystemExit:\n"
+        " raise\n"
+        "except Exception as e:\n"
+        " print(json.dumps({'found':None,'children':[],'probe_error':str(e)[:400]}));_s.exit(3)"
+    )
+    last_err = "no AT-SPI response"
+    proc = None
+    for attempt in range(2):
+        try:
+            proc = runner(
+                [sys.executable, "-c", probe, str(pid)],
+                capture_output=True, text=True, timeout=timeout, env=need_env,
+            )
+        except Exception as error:
+            if attempt == 1:
+                raise RuntimeError(
+                    f"AT-SPI identity check failed for synthetic PID {pid}; no input sent"
+                ) from error
+            time.sleep(0.5)
+            continue
+        out = (proc.stdout or "").strip()
+        name = None
+        diag = ""
+        try:
+            data = json.loads(out) if out else {}
+            name = data.get("found")
+            kids = data.get("children", [])
+            diag = "; ".join(
+                f"{k.get('pid')}:{k.get('name')!r}" for k in kids if "pid" in k
+            )[:500]
+        except Exception:
+            pass
+        if proc.returncode != 0:
+            returncode = getattr(proc, "returncode", 1)
+            err_full = (getattr(proc, "stderr", "") or "").strip()
+            # Last line of stderr usually carries the real error.
+            last_err = (err_full.splitlines()[-1] if err_full else diag) or last_err
+            if attempt == 0:
+                time.sleep(0.5)
+                continue
+            raise RuntimeError(
+                f"AT-SPI identity check failed for synthetic PID {pid}: "
+                f"{last_err or 'no AT-SPI name returned'}; "
+                f"observed child {diag!r}; no input sent"
+            )
+        if name:
+            return name
+        raise RuntimeError(
+            f"AT-SPI identity check failed for synthetic PID {pid}: "
+            f"{last_err or 'no AT-SPI name returned'}; "
+            f"observed child {diag!r}; no input sent"
+        )
+    raise RuntimeError(
+        f"AT-SPI identity check failed for synthetic PID {pid}: {last_err}; no input sent"
+    )
+
+
+def resolve_bridge_command(override, exists_fn=shutil.which, is_file=pathlib.Path.is_file):
+    """Resolve the optional bridge entry point, fail-closed when absent.
+
+    Returns the command to invoke, preferring an explicit override. Raises
+    RuntimeError when the bridge is not installed, so a --bridge run never
+    silently falls back to the portal path (and vice versa).
+    """
+    if override:
+        if exists_fn(override) or is_file(pathlib.Path(override)):
+            return override
+        raise RuntimeError(f"bridge command not found: {override}; no input sent")
+    found = exists_fn(BRIDGE_DEFAULT_COMMAND)
+    if not found:
+        raise RuntimeError(
+            f"{BRIDGE_DEFAULT_COMMAND!r} not on PATH; bridge mode unavailable "
+            "(omit --bridge to use the portal consent flow)"
+        )
+    return found
+
+
+class BridgeDriver:
+    """Drive absolute-coordinate input through linux-agent-access.
+
+    Each ``action`` invocation reconnects, re-screenshots (a fresh
+    observation id) and checks the named AT-SPI application is active
+    before sending one action -- exactly the bridge's CLI contract. No
+    KDE consent prompt is involved: the bridge restores its reusable
+    OS-level portal grant unattended. The KWin observer in this script
+    remains the fail-closed evidence source; bridge coordinates are
+    absolute, so the caller keeps the cursor==target guard unchanged.
+    """
+    def __init__(self, command, application,
+                 runner=subprocess.run, timeout=60, telemetry=None):
+        if not application:
+            raise ValueError("bridge application identity is required; no input sent")
+        self.command = command
+        self.application = application
+        self.runner = runner
+        self.timeout = timeout
+        self.telemetry = telemetry
+
+    def action(self, payload):
+        started = time.monotonic()
+        if self.telemetry:
+            self.telemetry.add("bridge_request", coordinates=[payload.get("x"), payload.get("y")],
+                               action=payload.get("kind"), monotonic_start=started)
+        try:
+            result = self.runner(
+                [self.command, "action", "--application", self.application,
+                 "--json", json.dumps(payload)],
+                capture_output=True, text=True, timeout=self.timeout)
+        except Exception:
+            if self.telemetry:
+                self.telemetry.add("bridge_result", monotonic_end=time.monotonic(),
+                                   bridge_return_code=None, outcome="exception")
+            raise
+        if result.returncode != 0:
+            if self.telemetry:
+                self.telemetry.add("bridge_result", monotonic_end=time.monotonic(),
+                                   bridge_return_code=result.returncode, outcome="failed")
+            raise RuntimeError(
+                f"bridge action failed ({self.command}); see bounded synthetic telemetry"
+            )
+        try:
+            decoded = json.loads(result.stdout)
+        except (TypeError, ValueError) as error:
+            if self.telemetry:
+                self.telemetry.add("bridge_result", monotonic_end=time.monotonic(),
+                                   bridge_return_code=result.returncode,
+                                   outcome="non_json_return")
+            raise RuntimeError(
+                f"bridge action returned non-JSON output; no input confirmed"
+            ) from error
+        if isinstance(decoded, dict) and "error" in decoded:
+            if self.telemetry:
+                self.telemetry.add("bridge_result", monotonic_end=time.monotonic(),
+                                   bridge_return_code=result.returncode,
+                                   outcome="reported_error")
+            raise RuntimeError("bridge action reported an error; see bounded synthetic telemetry")
+        if self.telemetry:
+            self.telemetry.add("bridge_result", monotonic_end=time.monotonic(),
+                               bridge_return_code=result.returncode, outcome="returned",
+                               return_metadata=bridge_return_metadata(decoded))
+        return decoded
+
+    def move(self, x, y):
+        return self.action({"kind": "move", "x": int(x), "y": int(y)})
+
+    def click(self, x, y):
+        return self.action({"kind": "click", "button": "left",
+                            "x": int(x), "y": int(y)})
+
+    def close(self):
+        # The bridge CLI keeps the portal session in its per-invocation
+        # backend worker (closed at process exit); nothing to tear down.
+        return None
+
+
+def guarded_click(portal, app_pid, latest, x, y):
+    """Move to (x, y) and click only after the compositor state passes guard."""
+    state = latest()
+    dx, dy = x - state["cursor"][0], y - state["cursor"][1]
+    if abs(dx) > 1600 or abs(dy) > 1200:
+        raise RuntimeError("requested pointer delta exceeds safety bound; no input sent")
+    portal.move(dx, dy)
+    deadline = time.monotonic() + 2
+    while time.monotonic() < deadline:
+        if guard_target(latest(), app_pid, x, y):
+            break
+        time.sleep(.01)
+    else:
+        raise RuntimeError("target/focus hit-test unstable after motion; no click sent")
+    if not guard_target(latest(), app_pid, x, y):
+        raise RuntimeError("final target/focus guard failed; no click sent")
+    portal.click()
+
+
+def guarded_click_bridge(bridge, app_pid, latest, x, y):
+    """Bridge variant of guarded_click: absolute coords, same KWin guard.
+
+    The bridge sends NotifyPointerMotionAbsolute + button itself, so there
+    is no relative motion to await -- but the fail-closed guard is NOT
+    weakened: cursor must equal [x, y], pid/active/top_hit must match, and
+    the 0.15-0.35s age window must hold immediately before the click.
+    """
+    state = latest()
+    if not target_window_contains(state, x, y):
+        raise RuntimeError("action coordinates outside the synthetic window; no input sent")
+    # The current cursor may be outside the active fixture. Require exact
+    # focus before moving, then require top-hit AND exact cursor position
+    # after motion and again immediately before the click.
+    if not active_target(state, app_pid):
+        raise RuntimeError("synthetic Settings is not active; no input sent")
+    bridge.move(x, y)
+    deadline = time.monotonic() + 2
+    while time.monotonic() < deadline:
+        if guard_target(latest(), app_pid, x, y):
+            break
+        time.sleep(.01)
+    else:
+        raise RuntimeError("target/focus hit-test unstable after motion; no click sent")
+    if not guard_target(latest(), app_pid, x, y):
+        raise RuntimeError("final target/focus guard failed; no click sent")
+    bridge.click(x, y)
+
+
+def move_only_diagnostic(bridge, app_pid, latest, preferences_path, telemetry,
+                         timeout_seconds=2.0):
+    """Run one explicit, isolated move probe; this function has no click route."""
+    before_bytes = pathlib.Path(preferences_path).read_bytes()
+    before = latest()
+    geometry = before.get("target_geometry")
+    if not isinstance(geometry, list) or len(geometry) != 4:
+        raise RuntimeError("move-only precondition failed: synthetic geometry unavailable")
+    x, y = page_tab_point_from_geometry(geometry, "Display")
+    if not target_window_contains(before, x, y):
+        raise RuntimeError("move-only precondition failed: Display point is outside the window")
+    telemetry_snapshot(telemetry, before, app_pid, requested=[x, y])
+    telemetry.add("diagnostic", label="move_only", requested_coordinates=[x, y],
+                  baseline_preferences_unchanged=True)
+    # Re-sample directly before the only permitted input. Cursor position and
+    # top-hit are intentionally not checked here because the cursor may start
+    # outside the fixture; the post-motion telemetry records both.
+    before_move = latest()
+    if not fresh_active_target(before_move, app_pid):
+        raise RuntimeError("move-only precondition failed: no fresh active synthetic Settings sample")
+    telemetry_snapshot(telemetry, before_move, app_pid, requested=[x, y])
+    bridge.move(x, y)  # exactly one bridge action; no navigation or follow-up input
+    deadline = time.monotonic() + timeout_seconds
+    last_signature = None
+    while time.monotonic() < deadline:
+        state = latest()
+        signature = tuple(state.get(key) for key in
+                          ("pid", "active", "top_hit", "cursor", "target_geometry"))
+        if signature != last_signature:
+            telemetry_snapshot(telemetry, state, app_pid, requested=[x, y])
+            last_signature = signature
+        time.sleep(.02)
+    final_state = latest()
+    telemetry_snapshot(telemetry, final_state, app_pid, requested=[x, y])
+    unchanged = pathlib.Path(preferences_path).read_bytes() == before_bytes
+    telemetry.add("diagnostic_end", json_unchanged=unchanged,
+                  requested_coordinates=[x, y], observed_cursor=final_state.get("cursor"))
+    if not unchanged:
+        raise RuntimeError("move-only diagnostic changed synthetic preferences JSON")
+    print("DIAGNOSTIC ONLY: one bridge move returned; no click/key/scroll/navigation; "
+          f"preferences JSON unchanged; telemetry={telemetry.path}", flush=True)
+    return 0
+
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--binary", type=pathlib.Path, required=True)
+    parser.add_argument("--action", choices=tuple(WAYLAND_SWITCH_ACTIONS),
+                        default="refresh-when-panel-opens",
+                        help="allowlisted switch action to exercise; hide-personal-info, "
+                             "show-tray-icon and disable-codex-provider live on Display/Menu Bar/Providers "
+                             "pages (only Display tab navigation is automated; manual "
+                             "provider-source/provider-api-key/provider-login steps run "
+                             "with --inspect-only first)")
+    parser.add_argument("--inspect-only", action="store_true",
+                        help="capture the synthetic Settings window and exit without requesting portal access")
+    parser.add_argument("--move-only", action="store_true",
+                        help="one bridge pointer move to the measured Display tab point; diagnostic only, no other input")
+    # Input routing: --bridge (agent-agnostic linux-agent-access bridge,
+    # no per-run KDE consent prompt) vs the default --portal flow. The
+    # bridge is optional and flag-gated: with neither flag the runner uses
+    # the bridge when installed, and the portal path only when it is not.
+    parser.add_argument("--bridge", action="store_true",
+                        help="send input via linux-agent-access (restores the "
+                             "reusable KDE grant; no consent prompt, no APPROVE)")
+    parser.add_argument("--portal", action="store_true",
+                        help="force the RemoteDesktop portal flow (KDE consent prompt + APPROVE)")
+    parser.add_argument("--bridge-cmd",
+                        help=f"bridge executable (default: {BRIDGE_DEFAULT_COMMAND} on PATH)")
+    parser.add_argument("--switch-x", type=int, help="override the geometry-derived KWin X coordinate")
+    parser.add_argument("--switch-y", type=int, help="override the geometry-derived KWin Y coordinate")
+    args = parser.parse_args()
+    if args.bridge and args.portal:
+        parser.error("--bridge and --portal are mutually exclusive")
+    if args.move_only and (args.portal or args.inspect_only):
+        parser.error("--move-only requires bridge mode and cannot be combined with --portal/--inspect-only")
+    if (args.switch_x is None) != (args.switch_y is None):
+        parser.error("--switch-x and --switch-y must be supplied together")
+    action = WAYLAND_SWITCH_ACTIONS[args.action]
+    preference_key = action.get("preference")
+    if action.get("kind") == "manual":
+        parser.error(
+            f"action {args.action!r} is a manual Providers step; use --inspect-only "
+            "to calibrate the Providers page, then perform it by hand against the "
+            "synthetic fixture (see the runner comment). Refusing to drive it."
+        )
+    is_provider_action = action.get("kind") == "provider_switch"
+    is_button_action = action.get("kind") == "button" or (preference_key is None and not is_provider_action)
+    if not os.environ.get("WAYLAND_DISPLAY") or not os.environ.get("XDG_RUNTIME_DIR"):
+        parser.error("run inside the intended Wayland session")
+    if os.environ.get("XDG_SESSION_TYPE") not in (None, "wayland"):
+        parser.error("XDG_SESSION_TYPE is not Wayland")
+    if not args.binary.is_file() or not os.access(args.binary, os.X_OK):
+        parser.error("--binary must name an executable native GTK build")
+    for tool in ("qdbus6", "systemd-run"):
+        if shutil.which(tool) is None:
+            parser.error(f"required KDE Wayland tool missing: {tool}")
+    cgroup = pathlib.Path("/proc/self/cgroup").read_text()
+    if "app-codexbar-gtk-synthetic-wayland-test.scope" not in cgroup:
+        parser.error("run inside app-codexbar-gtk-synthetic-wayland-test.scope; see UG_GATE.md")
+    for tool in ("spectacle",):
+        if shutil.which(tool) is None:
+            parser.error(f"required consent-window capture tool missing: {tool}")
+    if args.portal:
+        use_bridge = False
+    elif args.bridge or args.bridge_cmd:
+        use_bridge = True
+    else:
+        use_bridge = shutil.which(BRIDGE_DEFAULT_COMMAND) is not None
+    bridge_command = None
+    if args.move_only and not use_bridge:
+        parser.error("--move-only requires --bridge")
+    if use_bridge:
+        try:
+            bridge_command = resolve_bridge_command(args.bridge_cmd)
+        except RuntimeError as error:
+            parser.error(str(error))
+        print(f"Input route: linux-agent-access bridge ({bridge_command}); "
+              "no KDE consent prompt or APPROVE is required.", flush=True)
+    else:
+        print("Input route: RemoteDesktop portal; expect the KDE consent prompt.", flush=True)
+
+    scratch = pathlib.Path(tempfile.mkdtemp(prefix="codexbar-wayland-settings-"))
+    scratch.chmod(0o700)
+    app = observer = portal = input_driver = None
+    notification_monitor = None
+    bus = None
+    capture_status = None
+    settings_capture = None
+    kwin_plugin = "codexbar_u05_guard_" + uuid.uuid4().hex[:12]
+    focus_plugin = "codexbar_u05_focus_" + uuid.uuid4().hex[:12]
+    focus_script_loaded = False
+    desktop_path = pathlib.Path(os.environ.get("XDG_DATA_HOME", pathlib.Path.home() / ".local/share")) / "applications" / f"{APP_ID}.desktop"
+    desktop_created = False
+    desktop_parent_created = not desktop_path.parent.exists()
+    try:
+        # Do not replace XDG_RUNTIME_DIR: GTK and the portal must use the active
+        # desktop's Wayland socket and session bus. All persistent app state is private.
+        home = scratch / "home"
+        (home / ".config" / "codexbar-gtk").mkdir(parents=True, mode=0o700)
+        preferences = home / ".config" / "codexbar-gtk" / "settings.json"
+        # Buttons persist no preference; seed an empty store and rely on
+        # the synthetic Notifications monitor for their success check.
+        # Provider actions also persist no preference: the fixture CLI
+        # owns provider state (seeded ON so the runner clicks to disable).
+        seed = {} if preference_key is None else {preference_key: False}
+        preferences.write_text(json.dumps(seed) + "\n")
+        cli_calls = scratch / "fixture-cli-calls.log"
+        provider_enabled = scratch / "provider-codex-enabled"
+        if is_provider_action:
+            provider_enabled.write_text(provider_enabled_file_text(True))
+            fake_source = '''#!/bin/sh
+set -eu
+case "${1-}/${2-}" in
+  --version/*) printf '%s\\n' 'CodexBar synthetic fixture 0.82.0' ;;
+  config/providers)
+    printf '%s\\n' "$*" >> "$FIXTURE_CLI_CALLS"
+    if [ "$(cat "$FIXTURE_PROVIDER_ENABLED")" = "true" ]; then
+      printf '%s\\n' 'codex: enabled (Codex)' 'claude: disabled (Claude)'
+    else
+      printf '%s\\n' 'codex: disabled (Codex)' 'claude: disabled (Claude)'
+    fi
+    ;;
+  config/enable|config/disable)
+    printf '%s\\n' "$*" >> "$FIXTURE_CLI_CALLS"
+    if [ "${4-}" = "codex" ]; then
+      printf '%s\\n' "$2" | sed 's/^enable$/true/;s/^disable$/false/' > "$FIXTURE_PROVIDER_ENABLED"
+    fi
+    printf '%s\\n' '{"ok":true}'
+    ;;
+  *) printf '%s\\n' "$*" >> "$FIXTURE_CLI_CALLS"; printf '%s\\n' '[]' ;;
+esac
+'''
+        else:
+            fake_source = "#!/bin/sh\ncase \"${1-}\" in --version) echo 'CodexBar synthetic fixture 0.82.0';; *) echo '[]';; esac\n"
+        fake = scratch / "codexbar"
+        fake.write_text(fake_source)
+        fake.chmod(0o700)
+        # Portal identifies the requester through its app-scoped systemd unit and
+        # this matching temporary desktop entry. Remove only the entry we create.
+        create_portal_desktop_entry(desktop_path)
+        desktop_created = True
+        env = fixture_env(use_bridge)
+        env.update(HOME=str(home), XDG_CONFIG_HOME=str(home / ".config"),
+                   XDG_DATA_HOME=str(home / ".local/share"), XDG_CACHE_HOME=str(home / ".cache"),
+                   CODEXBAR_CLI=str(fake), GTK_USE_PORTAL="0",
+                   GDK_BACKEND="wayland", GSK_RENDERER="cairo")
+        env.pop("CODEXBAR_RUST_CORE", None)
+        if is_provider_action:
+            env.update(FIXTURE_CLI_CALLS=str(cli_calls), FIXTURE_PROVIDER_ENABLED=str(provider_enabled))
+        bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+        spectacle_owned = bus.call_sync(
+            "org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus",
+            "NameHasOwner", GLib.Variant("(s)", ("org.kde.spectacle",)),
+            GLib.VariantType.new("(b)"), Gio.DBusCallFlags.NONE, 3000, None).unpack()[0]
+        if spectacle_owned:
+            raise RuntimeError("Spectacle is already running; refusing to use its existing session")
+        owned = bus.call_sync("org.freedesktop.DBus", "/org/freedesktop/DBus",
+                              "org.freedesktop.DBus", "NameHasOwner",
+                              GLib.Variant("(s)", ("com.steipete.CodexBarGTK",)),
+                              GLib.VariantType.new("(b)"), Gio.DBusCallFlags.NONE, 3000, None).unpack()[0]
+        if owned:
+            raise RuntimeError("native application ID already owned; refusing to target an existing app")
+        watcher_owned = bus.call_sync(
+            "org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus",
+            "NameHasOwner", GLib.Variant("(s)", ("org.kde.StatusNotifierWatcher",)),
+            GLib.VariantType.new("(b)"), Gio.DBusCallFlags.NONE, 3000, None).unpack()[0]
+        if not watcher_owned:
+            raise RuntimeError("StatusNotifierWatcher is unavailable; refusing synthetic app launch")
+        sni_owned = bus.call_sync(
+            "org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus",
+            "NameHasOwner", GLib.Variant("(s)", ("org.kde.StatusNotifierItem-codexbar-gtk",)),
+            GLib.VariantType.new("(b)"), Gio.DBusCallFlags.NONE, 3000, None).unpack()[0]
+        if sni_owned:
+            raise RuntimeError("synthetic StatusNotifierItem name already owned; refusing launch")
+        portal_owner = bus.call_sync(
+            "org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus",
+            "GetNameOwner", GLib.Variant("(s)", ("org.freedesktop.impl.portal.desktop.kde",)),
+            GLib.VariantType.new("(s)"), Gio.DBusCallFlags.NONE, 3000, None).unpack()[0]
+        kwin_owner = bus.call_sync(
+            "org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus",
+            "GetNameOwner", GLib.Variant("(s)", ("org.kde.KWin",)),
+            GLib.VariantType.new("(s)"), Gio.DBusCallFlags.NONE, 3000, None).unpack()[0]
+        portal_pid = bus.call_sync(
+            "org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus",
+            "GetConnectionUnixProcessID", GLib.Variant("(s)", (portal_owner,)),
+            GLib.VariantType.new("(u)"), Gio.DBusCallFlags.NONE, 3000, None).unpack()[0]
+        app_log = (scratch / "app.log").open("wb")
+        app = subprocess.Popen([str(args.binary), "--settings"], env=env, stdout=app_log,
+                               stderr=subprocess.STDOUT, start_new_session=True)
+        state_path = scratch / "kwin-state.json"
+        observer_ready = scratch / "observer-ready"
+        consent_capture = scratch / "portal-consent.png"
+        settings_capture = scratch / "settings-before.png"
+        capture_status = scratch / "portal-capture.json"
+        observer_py = scratch / "observer.py"
+        observer_py.write_text(OBSERVER_PY.replace(
+            "__VALIDATOR__", textwrap.dedent(inspect.getsource(valid_kwin_observer_sample))))
+        observer = subprocess.Popen([sys.executable, str(observer_py), str(state_path), str(observer_ready),
+                                     str(portal_pid), str(consent_capture), str(capture_status),
+                                     kwin_owner],
+                                    env=os.environ.copy(), stdout=subprocess.DEVNULL,
+                                    stderr=(scratch / "observer.log").open("wb"), start_new_session=True)
+        ready_deadline = time.monotonic() + 5
+        while time.monotonic() < ready_deadline and not observer_ready.exists():
+            if observer.poll() is not None:
+                raise RuntimeError(f"KWin guard D-Bus observer exited; diagnostics: {scratch / 'observer.log'}")
+            time.sleep(.02)
+        if not observer_ready.exists():
+            raise RuntimeError("KWin guard D-Bus observer did not acquire its name")
+        js_path = scratch / "kwin-observer.js"
+        js_path.write_text(KWIN_JS.replace("__PID__", str(app.pid)).replace("__PORTAL_PID__", str(portal_pid)).replace("__PLUGIN__", kwin_plugin))
+        subprocess.run(["qdbus6", "org.kde.KWin", "/Scripting",
+                        "org.kde.kwin.Scripting.loadScript", str(js_path), kwin_plugin],
+                       check=True, capture_output=True, text=True)
+        loaded = subprocess.run(["qdbus6", "org.kde.KWin", "/Scripting",
+                                 "org.kde.kwin.Scripting.isScriptLoaded", kwin_plugin],
+                                check=True, capture_output=True, text=True).stdout.strip()
+        if loaded != "true":
+            raise RuntimeError(f"KWin did not load observer script {kwin_plugin}")
+        subprocess.run(["qdbus6", "org.kde.KWin", "/Scripting",
+                        "org.kde.kwin.Scripting.start"], check=True, capture_output=True)
+        deadline = time.monotonic() + 20
+        while time.monotonic() < deadline and app.poll() is None:
+            if state_path.exists() and json.loads(state_path.read_text()).get("target_present"):
+                break
+            time.sleep(.05)
+        if not state_path.exists() or not json.loads(state_path.read_text()).get("target_present"):
+            raise RuntimeError("KWin observer did not see the synthetic Settings window")
+        # A script loaded into the host compositor is observational only: it does
+        # not synthesize input, move the cursor, or change compositor settings.
+        baseline_deadline = time.monotonic() + 5
+        settings_state = json.loads(state_path.read_text())
+        while time.monotonic() < baseline_deadline and not active_target(settings_state, app.pid):
+            time.sleep(.02)
+            if state_path.exists():
+                settings_state = json.loads(state_path.read_text())
+        if not active_target(settings_state, app.pid):
+            raise RuntimeError("synthetic Settings was not active for baseline capture; no portal request sent")
+        baseline_capture = subprocess.run(
+            ["spectacle", "--background", "--activewindow", "--nonotify", "--output", str(settings_capture)],
+            capture_output=True, text=True, timeout=8,
+        )
+        if baseline_capture.returncode != 0 or not settings_capture.is_file():
+            raise RuntimeError("synthetic Settings baseline capture failed; no portal request sent")
+        print(f"Synthetic Settings baseline captured at {settings_capture}; verify the requested row.", flush=True)
+        if args.inspect_only:
+            print("Inspection-only mode; no portal request or input sent.", flush=True)
+            return 0
+        if args.move_only:
+            print("Inspect the synthetic Settings baseline image, then enter INSPECTED within 60 seconds to continue the single move-only probe; any other input aborts without input.", flush=True)
+            if read_acknowledgement() != "INSPECTED":
+                raise RuntimeError("move-only baseline inspection acknowledgement missing; no input sent")
+        print(f"Synthetic fixture and consent capture path: {scratch}", flush=True)
+        if use_bridge:
+            print("Bridge mode: the linux-agent-access bridge restores its "
+                  "reusable KDE grant unattended; no consent prompt.", flush=True)
+            # Resolve the exact AT-SPI name for this synthetic PID; never
+            # guess it (the window title and APP_ID can differ).
+            bridge_application = resolve_atspi_application(app.pid)
+            print(f"Bridge target AT-SPI name: {bridge_application!r} (PID {app.pid})", flush=True)
+            telemetry = BoundedTelemetry(scratch / "move-only-telemetry.json") if args.move_only else None
+            input_driver = BridgeDriver(bridge_command, bridge_application, telemetry=telemetry)
+            portal = input_driver
+        else:
+            print("Waiting for KDE RemoteDesktop consent prompt. Verify its synthetic test name visually; click Allow only then.", flush=True)
+            portal = PortalDriver(bus)
+            portal.start()
+            capture_deadline = time.monotonic() + 3
+            while time.monotonic() < capture_deadline and not capture_status.exists():
+                time.sleep(.05)
+            if not capture_status.exists():
+                raise RuntimeError("portal returned without a captured approval window; no input sent")
+            capture_result = json.loads(capture_status.read_text())
+            if capture_result.get("exit_code") != 0 or not consent_capture.is_file():
+                raise RuntimeError("portal approval window capture failed; no input sent")
+            print(f"Portal approval window captured at {consent_capture}; waiting for reviewer confirmation.", flush=True)
+            print("After the reviewer verifies the synthetic test name and you click Allow, enter APPROVE here.", flush=True)
+            if sys.stdin.readline().strip() != "APPROVE":
+                raise RuntimeError("explicit operator approval token missing; no input sent")
+
+        def latest():
+            return json.loads(state_path.read_text())
+
+        if args.move_only:
+            if not isinstance(portal, BridgeDriver) or not bridge_application:
+                raise RuntimeError("move-only diagnostic requires verified bridge identity")
+            focus_js_path = scratch / "kwin-focus-target.js"
+            activate_target_window(app.pid, focus_js_path, focus_plugin)
+            focus_script_loaded = True
+            try:
+                wait_for_fresh_active_target(latest, app.pid)
+            except RuntimeError as error:
+                raise RuntimeError(f"{error}; no input sent") from error
+            return move_only_diagnostic(
+                portal, app.pid, latest, preferences, telemetry
+            )
+
+        def guarded_input(app_pid, x, y):
+            # One entry point for both input routes: --bridge swaps only
+            # the transport; the KWin guard range and target checks are
+            # identical in both branches.
+            if use_bridge and isinstance(portal, BridgeDriver):
+                return guarded_click_bridge(portal, app_pid, latest, x, y)
+            return guarded_click(portal, app_pid, latest, x, y)
+
+        # The operator confirmation runs in the T3 client, which becomes the
+        # active window. Reactivate the exact synthetic Settings PID/title after
+        # receiving APPROVE even if an earlier snapshot happened to show it active.
+        focus_js_path = scratch / "kwin-focus-target.js"
+        activate_target_window(app.pid, focus_js_path, focus_plugin)
+        focus_script_loaded = True
+
+        # Wait for the Settings window to regain focus and a stable pointer after
+        # consent. Never move if focus remains elsewhere or cursor samples churn.
+        try:
+            baseline = wait_for_fresh_active_target(latest, app.pid)
+        except RuntimeError as error:
+            raise RuntimeError(f"{error} after portal consent") from error
+        if "page" in action:
+            geometry = baseline.get("target_geometry")
+            if not isinstance(geometry, list) or len(geometry) != 4:
+                raise RuntimeError("Settings window geometry unavailable for page navigation; no click sent")
+            if action["page"] in PAGE_TAB_FRACTIONS:
+                tab_x, tab_y = page_tab_point_from_geometry(geometry, action["page"])
+            else:
+                gx, gy, width, height = geometry
+                tab_x = round(gx + width * action["tab_x_fraction"])
+                tab_y = round(gy + height * 0.94)
+            if not target_window_contains(baseline, tab_x, tab_y):
+                raise RuntimeError("page-tab point outside Settings window; no click sent")
+            guarded_input(app.pid, tab_x, tab_y)
+            deadline = time.monotonic() + 2
+            while time.monotonic() < deadline:
+                if guard_target(latest(), app.pid, tab_x, tab_y):
+                    break
+                time.sleep(.01)
+            else:
+                raise RuntimeError("page-tab hit-test unstable after motion; no click sent")
+            if not guard_target(latest(), app.pid, tab_x, tab_y):
+                raise RuntimeError("final page-tab guard failed; no click sent")
+            # Reactivate the synthetic Settings window again after the tab
+            # click: Spectacle's --activewindow capture takes focus to its
+            # own window and KWin reports the target inactive until
+            # reactivated, even though the tab click already navigated.
+            focus_js_path.write_text(activation_script(app.pid))
+            subprocess.run(["qdbus6", "org.kde.KWin", "/Scripting",
+                            "org.kde.kwin.Scripting.loadScript", str(focus_js_path), focus_plugin],
+                           check=True, capture_output=True, text=True)
+            loaded = subprocess.run(["qdbus6", "org.kde.KWin", "/Scripting",
+                             "org.kde.kwin.Scripting.isScriptLoaded", focus_plugin],
+                            check=True, capture_output=True, text=True).stdout.strip()
+            if loaded != "true":
+                raise RuntimeError("KWin did not load the synthetic Settings focus helper; no input sent")
+            subprocess.run(["qdbus6", "org.kde.KWin", "/Scripting",
+                          "org.kde.kwin.Scripting.start"], check=True, capture_output=True)
+            time.sleep(0.5)
+            # Capture the window after the tab click so the Display page is
+            # visible in the evidence before any toggle is attempted. This
+            # copy survives the finally-block cleanup (unlike the scratch-dir
+            # captures), so the user can verify page navigation took effect.
+            page_check = scratch / "page-check.png"
+            page_capture = subprocess.run(
+                ["spectacle", "--background", "--activewindow", "--nonotify",
+                 "--output", str(page_check)],
+                capture_output=True, text=True, timeout=8,
+            )
+            page_kept = pathlib.Path(
+                action.get("page_check", "/tmp/codexbar-display-page-check.png")
+            )
+            page_label = action["page"]
+            if page_capture.returncode == 0 and page_check.is_file():
+                try:
+                    page_kept.write_bytes(page_check.read_bytes())
+                    print(f"{page_label} page check kept at {page_kept}; verify the {page_label} page is visible before the toggle.", flush=True)
+                except OSError:
+                    print(f"{page_label} page check captured at {page_check}; verify the {page_label} page before the toggle.", flush=True)
+            else:
+                print(f"{page_label} page check capture failed; continuing with guarded evidence only.", flush=True)
+            if page_label == "Display" and not page_verified_from_capture(page_check, baseline.get("target_geometry")):
+                raise RuntimeError(
+                    "Display page not verified by screenshot (OCR/filename-check); refusing toggle click"
+                )
+            baseline = None
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline:
+                state = latest()
+                age = time.monotonic() - state.get("received", 0)
+                if (state.get("pid") == app.pid and state.get("active")
+                        and 0.15 <= age <= 0.35):
+                    baseline = state
+                    break
+                time.sleep(.02)
+            if baseline is None:
+                raise RuntimeError(
+                    "Settings did not regain focus after page switch; no input sent"
+                )
+        if args.switch_x is not None:
+            switch_x, switch_y = args.switch_x, args.switch_y
+        else:
+            point_options = (
+                {"y_offset": action["y_offset"],
+                 "x_fraction": action.get("switch_x_fraction", 0.50)}
+                if "y_offset" in action
+                else {"y_fraction": action["y_fraction"]}
+            )
+            switch_x, switch_y = switch_point_from_geometry(
+                baseline.get("target_geometry"), **point_options
+            )
+        if not target_window_contains(baseline, switch_x, switch_y):
+            raise RuntimeError("action coordinates are outside the synthetic Settings window; no input sent")
+        # page already selected above via the guarded tab click
+        print(f"Guarded Settings action '{args.action}' switch point: ({switch_x},{switch_y})", flush=True)
+        baseline_preferences = json.loads(preferences.read_text())
+        if not is_button_action and not is_provider_action and baseline_preferences.get(preference_key) is not False:
+            raise RuntimeError(
+                f"selected preference {preference_key} did not start false; no click sent"
+            )
+        if is_provider_action and provider_enabled.read_text() != provider_enabled_file_text(True):
+            raise RuntimeError("synthetic Codex provider did not start enabled; no click sent")
+        notification_monitor = None
+        notification_log = scratch / "notifications-monitor.log"
+        if action.get("requires_notification_delivery"):
+            notification_monitor = start_notification_monitor(notification_log)
+            if notification_monitor is None:
+                print("warning: gdbus-monitor unavailable; notification delivery check will be skipped", flush=True)
+            else:
+                # Give the synthetic host a beat to establish the monitor
+                # subscription before the guarded pointer click.
+                time.sleep(0.2)
+        dx, dy = switch_x - baseline["cursor"][0], switch_y - baseline["cursor"][1]
+        if use_bridge:
+            # Absolute transport: the bridge moves to (x, y) itself; the
+            # safety bound is the target_window_contains check above plus
+            # the bridge's own screen-bounds validation.
+            guarded_input(app.pid, switch_x, switch_y)
+        else:
+            if abs(dx) > 1600 or abs(dy) > 1200:
+                raise RuntimeError("requested pointer delta exceeds safety bound; no input sent")
+            portal.move(dx, dy)
+            deadline = time.monotonic() + 2
+            while time.monotonic() < deadline:
+                state = latest()
+                if guard_target(state, app.pid, switch_x, switch_y):
+                    break
+                time.sleep(.01)
+            else:
+                raise RuntimeError("target/focus hit-test unstable after motion; no click sent")
+            # Final adjacent snapshot check: any stale or ambiguous state suppresses click.
+            if not guard_target(latest(), app.pid, switch_x, switch_y):
+                raise RuntimeError("final target/focus guard failed; no click sent")
+            portal.click()
+        if is_provider_action:
+            deadline = time.monotonic() + 8
+            while time.monotonic() < deadline:
+                if check_provider_state(
+                    cli_calls, provider_enabled,
+                    action["cli_action"], action["provider_id"],
+                ):
+                    enabled_after = provider_enabled.read_text() == provider_enabled_file_text(False)
+                    after_preferences = json.loads(preferences.read_text())
+                    if after_preferences != baseline_preferences:
+                        raise RuntimeError(
+                            "provider switch click changed unrelated preferences; refusing pass"
+                        )
+                    if enabled_after:
+                        print(
+                            f"PASS: synthetic fixture CLI recorded "
+                            f"{provider_cli_call(action['cli_action'], action['provider_id'])} and the "
+                            f"Codex provider state flipped enabled true->false (no preference JSON changed)",
+                            flush=True,
+                        )
+                        return 0
+                time.sleep(.05)
+            calls_seen = cli_calls.read_text() if cli_calls.exists() else ""
+            raise RuntimeError(
+                "synthetic provider disable did not reach the fixture CLI; "
+                f"fixture calls were {calls_seen!r} and the provider state was "
+                f"{provider_enabled.read_text() if provider_enabled.exists() else 'missing'!r}"
+            )
+        if is_button_action:
+            deadline = time.monotonic() + 8
+            delivered = False
+            while time.monotonic() < deadline:
+                if notification_monitor is not None and notification_delivered(notification_log):
+                    delivered = True
+                    break
+                time.sleep(.05)
+            stop_notification_monitor(notification_monitor)
+            notification_monitor = None
+            if delivered:
+                print("PASS: synthetic Notifications service received the test notification", flush=True)
+                return 0
+            # No monitor: fall back to the persisted-store check only if the
+            # monitor never ran; a running monitor that saw nothing is a
+            # genuine failed delivery and must fail closed.
+            raise RuntimeError(
+                "synthetic Notifications service did not observe a Notify('CodexBar GTK test notification') delivery after the guarded button click"
+            )
+        deadline = time.monotonic() + 8
+        while time.monotonic() < deadline:
+            try:
+                after_preferences = json.loads(preferences.read_text())
+                if after_preferences.get(preference_key) is True:
+                    if action.get("requires_autostart_entry"):
+                        autostart_entry = home / ".config" / "autostart" / "codexbar-gtk.desktop"
+                        if not autostart_entry.is_file():
+                            raise RuntimeError(
+                                "synthetic autostart entry did not persist during start-at-login"
+                            )
+                    print(f"PASS: synthetic Settings preference {preference_key}=true persisted", flush=True)
+                    return 0
+            except (FileNotFoundError, json.JSONDecodeError):
+                pass
+            time.sleep(.05)
+        after_preferences = json.loads(preferences.read_text())
+        changed = changed_preferences(baseline_preferences, after_preferences)
+        raise RuntimeError(
+            f"preference {preference_key} did not persist true; observed "
+            f"{after_preferences.get(preference_key)!r}; changed keys={changed}"
+        )
+    finally:
+        if notification_monitor is not None:
+            stop_notification_monitor(notification_monitor)
+        if portal:
+            portal.close()
+        if input_driver is not None and input_driver is not portal:
+            input_driver.close()
+        if app and app.poll() is None:
+            try:
+                os.killpg(app.pid, signal.SIGTERM)
+                app.wait(timeout=5)
+            except (ProcessLookupError, subprocess.TimeoutExpired):
+                try:
+                    os.killpg(app.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+        if observer and observer.poll() is None:
+            try:
+                # The observer owns the active-window Spectacle capture as a
+                # child in its own process group. Stop both on every exit path.
+                os.killpg(observer.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+            try:
+                observer.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                try:
+                    os.killpg(observer.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+        if capture_status and capture_status.exists() and bus:
+            try:
+                owner = bus.call_sync(
+                    "org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus",
+                    "NameHasOwner", GLib.Variant("(s)", ("org.kde.spectacle",)),
+                    GLib.VariantType.new("(b)"), Gio.DBusCallFlags.NONE, 3000, None).unpack()[0]
+                if owner:
+                    subprocess.run(["qdbus6", "org.kde.spectacle", "/MainApplication",
+                                    "org.qtproject.Qt.QCoreApplication.quit"],
+                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=3)
+            except Exception:
+                pass
+        if focus_script_loaded:
+            try:
+                subprocess.run(["qdbus6", "org.kde.KWin", "/Scripting",
+                                "org.kde.kwin.Scripting.unloadScript", focus_plugin],
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=3)
+            except Exception:
+                pass
+        try:
+            subprocess.run(["qdbus6", "org.kde.KWin", "/Scripting",
+                            "org.kde.kwin.Scripting.unloadScript", kwin_plugin],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=3)
+        except Exception:
+            pass
+        if desktop_created:
+            try:
+                if desktop_path.read_text(encoding="utf-8") == PORTAL_DESKTOP_ENTRY:
+                    desktop_path.unlink()
+            except FileNotFoundError:
+                pass
+        if desktop_parent_created:
+            try:
+                desktop_path.parent.rmdir()
+            except OSError:
+                pass
+        if os.environ.get("KEEP_WAYLAND_TEST_TMP") == "1":
+            if settings_capture is not None and settings_capture.is_file():
+                kept = pathlib.Path("/tmp/codexbar-display-baseline.png")
+                try:
+                    kept.write_bytes(settings_capture.read_bytes())
+                    print(f"Baseline capture kept at {kept}", file=sys.stderr, flush=True)
+                except OSError:
+                    pass
+            print(f"Synthetic test diagnostics kept at {scratch}", file=sys.stderr, flush=True)
+        else:
+            shutil.rmtree(scratch, ignore_errors=True)
+
+
+OBSERVER_PY = r'''import json, pathlib, subprocess, sys, threading, time
+from gi.repository import Gio, GLib
+__VALIDATOR__
+path=pathlib.Path(sys.argv[1]); ready=pathlib.Path(sys.argv[2]); portal_pid=int(sys.argv[3]); image=pathlib.Path(sys.argv[4]); status=pathlib.Path(sys.argv[5]); expected_sender=sys.argv[6]; loop=GLib.MainLoop(); captured=False; last_sequence=0
+xml='<node><interface name="org.codexbar.U05.Guard"><method name="Record"><arg name="state" type="s" direction="in"/></method></interface></node>'
+node=Gio.DBusNodeInfo.new_for_xml(xml); bus=Gio.bus_get_sync(Gio.BusType.SESSION,None)
+def method(_c,sender,_p,_i,_m,params,inv):
+    global captured,last_sequence
+    try:
+        (raw,)=params.unpack(); state=json.loads(raw)
+    except (ValueError, TypeError):
+        inv.return_value(GLib.Variant('()',())); return
+    if not valid_kwin_observer_sample(sender,expected_sender,state,last_sequence):
+        inv.return_value(GLib.Variant('()',())); return
+    last_sequence=state['sample_seq']; state['received']=time.monotonic()
+    tmp=path.with_suffix('.tmp'); tmp.write_text(json.dumps(state)); tmp.replace(path)
+    if state.get('portal_active') and not captured:
+        captured=True
+        def capture():
+            try:
+                result=subprocess.run(['spectacle','--background','--activewindow','--nonotify','--output',str(image)],capture_output=True,text=True,timeout=8)
+                status.write_text(json.dumps({'exit_code':result.returncode,'stderr':result.stderr[-500:]}))
+            except Exception as error: status.write_text(json.dumps({'exit_code':-1,'error':str(error)}))
+        threading.Thread(target=capture,daemon=True).start()
+    inv.return_value(GLib.Variant('()',()))
+bus.register_object('/org/codexbar/U05/Guard',node.interfaces[0],method)
+def acquired(_bus,_name): ready.write_text('ready')
+Gio.bus_own_name_on_connection(bus,'org.codexbar.U05.Guard',Gio.BusNameOwnerFlags.NONE,acquired,None)
+loop.run()
+'''
+
+KWIN_JS = r'''var TARGET_PID=__PID__, PORTAL_PID=__PORTAL_PID__, PLUGIN="__PLUGIN__", service="org.codexbar.U05.Guard", path="/org/codexbar/U05/Guard", iface="org.codexbar.U05.Guard";
+var SAMPLE_INTERVAL_MS=250, MAX_SAMPLES=2400, MAX_LIFETIME_MS=600000, startedAt=Date.now(), lastSampleAt=0, sampleSequence=0, sampleInFlight=false, sampler=null;
+function report(){var now=Date.now();if(now-startedAt>=MAX_LIFETIME_MS||sampleSequence>=MAX_SAMPLES){if(sampler)sampler.stop();return;}if(sampleInFlight||now-lastSampleAt<SAMPLE_INTERVAL_MS)return;sampleInFlight=true;lastSampleAt=now;var sequence=++sampleSequence;var p=workspace.cursorPos,h=workspace.windowAt(p,1),top=h&&h.length?h[0]:null,a=workspace.activeWindow,w=workspace.stackingOrder,t=null;for(var i=0;i<w.length;i++)if(Number(w[i].pid)===TARGET_PID)t=w[i];var g=t?{x:Number(t.x),y:Number(t.y),width:Number(t.width),height:Number(t.height)}:null;var s={sample_seq:sequence,pid:a?Number(a.pid):0,active:!!(a&&Number(a.pid)===TARGET_PID),top_hit:!!(top&&Number(top.pid)===TARGET_PID),target_present:!!t,target_geometry:g?[g.x,g.y,g.width,g.height]:null,cursor:[Number(p.x),Number(p.y)],portal_active:!!(a&&Number(a.pid)===PORTAL_PID)};callDBus(service,path,iface,"Record",JSON.stringify(s),function(){sampleInFlight=false;});}
+sampler=new QTimer(this);sampler.timeout.connect(report);sampler.start(SAMPLE_INTERVAL_MS);report();workspace.cursorPosChanged.connect(report);workspace.windowActivated.connect(report);workspace.windowAdded.connect(report);workspace.windowRemoved.connect(report);'''
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except Exception as error:
+        print(f"FAIL CLOSED: {error}", file=sys.stderr, flush=True)
+        raise SystemExit(1)

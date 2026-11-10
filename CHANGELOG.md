@@ -1,10 +1,972 @@
 # Changelog
 
+## 0.82.0 (94) — 2026-11-09
+
+Tracks upstream CodexBar 0.82.0.
+
+### Added
+
+- Reconcile the additive C01 isolated-prefix installer draft with build-93
+  main. The installer remains opt-in; no default cutover or C-gate acceptance
+  is claimed.
+
+### Validation
+
+- The existing 13-case isolated installer smoke belongs to the prior draft
+  implementation. Fresh exact-head CI is pending for this reconciled draft.
+  See AUDIT E197.
+
+## 0.82.0 (93) — 2026-11-09
+
+Tracks upstream CodexBar 0.82.0.
+
+### Verified
+
+- Record one guarded synthetic Wayland Settings action: the Display page's
+  Hide account details switch persisted `hidePersonalInfo: false → true` and
+  the full preferences JSON differed only at that key. The pre-click image is
+  [`build93-wayland-display-before.png`](docs/rust-migration/screenshots/build93-wayland-display-before.png).
+
+### Validation
+
+- Focused Wayland guard suite: 39 tests; full Python suite: see AUDIT E195 for
+  exact results and extension-dependent skips. The runner's pre-click sample
+  sequence/age and a post-click image were not retained. This verifies one
+  control only; UG remains open and Python remains the default.
+
 Client-side changelog for the CodexBar GTK front-end. Each entry keys a build
 number (`CURRENT_PROJECT_VERSION`) to the upstream macOS CodexBar release its
 short version tracks, so "which version has what" maps cleanly onto both trees.
 
-## Unreleased
+## 0.82.0 (92) — 2026-11-06
+
+Tracks upstream CodexBar 0.82.0.
+
+### Fixed
+
+- Enable accessibility for synthetic bridge sessions and resolve the exact
+  AT-SPI application name from the fixture process ID before sending input.
+- Require an explicit bridge target and reject failed identity probes even
+  when they print a name. Portal-only fixtures retain disabled accessibility.
+
+### Validation
+
+- Focused guard suite: 26 tests; full Python suite: 266 tests with 70
+  extension-dependent skips. The corrected discovery path has not yet
+  passed a live Wayland click; prior attempts failed closed. UG remains open
+  and Python remains the default. See AUDIT E194.
+
+## 0.82.0 (91) — 2026-11-06
+
+Tracks upstream CodexBar 0.82.0.
+
+### Fixed
+
+- Generate valid JSON for the synthetic Wayland partial-spend fixture.
+- Seed successful cost data before requesting the failed refresh used by the
+  retained-error capture, so the test can exercise retained data rather than
+  an initial failure.
+
+### Validation
+
+- Generated-fixture subprocess tests preserve explicit zero, coverage, empty
+  and failure states; focused Spend tests: 19 passed. Full Python suite:
+  263 ran, 70 extension-dependent skips. Live Wayland retained-data rendering
+  has not been reverified by this slice. Python remains the default and UG
+  remains open; see AUDIT E192.
+
+## 0.82.0 (90) — 2026-11-06
+
+Tracks upstream CodexBar 0.82.0.
+
+### Added
+
+- Add an optional `--bridge` input route to the guarded Wayland Settings
+  runner (`scripts/test-native-settings-wayland.py`) that sends clicks through
+  the agent-agnostic `linux-agent-access` bridge (absolute-coordinate
+  `action --application com.steipete.CodexBarGTK --json` calls) instead of
+  the RemoteDesktop portal consent prompt, so live runs need no per-run
+  operator Allow/APPROVE. The bridge is flag-gated: with neither `--bridge`
+  nor `--portal` the runner uses the bridge when installed and the portal
+  flow otherwise; the portal path still works unchanged.
+- Keep the fail-closed guard identical on both routes: the KWin observer
+  still reports cursor/top_hit/active with the same 0.15–0.35s age window,
+  the switch point must lie inside the synthetic window, and Spectacle
+  baseline/page-check evidence is captured as before. The bridge click is
+  absolute (x, y); the same `cursor==[x,y]` guard precedes it. The Portal
+  desktop-entry handling and the bridge's own OS-level grant are untouched.
+  The build-89 hide-personal-info x fix (E189, `switch_x_fraction` 0.75)
+  and the `settings_capture` cleanup guard (PR #88 fold-in) are retained
+  unchanged.
+
+### Validation
+
+- `py_compile` clean; guard suite 23 tests (19 prior + 4 bridge tests:
+  absolute action payloads, fail-closed error handling, command resolution,
+  guarded click requires the same KWin evidence). Full suite pending after
+  the build-90 rebase of the bridge route onto PR #90 (build 89, merged at
+  `9f5497c`); see `docs/rust-migration/AUDIT.md` E190/E191. No live Wayland
+  run in this worktree (T3 agent cgroup, not the intended KDE session). The
+  KDE native portal grant remains OS-level (authorized once); `--bridge`
+  removes only the per-run prompt. Python remains the default; UG stays
+  **NOT PASSED**.
+- See `docs/rust-migration/AUDIT.md` for the E190 bridge-runner entry and
+  E191 build-90 rebase entry.
+
+## 0.82.0 (89) — 2026-11-06
+
+Tracks upstream CodexBar 0.82.0.
+
+### Fixed
+
+- Fix the guarded Wayland runner's hide-personal-info click x-here
+  (E189): pixel-measured from the kept Display page-check capture,
+  the Hide account details toggle pill centre is at window-absolute
+  (1114, 460) — x_fraction 0.75. The runner was clicking (1264, 460)
+  because `switch_x_fraction=0.90` (364 + 900 = 1264) — 150px too
+  far right, into the window padding past the toggle; y 460 (311
+  offset) was already correct but the click still missed
+  (`hidePersonalInfo` stayed false, changed keys=[]). `switch_x_fraction`
+  is set to the measured 0.75; y_offset stays 311. No live Wayland
+  PASS is claimed yet — the operator must re-run
+  `--action hide-personal-info` on the intended KDE session and
+  require `hidePersonalInfo` true with changed keys=[[hidePersonalInfo]]
+  (or the equivalent synthetic assertion). Fold-in from PR #88
+  (verbatim): `settings_capture = None` init + cleanup guard so an
+  exception before assignment no longer masks the real error with
+  `UnboundLocalError` on the `KEEP_WAYLAND_TEST_TMP` path. UG remains
+  **NOT PASSED**; Python remains the default.
+
+## 0.82.0 (88) — 2026-11-06
+
+Tracks upstream CodexBar 0.82.0.
+
+### Fixed
+
+- Fix the guarded Wayland runner's hide-personal-info switch
+  `y_offset` (E188): pixel-measured from the kept Display
+  page-check capture (`/tmp/codexbar-display-page-check.png`), the
+  Hide account details toggle centre is at window y 311
+  (x 728..773, centre 750), not the guessed 320 (click point
+  (1264, 469) missed above the row; `hidePersonalInfo` stayed
+  false). `y_offset` is set to the measured 311; `switch_x_fraction`
+  stays 0.90 per instruction (toggle is at the row's right side —
+  pixel pill centre is 0.750, though, so a future live run should
+  confirm x too). No live Wayland PASS is claimed yet. UG remains
+  **NOT PASSED**; Python remains the default.
+
+## 0.82.0 (87) — 2026-11-06
+
+Tracks upstream CodexBar 0.82.0.
+
+### Fixed
+
+- Fix the Spend Wayland retained-error stale capture (E187): the
+  `--state retained-error` wait returned on the first failure marker,
+  before the backend finished the initial cost scan plus its
+  per-provider retries and published the retained-error view state,
+  so the capture could record the neighbouring partial frame
+  (byte-identical evidence). The wait now covers 3 cost-fixture
+  calls (1 initial + 2 retries) and a view-state settle before
+  capturing, and the state capture fails closed unless the
+  synthetic Spend window is active. No live Wayland PASS is
+  claimed yet — the operator must re-run `--state retained-error`
+  on the intended KDE session and require a retained-error capture
+  distinct from the partial capture. UG remains **NOT PASSED**;
+  Python remains the default.
+
+## 0.82.0 (86) — 2026-11-05
+
+Tracks upstream CodexBar 0.82.0.
+
+### Changed
+
+- Add the Providers Wayland evidence harness (E186): the guarded
+  `scripts/test-native-settings-wayland.py` allowlists
+  `disable-codex-provider` against a fixture CLI state file (seeded
+  ON, flipped `true→false` by a recorded `config disable --provider
+  codex`) with an unchanged preference store, plus manual
+  source/API-key/login entries that refuse to drive and document the
+  manual step (matching the Xvfb-verified synthetic fixtures). No
+  live Wayland PASS is claimed yet — the gate row stays OPEN until
+  the harness runs on the intended KDE session with a fresh named
+  grant. UG remains **NOT PASSED**; Python remains the default.
+
+## 0.82.0 (85) — 2026-11-05
+
+Tracks upstream CodexBar 0.82.0.
+
+### Changed
+
+- Add the Wayland update-check evidence harness (E185): a guarded
+  `scripts/test-native-update-check-wayland.py` that starts a
+  loopback-only synthetic VERSION server, drives the native Gio
+  `check-updates` action in a debug native binary on Wayland, asserts
+  the synthetic request arrived, and verifies the visible "Update
+  available" state via KWin caption plus a Spectacle capture kept at
+  `/tmp/codexbar-wayland-update-result.png`. It needs no RemoteDesktop
+  portal consent and never contacts a public URL. No live Wayland PASS
+  is claimed yet — the gate row stays OPEN until the harness runs on
+  the intended KDE session. UG remains **NOT PASSED**; Python remains
+  the default.
+
+## 0.82.0 (84) — 2026-11-05
+
+Tracks upstream CodexBar 0.82.0.
+
+### Changed
+
+- Add the guarded `scripts/test-native-spend-wayland.py` Wayland evidence
+  harness for Usage & Spend (build 84): one RemoteDesktop grant per run
+  exercises 4 ranges, 3 heatmap modes, tooltip hover, and Refresh, plus
+  fixture-only coverage of loading/success/partial/empty/retained-error
+  states. Screenshots and cost-fixture call assertions cover success/empty/
+  partial/loading/retained-error (live verified); range/mode/tooltip/
+  refresh pointer paths are harness-built and await a fresh named KDE
+  grant for live automated runs. Settings runner actions are untouched;
+  broader UG remains **NOT PASSED** and Python remains the default.
+
+## 0.82.0 (82) — 2026-11-05
+
+Tracks upstream CodexBar 0.82.0.
+
+### Changed
+
+- Extend the guarded synthetic Wayland Settings runner with five allowlisted
+  Notifications actions (four preference switches plus the "Send a test
+  notification" button) using the same fail-closed guard as the
+  General/Display actions (synthetic fixture, named KDE consent, portal
+  motion+click, persisted-JSON check). The test-notification button verifies
+  delivery to a synthetic `org.freedesktop.Notifications` service via
+  `gdbus-monitor` (falling back to a fail-closed error if the monitor is
+  unavailable or observes no `Notify("CodexBar GTK test notification")`
+  delivery). Row/tab coordinates are estimated from the Xvfb smoke and need
+  live calibration before a guarded Wayland run. UG remains **NOT PASSED**
+  and Python remains the default.
+
+## 0.82.0 (81) — 2026-11-05
+
+Tracks upstream CodexBar 0.82.0.
+
+### Changed
+
+- Diagnose and fix the Wayland runner's automated Display-tab navigation
+  (E184): the tab click previously landed 1 px above the `AdwTabBar` pill
+  (window y 696 vs pill top 697, from the old `(0.34, 0.94)` estimate), so
+  all automated runs stayed on General while the manual E183 run passed via
+  the user's own click. The runner now clicks the pixel-measured pill
+  centre `(0.325, 0.968)` and verifies the Display page from the page-check
+  screenshot (selected-pill + switch-pair evidence) before any toggle
+  click; it fails closed otherwise. No live automated PASS claimed yet —
+  awaiting a fresh named KDE grant. Broader UG remains **NOT PASSED** and
+  Python remains the default.
+
+## 0.82.0 (83) — 2026-11-05
+
+Tracks upstream CodexBar 0.82.0.
+
+### Changed
+
+- Extend the guarded synthetic Wayland Settings runner with an allowlisted
+  Menu Bar switch action for “Show the tray icon” (`showTray`). The Menu Bar
+  page's other three controls are combos (`menuBarIconStyle`,
+  `unifiedIconSource`, `switcherRowsOption`) documented as manual-only —
+  dropdown selection has no safe synthetic path and is not faked. The action
+  uses the same fail-closed guard + persisted-JSON check as the General/
+  Display switches; live Wayland evidence is pending a fresh named KDE
+  grant (manual Menu Bar tab selection before approval). Broader UG remains
+  **NOT PASSED** and Python remains the default.
+
+## 0.82.0 (80) — 2026-11-05
+
+Tracks upstream CodexBar 0.82.0.
+
+### Changed
+
+- Post-merge follow-ups from the Display-navigation slice (PR #78 merged at
+  build 79): the Wayland runner now reactivates the Settings window after the
+  post-tab-click page check (Spectacle's `--activewindow` capture steals focus,
+  E182/E183) and captures `/tmp/codexbar-display-page-check.png` to evidence
+  Display-page navigation. `hide-personal-info` now has a verified PASS
+  (E183, manual Display navigation + runner switch click; persisted
+  `hidePersonalInfo: true`) and the incorrect E181 PASS claim is retracted.
+  Broader UG remains **NOT PASSED** and Python remains the default.
+
+## 0.82.0 (78) — 2026-11-03
+
+Tracks upstream CodexBar 0.82.0.
+
+### Changed
+
+- Extend the guarded synthetic Wayland Settings runner with a manual-test
+  checklist doc and an allowlisted General action for “Hide personal
+  info”. Live Wayland evidence for the latter is pending a fresh named
+  KDE grant; broader UG remains **NOT PASSED** and Python remains the
+  default.
+
+## 0.82.0 (77) — 2026-11-03
+
+Tracks upstream CodexBar 0.82.0.
+
+### Changed
+
+- Extend the guarded synthetic Wayland Settings runner with an allowlisted
+  General action for “Start at login”, which persists the selected
+  preference and requires the isolated autostart entry alongside it. Live
+  Wayland evidence for this action is pending a fresh named KDE grant;
+  broader UG remains **NOT PASSED** and Python remains the default.
+
+## 0.82.0 (76) — 2026-11-03
+
+Tracks upstream CodexBar 0.82.0.
+
+### Changed
+
+- Extend the guarded synthetic Wayland Settings runner with an allowlisted
+  General action mapping for “Show the panel on start”; live Wayland evidence
+  includes one manual user click that persisted the selected preference. The
+  runner's automated click path remains unverified and UG remains **NOT PASSED**.
+
+## 0.82.0 (75) — 2026-11-03
+
+Tracks upstream CodexBar 0.82.0.
+
+### Changed
+
+- Add a guarded, synthetic Wayland Settings preference runner that keeps portal
+  setup and input on the same D-Bus connection, checks fresh KWin focus and hit
+  state, and verifies the isolated preference JSON. One user-approved live
+  General preference action passed; broader UG remains **NOT PASSED** and
+  Python remains the default.
+- Add unit coverage for stale, foreign, unstable and non-topmost guard states.
+
+## 0.82.0 (73) — 2026-11-02
+
+Tracks upstream CodexBar 0.82.0.
+
+### Changed
+
+- Record the build-73 Wayland attempt. The installed portal's app-ID scope
+  produced a named, nonpersistent pointer+keyboard consent prompt and a
+  successful grant; one pointer motion was sent, but cursor/focus checks then
+  changed and no Settings click or preference mutation is claimed. See audit
+  E141–E143. Python remains the default; UG remains **NOT PASSED**.
+
+## 0.82.0 (72) — 2026-11-02
+
+Tracks upstream CodexBar 0.82.0.
+
+### Changed
+
+- Record the build-71 merge and build-72 synthetic Wayland lifecycle/portal
+  evidence. A bounded process check found no spontaneous Settings exit; a
+  fresh, user-approved keyboard refresh reached the synthetic CLI. Python
+  remains the default and UG remains **NOT PASSED**.
+
+## 0.82.0 (71) — 2026-11-02
+
+Tracks upstream CodexBar 0.82.0.
+
+### Changed
+
+- Continue UG's serialized Wayland interaction evidence using a fresh,
+  consent-based KDE RemoteDesktop request. The user approved the named,
+  nonpersistent pointer/keyboard request, but the synthetic Settings process
+  exited before input; no Wayland action is claimed. Preserve Python as default
+  and UG as **NOT PASSED**.
+
+## 0.82.0 (70) — 2026-11-02
+
+Tracks upstream CodexBar 0.82.0.
+
+### Changed
+
+- Continue UG's serialized Wayland interaction evidence using KDE's
+  consent-based RemoteDesktop portal where available. A named one-time
+  pointer/keyboard request timed out without user approval, so no input was
+  sent. Preserve Python as default and UG as **NOT PASSED**.
+
+## 0.82.0 (69) — 2026-11-02
+
+Tracks upstream CodexBar 0.82.0.
+
+### Changed
+
+- Continue the native GTK acceptance follow-up with isolated Wayland page/action
+  interaction evidence. The build-69 live session captured Settings General,
+  but did not establish a verified Wayland control action because available
+  input routes produced no visible state/result change. See migration audit
+  E133; UG remains **NOT PASSED**.
+
+## 0.82.0 (68) — 2026-11-02
+
+Tracks upstream CodexBar 0.82.0.
+
+### Changed
+
+- Match the Python SNI panel contract: `Activate` toggles and refreshes only
+  when opening; `SecondaryActivate` and `ContextMenu` ensure the panel stays
+  open and refresh on every event when the menu-open refresh preference is on.
+- Preserve activation coordinates for X11 monitor anchoring and use the
+  compositor's placement on Wayland.
+
+### Validation
+
+- Build-68 Xvfb/private-D-Bus interaction matrix, exact refresh-call counts,
+  panel placement and focus-before-Escape evidence are recorded in migration
+  audit E130. Synthetic panel captures are in
+  `docs/rust-migration/screenshots/`. Wayland SNI events were sent over the
+  desktop session bus and captured with fixture data; keyboard/pointer input
+  remains unverified because the compositor rejects the available virtual
+  keyboard input method. Python remains the default; UG remains **NOT PASSED**.
+
+## 0.82.0 (67) — 2026-11-01
+
+Tracks upstream CodexBar 0.82.0.
+
+### Changed
+
+- Close the remaining synthetic GTK Settings interaction gaps from UG build 66,
+  including provider/auth controls, CLI-path Apply, hooks/plugins read states,
+  import/export/reset, update-check, and uncovered General/Display preferences.
+
+### Validation
+
+- Local Rust/Python tests, strict Clippy, native GTK smokes and the complete
+  synthetic Settings Xvfb interaction smoke passed on
+  `orchestrated/luna-u05-settings-interactions-build67`. Thirty-six captures,
+  including the visible sign-in success result, are recorded in E123. Exact-head
+  PR checks/review remain pending. UG remains **NOT PASSED** because Wayland
+  interaction and repeatable local panel evidence are open. Python remains the
+  default; see [UG_GATE.md](docs/rust-migration/UG_GATE.md).
+
+## 0.82.0 (66) — 2026-11-01
+
+Tracks upstream CodexBar 0.82.0.
+
+### Changed
+
+- Close out the U08 merge record and add a build-66 UG interaction/evidence
+  ledger. UG remains open while the remaining Settings actions and complete
+  Wayland interaction matrix are verified.
+- Extend the synthetic GTK smoke to click and capture all four Spend ranges and
+  all three heatmap modes. Exercise Menu Bar, selected Display, Notifications,
+  currency/time-zone, launch-at-login and private notification delivery through
+  visible Settings controls.
+- Add visually inspected build-66 Xvfb Settings/range/mode captures and retain
+  valid synthetic Wayland Sessions/Spend state captures with their provenance.
+
+### Validation
+
+- U08 PR #66 merged normally at `5de83def98ad5ebd09035ee9120698fbf710541c`;
+  exact head `fb89f0b6c702dff92992916e14951b385f5189bf` passed `test` and
+  `tray-dbus` in run `41345048163` (E119). Build-66 Settings and Usage & Spend
+  Xvfb smokes passed, including private notification delivery and Hooks global
+  enable/disable persistence (E120). UG remains **NOT PASSED**: provider,
+  import/export/reset and update-check actions and Wayland interaction evidence
+  remain incomplete. Plugins is a read-only fixture list; empty/loading/error
+  states are untested, with no mutation action required. See
+  `docs/rust-migration/UG_GATE.md`. Python remains the default.
+
+## 0.82.0 (65) — 2026-11-01
+
+Tracks upstream CodexBar 0.82.0.
+
+### Changed
+
+- Embed the existing licensed provider artwork catalog into the native app and
+  show brand or accent-tinted provider marks with an initial-letter fallback.
+- Render native meter and `iconPercent` tray pixmaps from the existing
+  `TraySummary`, with Cairo-generated ARGB pixels at caller-requested sizes.
+- Add responsive dashboard summary tiles, shared theme CSS, decorative
+  accessible provider artwork, and keyboard navigation shortcuts.
+
+### Validation
+
+- U07 PR #65 merged at `e373e019f7701f5f3a5e204153b7163763abac90`; exact head
+  `70bba1c52562c7670916a51a28fb9f37a29cd3ec` passed `test` and `tray-dbus` in
+  run `41340840860` (E114). U08 local Rust/Python checks, X11/Xvfb and actual
+  Wayland synthetic captures, and renderer/accessibility smokes are in E115/E116;
+  this PR's exact-head CI and merge remain pending.
+
+## 0.82.0 (64) — 2026-11-01
+
+Tracks upstream CodexBar 0.82.0.
+
+### Changed
+
+- Complete native desktop notification delivery, OS adapters, display
+  readiness, restart and launch-at-login integration, and orderly worker/tray
+  shutdown (U07).
+
+### Validation
+
+- U06 PR #64 merged normally at `678b6b9`; exact head passed both required
+  checks in run `41337858935`. U07 PR #65 exact head
+  `70bba1c52562c7670916a51a28fb9f37a29cd3ec` passed `test` and `tray-dbus` in
+  run `41340840860` and merged normally at
+  `e373e019f7701f5f3a5e204153b7163763abac90` (E114). U07 local Rust/Python/GTK
+  checks and synthetic Xvfb/private-bus runtime evidence are in E113.
+
+## 0.82.0 (63) — 2026-11-01
+
+Tracks upstream CodexBar 0.82.0.
+
+### Changed
+
+- Implement the native StatusNotifierItem and dbusmenu tray, including icon
+  pixmap/tooltip updates, projected provider switcher rows, watcher recovery,
+  central native actions, and explicit bus teardown.
+
+### Validation
+
+- U06 implementation and native GTK synthetic runtime evidence are recorded in
+  migration audit E110. Exact-head CI and merge status will be recorded after
+  observing them.
+
+## 0.82.0 (62) — 2026-11-01
+
+Tracks upstream CodexBar 0.82.0.
+
+### Changed
+
+- Add the native libadwaita Settings panes and serialized Rust preferences,
+  provider actions, CLI reconfiguration, login, import/export and reset.
+- Persist preference updates transactionally and preserve concurrent unrelated
+  values during import and reset.
+
+### Validation
+
+- U05 native Settings runtime, Rust tests and migration checks are recorded in
+  migration audit E105. The runner portability and no-capture interaction fix
+  is recorded with its local reruns in E107; replacement-head Actions checks
+  remain pending.
+
+## 0.82.0 (61) — 2026-11-01
+
+### Changed
+
+- Add native Usage & Spend and Sessions pages with sticky scan status,
+  unknown-aware token heatmap, filters, and accessible interaction (U04).
+
+### Validation
+
+- Local Rust formatting, tests and Clippy passed for all four crates; core has
+  81 tests, backend has 76 plus one integration test, and native GTK has 23.
+  The PyO3 build, default Python (214 passed, 21 expected opt-in skips),
+  Rust-opt-in Python (214 passed), and the 3-test tray D-Bus suite passed.
+  Synthetic GTK Xvfb routing, refresh, accessibility interaction and
+  empty/loading/partial/error screenshots passed locally. U04 PR #62's first
+  head passed `tray-dbus`; `test` and merge remain pending. See migration audit
+  E102–E103.
+
+## 0.82.0 (60) — 2026-11-01
+
+Tracks upstream CodexBar 0.82.0.
+
+### Changed
+
+- Implement the native compact usage panel with shared dashboard projections,
+  panel dismissal, navigation, and platform-aware placement (U03).
+
+### Validation
+
+- All four Rust crates pass formatting and strict Clippy. Tests pass for core
+  (78), backend (72 plus 1 integration), and native GTK (21). The optional
+  PyO3 extension build passed; default Python passed 214 tests with 21 expected
+  opt-in skips, Rust-opt-in Python passed all 214, and tray D-Bus passed 3.
+- A synthetic six-provider Wayland GTK fixture and screenshot were inspected;
+  a live X11 fixture verified the panel at the selected work-area corner and
+  exercised dashboard/page/settings/about routing. Exact-head PR #61 passed
+  `test` and `tray-dbus` in run `41324106655`, including routing/shutdown and
+  synthetic dashboard GTK smokes, then merged normally at `51480af` (E101).
+
+## 0.82.0 (59) — 2026-11-01
+
+Tracks upstream CodexBar 0.82.0.
+
+### Changed
+
+- Close the Python history writer parity gap so unknown and placeholder quota
+  windows cannot be persisted as zero-valued trend samples. Record the observed
+  U02b merge and the remaining ambiguity in pre-existing history rows.
+
+### Validation
+
+- Rust tests from the merged U02b implementation: core 78; backend 72 plus the
+  headless integration test; native GTK 18. Clippy passed for all four Rust
+  crates. The build-59 optional extension build passed; default Python ran 214
+  tests (21 opt-in skips) and Rust-opt-in Python ran 214 tests with no skips.
+- U02b PR #59 exact head `89ae294` passed `test` and `tray-dbus` in run
+  `41174965540` and merged normally at `81b7b8f`. U02 acceptance PR #60 exact
+  head `b2fc92c` passed both checks in run `41314701763` and merged normally at
+  `317078a`. A fresh Xvfb smoke could not run because `xvfb-run`, `Xvfb`, and
+  `xdotool` are absent; #60 changed no GTK rendering and the synthetic native
+  screenshots from merged U02 were inspected. Python remains default until UG.
+
+## 0.82.0 (57) — 2026-10-31
+
+Tracks upstream CodexBar 0.82.0.
+
+### Changed
+
+- Begin U02a native dashboard/provider-card implementation while keeping Python
+  as the default application until UG passes.
+
+### Validation
+
+- U02a PR #58 exact head `c2a3078d7ec304ef94323749d68d21d59d9cc21b` passed
+  `test` and `tray-dbus` in run `41172651348` and merged normally at
+  `549908e42195ce04479424c5fd22ca5ea52d8109`. Synthetic Wayland/GTK evidence
+  is recorded in AUDIT E090/E091; U02 remains partial pending U02b.
+
+## 0.82.0 (56) — 2026-10-31
+
+Tracks upstream CodexBar 0.82.0.
+
+### Changed
+
+- Record the observed U01 native bootstrap merge and move the Phase U handoff
+  to U02 while retaining the Python default and partial native screens.
+
+### Validation
+
+- Documentation/version closeout only. U01 PR #56 exact head `3b99d3e` passed
+  `test` and `tray-dbus`; the normal merge at `3eea06f` is live `origin/main`.
+  Merge evidence is recorded in AUDIT E089.
+
+## 0.82.0 (55) — 2026-10-31
+
+Tracks upstream CodexBar 0.82.0.
+
+### Changed
+
+- Start Phase U with a native GTK4/libadwaita bootstrap, direct Rust backend
+  worker, single-instance command routing and build metadata.
+- Keep Python as the default application until UG passes; native placeholder
+  routes are bootstrap scaffolding, not full-screen parity.
+
+### Validation
+
+- Local locked Rust tests passed for core (78), backend (71 unit + 1 integration)
+  and the native GTK bootstrap (8). Strict Clippy and both default/Rust-opt-in
+  Python suites passed. Xvfb/private-D-Bus routing/cancellation smoke passed;
+  the synthetic Wayland capture shows backend-ready revision 2. Exact-head CI
+  remains pending with the focused U01 PR.
+
+## 0.82.0 (53) — 2026-10-31
+
+Tracks upstream CodexBar 0.82.0.
+
+### Changed
+
+- Add a Rust-only BG end-to-end fixture covering CLI/controller state and
+  notifications, loopback currency/update HTTP, and fake PTY cancellation/join.
+- Record the verified B13c merge, current gate evidence, and remaining Python
+  UI/default-path boundaries.
+
+### Validation
+
+- Full backend and parity checks plus Python/Rust Wayland fixture screenshots
+  are recorded in AUDIT E085. BG remains open until the focused PR is merged.
+
+## 0.82.0 (52) — 2026-10-31
+
+Tracks upstream CodexBar 0.82.0.
+
+### Changed
+
+- Match the Rust-opt-in last-30-days spend caption to the Python UI while
+  retaining the structured last-30 token count in the Rust DTO.
+- Record the verified B15 merge and its explicit Rust opt-in compatibility
+  limits in the migration handoff.
+
+### Validation
+
+- Fixture parity assertions, both Python modes, Rust crate checks, and
+  synthetic Wayland GTK screenshots are recorded in AUDIT E084.
+
+## 0.82.0 (51) — 2026-10-30
+
+Tracks upstream CodexBar 0.82.0.
+
+### Changed
+
+- Characterize F01–F06 numeric, date/time, DST, chart and persisted-history
+  behavior against the unchanged Python reference; add explicit Rust range
+  errors and checked aggregation.
+- Match Python 3.12 Unicode 15 fallback casing exhaustively and keep provider
+  and currency catalogs on their Rust source in opt-in mode.
+- Record the production/helper reachability boundary and remaining explicit
+  Rust opt-in compatibility limits. BG remains open.
+
+### Validation
+
+- Local Rust/Python parity, strict checks, GTK fixture smoke and screenshots
+  are recorded in AUDIT E081; remote PR checks are recorded only after they
+  are observed.
+
+## 0.82.0 (50) — 2026-10-31
+
+Tracks upstream CodexBar 0.82.0.
+
+### Changed
+
+- Record the verified B14 integration and the shared CurrencyService facade
+  merge. Route Rust-opt-in currency catalog, rate, conversion, status and
+  refresh calls through the central controller facade.
+- Update the migration handoff to B14 complete; B15 remains the next backend
+  audit and the BG/native UI gates remain open.
+
+### Validation
+
+- This closeout changes version/status documentation only. PR #50's merged
+  implementation checks and fixture-only GTK screenshots are cited in AUDIT
+  E080. The closeout's default/Rust-opt-in Python suites, private-D-Bus tray
+  tests, format and version synchronization checks passed locally; its remote
+  PR checks remain to be observed.
+
+## 0.82.0 (49) — 2026-10-31
+
+Tracks upstream CodexBar 0.82.0.
+
+### Changed
+
+- Route Rust-opt-in currency catalog, rate, conversion, status and rate-refresh
+  calls through the central refresh-controller facade, sharing the existing
+  CurrencyService with refresh and spend projections.
+- Keep rate refresh work on a controller-owned worker and preserve
+  `fetched_at`, live/cache/offline source and refresh-failure status.
+
+### Validation
+
+- Core/backend tests, strict Rust checks, Python parity and Rust-opt-in suites,
+  private-D-Bus tray tests, and fixture-only Python/Rust Wayland settings smoke
+  passed. See AUDIT E078 for exact scope and screenshots.
+
+## 0.82.0 (48) — 2026-10-31
+
+Tracks upstream CodexBar 0.82.0.
+
+### Changed
+
+- Reconcile and accept the complete B13 extraction across merged spend/tray,
+  settings and application-action slices. B14's remaining currency facade work
+  is recorded separately and remains gated until this handoff merges.
+
+### Validation
+
+- No application runtime code changed in this handoff. See AUDIT E076 for the
+  observed B13 merges, accepted caller inventory and linked synthetic UI
+  screenshots; B14 currency facade routing is the next backend task.
+
+## 0.82.0 (47) — 2026-10-31
+
+Tracks upstream CodexBar 0.82.0.
+
+### Added
+
+- Route B11 login, B12 update checking and application restart operations
+  through the shared Rust facade while leaving GTK responsible for rendering,
+  browser interaction, GLib marshalling and OS notification delivery.
+- Audit remaining Python UI service callers and document their compatibility
+  boundary for the backend completion gate.
+
+### Validation
+
+- See `docs/rust-migration/AUDIT.md` for exact Rust/Python checks and
+  synthetic GTK runtime evidence in E074.
+
+## 0.82.0 (46) — 2026-10-30
+
+Tracks upstream CodexBar 0.82.0.
+
+### Added
+
+- Route provider configuration/actions, hooks/plugins, preference import/export/reset,
+  launch-at-login and CLI reconfiguration through the shared Rust settings facade.
+- Preserve immediate CLI path/timezone changes with a serialized shared-service
+  reconfiguration actor and transactional preference updates.
+
+### Fixed
+
+- Reject an invalid Rust-mode CLI executable before changing preferences or the
+  live controller service; Python parity behavior remains unchanged.
+- Reflect accepted CLI path and timezone changes in the settings controls.
+
+### Validation
+
+- See `docs/rust-migration/AUDIT.md` E071 for Rust/Python checks and synthetic
+  Wayland settings smoke evidence.
+
+## 0.82.0 (45) — 2026-10-30
+
+Tracks upstream CodexBar 0.82.0.
+
+### Added
+
+- Extract spend and tray presentation policies into Rust-owned DTO projections
+  callable through the B14 central facade.
+
+### Fixed
+
+- Keep missing project/model costs unavailable, preserve explicit zero costs,
+  and retain the legacy model-cost fallback from `cost: 0` to a nonzero
+  `totalCost`.
+- Bundle and load the PyGObject Cairo bridge in development and installed
+  layouts so the GTK spend heatmap and daily chart draw on Wayland.
+
+### Validation
+
+- See `docs/rust-migration/AUDIT.md` E069 for exact Rust/Python, installed
+  Wayland smoke and screenshot evidence.
+
+## 0.82.0 (44) — 2026-10-30
+
+Tracks upstream CodexBar 0.82.0.
+
+### Fixed
+
+- Exclude errored providers, placeholder windows and unknown usage from
+  automatic tray selection. Keep measured zero eligible and show unavailable
+  when no quota can be selected instead of projecting the default `0.0`.
+- Keep tray selection indices anchored to the unchanged ordered provider and
+  window vectors while filtering candidates.
+
+### Validation
+
+- See `docs/rust-migration/AUDIT.md` for the Python/Rust parity regression tests
+  and fixture-only GTK tray smoke evidence.
+
+## 0.82.0 (43) — 2026-10-30
+
+Tracks upstream CodexBar 0.82.0.
+
+### Added
+
+- Add the Rust refresh controller with an immediate first pass, dynamic polling,
+  one queued forced-refresh follow-up and joined asynchronous shutdown.
+- Publish immutable refresh snapshots with owned ordered provider data, spend,
+  sessions, history, tray selection, version context and sanitized errors.
+- Send typed notification transitions through a bounded event channel separate
+  from coalescing snapshots; retain usable prior state across partial failures.
+- Route Rust opt-in GTK refresh and force-refresh actions through the controller
+  while keeping Python implementations as parity references.
+- Compose complete usage provider envelopes in Rust and compare the shared
+  synthetic fixture with the Python reference to close the B02 integration gap.
+
+### Validation
+
+- See `docs/rust-migration/AUDIT.md` for B10 controller tests, full-envelope
+  parity, and fixture-only GTK smoke evidence.
+
+## 0.82.0 (42) — 2026-10-30
+
+Tracks upstream CodexBar 0.82.0.
+
+### Added
+
+- Add a Rust PTY login service with bounded transient events, safe lifecycle
+  snapshots, code submission, cancellation, timeout and child reaping.
+- Route Rust-opt-in Claude login and auth-status callers through B07 executable
+  discovery and the PTY-specific service boundary.
+
+### Validation
+
+- See `docs/rust-migration/AUDIT.md` for fixture-only auth parity, PTY lifecycle,
+  GTK login smoke and exact check results.
+
+## 0.82.0 (41) — 2026-10-30
+
+Tracks upstream CodexBar 0.82.0.
+
+### Added
+
+- Port CLI discovery and non-interactive command execution to the asynchronous
+  Rust backend with argv safety, timeouts, cancellation and child reaping.
+- Route existing Python CLI adapters through the service in Rust opt-in mode.
+
+### Validation
+
+- See `docs/rust-migration/AUDIT.md` for synthetic CLI parity, process lifecycle,
+  and GTK fixture smoke evidence.
+
+## 0.82.0 (40) — 2026-10-30
+
+Tracks upstream CodexBar 0.82.0.
+
+### Added
+
+- Add a typed, read-only Rust update check with a bounded public VERSION fetch,
+  numeric version comparison, and sanitized failure categories.
+- Keep update HTTP and version policy in the service adapter; the GTK dialog
+  renders the typed result.
+
+### Validation
+
+- See `docs/rust-migration/AUDIT.md` for B12 parity tests, bounded HTTP fixtures,
+  Rust opt-in GTK smoke evidence, and exact check results.
+
+## 0.82.0 (39) — 2026-10-30
+
+Tracks upstream CodexBar 0.82.0.
+
+### Added
+
+- Port quota threshold, session exhaustion, predictive pace, and reset-credit
+  expiry policies to a stateful Rust service with typed event outcomes.
+- Define a bounded, backpressured event stream for notification transitions so
+  coalescing watch snapshots cannot lose them.
+- Preserve unknown versus known-zero quota state in notification policy parity.
+
+### Validation
+
+- See `docs/rust-migration/AUDIT.md` E048 for Rust, Python, tray D-Bus, and
+  synthetic GTK evidence.
+
+## 0.82.0 (38) — 2026-10-30
+
+Tracks upstream CodexBar 0.82.0.
+
+### Added
+
+- Port provider visibility/order and automatic tray quota selection to Rust,
+  including deterministic ties, depleted-quota ranking, and trusted ETA rules.
+- Expose owned ordering and tray-selection DTOs for the B10 controller snapshot.
+
+### Validation
+
+- See `docs/rust-migration/AUDIT.md` for B09 parity, runtime and GTK fixture evidence.
+
+## 0.82.0 (37) — 2026-10-30
+
+Tracks upstream CodexBar 0.82.0.
+
+### Added
+
+- Port currency catalog, conversion, cached rates, and bounded asynchronous
+  Rustls HTTP refresh to the opt-in Rust backend with offline fallback.
+
+### Validation
+
+- Rust format and Clippy checks passed; 60 core and 7 backend tests passed.
+  Python passed 161 tests in each mode (two opt-in-only tests skipped in default
+  mode); 3 tray D-Bus tests passed. Synthetic GTK SpendView screenshot included.
+
+## 0.82.0 (36) — 2026-10-30
+
+Tracks upstream CodexBar 0.82.0.
+
+### Added
+
+- Port preference defaults, persistence, import/export, reset/update, and
+  refresh-interval derivation to Rust in opt-in mode.
+- Preserve existing settings documents and secure atomic writes.
+
+### Validation
+
+- See `docs/rust-migration/AUDIT.md` for B05 parity, storage-failure, and GTK
+  settings-flow evidence.
 
 ## 0.82.0 (35) — 2026-10-30
 

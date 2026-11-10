@@ -5,8 +5,13 @@
 
 pub mod activity;
 pub mod charts;
+pub mod currency;
 pub mod domain;
 pub mod formatting;
 pub mod history;
+pub mod notifications;
+pub mod ordering;
 pub mod pace;
+pub mod preferences;
 pub mod providers;
+pub mod unicode_case;

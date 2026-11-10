@@ -113,7 +113,7 @@ history storage and queries, sparkline geometry, and the first typed payload
 primitives from `data.py` (UTC timestamp parsing, numeric validation and
 `RateWindow`, `Pace`, `CostInfo`, detail chart, provider summary and session
 derived values, plus standard quota-window, extra rate-window, provider cost, detail chart,
-provider context (credits/status/error/plan), and agent-session payload
+provider context (credits/status/error/plan), agent-session and spend payload
 normalization). GTK rendering and the rest of CLI/provider payload normalization
 remain in Python/the CodexBar CLI. The client targets upstream
 CodexBar 0.82.0 provider behavior; the provider catalog remains at 110 providers.
@@ -121,16 +121,48 @@ CodexBar 0.82.0 provider behavior; the provider catalog remains at 110 providers
 ### Native Rust migration roadmap
 
 The approved destination is a **fully native Rust GTK4/libadwaita app**, with the
-remaining backend migrated **before** the UI. The PyO3 bridge and Python shell
-are temporary. Backend work is not complete, and native UI work has not started.
+backend migrated **before** the UI. The PyO3 bridge and Python shell are
+temporary. Backend gate BG passed in PR #54. U01's native bootstrap merged in
+PR #56, and all U01–U08 implementation PRs are now merged. UG acceptance is
+still open; see the explicit [gate ledger](docs/rust-migration/UG_GATE.md).
 
 - [Architecture, source inventory and stage gates](docs/rust-migration/README.md)
 - [Task checklist and current model handoff](docs/rust-migration/TASKS.md)
 - [Decisions, verification evidence and audit trail](docs/rust-migration/AUDIT.md)
 
-Future coding agents should start with [`AGENTS.md`](AGENTS.md). B00, B01,
-and B02 are complete; B04 spend normalization/aggregation is the next backend
-task.
+Future coding agents should start with [`AGENTS.md`](AGENTS.md). B00–B15 and BG
+are accepted. U01–U08 implementation PRs are merged. U08 PR #66 merged at
+`5de83def98ad5ebd09035ee9120698fbf710541c`; exact head
+`fb89f0b6c702dff92992916e14951b385f5189bf` passed `test` and `tray-dbus` in
+run `41345048163` (E119). U05's build-67 Settings interaction matrix now passes
+locally with synthetic Xvfb/private-D-Bus fixtures, including provider/source/
+API-key and sign-in, Hooks and Plugins states, Advanced CLI path, chooser-backed
+import/export, reset, update-check and the remaining General/Display controls
+(E123). Its 36
+screenshots are catalogued in the [UG evidence
+ledger](docs/rust-migration/UG_GATE.md); the login completion capture follows
+an assertion of the GTK success result. UG remains **NOT PASSED** because the
+Wayland action matrix and repeatable local panel focus/SNI evidence remain
+open. The Python launcher remains the default until the gate passes. See E086
+for the BG merge, B11 CI limitation and B15 compatibility bounds.
+
+Build 94 carries the additive isolated-prefix installer draft; it does not change the default launcher or pass a cutover gate.
+
+Build 93 records one guarded synthetic Wayland Display action: `hidePersonalInfo`
+changed from false to true, with the complete saved preferences JSON differing
+only at that key (AUDIT E195). The pre-click Display capture is
+[`build93-wayland-display-before.png`](docs/rust-migration/screenshots/build93-wayland-display-before.png).
+This verifies one control only; other Settings actions, navigation and keyboard
+parity remain open, UG is **NOT PASSED**, and Python remains the default.
+
+U05 PR #73 is merged on live `main` at `cbdcc129ab4ac3ec5d6f3a8ef805567f96d354ff`
+(E141); exact head `06dabbe1b0d24f79a8e9fa5eaa78575038a1450c` passed `test` and
+`tray-dbus` in run `41514939406`. Build 73 records an incomplete synthetic
+Wayland pointer attempt. A matching systemd app-ID scope produced a captured,
+named one-time pointer+keyboard consent prompt and `Start` returned success;
+one motion was sent, but later cursor/focus checks remained inconclusive, so no
+Settings click or preference change is claimed (E143). UG remains **NOT
+PASSED** and Python remains the default.
 
 ### Existing opt-in module integrations
 
@@ -150,13 +182,15 @@ task.
   extra rate-window, provider cost, detail chart, provider context
   (credits/status/error/plan), and agent-session payload normalization are
   Rust-backed in opt-in mode (B01a–c/B02a–b2b2b/B03); spend normalization
-  (B04) and remaining UI backend extraction remain transitional.
+  (B04) and B13–B15 transitional backend work are complete. GTK widgets and
+  platform integration remain in Python until their native UI tasks are accepted.
 
 The six original Rust ports have opt-in runtime integrations, with additional
 `data.py` behavior routed through Rust in opt-in mode. This checklist
 is not the full backend/native migration checklist above. Python implementations
 remain available as parity references until the backend, native UI and cutover
-gates are passed; the application is not yet entirely Rust.
+gates are passed; the application is not yet entirely Rust. BG has passed; the
+UI gate and cutover gate remain open.
 
 Build the extension and opt in for the app process with:
 
@@ -210,7 +244,7 @@ The GTK front-end uses the same version pair as the macOS bundle:
   this client is feature-compatible with (`0.82.0`).
 * `CURRENT_PROJECT_VERSION` is the build number of the Linux front-end.
 * `codexbar_gtk/version.py` turns the pair into the macOS-style
-  `"0.82.0 (35)"` string shown under Settings → About, in the tray menu and by
+  `"0.82.0 (94)"` string shown under Settings → About, in the tray menu and by
   `./run.sh --about`.
 
 Increment `CURRENT_PROJECT_VERSION` for each merged PR and keep it in sync with
@@ -223,8 +257,9 @@ changes. [`CHANGELOG.md`](CHANGELOG.md) records the changes in each build.
 The headless Rust service contract is being introduced in `rust-backend/`.
 It uses Tokio for async work, keeps GTK outside the backend crate, and publishes
 latest-value snapshots through a watch channel. This is migration scaffolding;
-the existing application still runs its Python backend by default, and its
-optional Rust flag still selects the existing PyO3 module integrations only.
+the existing application still runs its Python backend by default, while the
+Rust opt-in routes refresh polling and typed notification events through the
+Rust controller and uses existing PyO3 module integrations for other ports.
 
 ```sh
 ./run.sh                                  # run from the checkout
@@ -259,6 +294,26 @@ and `tools/preview.py` add those paths automatically. Do not commit `.deps/`.
 The preview needs a working X11/Wayland display; use `xvfb-run -a` for a virtual
 X display if available. The `offscreen` GDK backend is not included in every GTK
 build. Use synthetic CLI data when capturing previews.
+
+### Native Rust GTK bootstrap
+
+U01 adds a separate native bootstrap binary. It talks directly to
+`rust-backend` and owns no Python bridge. U02–U08 screens have landed, but the
+full interaction gate remains open. The Python launcher remains the default
+until UG passes.
+
+Native builds need GTK development metadata and headers in addition to Python
+typelibs:
+
+```sh
+sudo apt install libgtk-4-dev libadwaita-1-dev
+cargo run --manifest-path rust-gtk/Cargo.toml --locked -- --page usage
+```
+
+The CI workflow installs these development packages and exercises initial and
+secondary-instance routing plus cancellation during an in-flight synthetic
+CLI request. A synthetic Wayland bootstrap capture is in
+[`docs/rust-migration/screenshots/u01-native-bootstrap-wayland.png`](docs/rust-migration/screenshots/u01-native-bootstrap-wayland.png).
 
 To exercise the Rust-backed paths, build the optional PyO3 extension and run
 the test suite with both implementations:

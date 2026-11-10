@@ -16,13 +16,102 @@ Code baseline: `46f44d0` (PR #17), GTK build `0.81.0 (16)`. The initial planning
 PR increments the build to `0.81.0 (17)` without changing runtime behavior.
 
 The application still starts with `python3 -m codexbar_gtk`. Python is the default
-backend. `CODEXBAR_RUST_CORE=1` enables six module integrations through
-`rust-python/`; it does **not** select a complete Rust backend. The six existing
-ports are provider metadata, activity, formatting, monthly pace, history, and
-sparkline geometry. Some Python edge-input/timezone fallbacks remain.
+backend. `CODEXBAR_RUST_CORE=1` enables Rust-backed services through
+`rust-python/`; it does **not** select a complete native Rust application. B15's
+original-port parity work is merged in PR #52 at `63eb17c8`, and B13c's focused
+last-30 caption parity fix is merged in PR #53 at `0fc5cbb`. BG passed after
+PR #54 merged at `e1abf7b`; its headless integration, transitional GTK smoke
+and residual-Python audit are recorded in AUDIT E085/E086. Phase U is now
+unblocked. U01's separate native GTK bootstrap merged in PR #56 at `3eea06f`;
+its placeholder routes are not screen parity, and the Python launcher remains
+the default until UG passes. U02a native dashboard/provider-card work merged
+in PR #58 at `549908e`, U02b history plots/burndown merged in PR #59 at
+`81b7b8f`, and final U02 acceptance merged in PR #60 at `317078a`. Python and
+Rust history writers now both skip unknown/placeholder/non-finite samples while
+retaining known zero. Pre-existing JSONL rows do not contain knownness and
+remain ambiguous. U03's compact native panel and central routing merged in PR
+#61 at `51480af` on build 60; exact-head CI and native GTK routing/dashboard
+smokes passed (AUDIT E101). U04 Usage & Spend/Sessions PR #62 merged normally
+at `82b9f254e351ad983d3827d87c78c2de29ec92e9`; its final head passed both
+required checks in run `41327529193` (AUDIT E104). U05 owns provisional build
+62 on `orchestrated/luna-u05-settings`; its Settings panes and serialized
+preferences bridge are implemented and locally verified (AUDIT E105). PR #63
+head `9c566778a8c37c45600adbd95e3cd26acb6f185a` passed `tray-dbus` but failed
+the Settings smoke in `test` because CI lacked `rg` and the no-capture smoke did
+not size the window before its fixed-coordinate click (AUDIT E106–E107). Both
+issues are corrected and the no-capture smoke passes locally, including with
+`rg` absent from `PATH`; final exact head `562a8a7` passed `test` and
+`tray-dbus` in run `41333765485`, and PR #63 merged normally at
+`0c298afc0c4cd24bd8fd13b6979b06758dca1f21` (AUDIT E108). U06 owns build 63 on
+`orchestrated/luna-u06-tray`; local private-bus tests, native GTK route smokes
+and the synthetic tray-routed dashboard screenshot are recorded in E110. PR #64
+merged normally at `678b6b9cf3e10e5b9cd926cb488b5ffbf62ce1da`; its exact head
+passed both required checks (E111). U07 build 64 merged normally in PR #65 at
+`e373e019f7701f5f3a5e204153b7163763abac90`; its exact head passed both required
+checks in run `41340840860` (E114). U08 build 65 merged in PR #66 at
+`5de83def98ad5ebd09035ee9120698fbf710541c`; exact head
+`fb89f0b6c702dff92992916e14951b385f5189bf` passed `test` and `tray-dbus` in
+run `41345048163` (E119). All U01–U08 implementation PRs are merged. UG remains
+**NOT PASSED** while the interaction/capture matrix is incomplete; see
+[UG_GATE.md](UG_GATE.md) and E120. Python remains the default until UG passes.
+Some Python edge-input behavior remains available only through the default
+Python path as described below.
+U04's build-68 panel parity PR #69 then merged normally at
+`ba0338091f28c458432a469d8fe1b973facf1b4e`; exact head
+`ef5f8ebd96ceb716ea8529f85f81d119d41e24fc` passed `test` and `tray-dbus` in
+run `41373288090` (E132). U05 build 69 records a fresh synthetic Wayland
+Settings General capture, but the attempted AT-SPI and KWin fake-input routes
+did not verify a visible control action. UG remains **NOT PASSED**, Python is
+still the default, and the live session slot has been released (E133).
+The native binary embeds provider icon bytes, so install location does not affect
+asset lookup. GDK still needs its SVG image loader at runtime; Debian/Ubuntu
+packages must include `librsvg2-common` rather than relying on recommended
+packages, which may be omitted by `--no-install-recommends` (carry this into
+C01 packaging).
+
+U05 PR #70's build-69 evidence merged normally at
+`6fc6833059cf4ac1808f7f51fe16bcff66eb7867`; exact head
+`800dc57915216f90bfec18178ef26c7261299045` passed both required jobs in run
+`41377674020` (E135). Build 70 confirmed that the installed KDE RemoteDesktop
+portal can identify the synthetic native app using a systemd app scope and a
+temporary desktop entry. Its named, one-time keyboard/pointer consent prompt
+timed out after 360 seconds without approval; no input was sent. The captured
+Settings page and prompt do not pass UI action parity. UG remains
+**NOT PASSED** and Python remains the default (E136). U05 PR #71 then merged
+normally at `2d3901067b0a6e15217fa0ca63cd712527363b4e`; its exact head
+`7bfeb868bdb7ed3be75a25ed5364efbfa90756f0` passed both required jobs in run
+`41381485242`, with no reviews or inline threads (E137). Build 71 starts a
+fresh attempt for the named nonpersistent pointer/keyboard portal request. The
+user approved it and the live request returned `Response=0 devices=3`, but the
+synthetic Settings child exited before input; the session was closed without
+any input event or action claim (E138). UG remains **NOT PASSED** and Python
+remains the default. PR #72 records this outcome and merged normally at
+`4b2d25ed8e566efb27d335ce903ec29e2b32a333`; exact head
+`713736e90bd1abaabea4819418d49bb87b7cd423` passed `test` and `tray-dbus` in
+run `41506793899` after an initial `test` attempt failed to map the Import
+chooser. There were no reviews or comments (E139). Build 72 begins with a
+bounded synthetic process lifecycle, where the Settings child stayed alive for
+360 seconds. A first portal driver then exited through its own stdin-EOF
+cleanup after approval; that explains that build-72 runner closeout but does not
+explain the earlier build-71 exit. A corrected socket-controlled run received a
+fresh one-time keyboard/pointer approval and `Ctrl+R` reached the synthetic
+usage, cost, sessions and version commands. It did not exercise a Settings
+preference or pointer event. See E140; UG remains **NOT PASSED**.
 
 The file inventory and named functions below were inspected, not just inferred
 from filenames. Test results and limitations are recorded separately in AUDIT.
+
+Build 75 adds an automated fail-closed Wayland Settings runner and guard tests
+(E150). A user-approved live KDE portal run passed one General preference
+action and verified the isolated JSON (E151). The unit tests do not exercise
+GTK or Wayland input, and one action does not complete UG. CI's Xvfb GTK smokes
+include Settings but are X11-only. Weston is not system-installed; apt offers
+it, and a rootless extraction rendered a private compositor/socket, but its
+screenshot client was unauthorized. A private Weston widget smoke would cover
+GTK rendering/actions, not KDE shell or portal parity. Python remains the
+default and UG remains **NOT PASSED**. The build-75 local Rust/Python checks and
+all workflow Xvfb GTK smokes passed with the existing U04 SDK/tool bundle
+(E152); this remains separate from the single actual Wayland click.
 
 ## Architecture and dependency direction
 
@@ -43,20 +132,34 @@ Python GTK widgets                        Rust GTK4/libadwaita widgets
   Tokio runtime; the GTK main thread must never block on backend I/O. State is
   exposed as immutable snapshots over `tokio::sync::watch` (latest-value
   semantics), with cooperative cancellation and explicit join on shutdown.
-  Add `reqwest` with Rustls in B06 for bounded HTTP work. Defer `portable-pty`
+  Add `reqwest` with Rustls in B12 for the bounded read-only update check and
+  reuse it for currency HTTP refresh in B06. Defer `portable-pty`
   to B11, where its platform/dependency needs can be verified against the fake
   login harness. This crate currently defines lifecycle/error/state contracts,
   not provider fetch behavior or current-app integration.
 - Keep `rust-python/` a temporary, thin adapter over those APIs. Python dataclass
   construction is allowed during transition, but it must not conceal duplicated
   policy, fetching, scheduling, aggregation, or notification state.
-- Plan a `rust-gtk/` binary after gate BG. It must consume the same backend API
-  directly, not embed Python or invoke a Python backend process. This crate
-  also does **not** exist yet. A workspace layout can be introduced separately.
+- `rust-gtk/` is the native GTK4/libadwaita binary introduced by U01 after BG.
+  It consumes `rust-backend` directly, starts one controller on a dedicated
+  Tokio worker, polls immutable watch state and drains lossless events on the
+  GLib context. It has no PyO3/Python bridge; the Rust `codexbar` CLI service
+  remains its only subprocess integration. U02 provides the native dashboard
+  and U03 adds a compact panel; U04 owns Sessions and Spend, U05 owns Settings,
+  U06 owns StatusNotifierItem/dbusmenu, and U07 owns desktop notification and OS
+  lifecycle integration. The existing Python launcher remains the default
+  until UG passes.
 - The backend publishes immutable snapshots/state; the frontend marshals them
   to its GUI thread. `watch` deliberately coalesces intermediate updates; if a
   future user-visible operation needs a lossless event stream, define a bounded
   channel contract for that operation rather than treating snapshots as events.
+  B08/B10/B14 notification events use `rust_backend::event_channel()` with a
+  256 item Tokio `mpsc` buffer. Producers await sends, applying backpressure;
+  they never silently drop a transition. A closed receiver returns the stable
+  `EventPublishError::ReceiverClosed` result. The independent `watch` stream
+  remains latest-value state. The frontend drains events separately and
+  marshals delivery to its UI thread. Backend DTOs contain no GTK/Python types,
+  and errors use stable category/operation identifiers.
   Do not call GTK callbacks under backend locks or block the GUI on I/O.
 - Inject clocks, subprocess/HTTP/browser adapters, paths, and cancellation where
   needed for deterministic tests. Prove the backend works headlessly without
@@ -73,7 +176,7 @@ Python GTK widgets                        Rust GTK4/libadwaita widgets
 | `prefs.py`: `Preferences`, `DEFAULTS`, refresh intervals | Settings defaults, persistence, portable import/export and derived settings (B05) |
 | `currency.py`: `CurrencyConverter`, shared converter | Rate catalog/conversion, HTTP refresh, TTL/cache, offline fallback (B06) |
 | `cli.py`: `default_cli_path`, `CodexBarCLI` | Discovery, argv, TZ, timeouts, outputs/errors and all command wrappers (B07) |
-| `controller.py`: quota/session/pace/credit events, cycle tracking | Stateful event policies and deduplication; not OS notification delivery (B08) |
+| `controller.py`: quota/session/pace/credit events, cycle tracking | `NotificationPolicy::observe(&[ProviderUsage], &NotificationPreferences, DateTime<Utc>)` returns typed `QuotaThreshold`, `SessionExhausted`, `PredictivePace`, and `CreditExpiry` outcomes; GTK only delivers them (B08) |
 | `controller.py`: `_ordered`, `automatic_tray_selection` and ETA/ranking helpers | Provider visibility/order and tray-quota selection (B09) |
 | `controller.py`: `Controller`, `AppState` | Polling, queued refresh, cancellation, account collection, fallback scans, snapshots and recording (B10) |
 | `login.py`: terminal argv, browser helpers, `ClaudeLoginSession`, auth status | PTY/process lifecycle, streamed parsing, input, cancellation, status and results (B11) |
@@ -108,6 +211,77 @@ B13 explicitly searches `ui/` for leftover backend decisions and workers.
 - UI phase must retain the Settings-to-dashboard action, tray signal signatures
   and live updates (PR #15), host re-registration, settings actions and all
   existing pages. A backend task must not redesign the screens.
+
+### B15 edge-input characterization
+
+B15 was merged normally in PR #52 at
+`63eb17c8ea13c563c587cf9687a4877f1b5b47ff`; exact head
+`791154691213b9592e799e4b5cdec962409ed995` passed `test` and `tray-dbus`.
+The compatibility limits below remain part of the accepted Rust opt-in
+contract (AUDIT E081/E083). B13's screenshot review also found a token-count
+suffix on the Rust last-30-days caption that Python does not render. B13c
+removes only that display suffix while preserving the structured DTO field;
+see the active handoff in TASKS.md.
+
+The Python implementations remain the default and unchanged parity references.
+In Rust opt-in mode, provider metadata and currency conversions read the Rust
+catalogs; the Python copies are used only by default mode and catalog parity
+tests. The known provider IDs are ASCII, and catalog parity tests cover all 110
+providers, aliases and supported currencies.
+
+- **Large numbers:** Python's `_optional_int` rejects booleans and non-numeric
+  values, converts numeric values through `float`, then returns an integer.
+  Thus `2**53 + 1` rounds to `2**53`, `2**70` remains representable,
+  `2**63 - 1` rounds up to `2**63`, and `10**1000` converts to `None`. Rust
+  domain counters and window lengths use
+  signed 64-bit values. A value that does not fit, or an aggregate that exceeds
+  that range, raises an explicit overflow error; the refresh controller reports
+  stable `cli_usage_window_overflow` or `cli_cost_counter_overflow` operations
+  and retains its last good snapshot. Activity cumulative and weekly totals are
+  checked `i64` sums. Token display accepts signed 128-bit inputs; larger
+  Python integers remain formatable in Python but raise an explicit overflow in
+  Rust opt-in. Numeric formatting uses finite `f64` semantics, matching the
+  Python formatting helpers for large finite integers; inputs outside the
+  finite float range fail clearly.
+- **Timestamps and local time:** Python 3.12 `datetime.fromisoformat` accepts
+  extended/basic calendar and week dates, hour/minute/second times, a single
+  character date/time separator, fractional seconds, and offsets with seconds
+  or fractional seconds. Rust tests those forms and normalizes parsed values to
+  UTC; naive provider strings also mean UTC in `parse_timestamp`. Current CLI
+  payloads use ordinary RFC3339 extended timestamps. Monthly pace divides by
+  local calendar days, not 24-hour periods; fixture cases cover New York's
+  spring-forward, fall-back and repeated 01:30 hour. Rust formats direct
+  datetime helper inputs only when they are UTC-aware. Production timestamps
+  reach those callers through `parse_timestamp`, so they are already UTC.
+- **Charts:** the Python geometry helper accepts finite `Fraction` values and
+  integers wider than `f64`'s exact-integer range. Rust opt-in filters the same
+  invalid points, subtracts the first timestamp before conversion, and then
+  uses finite `f64` coordinates. Fractions and wide epochs are covered by
+  parity tests. The production chart reads floating-point timestamp/percentage
+  samples from history and integer GTK dimensions; it cannot receive a
+  `Fraction` from JSONL. Values that cannot convert to finite Python floats
+  overflow in both paths.
+- **Persisted history:** production appends Unix-second floats and percentage
+  floats rounded to two decimals as JSONL. The persisted compatibility fixture
+  also covers blank/corrupt rows, defaulted fields, numeric strings, booleans,
+  non-finite values and a large integer JSON token; Rust and Python read the
+  same retained samples. A direct Python append can write `10**1000` as JSON
+  integer text but then reads no finite sample; Rust rejects that write up
+  front because the value cannot be represented as `f64`. Rust's direct store
+  API takes text paths and signed 64-bit retention days. Bytes paths and
+  retention values outside `i64` are rejected with clear errors; normal app
+  configuration uses text paths and the default 30-day period.
+- **Unknown provider labels:** Rust fallback casing uses checked-in Unicode
+  15.0 properties and full mappings, exhaustively compared with Python 3.12 for
+  every cased codepoint. The Python 3.10/3.11 runtimes supported by the app use
+  older Unicode databases, so an unknown, non-ASCII provider ID can get a
+  different fallback label there. The known provider catalog is ASCII and is
+  unaffected. The Unicode tables record their UCD source and license.
+
+These Rust opt-in limits are explicit and covered by boundary tests; they do
+not narrow the default Python path. The normal app data paths are characterized
+separately from direct helper calls so the next migration gate can review any
+remaining compatibility differences deliberately.
 
 ## Definition of done for an implementation slice
 
@@ -160,13 +334,18 @@ no workspace commands are assumed.
 
 ## Stage gates
 
-- **BG — backend complete:** B00–B15 accepted; Rust-only headless end-to-end
-  tests cover fake CLI/HTTP/PTY flows without Python, GTK, or PyO3. Existing GTK
-  app consumes the Rust backend in opt-in mode with fixture smoke evidence.
-  No hidden Python policy/service work remains. This gate is currently open.
-- **UG — native UI complete:** all U tasks accepted against the same backend;
-  functional/visual parity and Wayland/X11/D-Bus behavior verified. Preserve the
-  old app until this gate is passed. This gate is currently blocked by BG.
+- **BG — backend complete:** PASSED after PR #54 merged at
+  `e1abf7b3e1db0e7f23e3be063a3ef067d85be1a1`. B00–B15 accepted; Rust-only
+  headless end-to-end tests cover fake CLI/HTTP/PTY flows without Python, GTK,
+  or PyO3. Existing GTK app consumes the Rust backend in opt-in mode with
+  fixture smoke evidence.
+  No hidden Python policy/service work remains. See AUDIT E085/E086 for B11's
+  Actions startup failure and the separately verified local evidence.
+- **UG — native UI complete:** all U01–U08 implementation PRs have merged, but
+  the gate is **NOT PASSED** until full feature/action parity and the required
+  Wayland/X11/private-D-Bus evidence matrix are accepted. Current evidence and
+  uncovered actions are itemized in [UG_GATE.md](UG_GATE.md). Preserve the
+  Python app as the default until this gate passes.
 - **CG — cutover complete:** native release/install works without Python,
   PyGObject or `_rust_core.so`; preferences/history survive the switch; native
   CI and packaging are proven. Remove bridge, fallback implementations, Python

@@ -13,6 +13,8 @@ import subprocess
 from dataclasses import dataclass, field
 from typing import Any
 
+from . import rust_bridge
+
 
 class CLIError(RuntimeError):
     """Raised when the codexbar CLI cannot be run or returns invalid output."""
@@ -38,6 +40,16 @@ def default_cli_path() -> str:
     env = os.environ.get("CODEXBAR_CLI")
     if env:
         return env
+
+    rust = rust_bridge.extension()
+    if rust is not None:
+        package_dir = os.path.dirname(os.path.abspath(__file__))
+        for name in ("codexbar", "CodexBarCLI"):
+            try:
+                return str(rust.discover_cli_executable(name, None, package_dir))
+            except RuntimeError:
+                pass
+        return "codexbar"
 
     here = os.path.dirname(os.path.abspath(__file__))
     candidates = [
@@ -79,10 +91,32 @@ class CodexBarCLI:
         # ``TZ`` shifts the CLI's day buckets, matching the macOS statistics
         # time zone preference. An empty value means "use the system zone".
         self.timezone = timezone or None
+        self._rust_service = None
+        self._rust_config: tuple[str, str | None] | None = None
+
+    def _rust(self):
+        extension = rust_bridge.extension()
+        if extension is None:
+            return None
+        config = (self.executable, self.timezone)
+        if self._rust_service is None or config != self._rust_config:
+            self._rust_service = extension.CliService(self.executable, self.timezone)
+            self._rust_config = config
+        return self._rust_service
+
+    @staticmethod
+    def _rust_error(error: Exception) -> CLIError:
+        return CLIError(str(error))
 
     # -- plumbing ---------------------------------------------------------
 
     def run(self, args: list[str], timeout: int | None = None) -> CLIResult:
+        rust = self._rust()
+        if rust is not None:
+            try:
+                return CLIResult(*rust.run(args, timeout or self.timeout))
+            except RuntimeError as exc:
+                raise self._rust_error(exc) from exc
         cmd = [self.executable, *args]
         env = None
         if self.timezone:
@@ -107,6 +141,12 @@ class CodexBarCLI:
         return CLIResult(proc.returncode, proc.stdout, proc.stderr)
 
     def run_json(self, args: list[str], timeout: int | None = None) -> Any:
+        rust = self._rust()
+        if rust is not None:
+            try:
+                return json.loads(rust.run_json(args, timeout or self.timeout, "cli_command"))
+            except RuntimeError as exc:
+                raise self._rust_error(exc) from exc
         result = self.run(args, timeout=timeout)
         text = result.stdout.strip()
         if not text:
@@ -122,6 +162,12 @@ class CodexBarCLI:
     # -- commands ---------------------------------------------------------
 
     def version(self) -> str:
+        rust = self._rust()
+        if rust is not None:
+            try:
+                return rust.version(20)
+            except RuntimeError:
+                return "unknown"
         try:
             result = self.run(["--version"], timeout=20)
         except CLIError:
@@ -140,6 +186,15 @@ class CodexBarCLI:
         Without ``provider`` the CLI returns exactly the enabled providers, which is
         what the GUI wants to display.
         """
+        rust = self._rust()
+        if rust is not None:
+            try:
+                index = account_index if account_index is not None and account_index >= 0 else None
+                return json.loads(
+                    rust.usage_json(provider, index, all_accounts, timeout or self.timeout)
+                )
+            except RuntimeError as exc:
+                raise self._rust_error(exc) from exc
         args = ["usage", "--format", "json"]
         if provider:
             args += ["--provider", provider]
@@ -153,6 +208,12 @@ class CodexBarCLI:
         return list(payload or [])
 
     def dashboard(self, timeout: int | None = None) -> dict[str, Any]:
+        rust = self._rust()
+        if rust is not None:
+            try:
+                return json.loads(rust.dashboard_json(timeout or self.timeout))
+            except RuntimeError as exc:
+                raise self._rust_error(exc) from exc
         payload = self.run_json(["dashboard"], timeout=timeout)
         return payload if isinstance(payload, dict) else {}
 
@@ -162,6 +223,12 @@ class CodexBarCLI:
         days: int | None = None,
         timeout: int | None = None,
     ) -> list[dict[str, Any]]:
+        rust = self._rust()
+        if rust is not None:
+            try:
+                return json.loads(rust.cost_json(provider, days, timeout or self.timeout))
+            except RuntimeError as exc:
+                raise self._rust_error(exc) from exc
         args = ["cost", "--format", "json"]
         if provider:
             args += ["--provider", provider]
@@ -173,6 +240,13 @@ class CodexBarCLI:
         return list(payload or [])
 
     def config_providers(self) -> list[ProviderStatusEntry]:
+        rust = self._rust()
+        if rust is not None:
+            try:
+                entries = json.loads(rust.config_providers_json(60))
+            except RuntimeError as exc:
+                raise self._rust_error(exc) from exc
+            return [ProviderStatusEntry(**entry) for entry in entries]
         result = self.run(["config", "providers"], timeout=60)
         entries: list[ProviderStatusEntry] = []
         for line in result.stdout.splitlines():
@@ -203,19 +277,49 @@ class CodexBarCLI:
         return entries
 
     def set_api_key(self, provider: str, key: str) -> CLIResult:
+        rust = self._rust()
+        if rust is not None:
+            try:
+                return CLIResult(*rust.set_api_key(provider, key, 180))
+            except RuntimeError as exc:
+                raise self._rust_error(exc) from exc
         return self.run(["config", "set-api-key", "--provider", provider, "--api-key", key])
 
     def enable_provider(self, provider: str) -> CLIResult:
+        rust = self._provider_action("enable", provider)
+        if rust is not None:
+            return rust
         return self.run(["config", "enable", "--provider", provider])
 
     def disable_provider(self, provider: str) -> CLIResult:
+        rust = self._provider_action("disable", provider)
+        if rust is not None:
+            return rust
         return self.run(["config", "disable", "--provider", provider])
 
     def set_source(self, provider: str, source: str) -> CLIResult:
+        rust = self._provider_action("set-source", provider, source)
+        if rust is not None:
+            return rust
         return self.run(["config", "set-source", "--provider", provider, "--source", source])
+
+    def _provider_action(self, action: str, provider: str, source: str | None = None) -> CLIResult | None:
+        rust = self._rust()
+        if rust is None:
+            return None
+        try:
+            return CLIResult(*rust.provider_action(action, provider, source, 180))
+        except RuntimeError as exc:
+            raise self._rust_error(exc) from exc
 
     def hooks(self) -> dict[str, Any]:
         """The hook rules from the shared CodexBar config."""
+        rust = self._rust()
+        if rust is not None:
+            try:
+                return json.loads(rust.hooks_json(30))
+            except RuntimeError:
+                return {"enabled": False, "events": []}
         try:
             payload = self.run_json(["hooks", "list", "--format", "json"], timeout=30)
         except CLIError:
@@ -223,9 +327,21 @@ class CodexBarCLI:
         return payload if isinstance(payload, dict) else {"enabled": False, "events": []}
 
     def set_hooks_enabled(self, enabled: bool) -> CLIResult:
+        rust = self._rust()
+        if rust is not None:
+            try:
+                return CLIResult(*rust.set_hooks_enabled(enabled, 30))
+            except RuntimeError as exc:
+                raise self._rust_error(exc) from exc
         return self.run(["hooks", "enable" if enabled else "disable"], timeout=30)
 
     def plugins(self) -> list[dict[str, Any]]:
+        rust = self._rust()
+        if rust is not None:
+            try:
+                return json.loads(rust.plugins_json(60))
+            except RuntimeError:
+                return []
         try:
             payload = self.run_json(["plugins", "list"], timeout=60)
         except CLIError:
@@ -235,6 +351,12 @@ class CodexBarCLI:
         return list(payload or [])
 
     def sessions(self) -> list[dict[str, Any]]:
+        rust = self._rust()
+        if rust is not None:
+            try:
+                return json.loads(rust.sessions_json(60))
+            except RuntimeError:
+                return []
         try:
             payload = self.run_json(["sessions", "--json-v2"], timeout=60)
         except CLIError:

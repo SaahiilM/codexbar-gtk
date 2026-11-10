@@ -67,12 +67,34 @@ class RustChartsIntegrationTests(unittest.TestCase):
 
     def test_adapter_calls_native_geometry(self) -> None:
         spy = Mock(wraps=self.core)
-        points = [(0.0, 20.0), (10.0, 30.0)]
+        points = [(0.0, float("nan")), (10.0, 20.0), (20.0, 30.0)]
         with patch("codexbar_gtk.charts.rust_bridge.extension", return_value=spy):
             charts.sparkline_coordinates(points, 100, 20)
-        spy.sparkline_coordinates.assert_called_once_with(points, 100, 20)
+        spy.sparkline_coordinates.assert_called_once_with(
+            [(0.0, 20.0), (1.0, 30.0)], 100.0, 20.0
+        )
 
-    def test_unsupported_numeric_types_keep_python_behavior(self) -> None:
-        self.compare_backends([(0.0, Fraction(20)), (1.0, Fraction(40))])
-        self.compare_backends([(2**60, 20.0), (2**60 + 1000, 30.0)])
-        self.compare_backends([(0.0, 20.0), (1.0, 40.0)], width=2**60)
+    def test_fraction_and_wide_numeric_inputs_match_python(self) -> None:
+        cases = [
+            ([(0.0, Fraction(20)), (1.0, Fraction(40))], 101, 24),
+            ([(2**60, 20.0), (2**60 + 1000, 30.0)], 101, 24),
+            ([(0.0, 20.0), (1.0, 40.0)], 2**60, 24),
+            (
+                [(Fraction(-(10**308), 1), 20), (Fraction(10**308, 1), 80)],
+                101,
+                24,
+            ),
+            ([(0, float("nan")), (2**60, 20), (2**60 + 1, 80)], 101, 24),
+        ]
+        for points, width, height in cases:
+            with self.subTest(points=points, width=width):
+                self.compare_backends(points, width, height)
+
+    def test_values_outside_python_float_range_keep_python_overflow(self) -> None:
+        points = [(2**2000, 20.0), (2**2000 + 1, 30.0)]
+        with patch("codexbar_gtk.charts.rust_bridge.extension", return_value=None):
+            with self.assertRaises(OverflowError):
+                charts.sparkline_coordinates(points, 101, 24)
+        with patch("codexbar_gtk.charts.rust_bridge.extension", return_value=self.core):
+            with self.assertRaises(OverflowError):
+                charts.sparkline_coordinates(points, 101, 24)

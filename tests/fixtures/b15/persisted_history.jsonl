@@ -1,0 +1,13 @@
+
+not json
+[]
+null
+{"t":null}
+{"u":"bad"}
+{"p":[]}
+{"u":1e999}
+{"t":" NaN "}
+{}
+{"t":" 10.25 ","p":"codex","w":"primary","u":"20"}
+{"t":true,"p":"codex","w":"primary","u":false}
+{"t":1152921504606846977,"p":"codex","w":"wide","u":1152921504606846977}

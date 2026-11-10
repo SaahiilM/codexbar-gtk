@@ -1,0 +1,14 @@
+{
+  "optional_int_rounding_input": 9007199254740993,
+  "optional_int_rounding_result": 9007199254740992,
+  "wide_optional_int": 1180591620717411303424,
+  "optional_int_max_i64_input": 9223372036854775807,
+  "counter_aggregate_inputs": [
+    4611686018427387904,
+    4611686018427387904
+  ],
+  "counter_aggregate_python_result": 9223372036854775808,
+  "activity_i64_max": 9223372036854775807,
+  "token_i128_max": 170141183460469231731687303715884105727,
+  "token_i128_overflow": 170141183460469231731687303715884105728
+}

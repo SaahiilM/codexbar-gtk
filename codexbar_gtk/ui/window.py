@@ -26,11 +26,13 @@ class MainWindow(Adw.ApplicationWindow):
         prefs,
         history=None,
         on_open_settings: Callable[[], None] | None = None,
+        rust_presentation: bool = False,
     ) -> None:
         super().__init__(application=application)
         self.prefs = prefs
         self.history = history
         self._on_open_settings = on_open_settings
+        self._rust_presentation = rust_presentation
         self.set_title("CodexBar")
         self.set_default_size(980, 720)
         self.set_size_request(560, 460)
@@ -239,20 +241,20 @@ class MainWindow(Adw.ApplicationWindow):
         self.highest_tile.set_value(format_percent(highest) if providers else "—")
         self.credits_tile.set_value(f"{credits:,.0f}" if credits else "—")
 
-        spend = state.spend
-        if spend is not None:
-            amount, code = self._converted(spend.total_cost, spend.currency)
-            partial = spend.cost_partial or bool(state.last_error)
-            self.spend_tile.set_value(
-                ("≥ " if partial else "") + format_currency(amount, code)
-                if spend.cost_known else "—",
-                "Known subtotal" if partial and spend.cost_known
-                else spend.history_label or "",
-            )
-        else:
-            self.spend_tile.set_value("—")
-
-        self.spend_view.update(spend, state.last_error)
+        if not self._rust_presentation:
+            spend = state.spend
+            if spend is not None:
+                amount, code = self._converted(spend.total_cost, spend.currency)
+                partial = spend.cost_partial or bool(state.last_error)
+                self.spend_tile.set_value(
+                    ("≥ " if partial else "") + format_currency(amount, code)
+                    if spend.cost_known else "—",
+                    "Known subtotal" if partial and spend.cost_known
+                    else spend.history_label or "",
+                )
+            else:
+                self.spend_tile.set_value("—")
+            self.spend_view.update(spend, state.last_error)
         self.sessions_view.update(state.sessions)
 
         if state.refreshing:
@@ -263,6 +265,22 @@ class MainWindow(Adw.ApplicationWindow):
             self.refresh_spinner.stop()
             self.refresh_spinner.set_visible(False)
             self.refresh_icon.set_visible(True)
+
+    def update_spend_projection(self, model: dict) -> None:
+        self.spend_view.update_projection(model)
+        total = model.get("total") or {}
+        amount = total.get("display_amount")
+        code = model.get("display_currency") or model.get("source_currency") or "USD"
+        if not total.get("known") or amount is None:
+            self.spend_tile.set_value("—")
+            return
+        prefix = "≥ " if total.get("partial") else ""
+        subtitle = (
+            "Known subtotal"
+            if total.get("partial")
+            else model.get("history_label") or ""
+        )
+        self.spend_tile.set_value(prefix + format_currency(amount, code), subtitle)
 
     def _converted(self, amount: float, source: str | None) -> tuple[float, str]:
         """Apply the preferred display currency, falling back to the source unit."""

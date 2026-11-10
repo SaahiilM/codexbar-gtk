@@ -112,30 +112,9 @@ fn grouped_number(value: f64, decimals: usize) -> String {
 }
 
 fn currency_symbol(currency: &str) -> Option<&'static str> {
-    match currency {
-        "USD" | "CAD" | "AUD" | "HKD" | "SGD" | "MXN" => Some("$"),
-        "GBP" => Some("£"),
-        "EUR" => Some("€"),
-        "CZK" => Some("Kč"),
-        "CNY" | "JPY" => Some("¥"),
-        "KRW" => Some("₩"),
-        "TWD" => Some("NT$"),
-        "INR" => Some("₹"),
-        "CHF" => Some("Fr."),
-        "AED" => Some("د.إ"),
-        "TRY" => Some("₺"),
-        "NZD" => Some("$"),
-        "SEK" | "NOK" | "DKK" => Some("kr"),
-        "PLN" => Some("zł"),
-        "BRL" => Some("R$"),
-        "ZAR" => Some("R"),
-        "THB" => Some("฿"),
-        "IDR" => Some("Rp"),
-        "VND" => Some("₫"),
-        "UAH" => Some("₴"),
-        "ILS" => Some("₪"),
-        _ => None,
-    }
+    crate::currency::CURRENCIES
+        .iter()
+        .find_map(|(code, symbol, _)| (*code == currency).then_some(*symbol))
 }
 
 pub fn format_currency(value: Option<f64>, currency: &str, compact: bool) -> String {
@@ -177,8 +156,12 @@ pub fn format_credits(value: Option<f64>) -> String {
     grouped_number(value, decimals)
 }
 
-pub fn format_tokens(value: Option<u64>) -> String {
+pub fn format_tokens(value: Option<i128>) -> String {
     let value = value.unwrap_or(0);
+    if value < 0 {
+        return value.to_string();
+    }
+    let value = value as u128;
     if value >= 1_000_000_000 {
         format!("{:.2}B", value as f64 / 1_000_000_000.0)
     } else if value >= 1_000_000 {

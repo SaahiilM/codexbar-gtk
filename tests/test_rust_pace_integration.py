@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 import importlib
+import json
+import os
+import subprocess
+import sys
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
@@ -56,10 +60,23 @@ class RustPaceIntegrationTests(unittest.TestCase):
             else:
                 self.assertAlmostEqual(python_result, rust_result)
 
-    def test_naive_datetimes_keep_the_python_fallback(self) -> None:
-        now = datetime(2026, 7, 1, 12)  # noqa: DTZ001 - deliberately naive fallback
-        resets_at = datetime(2026, 7, 11, 12)  # noqa: DTZ001 - deliberately naive fallback
-        self.assertAlmostEqual(pace.daily_target(300.0, resets_at, now), 300 / 11)
+    def test_naive_and_second_offset_datetimes_match_python(self) -> None:
+        core = importlib.import_module("codexbar_gtk._rust_core")
+        now = datetime(2026, 7, 1, 12)  # noqa: DTZ001 - deliberate local-time input
+        resets_at = datetime(2026, 7, 11, 12)  # noqa: DTZ001 - deliberate local-time input
+        with patch("codexbar_gtk.pace.rust_bridge.extension", return_value=None):
+            python_naive = pace.daily_target(300.0, resets_at, now)
+        with patch("codexbar_gtk.pace.rust_bridge.extension", return_value=core):
+            rust_naive = pace.daily_target(300.0, resets_at, now)
+        self.assertEqual(rust_naive, python_naive)
+
+        offset_reset = datetime.fromisoformat("2026-07-11T12:00:00+02:00:30")
+        now_utc = datetime(2026, 7, 1, 12, tzinfo=timezone.utc)
+        with patch("codexbar_gtk.pace.rust_bridge.extension", return_value=None):
+            python_offset = pace.daily_target(300.0, offset_reset, now_utc)
+        with patch("codexbar_gtk.pace.rust_bridge.extension", return_value=core):
+            rust_offset = pace.daily_target(300.0, offset_reset, now_utc)
+        self.assertEqual(rust_offset, python_offset)
 
     def test_window_and_monthly_cost_targets_match_rust(self) -> None:
         core = importlib.import_module("codexbar_gtk._rust_core")
@@ -117,6 +134,48 @@ class RustPaceIntegrationTests(unittest.TestCase):
                 pace.format_monthly_cost_target(cost, "EUR", now),
                 "≈ €5.02 / day to last until reset",
             )
+
+    def test_dst_local_midnight_reset_matches_python_and_rust(self) -> None:
+        script = """
+import json
+import sys
+from datetime import datetime, timezone
+from unittest.mock import patch
+from codexbar_gtk import pace
+from codexbar_gtk import _rust_core
+cases = json.loads(sys.argv[1])
+values = []
+for case in cases['cases']:
+    now = datetime.fromisoformat(case['now'])
+    reset = datetime.fromisoformat(case['reset'])
+    with patch('codexbar_gtk.pace.rust_bridge.extension', return_value=None):
+        python_value = pace.daily_target(case['remaining'], reset, now)
+    with patch('codexbar_gtk.pace.rust_bridge.extension', return_value=_rust_core):
+        rust_value = pace.daily_target(case['remaining'], reset, now)
+    values.append([python_value, rust_value])
+print(json.dumps(values))
+"""
+        fixture = json.loads(
+            (ROOT / "tests/fixtures/b15/dst_pace_cases.json").read_text()
+        )
+        env = os.environ.copy()
+        env["TZ"] = fixture["timezone"]
+        env["CODEXBAR_RUST_CORE"] = "1"
+        completed = subprocess.run(
+            [sys.executable, "-c", script, json.dumps(fixture)],
+            cwd=ROOT,
+            env=env,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        values = json.loads(completed.stdout)
+        expected = fixture["cases"]
+        self.assertEqual(
+            values,
+            [[case["expected"], case["expected"]] for case in expected],
+        )
 
     def test_daily_target_formatting_matches_rust_and_keeps_currency_conversion(
         self,

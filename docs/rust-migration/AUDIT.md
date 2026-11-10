@@ -6236,3 +6236,5 @@ unverified; UG and C gates remain open and Python remains default.
 - **Next:** root owns publication and exact-head CI. Continue the blocked
   Settings/UG work separately; do not infer gate acceptance from this renderer
   or from the earlier `--no-activate` runtime proof.
+
+- Root publication review: renderer behavior checks and the four runtime-proof harness tests independently passed. Add the standalone renderer test script to the workflow path filter so test-only changes also trigger CI. Installer code is unchanged from the previously observed 13-case Python-free smoke; final published-head CI remains pending.

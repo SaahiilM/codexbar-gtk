@@ -9,27 +9,38 @@ import os
 import pathlib
 import time
 
+from native_atspi_rows import exact_selected_row_records
+
 import gi
 
 gi.require_version("Atspi", "2.0")
 from gi.repository import Atspi
 
 
-def descendants(accessible, depth=0):
+MAX_ACCESSIBLE_NODES = 10_000
+MAX_ACCESSIBLE_CHILDREN = 4_096
+
+
+def descendants(accessible, depth=0, _remaining=None):
+    if _remaining is None:
+        _remaining = [MAX_ACCESSIBLE_NODES]
     if depth > 40:
         return
+    if _remaining[0] <= 0:
+        return
+    _remaining[0] -= 1
     yield accessible
     try:
         count = accessible.get_child_count()
     except Exception:
         return
-    for index in range(count):
+    for index in range(min(count, MAX_ACCESSIBLE_CHILDREN, _remaining[0])):
         try:
             child = accessible.get_child_at_index(index)
         except Exception:
             continue
         if child is not None:
-            yield from descendants(child, depth + 1)
+            yield from descendants(child, depth + 1, _remaining)
 
 
 def app_objects(app_pid: int):
@@ -168,11 +179,7 @@ def accept(app_pid: int, title: str, path: str) -> None:
         dialog = find_dialog(app_pid, title)
         if dialog is not None:
             basename = path.rsplit("/", 1)[-1]
-            selected_rows = [item for item in descendants(dialog)
-                             if item.get_role_name() == "table row"
-                             and basename in (item.get_name() or "")
-                             and states(item).contains(Atspi.StateType.SELECTED)
-                             and item.get_process_id() == app_pid]
+            selected_rows = selected_filename_rows(dialog, basename, app_pid)
             location_entry = focused_entry(dialog, app_pid)
             exact_location = (location_entry is not None
                               and read_text(location_entry) == path)
@@ -303,8 +310,8 @@ def select_file_row(app_pid: int, title: str, path: str) -> None:
                     for index in range(selection_parent.get_child_count()):
                         child = selection_parent.get_child_at_index(index)
                         if (child is not None and child.get_role_name() == "table row"
-                                and basename in (child.get_name() or "")
-                                and child.get_process_id() == app_pid):
+                                and child.get_process_id() == app_pid
+                                and row_has_exact_filename(child, basename, app_pid)):
                             if selection.select_child(index):
                                 print(f"ACTUAL_CHOOSER_SELECTED_ROW pid={app_pid} "
                                       f"role={row.get_role_name()!r} filename={basename!r} "
@@ -325,6 +332,61 @@ def select_file_row(app_pid: int, title: str, path: str) -> None:
     fail(f"no unique actionable chooser row for {basename!r} in app PID {app_pid}; "
          f"home_action_invoked={home_opened}; "
          f"observed={last!r}; diagnostic_tree={diagnostic_path}")
+
+
+def accessible_identity(accessible) -> str | None:
+    """Build a tree-path identity without using bounds or control labels."""
+    path = []
+    node = accessible
+    while node is not None:
+        parent = node.get_parent()
+        if parent is None:
+            break
+        found = None
+        for index in range(min(parent.get_child_count(), MAX_ACCESSIBLE_CHILDREN)):
+            child = parent.get_child_at_index(index)
+            if child is node or child == node:
+                found = index
+                break
+        if found is None:
+            return None
+        path.append(found)
+        node = parent
+    return f"{accessible.get_process_id()}:{'/'.join(map(str, reversed(path)))}"
+
+
+def accessible_row_record(row, app_pid: int) -> dict:
+    """Adapt one AT-SPI row and its descendants to the pure row validator."""
+    def state_names(item):
+        return {state.value_nick for state in states(item).get_states()}
+
+    cells = []
+    for child in descendants(row):
+        if child is row:
+            continue
+        role = child.get_role_name()
+        if role not in ("label", "table cell"):
+            continue
+        text = read_text(child) if "Text" in child.get_interfaces() else None
+        cells.append({"role": role, "name": child.get_name(), "text": text,
+                      "pid": child.get_process_id(), "states": state_names(child)})
+    return {"role": row.get_role_name(), "identity": accessible_identity(row),
+            "pid": row.get_process_id(), "states": state_names(row),
+            "descendants": cells}
+
+
+def row_has_exact_filename(row, basename: str, app_pid: int) -> bool:
+    return bool(exact_selected_row_records(
+        [accessible_row_record(row, app_pid)], basename, app_pid,
+        require_selected=False))
+
+
+def selected_filename_rows(dialog, basename: str, app_pid: int):
+    rows = [item for item in descendants(dialog) if item.get_role_name() == "table row"]
+    records = [accessible_row_record(item, app_pid) for item in rows]
+    matches = exact_selected_row_records(records, basename, app_pid)
+    by_identity = {record["identity"]: item for record, item in zip(records, rows)}
+    return [by_identity[record["identity"]] for record in matches]
 
 
 def save_default(app_pid: int, title: str, path: str) -> None:

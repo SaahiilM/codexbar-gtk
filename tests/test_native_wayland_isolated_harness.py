@@ -10,6 +10,12 @@ import tempfile
 import unittest
 from unittest import mock
 
+ROW_HELPER_SPEC = importlib.util.spec_from_file_location(
+    "native_atspi_rows", pathlib.Path(__file__).resolve().parents[1] /
+    "scripts/native_atspi_rows.py")
+ROW_HELPER = importlib.util.module_from_spec(ROW_HELPER_SPEC)
+ROW_HELPER_SPEC.loader.exec_module(ROW_HELPER)
+
 
 SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts/test-native-wayland-isolated.py"
 SPEC = importlib.util.spec_from_file_location("native_wayland_isolated", SCRIPT)
@@ -272,13 +278,40 @@ class NativeWaylandIsolatedHarnessTests(unittest.TestCase):
         self.assertIn('choices=("matrix", "advanced"), default="matrix"', source)
         self.assertIn('if args.scenario == "advanced":\n                run_advanced_preferences(', source)
         helper = (SCRIPT.parent / "select-native-file-chooser.py").read_text(encoding="utf-8")
-        self.assertIn('basename in (child.get_name() or "")', helper)
+        self.assertIn("row_has_exact_filename(child, basename, app_pid)", helper)
         self.assertIn('child.get_process_id() == app_pid', helper)
         self.assertIn('selection.select_child(index)', helper)
         self.assertIn('read_text(location_entry) == path', helper)
+        self.assertIn("exact_selected_row_records", helper)
+        self.assertNotIn('basename in (child.get_name() or "")', helper)
         self.assertNotIn('xdotool', helper)
         selector = helper.split("def select_file_row", 1)[1].split("def save_default", 1)[0]
         self.assertNotIn("Ctrl+L", selector)
+
+    def test_selected_chooser_row_requires_exact_visible_same_pid_cell_and_unique_identity(self):
+        def row(identity="row-1", row_pid=123, cell_name="synthetic.json",
+                cell_pid=123, row_states=("selected", "showing", "sensitive"),
+                cell_states=("showing", "sensitive")):
+            return {"identity": identity, "role": "table row", "pid": row_pid,
+                    "states": row_states, "descendants": [{
+                        "role": "label", "name": cell_name, "text": None,
+                        "pid": cell_pid, "states": cell_states}]}
+
+        exact = row()
+        self.assertEqual(ROW_HELPER.exact_selected_row_records(
+            [exact], "synthetic.json", 123), [exact])
+        self.assertEqual(ROW_HELPER.exact_selected_row_records(
+            [row(cell_name="prefix-synthetic.json")], "synthetic.json", 123), [])
+        self.assertEqual(ROW_HELPER.exact_selected_row_records(
+            [row(cell_pid=456)], "synthetic.json", 123), [])
+        self.assertEqual(ROW_HELPER.exact_selected_row_records(
+            [row(row_pid=456)], "synthetic.json", 123), [])
+        duplicate_controls = [exact, row(identity="row-2")]
+        self.assertEqual(ROW_HELPER.exact_selected_row_records(
+            duplicate_controls, "synthetic.json", 123), duplicate_controls)
+        duplicate_identity = [exact, row(identity="row-1")]
+        self.assertEqual(ROW_HELPER.exact_selected_row_records(
+            duplicate_identity, "synthetic.json", 123), [])
 
     def test_visible_text_requires_exact_pid_and_unique_identity(self):
         row = {"name": "1 running of 1 known sessions", "pid": 123,

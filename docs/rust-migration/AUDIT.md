@@ -7134,3 +7134,64 @@ code or cancellation policy changed.
   exact location-entry text and component with scoped read-only instrumentation,
   then preserve the real accept/close and downstream assertions. Root owns
   review and publication.
+
+### E207 BUILD104 native Settings chooser — actual-field repair verified locally
+
+**Scope and implementation:** Added `scripts/select-native-file-chooser.py` and
+updated `scripts/smoke-native-settings.sh`. The smoke now enables
+`GTK_A11Y=atspi` before application launch and reads the real chooser entry
+after Ctrl+L and Ctrl+A. The helper accepts only the unique `Import preferences`
+dialog belonging to the verified application PID, and the unique focused,
+visible, sensitive `EditableText` with Text and EditableText interfaces. It sets
+the absolute fixture path through AT-SPI, verifies exact text after GTK settles
+and before Return, then requires a visible, sensitive Import button in that same
+dialog and invokes its real GTK action. If Return closes the dialog, the existing
+close assertion confirms it; otherwise the accessible action handles
+acceptance. No application import code, `GFile` setter, direct backend call, app
+PID guard, or required CI step was bypassed. Export behavior remains on its
+existing visible Save chooser path.
+
+**Actual backend and cause evidence:** In a private focused app run,
+`GTK_A11Y=atspi` was set in the app environment before `--settings` launch. The
+visible chooser XID PID, AT-SPI dialog PID, entry PID, and Import-action PID all
+matched the Rust app. The actual entry was AT-SPI role `text` with `Text` and
+`EditableText` interfaces. It read as empty after Ctrl+L and after Ctrl+A;
+`EditableText.set_text_contents()` set the exact absolute synthetic fixture path,
+which remained exact after a bounded GTK event-loop settle and before Return.
+This establishes the prior unverified point: keyboard screenshots did not
+prove the location field contents. The new path uses direct readback and the
+visible app-owned GTK response action instead of relying on clipped text or a
+fixed button coordinate. The private session's D-Bus portal broker and
+`org.freedesktop.impl.portal.desktop.gtk` were activated; the latter mapped
+GTK 3, while the visible dialog remained owned and exposed by the app. Thus the
+dialog was not a separate GTK 3 portal window. This does not claim GTK portal
+broker activation was absent.
+
+**Runtime proof:** The cached BUILD104 executable was reused without rebuilding;
+SHA-256 was verified as
+`9b8e670276db6faef63959fcea75a680b73d47488530b6ba8297ba37c8b22cbd`. The
+final helper passed two consecutive complete native Settings smokes, each with
+a separate temporary HOME, private Xvfb, and private D-Bus session. Logs:
+`/tmp/build104-settings-smoke-atspi-2.log` and
+`/tmp/build104-settings-smoke-atspi-3.log`; both returned `SMOKE_EXIT=0` and
+reported the complete Settings smoke passed. Each run used the actual chooser
+for the valid preferences file and both empty-preferences imports; each path was
+read back exactly and each visible Import action was invoked. Existing checks
+passed for export JSON, imported preference overlay, unknown-key omission,
+autostart retention, empty Hooks/Plugins reload, reset/update tail, the other
+Settings controls and pages, and clean application lifecycle. CI's restored
+Settings step remains enabled; no remote CI result is available for this local
+commit.
+
+**Checks, boundaries, and status:** `bash -n scripts/smoke-native-settings.sh`,
+`shellcheck scripts/smoke-native-settings.sh`,
+`python3 -m py_compile scripts/select-native-file-chooser.py`, and
+`git diff --check` passed. No native build or app source change was made. Test
+fixtures and the loopback update server stayed inside each temporary smoke
+environment; the live desktop, host D-Bus, host services, real config, account
+or auth state, provider HTTP, credentials, push, and PR watch were not used.
+Portal and accessibility services activated only on each isolated private test
+bus. This repairs local BUILD104/E207 smoke evidence; it does not pass UG,
+change Python-default status, or establish exact-head remote CI success. Root
+owns review and publication; next step is review the verified local commit,
+publish it, then inspect exact-head CI.

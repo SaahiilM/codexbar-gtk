@@ -74,8 +74,8 @@ wait_for_file() {
     [[ -e "$path" ]] || { cat "$scratch/app.log" >&2; echo "timed out waiting for $description" >&2; exit 1; }
 }
 
-python3 -c 'import dbus, gi' >/dev/null 2>&1 || {
-    echo "native Settings notification smoke needs python3-dbus and python3-gi" >&2
+python3 -c 'import dbus, gi; gi.require_version("Atspi", "2.0"); from gi.repository import Atspi' >/dev/null 2>&1 || {
+    echo "native Settings smoke needs python3-dbus, python3-gi, and AT-SPI introspection" >&2
     exit 2
 }
 
@@ -331,7 +331,9 @@ export NATIVE_SETTINGS_CLAUDEPLATFORM_COOKIE_RECEIVED="$claudeplatform_cookie_fi
 export CODEXBAR_NATIVE_SETTINGS_CLAUDEPLATFORM_STATUS_REPORT="$claudeplatform_status_file"
 export NATIVE_SETTINGS_NOTIFICATION_LOG="$scratch/notifications"
 export CODEXBAR_NATIVE_SETTINGS_ICON_REPORT=1
-export GTK_A11Y=none GTK_USE_PORTAL=0 GDK_BACKEND=x11 GSK_RENDERER=cairo
+# GTK_A11Y must be set before application launch so the live native chooser's
+# editable location field and response action can be verified through AT-SPI.
+export GTK_A11Y=atspi GTK_USE_PORTAL=0 GDK_BACKEND=x11 GSK_RENDERER=cairo
 printf '%s\n' 'true' > "$NATIVE_SETTINGS_HOOKS_ENABLED"
 
 python3 "$scratch/notifications.py" "$NATIVE_SETTINGS_NOTIFICATION_LOG" >"$scratch/notifications.log" 2>&1 &
@@ -718,31 +720,28 @@ select_chooser_path() {
         }
         local target_name=${path##*/}
         capture_native_size "$chooser" "${NATIVE_SETTINGS_IMPORT_CHOOSER_SCREENSHOT:-}"
-        # GTK's native chooser has a location entry on Ctrl+L. Address the
-        # exact synthetic fixture path directly instead of deriving a row
-        # coordinate from GTK's current sort order and theme-dependent row
-        # height. Return asks the chooser to open/accept that exact file.
+        # Ctrl+L exposes GTK's real location entry. Read and set that entry
+        # through AT-SPI on the verified app-owned chooser, then require the
+        # actual visible Import response action to accept the exact fixture.
         xdotool key --clearmodifiers ctrl+l
-        # Clear any existing folder/completion text, as in the passing GTK probe.
+        python3 "$repo_root/scripts/select-native-file-chooser.py" read "$app_pid" "$title" "$path"
         xdotool key --clearmodifiers ctrl+a
-        xdotool type --clearmodifiers --delay 1 "$path"
+        python3 "$repo_root/scripts/select-native-file-chooser.py" read "$app_pid" "$title" "$path"
+        python3 "$repo_root/scripts/select-native-file-chooser.py" set "$app_pid" "$title" "$path"
         if [[ "$target_name" == "preferences-import.json" ]]; then
             capture_native_size "$chooser" "${NATIVE_SETTINGS_IMPORT_SELECTED_SCREENSHOT:-}"
         else
             capture_native_size "$chooser" "${NATIVE_SETTINGS_EMPTY_IMPORT_SELECTED_SCREENSHOT:-}"
         fi
+        # Return gives GTK's location entry its normal key event. If it leaves
+        # the chooser open, use the exact visible Import action through AT-SPI.
         xdotool key Return
-        sleep 0.2
         if [[ -n "${NATIVE_SETTINGS_CHOOSER_AFTER_SCREENSHOT:-}" ]]; then
             capture_root_debug "$NATIVE_SETTINGS_CHOOSER_AFTER_SCREENSHOT"
         fi
-        # The Import response button is bottom-right in GTK's native dialog.
-        # Read the current window dimensions instead of assuming a monitor
-        # size; click_window_at also validates the point and the focused XID.
-        local chooser_size chooser_width chooser_height
-        chooser_size=$(window_size "$chooser")
-        read -r chooser_width chooser_height <<<"$chooser_size"
-        click_window_at "$chooser" "$((chooser_width - 50))" "$((chooser_height - 29))" "accept $title chooser"
+        if xwininfo -id "$chooser" 2>/dev/null | grep -Fq 'Map State: IsViewable'; then
+            python3 "$repo_root/scripts/select-native-file-chooser.py" accept "$app_pid" "$title" "$path"
+        fi
         local close_deadline=$((SECONDS + 5))
         while xwininfo -id "$chooser" 2>/dev/null | grep -Fq 'Map State: IsViewable' \
             && (( SECONDS < close_deadline )); do sleep 0.05; done

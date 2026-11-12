@@ -1332,3 +1332,40 @@ read-only instrumentation, then retain the existing close/persistence/reload
 assertions and obtain fresh-home smoke passes. Build 104 and Python-default
 status are unchanged; UG remains **NOT PASSED**. Root owns review and
 publication.
+
+### BUILD104/E207 chooser repair — verified locally (2026-11-12)
+
+**Branch:** `orchestrated/luna-ug-settings-ci-reliability`.
+**Status:** the native Settings smoke now passes locally in two consecutive
+fresh-HOME runs against the cached BUILD104 binary; root review and publication
+remain pending. The smoke remains a required CI step. No application runtime
+code, build metadata, or Python-default behavior changed. UG remains
+**NOT PASSED** and Python remains the default.
+
+`scripts/select-native-file-chooser.py` scopes AT-SPI to the visible
+`Import preferences` dialog and the verified app PID. It reads the focused,
+visible, sensitive `EditableText` after Ctrl+L, after Ctrl+A, and after setting
+the exact absolute synthetic fixture path; it verifies the value after GTK
+settles and invokes the visible Import action owned by the same app process.
+The existing chooser-close, preferences persistence, empty-import Hooks and
+Plugins reload, reset/update tail, autostart-retention, and application shutdown
+assertions remain active.
+
+Focused evidence identified the visible dialog as an app-owned GTK4 dialog
+(dialog XID PID and AT-SPI PID match the Rust app). The private D-Bus portal
+broker and GTK implementation were activated, and the implementation mapped
+GTK 3, but neither owned the visible dialog. The app's actual focused chooser
+entry had AT-SPI `Text` and `EditableText` interfaces; its contents were empty
+after Ctrl+L and Ctrl+A, then matched the exact fixture path after setting and
+event-loop settle, before Return. The earlier screenshot alone had not proved
+that field value. No app import or GFile setter bypass is used.
+
+Local checks: `bash -n scripts/smoke-native-settings.sh`,
+`shellcheck scripts/smoke-native-settings.sh`, Python compilation of the AT-SPI
+helper, and `git diff --check` passed. Two complete current-helper full smoke
+runs passed, including valid and two empty preference imports and their
+downstream assertions, using the same cached BUILD104 binary and separate
+temporary homes/private Xvfb/private D-Bus sessions. See AUDIT E207 chooser
+repair for exact logs and limitations. No rebuild, push, or exact-head CI result
+is claimed. **Next:** root reviews the local commit, publishes it, and observes
+the required CI result before updating remote status.

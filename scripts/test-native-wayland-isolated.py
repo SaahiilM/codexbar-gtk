@@ -43,6 +43,13 @@ RESIDUAL_SETTINGS = (
     ("Menu Bar", "Provider rows", "switcherRowsOption", "details", "combo"),
     ("Usage & Spend", "Statistics time zone", "costUsageBucketTimeZone", "Africa/Abidjan", "combo"),
 )
+RESIDUAL_OPTION_LABELS = {
+    ("resetTimesOption", "absolute"): "Absolute time",
+    ("workdayTickAppearance", "highContrast"): "High contrast",
+    ("menuBarIconStyle", "iconPercent"): "Icon and percentage",
+    ("unifiedIconSource", "first"): "First enabled provider",
+    ("switcherRowsOption", "details"): "Quota details",
+}
 HOST_SESSION_KEYS = (
     "DISPLAY", "WAYLAND_DISPLAY", "WAYLAND_SOCKET", "XAUTHORITY",
     "DBUS_SESSION_BUS_ADDRESS", "DBUS_SESSION_BUS_PID", "DBUS_SYSTEM_BUS_ADDRESS",
@@ -95,7 +102,7 @@ for index in range(min(desktop.get_child_count(), 100)):
             tree_errors.append(detail["tree_error"])
         app_details.append(detail)
         queue = [(app, 0, f"app[{index}]")]
-        while queue and len(nodes) < 3000:
+        while queue and len(nodes) < 10000:
             node, depth, path = queue.pop(0)
             if depth > 30:
                 continue
@@ -154,6 +161,63 @@ elif mode in ("states", "snapshot"):
                     entry["enabled"] = state_set.contains(Atspi.StateType.ENABLED)
                     entry["selected"] = state_set.contains(Atspi.StateType.SELECTED)
                     entry["pressed"] = state_set.contains(Atspi.StateType.PRESSED)
+                    # A ComboRow's accessible combobox may not itself implement
+                    # Action or Selection while its child button/popup does.
+                    # Keep this same-process subtree traversal shallow and bounded.
+                    def describe(child, child_path, depth):
+                        if depth > 8:
+                            return []
+                        try:
+                            child_name = child.get_name() or ""
+                            child_role = child.get_role_name() or ""
+                            child_states = child.get_state_set()
+                            child_actions = child.get_action_iface()
+                            child_selection = child.get_selection_iface()
+                            child_count = min(child.get_child_count(), 40)
+                            action_names = []
+                            if child_actions:
+                                for action_index in range(min(child_actions.get_n_actions(), 12)):
+                                    action_names.append(child_actions.get_action_name(action_index))
+                            relations = []
+                            try:
+                                for relation in child.get_relation_set()[:12]:
+                                    relation_targets = []
+                                    for target_index in range(min(relation.get_n_targets(), 12)):
+                                        target = relation.get_target(target_index)
+                                        relation_targets.append({"name": target.get_name() or "",
+                                                                 "role": target.get_role_name() or ""})
+                                    relations.append({"type": relation.get_relation_type().value_nick,
+                                                      "targets": relation_targets})
+                            except Exception as relation_error:
+                                relations = [{"error": f"{type(relation_error).__name__}: {relation_error}"}]
+                            result = {"name": child_name, "role": child_role,
+                                      "path": child_path,
+                                      "identity": f"{pid}:{child_path}:{child_role}:{child_name}",
+                                      "pid": int(child.get_process_id()),
+                                      "states": sorted(s.value_nick for s in child_states.get_states()),
+                                      "action_names": action_names,
+                                      "selection_available": child_selection is not None,
+                                      "child_count": child_count,
+                                      "relations": relations}
+                            if depth < 8:
+                                descendants = []
+                                for nested_index in range(child_count):
+                                    nested = child.get_child_at_index(nested_index)
+                                    if nested is not None:
+                                        descendants.extend(describe(
+                                            nested, f"{child_path}/{child_role}[{nested_index}]:{child_name}", depth + 1))
+                                if descendants:
+                                    result["children"] = descendants
+                            return [result]
+                        except Exception as child_error:
+                            return [{"path": child_path,
+                                     "error": f"{type(child_error).__name__}: {child_error}"}]
+                    entry["subtree"] = []
+                    for child_index in range(min(node.get_child_count(), 40)):
+                        child = node.get_child_at_index(child_index)
+                        if child is not None:
+                            entry["subtree"].extend(describe(
+                                child, f"{path}/{role}[{child_index}]:{name}", 1))
                 except Exception:
                     entry["action_count"] = 0
             matches.append(entry)
@@ -224,61 +288,111 @@ elif mode == "activate":
 elif mode == "select-child":
     expected_identity = args[3]
     expected_option = args[4]
-    matches = [(node, role, path) for node, name, role, path in nodes
+    matches = [(node, path) for node, name, role, path in nodes
                if name == expected and role == "combo box"
                and f"{pid}:{path}:{role}:{name}" == expected_identity]
     if len(matches) != 1:
-        print(json.dumps({"ok": False, "reason": "expected exactly one identified combo box",
+        print(json.dumps({"ok": False, "reason": "expected one exact combo box",
                           "count": len(matches)}))
         raise SystemExit(3)
-    combo, role, path = matches[0]
-    try:
-        node_pid = int(combo.get_process_id())
-        state_set = combo.get_state_set()
-        states = sorted(state.value_nick for state in state_set.get_states())
-        visible = state_set.contains(Atspi.StateType.VISIBLE)
-        showing = state_set.contains(Atspi.StateType.SHOWING)
-        selection = combo.get_selection_iface()
-        children = []
-        for index in range(min(combo.get_child_count(), 1000)):
-            child = combo.get_child_at_index(index)
-            children.append((index, child, child.get_name() or "", child.get_role_name() or ""))
-    except Exception as error:
-        print(json.dumps({"ok": False, "reason": f"combo selection inspection failed: {error}"}))
-        raise SystemExit(4)
-    candidates = [(index, child, child_role) for index, child, name, child_role in children
-                  if name == expected_option]
-    if node_pid != pid or not (showing and visible) or selection is None:
-        print(json.dumps({"ok": False, "reason": "combo is not a visible same-PID selectable control",
-                          "pid": node_pid, "states": states,
+    combo, path = matches[0]
+    state = combo.get_state_set()
+    selection = combo.get_selection_iface()
+    if (int(combo.get_process_id()) != pid
+            or not state.contains(Atspi.StateType.SHOWING)
+            or not state.contains(Atspi.StateType.VISIBLE)
+            or selection is None):
+        print(json.dumps({"ok": False, "reason": "combo is not a visible same-PID Selection control",
+                          "pid": int(combo.get_process_id()),
                           "selection_available": selection is not None,
-                          "child_names": [name for _, _, name, _ in children[:80]]}))
-        raise SystemExit(5)
+                          "states": sorted(s.value_nick for s in state.get_states())}))
+        raise SystemExit(4)
+    children = []
+    for index in range(min(combo.get_child_count(), 1000)):
+        child = combo.get_child_at_index(index)
+        children.append((index, child, child.get_name() or "", child.get_role_name() or ""))
+    candidates = [(index, child, role) for index, child, name, role in children
+                  if name == expected_option]
     if len(candidates) != 1:
-        print(json.dumps({"ok": False, "reason": "expected exactly one combo child with selected value",
-                          "count": len(candidates), "child_names": [
-                              {"name": name, "role": child_role} for _, _, name, child_role in children[:80]]}))
-        raise SystemExit(6)
-    index, child, child_role = candidates[0]
-    before_selected = bool(selection.is_child_selected(index))
-    ok = bool(before_selected or selection.select_child(index))
+        print(json.dumps({"ok": False, "reason": "expected one exact option child",
+                          "count": len(candidates),
+                          "child_names": [{"name": name, "role": role}
+                                          for _, _, name, role in children[:80]]}))
+        raise SystemExit(5)
+    index, child, option_role = candidates[0]
+    before = bool(selection.is_child_selected(index))
+    ok = bool(before or selection.select_child(index))
     deadline = time.monotonic() + 5
-    after_selected = False
+    after = False
     while ok and time.monotonic() < deadline:
-        try:
-            after_selected = bool(selection.is_child_selected(index))
-        except Exception:
-            after_selected = False
-        if after_selected:
+        after = bool(selection.is_child_selected(index))
+        if after:
             break
         time.sleep(0.05)
-    print(json.dumps({"ok": bool(ok and after_selected), "pid": node_pid,
-                      "combo_identity": expected_identity, "combo_states": states,
-                      "option": expected_option, "option_role": child_role,
-                      "option_index": index, "already_selected": before_selected,
-                      "selected_after": after_selected,
+    print(json.dumps({"ok": bool(ok and after), "pid": pid,
+                      "combo_identity": expected_identity, "option": expected_option,
+                      "option_role": option_role, "option_index": index,
+                      "already_selected": before, "selected_after": after,
                       "action": "Atspi.Selection.select_child"}))
-    raise SystemExit(0 if ok and after_selected else 7)
+    raise SystemExit(0 if ok and after else 6)
+elif mode == "select-visible-option":
+    expected_option = args[3]
+    candidates = []
+    for node, name, role, path in nodes:
+        if name != expected_option:
+            continue
+        try:
+            node_pid = int(node.get_process_id())
+            states = node.get_state_set()
+            if node_pid != pid or not (states.contains(Atspi.StateType.VISIBLE)
+                                       and states.contains(Atspi.StateType.SHOWING)
+                                       and states.contains(Atspi.StateType.SENSITIVE)):
+                continue
+            candidates.append((node, role, path, states))
+        except Exception:
+            continue
+    selected = []
+    for node, role, path, states in candidates:
+        # The parent address is encoded by the child's accessible path. Find
+        # the unique same-PID Selection container whose child list owns it.
+        for parent, _, parent_role, parent_path in nodes:
+            try:
+                selection = parent.get_selection_iface()
+                if selection is None or not path.startswith(parent_path + "/"):
+                    continue
+                child_index = next((i for i in range(min(parent.get_child_count(), 1000))
+                                    if parent.get_child_at_index(i) == node), None)
+                if child_index is not None:
+                    selected.append((node, role, path, parent, parent_role, parent_path,
+                                     child_index, selection, states))
+            except Exception:
+                continue
+    if len(selected) != 1:
+        print(json.dumps({"ok": False, "reason": "expected one visible option in a same-PID Selection container",
+                          "visible_option_nodes": [{"role": role, "path": path}
+                                                   for _, role, path, _ in candidates],
+                          "selection_candidates": [{"role": row[4], "path": row[5],
+                                                     "index": row[6]} for row in selected]}))
+        raise SystemExit(4)
+    node, role, path, parent, parent_role, parent_path, child_index, selection, states = selected[0]
+    before = bool(selection.is_child_selected(child_index))
+    ok = bool(before or selection.select_child(child_index))
+    deadline = time.monotonic() + 3
+    after = False
+    while ok and time.monotonic() < deadline:
+        after = bool(selection.is_child_selected(child_index))
+        if after:
+            break
+        time.sleep(0.05)
+    print(json.dumps({"ok": bool(ok and after), "pid": pid, "option": expected_option,
+                      "option_role": role, "option_identity": f"{pid}:{path}:{role}:{expected_option}",
+                      "option_states": sorted(s.value_nick for s in states.get_states()),
+                      "selection_container_role": parent_role,
+                      "selection_container_path": parent_path,
+                      "selection_child_index": child_index,
+                      "selection_before": before, "selection_after": after,
+                      "action": "Atspi.Selection.select_child"}))
+    raise SystemExit(0 if ok and after else 5)
 else:
     raise SystemExit("unknown AT-SPI probe mode")
 '''
@@ -546,6 +660,54 @@ def select_combo_option(python: str, pid: int, row: dict, option: str) -> dict:
     return result
 
 
+def select_open_popup_option(python: str, pid: int, option_label: str,
+                             control_name: str) -> tuple[dict, dict]:
+    try:
+        visible = wait_until(
+            f"visible same-PID {option_label!r} popup option",
+            lambda: next((row for row in atspi_probe(
+                python, "snapshot", pid, option_label).get("matches", [])
+                if row.get("name") == option_label and row.get("pid") == pid
+                and row.get("showing") and row.get("visible")), None),
+            timeout=3)
+    except RuntimeError as error:
+        option_nodes = atspi_probe(python, "snapshot", pid, option_label).get("matches", [])
+        control_nodes = atspi_probe(python, "snapshot", pid, control_name).get("matches", [])
+        control_nodes = [row for row in control_nodes if row.get("role") == "combo box"]
+        tree = atspi_probe(python, "tree", pid, "")
+        visible_rows = [row for row in tree.get("rows", []) if row.get("pid") == pid
+                        and {"showing", "visible"}.issubset(set(row.get("states", [])))]
+        relevant = [row for row in visible_rows
+                    if row.get("name") in {option_label, "Reset time format", "Countdown",
+                                            "Absolute time", "Both"}
+                    or row.get("role") in ("menu", "menu item", "list", "list item", "combo box")]
+        failure = RuntimeError(f"{error}; named option nodes={option_nodes!r}; "
+                               f"opened control subtrees={control_nodes[:3]!r}; "
+                               f"relevant visible same-PID tree={relevant[:80]!r}")
+        raise failure from error
+    selection = atspi_probe(python, "select-visible-option", pid, option_label)
+    if not selection.get("ok") or selection.get("pid") != pid:
+        raise RuntimeError(f"visible popup option selection failed for {option_label!r}: {selection}")
+    return visible, selection
+
+
+def combo_activation_child(row: dict) -> dict | None:
+    candidates = []
+    pending = list(row.get("subtree", []))
+    while pending:
+        child = pending.pop(0)
+        pending.extend(child.get("children", []))
+        states = set(child.get("states", []))
+        if (child.get("role") in ("button", "push button", "toggle button")
+                and child.get("pid") == row.get("pid")
+                and states.intersection({"showing"}) and states.intersection({"visible"})
+                and "sensitive" in states and child.get("action_names")):
+            candidates.append(child)
+    if len(candidates) > 1:
+        raise RuntimeError(f"ambiguous same-PID combo popup trigger: {candidates!r}")
+    return candidates[0] if candidates else None
+
+
 def selected_accessible(python: str, pid: int, name: str, role: str) -> dict:
     snapshot = atspi_probe(python, "states", pid, name)
     matches = [row for row in snapshot.get("matches", [])
@@ -585,29 +747,35 @@ def wait_visible_control(python: str, pid: int, name: str,
         named_rows = [row for row in snapshot.get("matches", [])
                 if row.get("name") == name and row.get("pid") == pid
                 and row.get("role") in expected_roles]
+        for row in named_rows:
+            if row.get("role") == "combo box" and row.get("action_count", 0) == 0 \
+                    and not row.get("selection_available"):
+                row["activation_child"] = combo_activation_child(row)
         last_candidates[:] = [{key: row.get(key) for key in
                                ("identity", "path", "role", "showing", "visible", "action_count",
-                                "selection_available")}
+                                "selection_available", "activation_child")}
                               for row in named_rows[:8]]
         rows = [row for row in named_rows
                 if f":{expected_context}/panel[" in row.get("path", "")
                 and row.get("showing") and row.get("visible")
                 and (row.get("action_count", 0) > 0
-                     or (allow_selection and row.get("selection_available")))]
+                     or (allow_selection and (row.get("selection_available")
+                                              or row.get("activation_child"))))]
         visible_candidates = [row for row in named_rows
                               if f":{expected_context}/panel[" in row.get("path", "")
                               and row.get("showing") and row.get("visible")]
         unsupported_combos = [row for row in visible_candidates
                               if row.get("role") == "combo box"
                               and row.get("action_count", 0) == 0
-                              and not row.get("selection_available")]
+                              and not row.get("selection_available")
+                              and not row.get("activation_child")]
         if allow_selection and unsupported_combos:
             error = RuntimeError("visible GTK combo exposes neither AT-SPI AccessibleAction "
                                  "nor Selection interface")
             error.contract_details = [
                 {key: row.get(key) for key in
                  ("name", "pid", "identity", "path", "role", "action_count",
-                  "selection_available")}
+                  "selection_available", "activation_child", "subtree")}
                 for row in unsupported_combos]
             raise error
         identities = {row["identity"]: row for row in rows}
@@ -984,6 +1152,7 @@ def run_residual_settings(python: str, pid: int, prefs: pathlib.Path,
         active_page = page
 
     for page, label, key, value, kind in RESIDUAL_SETTINGS:
+        option_label = RESIDUAL_OPTION_LABELS.get((key, value), value)
         open_page(page)
         expected_roles = (("check box", "switch") if kind == "switch" else
                           ("combo box", "button", "push button"))
@@ -995,16 +1164,16 @@ def run_residual_settings(python: str, pid: int, prefs: pathlib.Path,
                 raise
             if page not in captured:
                 capture_page(page)
+            gap = getattr(error, "contract_details", [])
             completed = [{"page": item["page"], "control": item["control"],
                           "key": item["key"], "value": item["value"]}
                          for item in results if item.get("kind") == "AT-SPI preference action"]
-            actual_map = json.loads(prefs.read_text(encoding="utf-8"))
             failure = RuntimeError(str(error))
             failure.details = {
                 "scenario": "settings-residual",
-                "accessibility_contract_gap": getattr(error, "contract_details", []),
+                "accessibility_contract_gap": gap,
                 "completed_settings_controls": completed,
-                "persisted_settings_json": actual_map,
+                "persisted_settings_json": json.loads(prefs.read_text(encoding="utf-8")),
                 "binary_sha256": evidence.get("binary_sha256"),
                 "source_commit": evidence.get("source_commit"),
                 "host_session_handles_removed": evidence.get("host_session_handles_removed"),
@@ -1025,10 +1194,26 @@ def run_residual_settings(python: str, pid: int, prefs: pathlib.Path,
             if action.get("before_checked") is not desired_before or action.get("after_checked") is not value:
                 raise RuntimeError(f"{label!r} did not visibly toggle to {value}: {action!r}")
         else:
-            # ComboRow exposes a Selection interface instead of an Action.
-            # Select its exact named model child through that UI interface.
-            selection = select_combo_option(python, pid, control, value)
-            action = {"selection": selection}
+            if control.get("selection_available"):
+                selection = select_combo_option(python, pid, control, option_label)
+                action = {"selection": selection}
+            elif control.get("action_count", 0) > 0:
+                opened = activate_accessible(python, pid, label, control["identity"])
+                option_snapshot, selection = select_open_popup_option(python, pid,
+                                                                      option_label, label)
+                action = {"accessible_activation": opened,
+                          "visible_popup_option": option_snapshot,
+                          "selection": selection}
+            elif control.get("activation_child"):
+                child = control["activation_child"]
+                opened = activate_accessible(python, pid, child["name"], child["identity"])
+                option_snapshot, selection = select_open_popup_option(python, pid,
+                                                                      option_label, label)
+                action = {"accessible_child_activation": opened,
+                          "visible_popup_option": option_snapshot,
+                          "selection": selection}
+            else:
+                raise RuntimeError(f"combo {label!r} exposed no usable accessible UI operation")
 
         expected_map = dict(current_map)
         expected_map[key] = value

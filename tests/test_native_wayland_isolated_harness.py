@@ -268,19 +268,39 @@ class NativeWaylandIsolatedHarnessTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, "combo selection failed closed"):
                     MODULE.select_combo_option(sys.executable, 123, combo, "Icon and percentage")
 
-    def test_combo_control_requires_action_or_selection_and_reports_contract_gap(self):
+    def test_combo_control_uses_a_real_visible_same_pid_descendant_action_when_present(self):
         combo = {"name": "Reset time format", "role": "combo box", "pid": 123,
                  "identity": "123:app[0]/combo:combo box:Reset time format",
                  "path": "app[0]/window:CodexBar Settings/panel:Display/panel[0]",
                  "showing": True, "visible": True, "action_count": 0,
-                 "selection_available": True}
+                 "selection_available": False,
+                 "subtree": [{"name": "Reset time format", "role": "toggle button",
+                              "identity": "123:app[0]/combo/button:toggle button:Reset time format",
+                              "pid": 123, "states": ["showing", "visible", "sensitive"],
+                              "action_names": ["click"]}]}
         with mock.patch.object(MODULE, "atspi_probe", return_value={"matches": [combo]}):
-            self.assertEqual(MODULE.wait_visible_control(
+            selected = MODULE.wait_visible_control(
                 sys.executable, 123, "Reset time format", ("combo box",), "Display",
-                timeout=0.1, allow_selection=True), combo)
+                timeout=0.1, allow_selection=True)
+        self.assertEqual(selected["identity"], combo["identity"])
+        self.assertEqual(selected["activation_child"]["identity"], combo["subtree"][0]["identity"])
 
-        unsupported = dict(combo, selection_available=False)
-        with mock.patch.object(MODULE, "atspi_probe", return_value={"matches": [unsupported]}):
+    def test_combo_control_does_not_treat_current_value_list_as_option_selection(self):
+        combo = {"name": "Reset time format", "role": "combo box", "pid": 123,
+                 "identity": "123:app[0]/combo:combo box:Reset time format",
+                 "path": "app[0]/window:CodexBar Settings/panel:Display/panel[0]",
+                 "showing": True, "visible": True, "action_count": 0,
+                 "selection_available": False,
+                 "subtree": [{"name": "", "role": "list", "pid": 123,
+                              "states": ["showing", "visible", "focusable"],
+                              "selection_available": True,
+                              "children": [{"name": "", "role": "list item", "pid": 123,
+                                            "states": ["showing", "visible"],
+                                            "action_names": ["listitem.scroll-to"],
+                                            "children": [{"name": "Countdown", "role": "label",
+                                                          "pid": 123, "states": ["showing", "visible"],
+                                                          "action_names": ["clipboard.copy"]}]}]}]}
+        with mock.patch.object(MODULE, "atspi_probe", return_value={"matches": [combo]}):
             with self.assertRaisesRegex(RuntimeError, "neither AT-SPI AccessibleAction nor Selection") as caught:
                 MODULE.wait_visible_control(
                     sys.executable, 123, "Reset time format", ("combo box",), "Display",
@@ -297,9 +317,12 @@ class NativeWaylandIsolatedHarnessTests(unittest.TestCase):
         self.assertIn('"full_settings_map_checked": True', source)
         self.assertIn('"settings_diff"', source)
         self.assertIn('elif mode == "select-child":', MODULE.AT_SPI_PROBE)
-        self.assertIn('showing and visible', MODULE.AT_SPI_PROBE)
+        self.assertIn('Atspi.StateType.SHOWING', MODULE.AT_SPI_PROBE)
+        self.assertIn('Atspi.StateType.VISIBLE', MODULE.AT_SPI_PROBE)
         self.assertIn('selection.select_child(index)', MODULE.AT_SPI_PROBE)
         self.assertIn('selection.is_child_selected(index)', MODULE.AT_SPI_PROBE)
+        self.assertIn('RESIDUAL_OPTION_LABELS', source)
+        self.assertIn('"subtree"', source)
         self.assertIn('if args.scenario == "matrix":', source)
 
     def test_visible_action_requires_one_enabled_same_process_actionable_node(self):

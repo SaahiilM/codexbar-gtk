@@ -741,15 +741,29 @@ mod tests {
     }
 
     async fn wait_for_fixture_pid(path: &Path) -> i32 {
+        wait_for_fixture_pid_optional(path)
+            .await
+            .unwrap_or_else(|| panic!("fixture process did not write a complete child PID"))
+    }
+
+    async fn wait_for_fixture_pid_optional(path: &Path) -> Option<i32> {
         for _ in 0..300 {
             if let Ok(contents) = fs::read_to_string(path) {
                 if let Ok(pid) = contents.trim().parse() {
-                    return pid;
+                    return Some(pid);
                 }
             }
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
-        panic!("fixture process did not write a complete child PID");
+        None
+    }
+
+    struct ProcessGroupCleanup(Option<u32>);
+
+    impl Drop for ProcessGroupCleanup {
+        fn drop(&mut self) {
+            kill_process_group(self.0);
+        }
     }
 
     async fn wait_for_process_exit(pid: i32) -> bool {
@@ -780,7 +794,7 @@ mod tests {
 
     async fn run_and_assert_process_group_termination(cancel: bool) {
         let fixture = Fixture::new(
-            "sleep 30 & echo $! > {DIR}/descendant.pid; echo $$ > {DIR}/leader.pid; wait",
+            "echo $$ > {DIR}/leader.pid; sleep 30 & echo $! > {DIR}/descendant.pid; wait",
         );
         let service = CliService::new(&fixture.executable, None);
         let leader_path = fixture.dir.join("leader.pid");
@@ -794,7 +808,12 @@ mod tests {
             Duration::from_millis(500)
         };
         let task = tokio::spawn(async move { service.run(&[], timeout, cancellation).await });
-        let leader = wait_for_fixture_pid(&leader_path).await;
+        let Some(leader) = wait_for_fixture_pid_optional(&leader_path).await else {
+            task.abort();
+            let _ = task.await;
+            panic!("fixture process did not write a complete leader PID");
+        };
+        let mut cleanup = ProcessGroupCleanup(Some(leader as u32));
         let descendant = wait_for_fixture_pid(&descendant_path).await;
         if cancel {
             sender.send_replace(true);
@@ -827,6 +846,7 @@ mod tests {
             descendant_stopped,
             "descendant process {descendant} survived"
         );
+        cleanup.0 = None;
     }
 
     #[tokio::test]
@@ -881,6 +901,42 @@ mod tests {
         let _guard = PROCESS_TEST_LOCK.lock().await;
         run_and_assert_process_group_termination(false).await;
         run_and_assert_process_group_termination(true).await;
+    }
+
+    #[tokio::test]
+    async fn process_group_cleanup_guard_kills_fixture_group_on_drop() {
+        let _guard = PROCESS_TEST_LOCK.lock().await;
+        let fixture = Fixture::new(
+            "echo $$ > {DIR}/leader.pid; sleep 30 & echo $! > {DIR}/descendant.pid; wait",
+        );
+        let mut command = Command::new(&fixture.executable);
+        command
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt;
+            command.as_std_mut().process_group(0);
+        }
+        let mut child = command.spawn().unwrap();
+        let leader = child.id().unwrap() as i32;
+        let cleanup = ProcessGroupCleanup(Some(leader as u32));
+        let descendant = wait_for_fixture_pid(&fixture.dir.join("descendant.pid")).await;
+
+        drop(cleanup);
+        time::timeout(Duration::from_secs(2), child.wait())
+            .await
+            .expect("cleanup guard did not stop fixture leader")
+            .unwrap();
+        assert!(
+            wait_for_process_exit(leader).await,
+            "leader process survived"
+        );
+        assert!(
+            wait_for_process_exit(descendant).await,
+            "descendant process survived"
+        );
     }
 
     #[tokio::test]

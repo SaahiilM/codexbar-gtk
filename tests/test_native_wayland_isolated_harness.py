@@ -10,6 +10,12 @@ import tempfile
 import unittest
 from unittest import mock
 
+ROW_HELPER_SPEC = importlib.util.spec_from_file_location(
+    "native_atspi_rows", pathlib.Path(__file__).resolve().parents[1] /
+    "scripts/native_atspi_rows.py")
+ROW_HELPER = importlib.util.module_from_spec(ROW_HELPER_SPEC)
+ROW_HELPER_SPEC.loader.exec_module(ROW_HELPER)
+
 
 SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts/test-native-wayland-isolated.py"
 SPEC = importlib.util.spec_from_file_location("native_wayland_isolated", SCRIPT)
@@ -89,7 +95,7 @@ class NativeWaylandIsolatedHarnessTests(unittest.TestCase):
                 "XDG_RUNTIME_DIR": "/run/user/1000", "GDK_BACKEND": "x11",
                 "GSK_RENDERER": "gl", "GTK_USE_PORTAL": "1",
             }, root / "home", root / "runtime", "wayland-private",
-               root / "fake-codexbar", "unix:path=/private/session-bus")
+               root / "fake-codexbar", "unix:path=/private/session-bus", root / "diagnostics")
             for key in ("DISPLAY", "WAYLAND_SOCKET", "XAUTHORITY", "DBUS_SYSTEM_BUS_ADDRESS",
                         "DBUS_STARTER_ADDRESS", "DBUS_STARTER_BUS_TYPE", "AT_SPI_BUS_ADDRESS"):
                 self.assertNotIn(key, env)
@@ -242,6 +248,70 @@ class NativeWaylandIsolatedHarnessTests(unittest.TestCase):
             self.assertEqual(MODULE.activate_accessible(sys.executable, 123, "fixture", identity),
                              {"ok": True})
             probe.assert_called_once_with(sys.executable, "activate", 123, "fixture", identity)
+
+    def test_visible_action_requires_one_enabled_same_process_actionable_node(self):
+        row = {"name": "Export…", "role": "button", "pid": 123,
+               "identity": "123:app[0]/button:Export", "showing": True,
+               "visible": True, "states": ["sensitive"], "action_count": 1,
+               "path": "app[0]/panel[0]:Advanced/button[0]"}
+        with mock.patch.object(MODULE, "atspi_probe", return_value={"matches": [row]}):
+            self.assertEqual(MODULE.wait_visible_action(
+                sys.executable, 123, "Export…", ("button",), timeout=0.1,
+                context="Advanced"), row)
+        for invalid in (dict(row, pid=456), dict(row, visible=False),
+                        dict(row, states=[]), dict(row, action_count=0)):
+            with self.subTest(invalid=invalid), mock.patch.object(
+                    MODULE, "atspi_probe", return_value={"matches": [invalid]}):
+                with self.assertRaisesRegex(RuntimeError, "timed out waiting for visible action"):
+                    MODULE.wait_visible_action(
+                        sys.executable, 123, "Export…", ("button",), timeout=0.05,
+                        context="Advanced")
+        duplicate = dict(row, identity=row["identity"] + "/duplicate")
+        with mock.patch.object(MODULE, "atspi_probe", return_value={"matches": [row, duplicate]}):
+            with self.assertRaisesRegex(RuntimeError, "ambiguous visible action"):
+                MODULE.wait_visible_action(
+                    sys.executable, 123, "Export…", ("button",), timeout=0.1,
+                    context="Advanced")
+
+    def test_advanced_scenario_is_opt_in_and_chooser_selection_is_exact(self):
+        source = SCRIPT.read_text(encoding="utf-8")
+        self.assertIn('choices=("matrix", "advanced"), default="matrix"', source)
+        self.assertIn('if args.scenario == "advanced":\n                run_advanced_preferences(', source)
+        helper = (SCRIPT.parent / "select-native-file-chooser.py").read_text(encoding="utf-8")
+        self.assertIn("row_has_exact_filename(child, basename, app_pid)", helper)
+        self.assertIn('child.get_process_id() == app_pid', helper)
+        self.assertIn('selection.select_child(index)', helper)
+        self.assertIn('read_text(location_entry) == path', helper)
+        self.assertIn("exact_selected_row_records", helper)
+        self.assertNotIn('basename in (child.get_name() or "")', helper)
+        self.assertNotIn('xdotool', helper)
+        selector = helper.split("def select_file_row", 1)[1].split("def save_default", 1)[0]
+        self.assertNotIn("Ctrl+L", selector)
+
+    def test_selected_chooser_row_requires_exact_visible_same_pid_cell_and_unique_identity(self):
+        def row(identity="row-1", row_pid=123, cell_name="synthetic.json",
+                cell_pid=123, row_states=("selected", "showing", "sensitive"),
+                cell_states=("showing", "sensitive")):
+            return {"identity": identity, "role": "table row", "pid": row_pid,
+                    "states": row_states, "descendants": [{
+                        "role": "label", "name": cell_name, "text": None,
+                        "pid": cell_pid, "states": cell_states}]}
+
+        exact = row()
+        self.assertEqual(ROW_HELPER.exact_selected_row_records(
+            [exact], "synthetic.json", 123), [exact])
+        self.assertEqual(ROW_HELPER.exact_selected_row_records(
+            [row(cell_name="prefix-synthetic.json")], "synthetic.json", 123), [])
+        self.assertEqual(ROW_HELPER.exact_selected_row_records(
+            [row(cell_pid=456)], "synthetic.json", 123), [])
+        self.assertEqual(ROW_HELPER.exact_selected_row_records(
+            [row(row_pid=456)], "synthetic.json", 123), [])
+        duplicate_controls = [exact, row(identity="row-2")]
+        self.assertEqual(ROW_HELPER.exact_selected_row_records(
+            duplicate_controls, "synthetic.json", 123), duplicate_controls)
+        duplicate_identity = [exact, row(identity="row-1")]
+        self.assertEqual(ROW_HELPER.exact_selected_row_records(
+            duplicate_identity, "synthetic.json", 123), [])
 
     def test_visible_text_requires_exact_pid_and_unique_identity(self):
         row = {"name": "1 running of 1 known sessions", "pid": 123,

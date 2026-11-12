@@ -1,0 +1,80 @@
+{
+  "status": "passed",
+  "scenario": "advanced Settings preferences and reset",
+  "runner_build": 105,
+  "application_binary": {
+    "embedded_build": 104,
+    "source_commit": "f7425d039e9b10f73023c277166b6117d2f2668c",
+    "sha256": "a7e7dbe7f04ea84f255d0f5851ece35381660c50b00f8f07e541ec2c9eee6700",
+    "provenance": "Built from unchanged native application sources; embedded VERSION marker was checked in the binary."
+  },
+  "environment": {
+    "compositor": "rootless Weston headless Pixman",
+    "gdk_backend": "Wayland",
+    "session_bus": "private dbus-run-session",
+    "synthetic_home": true,
+    "host_session_handles_removed": true
+  },
+  "observations": {
+    "export": {
+      "actual_save_action": true,
+      "dialog_closed": true,
+      "portable_json_version": 1,
+      "selected_preference": "refreshFrequency=5m",
+      "visible_result": "Preferences exported."
+    },
+    "valid_import": {
+      "actual_selected_row_and_import_action": true,
+      "exact_filename_cell_in_selected_visible_sensitive_same_pid_row": true,
+      "dialog_closed": true,
+      "overlay": {
+        "refreshFrequency": "2m",
+        "preferredCurrencyCode": "EUR"
+      },
+      "unrelated_seeded_setting_retained": "usageBarsShowUsed=false",
+      "unknown_imported_key_omitted": true,
+      "plugins_query_count": "1 to 2",
+      "autostart_bytes_unchanged": true,
+      "visible_result": "Settings loaded from the shared CodexBar services."
+    },
+    "empty_import": {
+      "actual_selected_row_and_import_action": true,
+      "full_preferences_map_unchanged": true,
+      "plugins_query_count": "2 to 3",
+      "autostart_bytes_unchanged": true,
+      "visible_result": "Settings loaded from the shared CodexBar services."
+    },
+    "reset_cancel": {
+      "confirmation_dialog_captured": true,
+      "dialog_closed": true,
+      "full_preferences_map_unchanged": true,
+      "autostart_bytes_unchanged": true
+    },
+    "reset_confirm": {
+      "confirmation_dialog_captured": true,
+      "dialog_closed": true,
+      "full_map_matches_rust_defaults": true,
+      "autostart_bytes_unchanged": true,
+      "visible_result": "Settings loaded from the shared CodexBar services."
+    },
+    "cleanup": {
+      "app_exited": true,
+      "compositor_exited": true,
+      "private_runtime_removed": true,
+      "synthetic_home_removed": true,
+      "private_bus_socket_removed": true
+    }
+  },
+  "screenshots": {
+    "export": "export.png",
+    "import_selected": "import-selected.png",
+    "import_result": "import-result.png",
+    "reset_confirmation": "reset-confirm.png",
+    "reset_result": "reset-result.png"
+  },
+  "limits": [
+    "AT-SPI actions exercise accessible controls and chooser responses, not physical Wayland input.",
+    "Private Weston does not establish KDE shell placement, portal input, or general chooser parity.",
+    "This runtime evidence uses the BUILD104 application binary; it is not a BUILD105 application-binary run."
+  ]
+}

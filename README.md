@@ -90,7 +90,7 @@ Useful flags:
 ~/.local/bin/codexbar-gtk-native            # start the app
 ~/.local/bin/codexbar-gtk-native --panel    # start with the compact panel open
 ~/.local/bin/codexbar-gtk-native --settings # start and open Settings
-~/.local/bin/codexbar-gtk-native --page sessions|spend
+~/.local/bin/codexbar-gtk-native --page sessions # or: --page spend
 ```
 
 Uninstall the native package with `./scripts/install.sh --uninstall`. This

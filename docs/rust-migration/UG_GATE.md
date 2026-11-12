@@ -60,6 +60,27 @@ This test uses fixture CLI data. GAction/AT-SPI proves accessible app actions,
 not physical input. Weston does not establish KDE shell placement, KDE portal
 input, keyboard parity, or full UG acceptance; the gate remains **NOT PASSED**.
 
+## Private Weston matrix completion (E206)
+
+**PASS for this synthetic slice; UG remains NOT PASSED.** The bounded rootless
+Weston batch used the build-102 native binary with the build-103 harness. It
+verified the four Spend ranges through the selected `pressed` state; Daily was
+already selected on entry, Weekly and Cumulative changed state, and a final
+Daily action changed state back after Cumulative. It also verified the General
+refresh preference, all four Notifications preferences, `showTray`, and Hooks
+disable against the synthetic CLI. These are GAction/AT-SPI observations, not
+physical input or actual KDE behavior.
+
+Sessions success, empty and error statuses were asserted while visible, each
+fixture completed, and then its image was captured. The error capture follows
+an empty successful scan and displays zero rows; retained nonempty error rows
+remain **unproven**. The three personally inspected captures and sanitized
+relative [`results.json`](screenshots/build103-wayland-matrix/results.json) are
+under [`build103-wayland-matrix/`](screenshots/build103-wayland-matrix/).
+All five cleanup assertions passed. The existing KDE input/placement, keyboard
+parity, chooser/provider/login actions, notification delivery and full UG
+acceptance remain open.
+
 ## Page and action matrix
 
 The README feature list was cross-checked against the Python UI entry points

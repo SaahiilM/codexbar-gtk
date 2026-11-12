@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.82.0 (107) — 2026-11-12
+
+Strengthens synthetic Rust CLI process lifecycle regression coverage. Timeout
+and cancellation tests require both the process-group leader and descendant to
+stop, and a fixture cleanup guard kills remaining group members on test exit.
+No production CLI behavior or backend port changed. Python remains the default;
+UG remains **NOT PASSED**.
+
+- See migration audit E210 for local checks, base evidence, and limitations.
+
 ## 0.82.0 (105) — 2026-11-12
 
 Adds a bounded advanced Settings acceptance scenario to the required private

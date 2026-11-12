@@ -7373,3 +7373,93 @@ provisional build metadata after the reserved UI BUILD106 slice merges, then
 own publication and live exact-head CI verification.
 
 **Root base reconciliation:** PR #107 merged normally at `2b8d5b70765e36b7baa511a4c9001737cc9c7aaa`; exact head `33f433b7951677e7167c1d35d8b382c4aba33ac0` passed all three jobs in run `43287961284`, including the empty-dashboard X11 widget regression. Reviews/comments/threads were empty. BUILD107 merged that base normally, retaining E209/E210 and both changelog entries. Conflicts were release metadata/handoff only; no source conflict. Fresh exact-head CI remains pending.
+
+### E211 — BUILD108 shared provider artwork ownership
+
+Base PR #108 merged normally at `a73e10c90e363faa970f50cb455629d75d85147e`; exact head `cbcd45ec72c2b23090f52bd09fc1c3f5743dd028` passed all three jobs in run `43290374919`. Reviews/comments/threads were empty. Root reviewed implementation `c07993f71edf35770c2b10059ce53fd9eaaab9f8` and reserves build 108.
+
+#### Implementation evidence (pre-release-metadata worker handoff)
+
+**Base and scope:** clean isolated worktree `t3/relocate-provider-assets` started at `a73e10c90e363faa970f50cb455629d75d85147e` (`origin/main`). Canonical artwork path: `assets/provider_icons/`. No version/release metadata, README, TASKS, AUDIT, or UG_GATE changes. Python remains the default; no cutover behavior changed.
+
+**Paths/contracts changed:** moved all catalog files with `git mv`, retaining `LICENSE-CodexBar`, `README.md`, and `UPSTREAM-PROVENANCE.md`. `rust-gtk/build.rs` now embeds from the root-level catalog and preserves its PNG/SVG filename filter and sort. Rust artwork decode tests and negative SVG-precondition test use the new include paths. `codexbar_gtk/provider_icons.py` resolves the shared catalog relative to the app root. `scripts/install.sh` copies it beside `codexbar_gtk/` into the legacy Python install prefix. `.github/workflows/rust-core.yml` push path filters now watch `assets/provider_icons/**`. Python tests assert catalog location/license and existing provider artwork/alias behavior. Native `icons.rs` module comment no longer describes the neutral catalog as Python-owned.
+
+**Checks:** `python3 -m unittest tests.test_provider_icons` — 6 passed. `cargo build --locked --manifest-path rust-gtk/Cargo.toml --bin codexbar-gtk-native` — passed, dev profile. `cargo test --manifest-path rust-gtk/Cargo.toml --locked --lib embedded_catalog_has_python_aliases_and_provider_fallback_assets` — 1 passed. Under private HOME, private XDG_RUNTIME_DIR, Xvfb and `dbus-run-session`, `cargo test --manifest-path rust-gtk/Cargo.toml --locked --test a11y_assets -- --ignored` — 1 passed; it decoded actual embedded Codex PNG, Claude SVG and three monochrome SVGs after changing cwd to `/tmp`, and exercised native provider marks. `scripts/install.sh --no-autostart` with synthetic HOME and temporary PREFIX, then Python import from `/tmp` via the installed package — passed; resolved `/prefix/share/codexbar-gtk/assets/provider_icons`, found Codex artwork and license. `cargo fmt --manifest-path rust-gtk/Cargo.toml -- --check`, `shellcheck scripts/install.sh`, `bash -n scripts/install.sh`, and `git diff --check` — passed.
+
+**Limits/skips:** no full Python suite, complete app/runtime or UI smoke, C02 Docker proof, live desktop/bus/portal/input, or provider/auth/credential behavior was exercised. The native decode test is the focused artwork UI smoke. No path in the native runtime reads from `codexbar_gtk`; the tested icon bytes come from build-time embedding. No PR/push/remote CI was run. UG remains NOT PASSED, Python default and C gates open. Root should update serialized docs/metadata, including historical path pointers as appropriate, and observe fresh exact-head CI.
+
+**Remaining references/consumers:** `rg -n 'codexbar_gtk/assets/provider_icons|codexbar_gtk/assets' .` reports only four historical references in append-only `docs/rust-migration/AUDIT.md` (E114/E187/E? provenance rows). No source/build/test/install/workflow runtime consumer remains on the old path. `README.md`, `TASKS.md`, and `UG_GATE.md` have no literal old path matches.
+
+**Diagnostic retries:** the first temporary-HOME Cargo test invocation could not select a Rust toolchain because rustup state was outside that synthetic HOME; rerun passed after explicitly setting `RUSTUP_HOME=/home/sam/.rustup` and `CARGO_HOME=/home/sam/.cargo`. The first `cargo fmt --check` reported only formatting differences in the moved include expressions; `cargo fmt` was applied and the subsequent check passed. The Xvfb artwork test emitted a nonfatal DRI3 warning and a D-Bus disconnect line during teardown after its 1/1 pass. `scripts/smoke-native-install.sh` was not run: it requires distinct debug and release native binaries and exercises a broader install/activation lifecycle beyond this asset slice; no release artifact was built.
+
+Root updates release metadata and current handoff in this PR. Historical audit paths remain historical; the current canonical path is `assets/provider_icons/`. No runtime artwork bytes or presentation changed, so no new screenshot is required. Fresh exact-head CI remains pending; this is asset dependency closure, not C03 deletion or gate acceptance.
+
+### E212 — BUILD109 residual Settings acceptance and combo scope
+
+**Base/release metadata:** PR #108 merged at
+`a73e10c90e363faa970f50cb455629d75d85147e`; exact head
+`cbcd45ec72c2b23090f52bd09fc1c3f5743dd028` passed all three jobs in run
+`43290374919`. Root reserves BUILD109/E212. This implementation is local on
+`t3/native-settings-acceptance`; no push, PR, merge, or current CI result is
+claimed. `VERSION`, `codexbar_gtk/version.py`, README's displayed version, and
+CHANGELOG reserve `0.82.0 (109)`.
+
+**Runner changes:** `scripts/test-native-wayland-isolated.py` retains the
+`settings-residual` scenario for exactly three switches: Display
+`usageBarsShowUsed`, Display `quotaBurndownEnabled`, and Usage & Spend
+`costUsageEnabled`. It verifies one exact same-PID visible control, the
+`showing`/`visible`/`sensitive` states, checked-state transition, visible result
+text and the complete preferences JSON after each action. It retains a bounded
+static diagnostic mapping of six combo controls to their X11 smoke assertions
+but does not launch/probe GTK in the diagnostic scenario. Removed dead
+`select-child` and `select-visible-option` probe modes, combo popup selection
+helpers, and recursive combo child-subtree inspection. Shared app identity
+checks, action identity binding and generic bounded tree inspection remain.
+Harness tests now reject a visible combo with no AccessibleAction rather than
+simulating selection support.
+
+The historical limitation is clearly scoped to the earlier native Rust GTK
+application AT-SPI observation on private Wayland, recorded against source
+`3e442c1dfe46a5ba153fdccc406ae28f76f490d1`. The diagnostic's supplied-binary
+SHA is identity metadata only: the diagnostic run does not launch the binary or
+claim a current binary test. The six controls map to X11 assertions, with
+non-equivalent targets preserved: Wayland `resetTimesOption=absolute` vs X11
+`both`; Wayland `unifiedIconSource=first` vs X11 `automatic`; and Wayland
+`costUsageBucketTimeZone=Africa/Abidjan` vs X11's generic nonempty-value
+assertion. Other mapped values are recorded in the diagnostic's static table.
+No live combo probe was repeated.
+
+**CI:** `.github/workflows/rust-core.yml` adds a required six-minute
+`settings-residual` private-Weston scenario and a dedicated
+`if: always()` synthetic artifact upload. Existing default matrix and Advanced
+Wayland steps and X11 Settings smoke remain intact.
+
+**Observed private runtime evidence:** the three-switch scenario passed against
+the existing native binary built from Rust source
+`3e442c1dfe46a5ba153fdccc406ae28f76f490d1`, embedded BUILD108, SHA-256
+`e2423c661c4c466e55a5f9f85b91458d1c96328d6d594872c4bc7a72de32e75a`. It
+changed `usageBarsShowUsed=false→true`, `quotaBurndownEnabled=true→false`, and
+`costUsageEnabled=true→false`; each transition was visible through the
+same-PID AT-SPI action and each complete preference map matched its expected
+synthetic delta. The app and compositor exited and the synthetic HOME/private
+runtime/private D-Bus session were cleaned up. Captures were reviewed and
+retained with bounded sanitized relative data at
+[`screenshots/build109-wayland-settings-residual/`](../../screenshots/build109-wayland-settings-residual/).
+BUILD109 metadata was not present in the binary. AT-SPI actions are not
+physical Wayland input and private Weston does not establish KDE shell/portal
+parity.
+
+**Local verification:** `python3 -m unittest tests.test_native_wayland_isolated_harness`
+passed (24 tests). `python3 -m py_compile scripts/test-native-wayland-isolated.py
+tests/test_native_wayland_isolated_harness.py`,
+`python3 -m unittest tests.test_app.VersionMetadataTests.test_display_string_matches_version_file`,
+`CARGO_TARGET_DIR=/tmp/codexbar-t3-settings-residual-target-1794515346 cargo test --manifest-path rust-gtk/Cargo.toml --locked --lib version_metadata_tracks_the_root_version_file`, YAML structure/link checks, PNG decode/dimension checks, and `git diff --check` passed. The actual static combo diagnostic CLI exited 3 with its historical-scope mapping and explicitly reported no app launch. The post-trim `settings-residual` private-Weston
+run passed. Since shared AT-SPI snapshot handling changed, the default `matrix`
+and `advanced` private-Weston scenarios were rerun serially on the same BUILD108
+binary and passed. An initial concurrent execution of those two scenarios
+failed at AT-SPI bus connection; those results were discarded, and the serial
+runs passed. No local X11 run was made; the required X11 workflow step is
+unchanged. No full Python/Rust suite, native rebuild, current-metadata runtime,
+exact-head CI, full UG gate, migration gate, Python removal, or default flip was
+performed. The precise next step is root diff review followed by publication
+and exact-head CI observation.

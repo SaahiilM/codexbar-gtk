@@ -166,6 +166,14 @@ impl DashboardView {
         empty_detail.set_xalign(0.0);
         empty_detail.set_wrap(true);
         empty.append(&empty_detail);
+        let empty_settings = gtk::Button::with_label("Open Settings");
+        empty_settings.add_css_class("suggested-action");
+        empty_settings.set_halign(gtk::Align::Start);
+        empty_settings.set_action_name(Some("app.settings"));
+        empty_settings.update_property(&[gtk::accessible::Property::Label(
+            "Open Settings to enable a provider",
+        )]);
+        empty.append(&empty_settings);
         content.append(&empty);
 
         let providers = gtk::Box::new(gtk::Orientation::Vertical, 10);
@@ -692,6 +700,22 @@ mod display_tests {
         }
     }
 
+    fn find_button(widget: &gtk::Widget, text: &str) -> Option<gtk::Button> {
+        if let Ok(button) = widget.clone().downcast::<gtk::Button>() {
+            if button.label().as_deref() == Some(text) {
+                return Some(button);
+            }
+        }
+        let mut child = widget.first_child();
+        while let Some(current) = child {
+            if let Some(button) = find_button(&current, text) {
+                return Some(button);
+            }
+            child = current.next_sibling();
+        }
+        None
+    }
+
     #[test]
     #[ignore = "requires a GTK display; run under Xvfb"]
     fn rendered_dashboard_contains_safe_warning_and_both_quotas() {
@@ -771,6 +795,60 @@ mod display_tests {
         assert!(!visible_labels
             .iter()
             .any(|text| text.contains("SYNTHETIC-HOSTILE")));
+        window.close();
+    }
+
+    #[test]
+    #[ignore = "requires a GTK display; run under Xvfb"]
+    fn empty_dashboard_offers_settings_action() {
+        gtk::init().expect("GTK display for rendered dashboard test");
+        let snapshot = ControllerSnapshot {
+            revision: 1,
+            version: "0.82.0 (104)".into(),
+            updated_at: None,
+            last_error: None,
+            cost_error: None,
+            providers: vec![],
+            spend: None,
+            sessions: vec![],
+            session_scan_status: None,
+            history: vec![],
+            tray_selection: None,
+        };
+        let state = BackendState {
+            sequence: 1,
+            changed_at: SystemTime::now(),
+            status: BackendStatus::Ready,
+            snapshot: Some(Arc::new(snapshot)),
+            last_error: None,
+        };
+        let model = project_dashboard(
+            &state,
+            &Map::new(),
+            &CurrencyCatalog::default(),
+            chrono::Utc::now(),
+        );
+        assert!(model.empty);
+
+        let view = DashboardView::new();
+        view.render(&model);
+        assert!(view.empty.is_visible());
+        let empty_settings =
+            find_button(&view.widget(), "Open Settings").expect("empty state Settings button");
+        assert!(empty_settings.is_visible());
+        assert_eq!(
+            empty_settings.action_name().as_deref(),
+            Some("app.settings")
+        );
+
+        let window = gtk::Window::new();
+        window.set_default_size(900, 600);
+        window.set_child(Some(&view.widget()));
+        window.present();
+        while gtk::glib::MainContext::default().pending() {
+            gtk::glib::MainContext::default().iteration(false);
+        }
+        assert!(empty_settings.is_mapped());
         window.close();
     }
 }

@@ -7195,3 +7195,67 @@ bus. This repairs local BUILD104/E207 smoke evidence; it does not pass UG,
 change Python-default status, or establish exact-head remote CI success. Root
 owns review and publication; next step is review the verified local commit,
 publish it, then inspect exact-head CI.
+
+### BUILD105/E208 — advanced private Wayland Settings evidence
+
+**Base and merge evidence:** PR [#105](https://github.com/SaahiilM/codexbar-gtk/pull/105)
+merged normally at `04edc0d83cde332df0060f43bcd604c18fa11b42` (build 104).
+Its exact head `3547654ea78626e12f8e38f143bde08097ddc5b7` passed all three checks
+in run `43271512090`; no reviews, comments or threads were reported. This is
+base evidence only; it does not establish CI for BUILD105.
+
+**BUILD105 implementation:** branch `orchestrated/luna-ug-wayland-advanced`
+adds the opt-in `advanced` case beside the unchanged default Wayland matrix in
+`scripts/test-native-wayland-isolated.py`. CI has a separate six-minute
+AdvancedWayland step using the existing debug executable and uploads only its
+dedicated synthetic artifact directory. The full X11 Settings step remains
+required and unchanged. The workflow path filters include the chooser helper.
+The chooser requires an exact visible label/table-cell filename inside a
+selected, showing, sensitive row owned by the app PID, plus exactly one row
+identity. Tree-path identity preserves distinct controls even when bounds
+overlap; depth, visited-node and per-parent child-count limits bound AT-SPI
+traversal. The exact focused editable-path fallback for the X11 chooser remains
+available. Pure fake-record tests reject wrong-prefix filenames, wrong-PID
+rows/cells, duplicate identities, and ensure distinct matching row identities
+are not collapsed. The native Save path still parses and validates the written
+portable JSON downstream.
+
+**Observed private runtime:** both the existing default `matrix` scenario and
+the new `advanced` scenario passed after the chooser helper changes, in private
+rootless Weston/Pixman Wayland sessions, each with a temporary HOME and private
+D-Bus. The default matrix retained Dashboard, Settings toggle, Spend 7-day,
+heatmap, and Sessions loading/success/empty/error assertions and captures. The
+advanced scenario exercised the real native Save and Import chooser actions;
+validated portable JSON; checked imported values overlay known preferences,
+retain an unrelated seeded setting, omit an unknown key, and trigger a fresh
+Plugins query; verified empty import leaves the complete preference map
+unchanged while refreshing Plugins; verified Reset Cancel leaves the complete
+map unchanged; and verified Reset Confirm writes the full Rust default map.
+Synthetic autostart bytes remained unchanged through all actions, visible result
+messages were observed, and app/compositor/private runtime/HOME/bus cleanup
+completed. The selector did not call an application import/backend setter.
+
+Runtime provenance is explicit: the native executable was built from unchanged
+native application sources and embeds BUILD104, as checked in the binary. Its
+SHA-256 is
+`a7e7dbe7f04ea84f255d0f5851ece35381660c50b00f8f07e541ec2c9eee6700`; the
+runner/source commit is `f7425d039e9b10f73023c277166b6117d2f2668c`. This is not
+a BUILD105 application-binary runtime claim. The selected synthetic captures
+were reviewed and are stored with bounded, sanitized relative evidence at
+[`build105-wayland-advanced/`](screenshots/build105-wayland-advanced/), including
+the [results record](screenshots/build105-wayland-advanced/results.json).
+
+**Checks and remaining gates:** the 19-case private Wayland harness unit suite
+passed; Python and Rust build-metadata regression tests passed; Python
+compilation and `git diff --check` passed. The existing full X11 Settings smoke
+was attempted but could not start because `xvfb-run` is unavailable in this
+environment; this is a skip, not a pass. Its required workflow step remains
+enabled. Current BUILD105 exact-head CI has not been observed. AT-SPI and
+GAction evidence does not prove physical Wayland input, KDE shell placement,
+portal input, or general chooser parity. UG remains **NOT PASSED**, Python
+remains the default, and C gates remain open. Next: root reviews and publishes
+this slice, then observes exact-head CI; afterward continue the residual
+B-phase Settings audit and UG's remaining Settings/Pages/States/update-check
+loopback acceptance.
+
+**Root integration review:** E208 is reflected in the Advanced UG matrix row as partial: the evidenced accessible export/import/reset actions are covered; Wayland CLI-path Apply and general/KDE chooser parity are not claimed. Overall UG and C gates remain unchanged.

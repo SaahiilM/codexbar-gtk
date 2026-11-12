@@ -182,6 +182,11 @@ parity; UG remains **NOT PASSED**, and Python remains the default. See the
 [build-103 evidence](docs/rust-migration/screenshots/build103-wayland-matrix/results.json)
 and audit E206.
 
+Build 105 adds an advanced private Weston Settings acceptance scenario with
+synthetic portable preferences and Reset evidence. It checks exact chooser row
+selection and runs beside the existing Wayland matrix; the full X11 Settings
+smoke remains required. UG remains **NOT PASSED**, and Python remains default.
+
 Build 104 restores the comprehensive native Settings smoke to required CI
 after two consecutive full private Xvfb/D-Bus runs passed with the reviewed
 chooser-focus fix. It uses synthetic fixtures and a bounded 15-minute step.
@@ -285,7 +290,7 @@ The GTK front-end uses the same version pair as the macOS bundle:
   this client is feature-compatible with (`0.82.0`).
 * `CURRENT_PROJECT_VERSION` is the build number of the Linux front-end.
 * `codexbar_gtk/version.py` turns the pair into the macOS-style
-  `"0.82.0 (104)"` string shown under Settings → About, in the tray menu and by
+  `"0.82.0 (105)"` string shown under Settings → About, in the tray menu and by
   `./run.sh --about`.
 
 Increment `CURRENT_PROJECT_VERSION` for each merged PR and keep it in sync with

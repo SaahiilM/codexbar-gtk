@@ -802,9 +802,9 @@ mod display_tests {
     #[ignore = "requires a GTK display; run under Xvfb"]
     fn empty_dashboard_offers_settings_action() {
         gtk::init().expect("GTK display for rendered dashboard test");
-        let snapshot = ControllerSnapshot {
+        let empty_snapshot = ControllerSnapshot {
             revision: 1,
-            version: "0.82.0 (104)".into(),
+            version: "0.82.0 (106)".into(),
             updated_at: None,
             last_error: None,
             cost_error: None,
@@ -815,15 +815,15 @@ mod display_tests {
             history: vec![],
             tray_selection: None,
         };
-        let state = BackendState {
+        let empty_state = BackendState {
             sequence: 1,
             changed_at: SystemTime::now(),
             status: BackendStatus::Ready,
-            snapshot: Some(Arc::new(snapshot)),
+            snapshot: Some(Arc::new(empty_snapshot)),
             last_error: None,
         };
         let model = project_dashboard(
-            &state,
+            &empty_state,
             &Map::new(),
             &CurrencyCatalog::default(),
             chrono::Utc::now(),
@@ -836,12 +836,20 @@ mod display_tests {
         let empty_settings =
             find_button(&view.widget(), "Open Settings").expect("empty state Settings button");
         assert!(empty_settings.is_visible());
+        assert!(empty_settings.can_focus());
         assert_eq!(
             empty_settings.action_name().as_deref(),
             Some("app.settings")
         );
 
         let window = gtk::Window::new();
+        let settings_action = gtk::gio::SimpleAction::new("settings", None);
+        let activated = std::rc::Rc::new(std::cell::Cell::new(false));
+        let activated_for_action = activated.clone();
+        settings_action.connect_activate(move |_, _| activated_for_action.set(true));
+        let actions = gtk::gio::SimpleActionGroup::new();
+        actions.add_action(&settings_action);
+        window.insert_action_group("app", Some(&actions));
         window.set_default_size(900, 600);
         window.set_child(Some(&view.widget()));
         window.present();
@@ -849,6 +857,44 @@ mod display_tests {
             gtk::glib::MainContext::default().iteration(false);
         }
         assert!(empty_settings.is_mapped());
+        empty_settings.emit_clicked();
+        assert!(activated.get(), "the app.settings action should activate");
+
+        let provider = provider_usage_from_value(&json!({
+            "provider": "claude",
+            "usage": {"primary": {"usedPercent": 20, "windowMinutes": 300}}
+        }))
+        .expect("synthetic provider payload is valid")
+        .expect("synthetic provider is present");
+        let nonempty_state = BackendState {
+            sequence: 2,
+            changed_at: SystemTime::now(),
+            status: BackendStatus::Ready,
+            snapshot: Some(Arc::new(ControllerSnapshot {
+                revision: 2,
+                version: "0.82.0 (106)".into(),
+                updated_at: None,
+                last_error: None,
+                cost_error: None,
+                providers: vec![provider],
+                spend: None,
+                sessions: vec![],
+                session_scan_status: None,
+                history: vec![],
+                tray_selection: None,
+            })),
+            last_error: None,
+        };
+        let nonempty_model = project_dashboard(
+            &nonempty_state,
+            &Map::new(),
+            &CurrencyCatalog::default(),
+            chrono::Utc::now(),
+        );
+        assert!(!nonempty_model.empty);
+        view.render(&nonempty_model);
+        assert!(!view.empty.is_visible());
+        assert!(!empty_settings.is_mapped());
         window.close();
     }
 }

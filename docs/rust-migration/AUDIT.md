@@ -7195,3 +7195,69 @@ bus. This repairs local BUILD104/E207 smoke evidence; it does not pass UG,
 change Python-default status, or establish exact-head remote CI success. Root
 owns review and publication; next step is review the verified local commit,
 publish it, then inspect exact-head CI.
+
+### E209 — BUILD106 native empty-dashboard Settings recovery
+
+- **Claim and base:** Provisional build 106, marketing version 0.82.0, on
+  `orchestrated/luna-native-ui-completion`. The assigned checkout began clean at
+  source commit `42a79257ebeaae6081edf338af3a63d76674ca4c`, whose only prior
+  change is the native empty-dashboard Settings action. This task preserves
+  that implementation. Its parent is BUILD104 commit `04edc0d`; PR #106 is an
+  independent, unmerged BUILD105 Advanced slice. At the observation time
+  2026-11-12 19:01:50Z, PR #106 head
+  `3fb5d2d07cd5b63301d9cbceccb1bf88c183ca66` had `tray-dbus` and
+  `python-free-runtime-proof` successful and `test` in progress. This is not
+  merge or CI evidence for E209. Root owns serial base reconciliation after
+  that merge; no PR publication or push occurred here.
+- **Behavior and paths:** `rust-gtk/src/dashboard_widget.rs` puts a
+  keyboard-focusable, accessibly labelled “Open Settings” button in the native
+  no-enabled-provider empty state. It binds to the existing `app.settings`
+  action, so application routing continues through the existing Settings
+  window flow. The GTK display regression checks that it is mapped in the empty
+  state, not mapped after rendering a non-empty provider state, is focusable,
+  and activates a registered `app.settings` action. `.github/workflows/rust-core.yml`
+  invokes just this display-required test beside existing Xvfb GTK tests.
+  `VERSION`, `codexbar_gtk/version.py`, README, and CHANGELOG reserve
+  `0.82.0 (106)`. The synthetic capture is retained at
+  [`empty-dashboard-xvfb.png`](screenshots/build106-empty-dashboard/empty-dashboard-xvfb.png).
+- **Capture provenance and limits:** The capture was supplied from
+  `/tmp/codexbar-native-empty-ui.reqnTd/empty-dashboard.png` (PNG SHA-256
+  `8ce6331fca3e0fefd3b873bbaacadf07760bc9593aa309b4c5e927289071c1aa`;
+  1200×900). Its pre-metadata runtime executable is retained at
+  `/tmp/codexbar-native-ui-luna-target/debug/codexbar-gtk-native`, SHA-256
+  `cdc3bb385a05facd392ecdf3dea9dda6f2a35faac0da336f6b4cc05e9705cec3`, size
+  23,806,224 bytes, timestamp 2026-11-12 13:51:54 -0500; the PNG timestamp is
+  13:53:22 -0500. This executable predates the BUILD106 metadata edits and
+  contains the Open Settings label. It was built from the working source that
+  became prior UI commit `42a79257ebeaae6081edf338af3a63d76674ca4c`; the
+  capture is therefore evidence for rendered UI only, not a BUILD106-metadata
+  runtime or action activation. The final source diff receives its own commit
+  identity when this local slice is committed. No real provider/account data
+  appears in the capture.
+- **Local verification:** `cargo fmt --manifest-path rust-gtk/Cargo.toml --
+  --check` passed. The exact focused runtime command
+  `CARGO_TARGET_DIR=/tmp/codexbar-native-ui-luna-target
+  PATH=/tmp/codexbar-build106-xvfb/root/usr/bin:$PATH xvfb-run -a
+  dbus-run-session -- cargo test --manifest-path rust-gtk/Cargo.toml --locked
+  --lib empty_dashboard_offers_settings_action -- --ignored` passed (1 test).
+  Xvfb packages were rootlessly extracted to `/tmp`; the test used private
+  Xvfb and D-Bus. `cargo clippy --manifest-path rust-gtk/Cargo.toml
+  --all-targets -- -D warnings`,
+  `python3 -m unittest
+  tests.test_app.VersionMetadataTests.test_display_string_matches_version_file`,
+  and `git diff --check` passed. A current-source native debug binary was
+  built at `/tmp/codexbar-native-ui-luna-target/debug/codexbar-gtk-native`,
+  SHA-256
+  `c60072b96ab7a30e54e577e918082044311ab1e8d338e1ea0e3f3f9b784f5ae0`.
+  An initial test invocation used `--exact` without its module-qualified test
+  name and ran zero tests; it was immediately corrected to the passing command
+  above. GTK printed non-fatal EGL device permission and slider-size warnings;
+  the isolated AT-SPI registry also printed a bus-disconnect message during
+  teardown after the test had passed. No broad Cargo/Python suite, native app
+  runtime action smoke, real desktop/bus/portal, provider HTTP, credentials,
+  auth, push, or remote CI was exercised for this slice.
+- **Status and next step:** This is a bounded UI recovery feature, not broad
+  parity. UG remains **NOT PASSED**, Python remains the default, and C gates
+  remain open. Root must reconcile this BUILD106 metadata/source onto the
+  observed PR #106 BUILD105 merge, inspect the final diff, then obtain fresh
+  exact-head CI before treating the slice as verified or merged.

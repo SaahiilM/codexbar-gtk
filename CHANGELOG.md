@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.82.0 (108) — 2026-11-12
+
+Move provider artwork and attribution into the shared `assets/provider_icons/`
+catalog. Native builds no longer read assets from the Python package; artwork
+remains embedded in the native executable. Preserve Python-default artwork
+lookup and legacy installation during transition. UG remains **NOT PASSED**.
+
+- See migration audit E211 for decode and compatibility verification.
+
+## 0.82.0 (107) — 2026-11-12
+
+Strengthens synthetic Rust CLI process lifecycle regression coverage. Timeout
+and cancellation tests require both the process-group leader and descendant to
+stop, and a fixture cleanup guard kills remaining group members on test exit.
+No production CLI behavior or backend port changed. Python remains the default;
+UG remains **NOT PASSED**.
+
+- See migration audit E210 for local checks, base evidence, and limitations.
+
+## 0.82.0 (106) — 2026-11-12
+
+Add an accessible, keyboard-focusable Open Settings action to the native empty
+dashboard so users can enable a provider. The existing `app.settings` action
+handles activation. CI now runs the display-required widget regression under
+private Xvfb and D-Bus. This is a focused recovery feature; UG remains
+**NOT PASSED**, and Python remains the default launcher.
+
+- See migration audit E209 for local source/binary identity, capture provenance,
+  checks, and the pending base/CI reconciliation.
+
 ## 0.82.0 (105) — 2026-11-12
 
 Adds a bounded advanced Settings acceptance scenario to the required private

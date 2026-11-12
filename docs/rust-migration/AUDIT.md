@@ -7259,3 +7259,137 @@ B-phase Settings audit and UG's remaining Settings/Pages/States/update-check
 loopback acceptance.
 
 **Root integration review:** E208 is reflected in the Advanced UG matrix row as partial: the evidenced accessible export/import/reset actions are covered; Wayland CLI-path Apply and general/KDE chooser parity are not claimed. Overall UG and C gates remain unchanged.
+
+### E209 — BUILD106 native empty-dashboard Settings recovery
+
+- **Claim and base:** Provisional build 106, marketing version 0.82.0, on
+  `orchestrated/luna-native-ui-completion`. The assigned checkout began clean at
+  source commit `42a79257ebeaae6081edf338af3a63d76674ca4c`, whose only prior
+  change is the native empty-dashboard Settings action. This task preserves
+  that implementation. Its parent is BUILD104 commit `04edc0d`; PR #106 is an
+  independent, unmerged BUILD105 Advanced slice. At the observation time
+  2026-11-12 19:01:50Z, PR #106 head
+  `3fb5d2d07cd5b63301d9cbceccb1bf88c183ca66` had `tray-dbus` and
+  `python-free-runtime-proof` successful and `test` in progress. This is not
+  merge or CI evidence for E209. Root owns serial base reconciliation after
+  that merge; no PR publication or push occurred here.
+- **Behavior and paths:** `rust-gtk/src/dashboard_widget.rs` puts a
+  keyboard-focusable, accessibly labelled “Open Settings” button in the native
+  no-enabled-provider empty state. It binds to the existing `app.settings`
+  action, so application routing continues through the existing Settings
+  window flow. The GTK display regression checks that it is mapped in the empty
+  state, not mapped after rendering a non-empty provider state, is focusable,
+  and activates a registered `app.settings` action. `.github/workflows/rust-core.yml`
+  invokes just this display-required test beside existing Xvfb GTK tests.
+  `VERSION`, `codexbar_gtk/version.py`, README, and CHANGELOG reserve
+  `0.82.0 (106)`. The synthetic capture is retained at
+  [`empty-dashboard-xvfb.png`](screenshots/build106-empty-dashboard/empty-dashboard-xvfb.png).
+- **Capture provenance and limits:** The capture was supplied from
+  `/tmp/codexbar-native-empty-ui.reqnTd/empty-dashboard.png` (PNG SHA-256
+  `8ce6331fca3e0fefd3b873bbaacadf07760bc9593aa309b4c5e927289071c1aa`;
+  1200×900). Its pre-metadata runtime executable is retained at
+  `/tmp/codexbar-native-ui-luna-target/debug/codexbar-gtk-native`, SHA-256
+  `cdc3bb385a05facd392ecdf3dea9dda6f2a35faac0da336f6b4cc05e9705cec3`, size
+  23,806,224 bytes, timestamp 2026-11-12 13:51:54 -0500; the PNG timestamp is
+  13:53:22 -0500. This executable predates the BUILD106 metadata edits and
+  contains the Open Settings label. It was built from the working source that
+  became prior UI commit `42a79257ebeaae6081edf338af3a63d76674ca4c`; the
+  capture is therefore evidence for rendered UI only, not a BUILD106-metadata
+  runtime or action activation. The final source diff receives its own commit
+  identity when this local slice is committed. No real provider/account data
+  appears in the capture.
+- **Local verification:** `cargo fmt --manifest-path rust-gtk/Cargo.toml --
+  --check` passed. The exact focused runtime command
+  `CARGO_TARGET_DIR=/tmp/codexbar-native-ui-luna-target
+  PATH=/tmp/codexbar-build106-xvfb/root/usr/bin:$PATH xvfb-run -a
+  dbus-run-session -- cargo test --manifest-path rust-gtk/Cargo.toml --locked
+  --lib empty_dashboard_offers_settings_action -- --ignored` passed (1 test).
+  Xvfb packages were rootlessly extracted to `/tmp`; the test used private
+  Xvfb and D-Bus. `cargo clippy --manifest-path rust-gtk/Cargo.toml
+  --all-targets -- -D warnings`,
+  `python3 -m unittest
+  tests.test_app.VersionMetadataTests.test_display_string_matches_version_file`,
+  and `git diff --check` passed. A current-source native debug binary was
+  built at `/tmp/codexbar-native-ui-luna-target/debug/codexbar-gtk-native`,
+  SHA-256
+  `c60072b96ab7a30e54e577e918082044311ab1e8d338e1ea0e3f3f9b784f5ae0`.
+  An initial test invocation used `--exact` without its module-qualified test
+  name and ran zero tests; it was immediately corrected to the passing command
+  above. GTK printed non-fatal EGL device permission and slider-size warnings;
+  the isolated AT-SPI registry also printed a bus-disconnect message during
+  teardown after the test had passed. No broad Cargo/Python suite, native app
+  runtime action smoke, real desktop/bus/portal, provider HTTP, credentials,
+  auth, push, or remote CI was exercised for this slice.
+- **Status and next step:** This is a bounded UI recovery feature, not broad
+  parity. UG remains **NOT PASSED**, Python remains the default, and C gates
+  remain open. Root must reconcile this BUILD106 metadata/source onto the
+  observed PR #106 BUILD105 merge, inspect the final diff, then obtain fresh
+  exact-head CI before treating the slice as verified or merged.
+
+**Root base reconciliation:** PR #106 merged normally at `ca1535c9e937d0a832047e03f68712f976f8d4ce`; exact head `3fb5d2d07cd5b63301d9cbceccb1bf88c183ca66` passed all three jobs in run `43284913776`. Default and Advanced private Wayland and full X11 Settings steps passed; reviews/comments/threads were empty. BUILD106 merged that main normally, retaining both changelog entries and E208/E209. No production code conflicts occurred; fresh BUILD106 CI remains pending.
+
+### Provisional BUILD107/E210 — synthetic CLI process-group regression coverage
+
+**Base and serialization:** PR [#106](https://github.com/SaahiilM/codexbar-gtk/pull/106)
+merged normally at `ca1535c9e937d0a832047e03f68712f976f8d4ce` (build 105).
+Its exact head `3fb5d2d07cd5b63301d9cbceccb1bf88c183ca66` passed all three
+checks in run `43284913776`; no reviews, comments or threads were reported.
+This is base evidence, not CI for this slice. The branch merge commit
+`54b9fc5` incorporates `origin/main` without conflict while preserving the
+preexisting implementation commits. BUILD106 remains reserved for the
+in-flight native UI slice; BUILD107 and this entry are provisional until root
+reconciles the final base after UI BUILD106 merges.
+
+**Implementation scope:** `rust-backend/src/cli.rs` contains the test-only
+changes from `d375a0c` (timeout/cancellation process-group regression coverage),
+`1b0b230` (fail closed when `/proc/<pid>/stat` evidence is malformed or
+unreadable, except recognized process disappearance), and `ad6aaaf` (RAII
+fixture process-group cleanup plus leader/descendant termination assertions).
+The wait helper recognizes zombie/dead states and normal `ENOENT`/`ESRCH` as
+stopped; unreadable or malformed evidence cannot satisfy the assertion. The
+cleanup guard kills remaining members on early test exit. Root reviewed
+`ad6aaaf`; this slice does not change production CLI behavior, add a new port,
+or claim upstream/UG acceptance.
+
+**Observed local checks:** `cargo test --manifest-path
+rust-backend/Cargo.toml --locked` passed 97 unit tests and 1 headless backend
+integration test. The focused
+`cli::tests::timeout_and_cancellation_terminate_the_entire_process_group`
+test passed three consecutive runs with one test thread. The test is included
+in the 97 unit-test result; the repeats add stability evidence, not unique
+coverage. `cargo fmt --manifest-path rust-backend/Cargo.toml -- --check` and
+`cargo clippy --manifest-path rust-backend/Cargo.toml --all-targets
+--all-features -- -D warnings` passed. The version metadata regression test
+`VersionMetadataTests.test_display_string_matches_version_file` passed after
+provisional BUILD107 updates.
+
+**Limits and next step:** no full multi-crate/Python suite, native app build,
+GTK smoke, UI smoke, or full application runtime path was run for this
+test-only slice. No host desktop/app/service, D-Bus session, real account,
+credential, provider HTTP, or authentication flow was used. Python remains the
+default; UG remains **NOT PASSED**; BG/C gates remain open. No push, PR, merge,
+or exact-head CI result is claimed. Root must reconcile the final base and
+provisional build metadata after the reserved UI BUILD106 slice merges, then
+own publication and live exact-head CI verification.
+
+**Root base reconciliation:** PR #107 merged normally at `2b8d5b70765e36b7baa511a4c9001737cc9c7aaa`; exact head `33f433b7951677e7167c1d35d8b382c4aba33ac0` passed all three jobs in run `43287961284`, including the empty-dashboard X11 widget regression. Reviews/comments/threads were empty. BUILD107 merged that base normally, retaining E209/E210 and both changelog entries. Conflicts were release metadata/handoff only; no source conflict. Fresh exact-head CI remains pending.
+
+### E211 — BUILD108 shared provider artwork ownership
+
+Base PR #108 merged normally at `a73e10c90e363faa970f50cb455629d75d85147e`; exact head `cbcd45ec72c2b23090f52bd09fc1c3f5743dd028` passed all three jobs in run `43290374919`. Reviews/comments/threads were empty. Root reviewed implementation `c07993f71edf35770c2b10059ce53fd9eaaab9f8` and reserves build 108.
+
+#### Implementation evidence (pre-release-metadata worker handoff)
+
+**Base and scope:** clean isolated worktree `t3/relocate-provider-assets` started at `a73e10c90e363faa970f50cb455629d75d85147e` (`origin/main`). Canonical artwork path: `assets/provider_icons/`. No version/release metadata, README, TASKS, AUDIT, or UG_GATE changes. Python remains the default; no cutover behavior changed.
+
+**Paths/contracts changed:** moved all catalog files with `git mv`, retaining `LICENSE-CodexBar`, `README.md`, and `UPSTREAM-PROVENANCE.md`. `rust-gtk/build.rs` now embeds from the root-level catalog and preserves its PNG/SVG filename filter and sort. Rust artwork decode tests and negative SVG-precondition test use the new include paths. `codexbar_gtk/provider_icons.py` resolves the shared catalog relative to the app root. `scripts/install.sh` copies it beside `codexbar_gtk/` into the legacy Python install prefix. `.github/workflows/rust-core.yml` push path filters now watch `assets/provider_icons/**`. Python tests assert catalog location/license and existing provider artwork/alias behavior. Native `icons.rs` module comment no longer describes the neutral catalog as Python-owned.
+
+**Checks:** `python3 -m unittest tests.test_provider_icons` — 6 passed. `cargo build --locked --manifest-path rust-gtk/Cargo.toml --bin codexbar-gtk-native` — passed, dev profile. `cargo test --manifest-path rust-gtk/Cargo.toml --locked --lib embedded_catalog_has_python_aliases_and_provider_fallback_assets` — 1 passed. Under private HOME, private XDG_RUNTIME_DIR, Xvfb and `dbus-run-session`, `cargo test --manifest-path rust-gtk/Cargo.toml --locked --test a11y_assets -- --ignored` — 1 passed; it decoded actual embedded Codex PNG, Claude SVG and three monochrome SVGs after changing cwd to `/tmp`, and exercised native provider marks. `scripts/install.sh --no-autostart` with synthetic HOME and temporary PREFIX, then Python import from `/tmp` via the installed package — passed; resolved `/prefix/share/codexbar-gtk/assets/provider_icons`, found Codex artwork and license. `cargo fmt --manifest-path rust-gtk/Cargo.toml -- --check`, `shellcheck scripts/install.sh`, `bash -n scripts/install.sh`, and `git diff --check` — passed.
+
+**Limits/skips:** no full Python suite, complete app/runtime or UI smoke, C02 Docker proof, live desktop/bus/portal/input, or provider/auth/credential behavior was exercised. The native decode test is the focused artwork UI smoke. No path in the native runtime reads from `codexbar_gtk`; the tested icon bytes come from build-time embedding. No PR/push/remote CI was run. UG remains NOT PASSED, Python default and C gates open. Root should update serialized docs/metadata, including historical path pointers as appropriate, and observe fresh exact-head CI.
+
+**Remaining references/consumers:** `rg -n 'codexbar_gtk/assets/provider_icons|codexbar_gtk/assets' .` reports only four historical references in append-only `docs/rust-migration/AUDIT.md` (E114/E187/E? provenance rows). No source/build/test/install/workflow runtime consumer remains on the old path. `README.md`, `TASKS.md`, and `UG_GATE.md` have no literal old path matches.
+
+**Diagnostic retries:** the first temporary-HOME Cargo test invocation could not select a Rust toolchain because rustup state was outside that synthetic HOME; rerun passed after explicitly setting `RUSTUP_HOME=/home/sam/.rustup` and `CARGO_HOME=/home/sam/.cargo`. The first `cargo fmt --check` reported only formatting differences in the moved include expressions; `cargo fmt` was applied and the subsequent check passed. The Xvfb artwork test emitted a nonfatal DRI3 warning and a D-Bus disconnect line during teardown after its 1/1 pass. `scripts/smoke-native-install.sh` was not run: it requires distinct debug and release native binaries and exercises a broader install/activation lifecycle beyond this asset slice; no release artifact was built.
+
+Root updates release metadata and current handoff in this PR. Historical audit paths remain historical; the current canonical path is `assets/provider_icons/`. No runtime artwork bytes or presentation changed, so no new screenshot is required. Fresh exact-head CI remains pending; this is asset dependency closure, not C03 deletion or gate acceptance.

@@ -4,6 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(dirname "$SCRIPT_DIR")"
 INSTALLER="$ROOT/scripts/install-native.sh"
+DEFAULT_INSTALLER="$ROOT/scripts/install.sh"
 
 # Parent wrapper retains control of XDG runtime + private session exit.
 # Use the SAME isolated home/runtime paths before bus and app (inner does
@@ -125,13 +126,18 @@ HIS_BEFORE="$(sha256sum "$TEST_HOME/.config/codexbar-gtk/history.jsonl" | awk '{
 
 echo "=== 2. install debug (no activate), default side-effect check ==="
 mkdir -p "$TEST_HOME/.config/systemd/user" "$PREFIX/share/applications"
+mkdir -p "$PREFIX/bin"
+LEGACY_BIN="$PREFIX/bin/codexbar-gtk"
+printf '#!/bin/sh\necho synthetic legacy launcher\n' > "$LEGACY_BIN"
+chmod 755 "$LEGACY_BIN"
+LEGACY_BIN_SHA="$(sha256sum "$LEGACY_BIN" | awk '{print $1}')"
 PY_SVC="$TEST_HOME/.config/systemd/user/codexbar-gtk.service"
 PY_DSK="$PREFIX/share/applications/codexbar-gtk.desktop"
 printf 'Description=Py\nExecStart=/usr/bin/python3 -m codexbar_gtk\n' > "$PY_SVC"
 printf '[Desktop Entry]\nExec=/usr/bin/python3 -m codexbar_gtk\n' > "$PY_DSK"
 PY_SVC_SHA="$(sha256sum "$PY_SVC" | awk '{print $1}')"
 PY_DSK_SHA="$(sha256sum "$PY_DSK" | awk '{print $1}')"
-"$INSTALLER" --artifact "$DEBUG_BIN" --prefix "$PREFIX"
+"$DEFAULT_INSTALLER" --artifact "$DEBUG_BIN" --prefix "$PREFIX"
 [[ -x "$BIN_DEST" ]] || fail "binary not installed"
 [[ "$(sha256sum "$BIN_DEST" | awk '{print $1}')" == "$DEBUG_SHA" ]] || fail "binary sha mismatch"
 grep -q "^activated=0$" "$MANIFEST" || fail "default must be activated=0"
@@ -139,6 +145,11 @@ grep -q "^activated=0$" "$MANIFEST" || fail "default must be activated=0"
 [[ ! -e "$PY_SVC.pre-native" ]] || fail "default created service backup"
 [[ "$(sha256sum "$PY_SVC" | awk '{print $1}')" == "$PY_SVC_SHA" ]] || fail "default clobbered service"
 [[ "$(sha256sum "$PY_DSK" | awk '{print $1}')" == "$PY_DSK_SHA" ]] || fail "default clobbered desktop"
+[[ "$(sha256sum "$LEGACY_BIN" | awk '{print $1}')" == "$LEGACY_BIN_SHA" ]] || fail "default clobbered legacy command"
+if PREFIX="$PREFIX" "$ROOT/scripts/install-python.sh" >"$SCRATCH/legacy-block.out" 2>&1; then
+  fail "legacy installer unexpectedly ran over native manifest"
+fi
+grep -Fq "native installation manifest exists" "$SCRATCH/legacy-block.out" || fail "legacy installer did not explain native manifest block"
 [[ ! -e "$TEST_HOME/.config/autostart/codexbar-gtk.desktop" ]] || fail "default created autostart"
 ok "default install: binary+manifest only"
 
@@ -245,7 +256,7 @@ probe_launch() {
 probe_launch "$DEBUG_SHA" debug --settings
 
 echo "=== 4. upgrade release (no flag preserves activated=0) ==="
-"$INSTALLER" --artifact "$RELEASE_BIN" --prefix "$PREFIX"
+"$DEFAULT_INSTALLER" --artifact "$RELEASE_BIN" --prefix "$PREFIX"
 [[ "$(sha256sum "$BIN_DEST" | awk '{print $1}')" == "$RELEASE_SHA" ]] || fail "upgrade did not swap"
 grep -q "^activated=0$" "$MANIFEST" || fail "upgrade must preserve activated=0"
 probe_launch "$RELEASE_SHA" release --about
@@ -262,6 +273,7 @@ echo "=== 6. idempotent uninstall ==="
 [[ ! -e "$MANIFEST" ]] || fail "uninstall left manifest"
 [[ "$(sha256sum "$PY_SVC" | awk '{print $1}')" == "$PY_SVC_SHA" ]] || fail "uninstall clobbered service"
 [[ "$(sha256sum "$PY_DSK" | awk '{print $1}')" == "$PY_DSK_SHA" ]] || fail "uninstall clobbered desktop"
+[[ "$(sha256sum "$LEGACY_BIN" | awk '{print $1}')" == "$LEGACY_BIN_SHA" ]] || fail "uninstall clobbered legacy command"
 [[ "$(sha256sum "$TEST_HOME/.config/codexbar-gtk/settings.json" | awk '{print $1}')" == "$SET_BEFORE" ]] || fail "settings changed"
 [[ "$(sha256sum "$TEST_HOME/.config/codexbar-gtk/history.jsonl" | awk '{print $1}')" == "$HIS_BEFORE" ]] || fail "history changed"
 ok "idempotent uninstall"

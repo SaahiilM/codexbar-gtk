@@ -1,9 +1,12 @@
 # UG native UI gate ledger
 
 **Status: NOT PASSED.** All U01–U08 implementation PRs have merged, but the
-required UI action and Wayland evidence is incomplete. Python remains the
-default launcher. This ledger records observed evidence, limits and the exact
-remaining work; backend unit tests do not count as GTK interaction evidence.
+required UI action and Wayland evidence is incomplete. By explicit user
+instruction, BUILD110 changes the repository launcher default to native while
+this gate remains unpassed. Python remains the explicit parity/rollback path.
+This policy exception does not complete UI acceptance or migrate an installed
+host. The ledger records observed evidence, limits and the exact remaining
+work; backend unit tests do not count as GTK interaction evidence.
 
 ## Baseline and merge state
 

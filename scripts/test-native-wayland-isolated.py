@@ -933,6 +933,31 @@ def inside_run(args) -> dict:
                                         "control_group": "Token activity heatmap",
                                         "modes": mode_results})
 
+            # Daily was initially selected when the page first opened. Return
+            # to it after Weekly and Cumulative have both been selected so the
+            # evidence proves the return action as well as the initial state.
+            daily_control = wait_visible_control(
+                python, app.pid, "Daily", ("toggle button",),
+                "CodexBar GTK — Usage & Spend")
+            daily_return = activate_accessible(
+                python, app.pid, "Daily", daily_control["identity"])
+            if not daily_return["changed"]:
+                raise RuntimeError("final Daily return action did not change the selected heatmap mode")
+            daily_state = wait_until("heatmap Daily final return pressed state", lambda:
+                next((row for row in atspi_probe(python, "states", app.pid, "Daily")["matches"]
+                      if row["name"] == "Daily" and row["role"] == "toggle button"
+                      and row.get("pid") == app.pid and "pressed" in row["states"]), None))
+            selected_mode = selected_heatmap_mode(python, app.pid)
+            if selected_mode["name"] != "Daily" or selected_mode["identity"] != daily_control["identity"]:
+                raise RuntimeError("Daily was not the unique visible pressed mode after return action")
+            evidence["actions"].append({"kind": "AT-SPI AccessibleAction.DoAction",
+                                        "control_group": "Token activity heatmap",
+                                        "final_return": {"mode": "Daily", "changed": True,
+                                                         "role": daily_state["role"],
+                                                         "states": daily_state["states"],
+                                                         "identity": daily_state["identity"],
+                                                         "pid": daily_state["pid"]}})
+
             gaction("page", "'sessions'")
             sessions_title = wait_until("Sessions route", lambda: atspi_probe(
                 python, "title", app.pid, "Sessions").get("match"))
@@ -965,6 +990,14 @@ def inside_run(args) -> dict:
                                           "role": visible["role"], "pid": visible["pid"]})
                 wait_until(f"synthetic sessions fixture {mode} completed", lambda mode=mode:
                     f"sessions-fixture-{mode}-done" in call_log.read_text(encoding="utf-8").splitlines())
+                # Keep each result capture tied to the visible assertion above
+                # and to the completed synthetic scan, rather than the loading
+                # frame or a neighbouring refresh state.
+                if mode in ("success", "empty", "error"):
+                    capture_screen(screenshooter, env, scratch / f"capture-sessions-{mode}",
+                                   artifact_dir / f"sessions-{mode}.png")
+                    evidence["screenshots"][f"sessions_{mode}"] = str(
+                        artifact_dir / f"sessions-{mode}.png")
                 sessions_calls_after = call_log.read_text(encoding="utf-8").splitlines().count(
                     "sessions --json-v2")
                 sessions_call_count = sessions_calls_after - sessions_calls_before

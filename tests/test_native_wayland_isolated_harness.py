@@ -169,6 +169,20 @@ class NativeWaylandIsolatedHarnessTests(unittest.TestCase):
                 "sessions-fixture-success-done", "sessions-fixture-empty-done",
                 "sessions-fixture-error-done", "sessions-fixture-loading-done"])
 
+    def test_sessions_state_captures_follow_visible_assertions_and_daily_return_precedes_route(self):
+        source = SCRIPT.read_text(encoding="utf-8")
+        sessions = source.split('gaction("page", "\'sessions\'")', 1)[1]
+        self.assertIn('if mode in ("success", "empty", "error"):', sessions)
+        self.assertIn('f"capture-sessions-{mode}"', sessions)
+        self.assertIn('artifact_dir / f"sessions-{mode}.png"', sessions)
+        self.assertLess(sessions.index("visible = wait_visible_text"),
+                        sessions.index('if mode in ("success", "empty", "error")'))
+        self.assertLess(sessions.index('f"sessions-fixture-{mode}-done"'),
+                        sessions.index('if mode in ("success", "empty", "error")'))
+        before_sessions_route = source.split('gaction("page", "\'sessions\'")', 1)[0]
+        self.assertIn("heatmap Daily final return pressed state", before_sessions_route)
+        self.assertIn("final_return", before_sessions_route)
+
     def test_hooks_fixture_tracks_exact_enable_disable_cli_state(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = pathlib.Path(temporary)

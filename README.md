@@ -171,6 +171,17 @@ parity and keyboard parity remain open. The native binary under test was build
 95; this evidence does not claim a build-97 application binary. UG remains
 **NOT PASSED**, and Python remains the default.
 
+Build 103 records the remaining synthetic private Weston Wayland capture slice:
+Sessions success, empty and error images are captured only after visible-state
+assertions and fixture completion; the spend-range and heatmap selection states
+are asserted, including a final return to Daily after Weekly and Cumulative.
+The Sessions error follows an empty successful scan, so retained nonempty error
+rows remain unproven. This uses the build-102 application binary with build-103
+runner and metadata. It does not close actual KDE input/placement or keyboard
+parity; UG remains **NOT PASSED**, and Python remains the default. See the
+[build-103 evidence](docs/rust-migration/screenshots/build103-wayland-matrix/results.json)
+and audit E206.
+
 Build 94 carries the additive isolated-prefix installer; its no-activation path does not change the default launcher.
 
 Build 93 records one guarded synthetic Wayland Display action: `hidePersonalInfo`
@@ -269,7 +280,7 @@ The GTK front-end uses the same version pair as the macOS bundle:
   this client is feature-compatible with (`0.82.0`).
 * `CURRENT_PROJECT_VERSION` is the build number of the Linux front-end.
 * `codexbar_gtk/version.py` turns the pair into the macOS-style
-  `"0.82.0 (102)"` string shown under Settings → About, in the tray menu and by
+  `"0.82.0 (103)"` string shown under Settings → About, in the tray menu and by
   `./run.sh --about`.
 
 Increment `CURRENT_PROJECT_VERSION` for each merged PR and keep it in sync with

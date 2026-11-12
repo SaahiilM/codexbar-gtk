@@ -121,6 +121,14 @@ jobs:
             --scenario advanced \
             --binary rust-gtk/target/debug/codexbar-gtk-native \
             --artifact-dir "$RUNNER_TEMP/native-wayland-advanced-evidence"
+      - name: Exercise residual native Settings switches on private Weston Wayland
+        timeout-minutes: 6
+        run: |
+          mkdir -m 700 -p "$RUNNER_TEMP/native-wayland-settings-residual-evidence"
+          /usr/bin/python3 scripts/test-native-wayland-isolated.py \
+            --scenario settings-residual \
+            --binary rust-gtk/target/debug/codexbar-gtk-native \
+            --artifact-dir "$RUNNER_TEMP/native-wayland-settings-residual-evidence"
       - name: Exercise native Spend and Sessions with synthetic data
         run: ./scripts/smoke-native-usage-pages.sh
       - name: Exercise native Settings interactions with synthetic data
@@ -147,6 +155,13 @@ jobs:
           name: native-wayland-advanced-${{ github.run_id }}
           if-no-files-found: warn
           path: ${{ runner.temp }}/native-wayland-advanced-evidence/
+      - name: Retain synthetic residual Settings evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-wayland-settings-residual-${{ github.run_id }}
+          if-no-files-found: warn
+          path: ${{ runner.temp }}/native-wayland-settings-residual-evidence/
 
   python-free-runtime-proof:
     # Match the runtime image ABI; do not build against a moving newer distro.

@@ -1,0 +1,92 @@
+{
+  "scenario": "settings-residual",
+  "status": "pass",
+  "runtime": "private rootless Weston/Pixman, GDK_BACKEND=wayland",
+  "input_scope": "same-PID visible AT-SPI actions; not physical Wayland input",
+  "runner_source_commit": "373d0d259465aa11d8a0d74900ed92568fc0110a",
+  "native_runtime_source_commit": "3e442c1dfe46a5ba153fdccc406ae28f76f490d1",
+  "native_runtime_build": 108,
+  "native_runtime_binary_sha256": "e2423c661c4c466e55a5f9f85b91458d1c96328d6d594872c4bc7a72de32e75a",
+  "actions": [
+    {
+      "page": "Display",
+      "control": "Show used instead of remaining",
+      "preference": "usageBarsShowUsed",
+      "value": true,
+      "visible_states_asserted": [
+        "showing",
+        "visible",
+        "sensitive"
+      ],
+      "before": false,
+      "after": true,
+      "visible_result": "Settings applied; a refresh was queued.",
+      "full_settings_map_checked": true,
+      "capture": "switch-usage-bars.png"
+    },
+    {
+      "page": "Display",
+      "control": "Project usage at reset",
+      "preference": "quotaBurndownEnabled",
+      "value": false,
+      "visible_states_asserted": [
+        "showing",
+        "visible",
+        "sensitive"
+      ],
+      "before": true,
+      "after": false,
+      "visible_result": "Settings applied; a refresh was queued.",
+      "full_settings_map_checked": true,
+      "capture": "switch-quota-burndown.png"
+    },
+    {
+      "page": "Usage & Spend",
+      "control": "Enable local cost scans",
+      "preference": "costUsageEnabled",
+      "value": false,
+      "visible_states_asserted": [
+        "showing",
+        "visible",
+        "sensitive"
+      ],
+      "before": true,
+      "after": false,
+      "visible_result": "Settings applied; a refresh was queued.",
+      "full_settings_map_checked": true,
+      "capture": "switch-local-cost-scan.png"
+    }
+  ],
+  "settings_diff": {
+    "costUsageEnabled": [
+      true,
+      false
+    ],
+    "quotaBurndownEnabled": [
+      true,
+      false
+    ],
+    "usageBarsShowUsed": [
+      false,
+      true
+    ]
+  },
+  "cleanup": {
+    "app_exited": true,
+    "compositor_exited": true,
+    "private_runtime_removed": true,
+    "synthetic_home_removed": true,
+    "private_dbus_socket_removed": true
+  },
+  "screenshots": [
+    "switch-usage-bars.png",
+    "switch-quota-burndown.png",
+    "switch-local-cost-scan.png"
+  ],
+  "limits": [
+    "This is synthetic private-Weston evidence from the BUILD108 runtime binary; it does not test BUILD109 runtime metadata.",
+    "AT-SPI actions are not physical Wayland pointer or keyboard input.",
+    "Private Weston does not establish KDE shell placement, portal input, or host compositor parity."
+  ],
+  "sanitization": "Relative screenshot names only; synthetic settings deltas; process IDs, fixture paths, D-Bus addresses, and logs omitted."
+}

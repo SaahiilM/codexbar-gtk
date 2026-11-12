@@ -249,6 +249,103 @@ class NativeWaylandIsolatedHarnessTests(unittest.TestCase):
                              {"ok": True})
             probe.assert_called_once_with(sys.executable, "activate", 123, "fixture", identity)
 
+    def test_combo_without_accessible_action_is_not_accepted_as_activated_control(self):
+        combo = {"name": "Reset time format", "role": "combo box", "pid": 123,
+                 "identity": "123:app[0]/combo:combo box:Reset time format",
+                 "path": "app[0]/window:CodexBar Settings/panel:Display/panel[0]",
+                 "showing": True, "visible": True, "action_count": 0}
+        with mock.patch.object(MODULE, "atspi_probe", return_value={"matches": [combo]}):
+            with self.assertRaisesRegex(RuntimeError, "timed out waiting for visible AT-SPI control"):
+                MODULE.wait_visible_control(
+                    sys.executable, 123, "Reset time format", ("combo box",), "Display",
+                    timeout=0.1)
+        self.assertEqual(combo["pid"], 123)
+        self.assertEqual(combo["action_count"], 0)
+
+    def test_residual_settings_batch_is_exactly_three_switch_actions(self):
+        self.assertEqual(len(MODULE.RESIDUAL_SETTINGS), 3)
+        self.assertTrue(all(item[4] == "switch" for item in MODULE.RESIDUAL_SETTINGS))
+        self.assertEqual(
+            [item[2] for item in MODULE.RESIDUAL_SETTINGS],
+            ["usageBarsShowUsed", "quotaBurndownEnabled", "costUsageEnabled"],
+        )
+        source = SCRIPT.read_text(encoding="utf-8")
+        self.assertIn('choices=("matrix", "advanced", "settings-residual",', source)
+        self.assertIn('run_residual_settings(', source)
+        self.assertIn('if len(completed) != 3', source)
+        self.assertIn('full_settings_map_checked": True', source)
+        self.assertIn('"showing", "visible", "sensitive"', source)
+        self.assertNotIn('select_combo_option', source)
+        self.assertNotIn('select_open_popup_option', source)
+        self.assertNotIn('selection.select_child', source)
+        self.assertNotIn('"subtree"', source)
+
+    def test_six_combo_controls_are_isolated_as_explicit_unsupported_diagnostic(self):
+        self.assertEqual(len(MODULE.COMBO_DIAGNOSTIC_SETTINGS), 6)
+        self.assertTrue(all(item[4] == "combo" for item in MODULE.COMBO_DIAGNOSTIC_SETTINGS))
+        self.assertEqual(
+            [(item[2], item[5].split(": ", 1)[1]) for item in MODULE.COMBO_DIAGNOSTIC_SETTINGS],
+            [("resetTimesOption", "wait_for_preference resetTimesOption both"),
+             ("workdayTickAppearance", "wait_for_preference workdayTickAppearance highContrast"),
+             ("menuBarIconStyle", "wait_for_preference menuBarIconStyle iconPercent"),
+             ("unifiedIconSource", "wait_for_preference unifiedIconSource automatic"),
+             ("switcherRowsOption", "wait_for_preference switcherRowsOption details"),
+             ("costUsageBucketTimeZone", "wait_for_nonempty_preference costUsageBucketTimeZone")],
+        )
+        diagnostic = MODULE.combo_diagnostic_result(pathlib.Path("/bin/true"), "fixture-head")
+        self.assertEqual(diagnostic["scenario"], "settings-combo-diagnostic")
+        self.assertEqual(diagnostic["status"], "unsupported")
+        self.assertEqual(diagnostic["exit_code"], 3)
+        self.assertEqual(len(diagnostic["controls"]), 6)
+        self.assertTrue(all(row["status"] == "unsupported" for row in diagnostic["controls"]))
+        self.assertIn("not repeated", diagnostic["reason"])
+        self.assertEqual(diagnostic["historical_observation"]["source_commit"],
+                         "3e442c1dfe46a5ba153fdccc406ae28f76f490d1")
+        self.assertIn("private Wayland", diagnostic["historical_observation"]["scope"])
+        self.assertEqual(diagnostic["current_run"],
+                         "static mapping only; no application binary launched")
+        self.assertIn("not runtime evidence", " ".join(diagnostic["limits"]))
+        source = SCRIPT.read_text(encoding="utf-8")
+        self.assertIn('"settings-combo-diagnostic"', source)
+        self.assertIn('return 3', source)
+        self.assertIn('No GTK app, AT-SPI tree, or combo action was launched', source)
+
+    def test_combo_diagnostic_exactly_maps_six_x11_controls(self):
+        diagnostic = MODULE.combo_diagnostic_result(pathlib.Path("/bin/true"), "fixture-head")
+        self.assertEqual(
+            [(page, label, key, value) for page, label, key, value, _kind, _x11
+             in MODULE.COMBO_DIAGNOSTIC_SETTINGS],
+            [
+                ("Display", "Reset time format", "resetTimesOption", "absolute"),
+                ("Display", "Workday ticks", "workdayTickAppearance", "highContrast"),
+                ("Menu Bar", "Icon style", "menuBarIconStyle", "iconPercent"),
+                ("Menu Bar", "Icon shows", "unifiedIconSource", "first"),
+                ("Menu Bar", "Provider rows", "switcherRowsOption", "details"),
+                ("Usage & Spend", "Statistics time zone", "costUsageBucketTimeZone", "Africa/Abidjan"),
+            ],
+        )
+        self.assertEqual(
+            [row["x11_assertion"] for row in diagnostic["controls"]],
+            [row[5] for row in MODULE.COMBO_DIAGNOSTIC_SETTINGS],
+        )
+
+    def test_combo_diagnostic_cli_writes_unsupported_evidence_and_exits_three(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            artifact_dir = root / "diagnostic"
+            argv = [str(SCRIPT), "--binary", "/bin/true",
+                    "--scenario", "settings-combo-diagnostic",
+                    "--artifact-dir", str(artifact_dir)]
+            with mock.patch.object(sys, "argv", argv), \
+                    contextlib.redirect_stdout(io.StringIO()), \
+                    contextlib.redirect_stderr(io.StringIO()):
+                result = MODULE.main()
+            evidence = json.loads((artifact_dir / "evidence.json").read_text(encoding="utf-8"))
+            self.assertEqual(result, 3)
+            self.assertEqual(evidence["status"], "unsupported")
+            self.assertEqual(evidence["scenario"], "settings-combo-diagnostic")
+            self.assertFalse(any(path.name.startswith("weston") for path in artifact_dir.iterdir()))
+
     def test_visible_action_requires_one_enabled_same_process_actionable_node(self):
         row = {"name": "Export…", "role": "button", "pid": 123,
                "identity": "123:app[0]/button:Export", "showing": True,
@@ -275,7 +372,7 @@ class NativeWaylandIsolatedHarnessTests(unittest.TestCase):
 
     def test_advanced_scenario_is_opt_in_and_chooser_selection_is_exact(self):
         source = SCRIPT.read_text(encoding="utf-8")
-        self.assertIn('choices=("matrix", "advanced"), default="matrix"', source)
+        self.assertIn('choices=("matrix", "advanced", "settings-residual",', source)
         self.assertIn('if args.scenario == "advanced":\n                run_advanced_preferences(', source)
         helper = (SCRIPT.parent / "select-native-file-chooser.py").read_text(encoding="utf-8")
         self.assertIn("row_has_exact_filename(child, basename, app_pid)", helper)

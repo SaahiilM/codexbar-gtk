@@ -1,173 +1,60 @@
 #!/usr/bin/env bash
-# Install CodexBar (GTK) for the current user.
+# Default installer for the native Rust GTK application.
 #
-#   ./scripts/install.sh              install and enable autostart
-#   ./scripts/install.sh --no-autostart
-#   ./scripts/install.sh --uninstall
+#   ./scripts/install.sh [--prefix DIR] [--activate]
+#   ./scripts/install.sh --uninstall [--prefix DIR]
 #
-# The app is installed to ~/.local/bin/codexbar-gtk, the launcher entry to
-# ~/.local/share/applications and a systemd user service to
-# ~/.config/systemd/user/codexbar-gtk.service.
-
+# Default installation is additive and does not touch desktop/service
+# activation. --activate explicitly writes the ownership-tracked desktop and
+# user-service files; it never enables or starts the service. Rollback with
+# --uninstall restores files this installer backed up when their installed
+# hashes still match, and preserves user edits.
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT="$(dirname "$SCRIPT_DIR")"
-
-PREFIX="${PREFIX:-$HOME/.local}"
-BIN_DIR="${PREFIX}/bin"
-APP_DIR="${PREFIX}/share/codexbar-gtk"
-DATA_DIR="${PREFIX}/share/applications"
-ICON_DIR="${PREFIX}/share/icons/hicolor/scalable/apps"
-UNIT_DIR="${HOME}/.config/systemd/user"
-AUTOSTART_DIR="${HOME}/.config/autostart"
-CONFIG_DIR="${HOME}/.config/codexbar-gtk"
-
-AUTOSTART=1
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+ROOT="$(dirname -- "$SCRIPT_DIR")"
+INSTALLER="$SCRIPT_DIR/install-native.sh"
+PREFIX_DIR="${PREFIX:-${HOME:?HOME must identify the installation user}/.local}"
+ARTIFACT="${CODEXBAR_NATIVE_ARTIFACT:-}"
+ACTIVATE=""
 UNINSTALL=0
 
-for arg in "$@"; do
-  case "$arg" in
-    --no-autostart) AUTOSTART=0 ;;
-    --uninstall) UNINSTALL=1 ;;
-    *) echo "unknown option: $arg" >&2; exit 1 ;;
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --prefix) [[ $# -ge 2 ]] || { echo "--prefix requires a directory" >&2; exit 2; }; PREFIX_DIR="$2"; shift 2 ;;
+    --artifact) [[ $# -ge 2 ]] || { echo "--artifact requires a path" >&2; exit 2; }; ARTIFACT="$2"; shift 2 ;;
+    --activate) ACTIVATE=1; shift ;;
+    --no-activate|--no-autostart) ACTIVATE=0; shift ;;
+    --uninstall) UNINSTALL=1; shift ;;
+    *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
 done
 
-uninstall() {
-  rm -f "${BIN_DIR}/codexbar-gtk"
-  rm -rf "${APP_DIR}"
-  rm -f "${DATA_DIR}/codexbar-gtk.desktop"
-  rm -f "${ICON_DIR}/codexbar-gtk.svg"
-  rm -f "${UNIT_DIR}/codexbar-gtk.service"
-  rm -f "${AUTOSTART_DIR}/codexbar-gtk.desktop"
-  systemctl --user disable --now codexbar-gtk.service 2>/dev/null || true
-  echo "CodexBar removed."
-}
-
 if [[ "$UNINSTALL" == "1" ]]; then
-  uninstall
-  exit 0
+  exec "$INSTALLER" --uninstall --prefix "$PREFIX_DIR"
 fi
 
-echo "==> Installing CodexBar (GTK)"
-mkdir -p "${BIN_DIR}" "${APP_DIR}" "${DATA_DIR}" "${ICON_DIR}" "${UNIT_DIR}" "${CONFIG_DIR}"
-
-# Launcher ------------------------------------------------------------------
-cat > "${BIN_DIR}/codexbar-gtk" <<EOF
-#!/usr/bin/env bash
-# CodexBar (GTK) launcher
-export PYTHONPATH="${APP_DIR}\${PYTHONPATH:+:\$PYTHONPATH}"
-if [[ -d "${APP_DIR}/deps/typelibs" ]]; then
-  export GI_TYPELIB_PATH="${APP_DIR}/deps/typelibs\${GI_TYPELIB_PATH:+:\$GI_TYPELIB_PATH}"
-  export LD_LIBRARY_PATH="${APP_DIR}/deps/lib\${LD_LIBRARY_PATH:+:\$LD_LIBRARY_PATH}"
-fi
-export GDK_BACKEND="\${GDK_BACKEND:-x11}"
-exec python3 -m codexbar_gtk "\$@"
-EOF
-chmod +x "${BIN_DIR}/codexbar-gtk"
-
-# Application code ----------------------------------------------------------
-rm -rf "${APP_DIR}/codexbar_gtk"
-cp -r "${ROOT}/codexbar_gtk" "${APP_DIR}/codexbar_gtk"
-rm -rf "${APP_DIR}/assets/provider_icons"
-mkdir -p "${APP_DIR}/assets"
-cp -r "${ROOT}/assets/provider_icons" "${APP_DIR}/assets/provider_icons"
-find "${APP_DIR}" -name '__pycache__' -type d -prune -exec rm -rf {} + 2>/dev/null || true
-
-# Private runtime dependencies (GTK4 typelibs, libadwaita, the cairo bridge)
-if [[ -d "${ROOT}/.deps/root/usr/lib/x86_64-linux-gnu" ]]; then
-  rm -rf "${APP_DIR}/deps"
-  mkdir -p "${APP_DIR}/deps/typelibs" "${APP_DIR}/deps/lib"
-  cp -a "${ROOT}/.deps/root/usr/lib/x86_64-linux-gnu/girepository-1.0/." "${APP_DIR}/deps/typelibs/" 2>/dev/null || true
-  cp -a "${ROOT}/.deps/root/usr/lib/x86_64-linux-gnu/"*.so* "${APP_DIR}/deps/lib/" 2>/dev/null || true
-  for so in "${ROOT}"/.deps/_gi_cairo*.so "${ROOT}"/.deps/root/usr/lib/python3/dist-packages/gi/_gi_cairo*.so; do
-    if [[ -e "$so" ]]; then cp -a "$so" "${APP_DIR}/deps/"; fi
-  done
+if [[ -z "$ARTIFACT" ]]; then
+  echo "==> Building native CodexBar (Rust GTK)"
+  PROFILE="${PROFILE:-release}" OUT_DIR="${OUT_DIR:-$ROOT/rust-gtk/target/native}" \
+    "$SCRIPT_DIR/build-native.sh"
+  ARTIFACT="${OUT_DIR:-$ROOT/rust-gtk/target/native}/codexbar-gtk-native"
 fi
 
-# Icon ----------------------------------------------------------------------
-python3 - "$ICON_DIR" <<'PY'
-import os
-import sys
-
-sys.path.insert(0, os.path.join(os.environ.get("PREFIX", ""), "share/codexbar-gtk"))
-icon_dir = sys.argv[1]
-os.makedirs(icon_dir, exist_ok=True)
-template = """<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
-  <defs>
-    <clipPath id="cb-rounded">
-      <rect x="2.5" y="6.5" width="19" height="11" rx="4.5" ry="4.5"/>
-    </clipPath>
-  </defs>
-  <rect x="2.5" y="6.5" width="19" height="11" rx="4.5" ry="4.5" fill="#ffffff" fill-opacity="0.16"/>
-  <g clip-path="url(#cb-rounded)">
-    <rect x="2.5" y="6.5" width="13" height="11" fill="#10A37F"/>
-  </g>
-  <rect x="2.5" y="6.5" width="19" height="11" rx="4.5" ry="4.5" fill="none" stroke="#ffffff" stroke-opacity="0.85" stroke-width="1.4"/>
-</svg>
-"""
-with open(os.path.join(icon_dir, "codexbar-gtk.svg"), "w", encoding="utf-8") as handle:
-    handle.write(template)
-PY
-
-# Desktop entry -------------------------------------------------------------
-cat > "${DATA_DIR}/codexbar-gtk.desktop" <<EOF
-[Desktop Entry]
-Type=Application
-Name=CodexBar
-GenericName=AI coding quota monitor
-Comment=Show usage limits for OpenAI Codex, Claude Code and more
-Exec="${BIN_DIR}/codexbar-gtk"
-Icon=codexbar-gtk
-Terminal=false
-Categories=Utility;Development;
-Keywords=codex;claude;usage;quota;limits;
-StartupNotify=false
-EOF
-
-# systemd user service ------------------------------------------------------
-# The service starts before plasmashell so that the tray item is registered
-# before Plasma creates its StatusNotifierItem host. Plasma only shows tray
-# items that already existed when the host came up.
-cat > "${UNIT_DIR}/codexbar-gtk.service" <<EOF
-[Unit]
-Description=CodexBar (GTK) — AI coding quota monitor
-PartOf=graphical-session.target
-Before=plasma-plasmashell.service
-After=dbus.service
-
-[Service]
-Type=simple
-ExecStart="${BIN_DIR}/codexbar-gtk"
-Restart=on-failure
-RestartSec=5
-Slice=app.slice
-
-[Install]
-WantedBy=graphical-session.target
-EOF
-
-if [[ "$AUTOSTART" == "1" ]]; then
-  systemctl --user daemon-reload
-  systemctl --user enable codexbar-gtk.service >/dev/null 2>&1 || true
-
-  mkdir -p "${AUTOSTART_DIR}"
-  cat > "${AUTOSTART_DIR}/codexbar-gtk.desktop" <<EOF
-[Desktop Entry]
-Type=Application
-Name=CodexBar
-Exec="${BIN_DIR}/codexbar-gtk"
-X-GNOME-Autostart-enabled=true
-Terminal=false
-EOF
+ARGS=(--artifact "$ARTIFACT" --prefix "$PREFIX_DIR")
+if [[ "$ACTIVATE" == "1" ]]; then
+  ARGS+=(--activate)
+elif [[ "$ACTIVATE" == "0" ]]; then
+  ARGS+=(--no-activate)
 fi
 
-echo "==> Installed."
-echo "    launcher : ${BIN_DIR}/codexbar-gtk"
-echo "    app code : ${APP_DIR}"
-echo "    settings : ${CONFIG_DIR}/settings.json"
-echo
-echo "Start it with:  ${BIN_DIR}/codexbar-gtk"
-echo "Open settings :  ${BIN_DIR}/codexbar-gtk --settings"
+"$INSTALLER" "${ARGS[@]}"
+
+if [[ -x "$PREFIX_DIR/bin/codexbar-gtk" ]]; then
+  echo "Existing legacy launcher retained: $PREFIX_DIR/bin/codexbar-gtk" >&2
+  echo "It was not replaced. To remove that legacy package, first roll back the native install, then use scripts/install-python.sh --uninstall." >&2
+fi
+
+echo "Native binary installed at: $PREFIX_DIR/bin/codexbar-gtk-native"
+echo "Desktop/service activation: ${ACTIVATE:-preserved from manifest; first install stays inactive}"
+echo "Rollback: scripts/install.sh --uninstall --prefix '$PREFIX_DIR'"

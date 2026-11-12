@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
-# Opt-in source-tree launcher for the native Rust GTK application.
+# Source-tree launcher for the native Rust GTK application.
 #
-# This intentionally leaves run.sh and the installed Python launcher alone
-# until the native UI gate passes. An installed native package already
-# provides PREFIX/bin/codexbar-gtk-native and does not need this script.
+# The installed native package provides PREFIX/bin/codexbar-gtk-native and
+# does not need this script. Explicit Python parity remains at run-python.sh.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"

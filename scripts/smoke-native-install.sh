@@ -49,6 +49,7 @@ fi
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 ok() { echo "ok: $*"; }
+command -v xwininfo >/dev/null 2>&1 || fail "xwininfo is required to verify native launch routes"
 
 "$ROOT/scripts/test-native-activation-renderer.sh"
 
@@ -104,10 +105,10 @@ CLI
 chmod 700 "$SCRATCH/fake-codexbar"
 export CODEXBAR_CLI="$SCRATCH/fake-codexbar"
 
-[[ -x "$ROOT/rust-gtk/target/debug/codexbar-gtk-native" ]] || fail "debug binary missing"
-[[ -x "$ROOT/rust-gtk/target/release/codexbar-gtk-native" ]] || fail "release binary missing"
-DEBUG_BIN="$ROOT/rust-gtk/target/debug/codexbar-gtk-native"
-RELEASE_BIN="$ROOT/rust-gtk/target/release/codexbar-gtk-native"
+DEBUG_BIN="${NATIVE_DEBUG_ARTIFACT:-$ROOT/rust-gtk/target/debug/codexbar-gtk-native}"
+RELEASE_BIN="${NATIVE_RELEASE_ARTIFACT:-$ROOT/rust-gtk/target/release/codexbar-gtk-native}"
+[[ -x "$DEBUG_BIN" ]] || fail "debug binary missing: $DEBUG_BIN"
+[[ -x "$RELEASE_BIN" ]] || fail "release binary missing: $RELEASE_BIN"
 DEBUG_SHA="$(sha256sum "$DEBUG_BIN" | awk '{print $1}')"
 RELEASE_SHA="$(sha256sum "$RELEASE_BIN" | awk '{print $1}')"
 [[ "$DEBUG_SHA" != "$RELEASE_SHA" ]] || fail "identical artifacts"
@@ -163,7 +164,7 @@ probe_launch() {
   local expect_sha="$1" label="$2"
   local app_log="$SCRATCH/app-${label}.log"
   local t0=$SECONDS
-  "$BIN_DEST" > "$app_log" 2>&1 &
+  CODEXBAR_NATIVE_BINARY="$BIN_DEST" "$ROOT/run.sh" "$@" > "$app_log" 2>&1 &
   local pid=$!
   APP_PIDS="$APP_PIDS $pid"
   echo "[$label] t=0s launched pid=$pid" >&2
@@ -198,6 +199,25 @@ probe_launch() {
     APP_PIDS="$(tr " " '\n' <<<"$APP_PIDS" | grep -vx "$pid" | tr '\n' ' ' || true)"
     fail "NameHasOwner failed after 10s ($label); log: $app_log"
   fi
+  local expected_window=""
+  case " $* " in
+    *" --settings "*) expected_window="CodexBar Settings" ;;
+    *" --about "*) expected_window="About CodexBar GTK" ;;
+  esac
+  if [[ -n "$expected_window" ]]; then
+    local window_tree="" window_deadline=$((SECONDS + 10))
+    while [[ "$SECONDS" -lt "$window_deadline" ]]; do
+      window_tree="$(xwininfo -root -tree 2>/dev/null || true)"
+      grep -Fq "\"$expected_window\"" <<<"$window_tree" && break
+      sleep 0.1
+    done
+    grep -Fq "\"$expected_window\"" <<<"$window_tree" || {
+      echo "--- window tree ($label) ---" >&2; echo "$window_tree" >&2
+      echo "--- app log ($label) ---" >&2; cat "$app_log" >&2 || true
+      fail "$label run.sh arguments did not open $expected_window"
+    }
+    ok "$label default run.sh route opened $expected_window"
+  fi
   local conn=""
   conn="$(timeout 5 gdbus call --session --dest org.freedesktop.DBus --object-path /org/freedesktop/DBus --method org.freedesktop.DBus.GetConnectionUnixProcessID com.steipete.CodexBarGTK 2>/dev/null || true)"
   local owner_pid
@@ -222,13 +242,13 @@ probe_launch() {
   APP_PIDS="$(tr " " '\n' <<<"$APP_PIDS" | grep -vx "$pid" | tr '\n' ' ' || true)"
   ok "launched $label: owner pid $owner_pid exe+hash verified"
 }
-probe_launch "$DEBUG_SHA" debug
+probe_launch "$DEBUG_SHA" debug --settings
 
 echo "=== 4. upgrade release (no flag preserves activated=0) ==="
 "$INSTALLER" --artifact "$RELEASE_BIN" --prefix "$PREFIX"
 [[ "$(sha256sum "$BIN_DEST" | awk '{print $1}')" == "$RELEASE_SHA" ]] || fail "upgrade did not swap"
 grep -q "^activated=0$" "$MANIFEST" || fail "upgrade must preserve activated=0"
-probe_launch "$RELEASE_SHA" release
+probe_launch "$RELEASE_SHA" release --about
 
 echo "=== 5. rollback to debug ==="
 "$INSTALLER" --artifact "$DEBUG_BIN" --prefix "$PREFIX"
@@ -253,6 +273,8 @@ echo "=== 7. activate: backup, upgrade preserves provenance, uninstall restores 
 [[ ! -e "$TEST_HOME/.config/autostart/codexbar-gtk.desktop" ]] || fail "activate created autostart entry"
 grep -q "X-CodexBar-DesktopFile" "$PY_DSK" || fail "desktop marker"
 grep -q "X-CodexBar-Service" "$PY_SVC" || fail "service marker"
+grep -Fqx "Exec=\"$BIN_DEST\" %U" "$PY_DSK" || fail "desktop Exec does not target installed native binary"
+grep -Fqx "ExecStart=\"$BIN_DEST\"" "$PY_SVC" || fail "service ExecStart does not target installed native binary"
 "$INSTALLER" --artifact "$DEBUG_BIN" --prefix "$PREFIX"
 grep -q "^activated=1$" "$MANIFEST" || fail "upgrade reset activation"
 [[ "$(sha256sum "$PY_DSK.pre-native" | awk '{print $1}')" == "$PY_DSK_SHA" ]] || fail "upgrade overwrote desktop backup"

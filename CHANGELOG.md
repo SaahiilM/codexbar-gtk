@@ -10,6 +10,17 @@ UG remains **NOT PASSED**.
 
 - See migration audit E210 for local checks, base evidence, and limitations.
 
+## 0.82.0 (106) — 2026-11-12
+
+Add an accessible, keyboard-focusable Open Settings action to the native empty
+dashboard so users can enable a provider. The existing `app.settings` action
+handles activation. CI now runs the display-required widget regression under
+private Xvfb and D-Bus. This is a focused recovery feature; UG remains
+**NOT PASSED**, and Python remains the default launcher.
+
+- See migration audit E209 for local source/binary identity, capture provenance,
+  checks, and the pending base/CI reconciliation.
+
 ## 0.82.0 (105) — 2026-11-12
 
 Adds a bounded advanced Settings acceptance scenario to the required private

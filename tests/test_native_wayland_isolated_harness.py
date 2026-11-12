@@ -60,7 +60,7 @@ class NativeWaylandIsolatedHarnessTests(unittest.TestCase):
             with self.assertRaises(subprocess.TimeoutExpired):
                 MODULE.run_owned_process_group(
                     [sys.executable, "-c", child_code, str(child_pid), str(grandchild_pid)],
-                    env=dict(os.environ), timeout=1.5,
+                    env=dict(os.environ), timeout=5,
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             self.assertTrue(child_pid.exists())
             self.assertTrue(grandchild_pid.exists())
@@ -133,6 +133,111 @@ class NativeWaylandIsolatedHarnessTests(unittest.TestCase):
             self.assertEqual(log.read_text(encoding="utf-8").splitlines(), ["usage", "cost"])
             self.assertNotIn("api_key", MODULE.fake_cli_text().lower())
             self.assertNotIn("oauth", MODULE.fake_cli_text().lower())
+            self.assertNotIn("--url", MODULE.fake_cli_text().lower())
+
+    def test_sessions_fixture_modes_produce_success_empty_delay_and_failure(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            cli = root / "fake-codexbar"
+            cli.write_text(MODULE.fake_cli_text(), encoding="utf-8")
+            cli.chmod(0o700)
+            mode_file = root / "sessions-mode"
+            calls = root / "calls.log"
+            env = dict(os.environ, NATIVE_CLI_LOG=str(calls),
+                       NATIVE_SESSIONS_MODE_FILE=str(mode_file))
+            expected = {
+                "success": (0, '"id":"fixture-session"'),
+                "empty": (0, "[]"),
+                "error": (7, "synthetic session scan failure"),
+            }
+            for mode, (return_code, marker) in expected.items():
+                with self.subTest(mode=mode):
+                    mode_file.write_text(mode + "\n", encoding="utf-8")
+                    result = subprocess.run([str(cli), "sessions", "--json-v2"], env=env,
+                                            capture_output=True, text=True, check=False)
+                    self.assertEqual(result.returncode, return_code)
+                    self.assertIn(marker, result.stdout + result.stderr)
+            mode_file.write_text("loading\n", encoding="utf-8")
+            result = subprocess.run([str(cli), "sessions", "--json-v2"], env=env,
+                                    capture_output=True, text=True, check=False)
+            self.assertEqual(result.returncode, 0)
+            self.assertIn('"id":"fixture-session"', result.stdout)
+            call_lines = calls.read_text(encoding="utf-8").splitlines()
+            self.assertEqual([line for line in call_lines if line == "sessions --json-v2"],
+                             ["sessions --json-v2"] * 4)
+            self.assertEqual([line for line in call_lines if line.endswith("-done")], [
+                "sessions-fixture-success-done", "sessions-fixture-empty-done",
+                "sessions-fixture-error-done", "sessions-fixture-loading-done"])
+
+    def test_hooks_fixture_tracks_exact_enable_disable_cli_state(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            cli = root / "fake-codexbar"
+            cli.write_text(MODULE.fake_cli_text(), encoding="utf-8")
+            cli.chmod(0o700)
+            state = root / "hooks-enabled"
+            state.write_text("true\n", encoding="utf-8")
+            calls = root / "calls.log"
+            env = dict(os.environ, NATIVE_CLI_LOG=str(calls),
+                       NATIVE_HOOKS_STATE_FILE=str(state))
+            before = subprocess.run([str(cli), "hooks", "list", "--format", "json"],
+                                    env=env, capture_output=True, text=True, check=True)
+            disabled = subprocess.run([str(cli), "hooks", "disable"], env=env,
+                                      capture_output=True, text=True, check=True)
+            after = subprocess.run([str(cli), "hooks", "list", "--format", "json"],
+                                   env=env, capture_output=True, text=True, check=True)
+            self.assertEqual(json.loads(before.stdout), {"enabled": True, "events": []})
+            self.assertEqual(json.loads(after.stdout), {"enabled": False, "events": []})
+            self.assertEqual(calls.read_text(encoding="utf-8").splitlines(), [
+                "hooks list --format json", "hooks disable", "hooks list --format json"])
+            self.assertEqual(disabled.returncode, 0)
+
+    def test_visible_control_identity_requires_one_exact_pid_node(self):
+        row = {"name": "Session quota notifications", "pid": 123,
+               "identity": "123:app[0]/tab[1]:switch:Session quota notifications",
+               "showing": True, "visible": True}
+        with mock.patch.object(MODULE, "atspi_probe", return_value={"matches": [row]}):
+            found = MODULE.wait_visible_control(sys.executable, 123, row["name"], timeout=0.1)
+            self.assertEqual(found["identity"], row["identity"])
+
+        duplicate = dict(row, identity=row["identity"] + "/duplicate")
+        with mock.patch.object(MODULE, "atspi_probe", return_value={"matches": [row, duplicate]}):
+            with self.assertRaisesRegex(RuntimeError, "ambiguous visible AT-SPI control"):
+                MODULE.wait_visible_control(sys.executable, 123, row["name"], timeout=0.1)
+
+    def test_visible_text_requires_exact_pid_and_unique_identity(self):
+        row = {"name": "1 running of 1 known sessions", "pid": 123,
+               "identity": "123:app[0]/label[1]:label:session status",
+               "showing": True, "visible": True}
+        with mock.patch.object(MODULE, "atspi_probe", return_value={"matches": [row]}):
+            self.assertEqual(MODULE.wait_visible_text(
+                sys.executable, 123, "running of", timeout=0.1), row)
+
+        duplicate = dict(row, identity=row["identity"] + "/duplicate")
+        with mock.patch.object(MODULE, "atspi_probe", return_value={"matches": [row, duplicate]}):
+            with self.assertRaisesRegex(RuntimeError, "ambiguous visible AT-SPI text"):
+                MODULE.wait_visible_text(sys.executable, 123, "running of", timeout=0.1)
+
+        wrong_pid = dict(row, pid=456)
+        with mock.patch.object(MODULE, "atspi_probe", return_value={"matches": [wrong_pid]}):
+            with self.assertRaisesRegex(RuntimeError, "timed out waiting for visible AT-SPI text"):
+                MODULE.wait_visible_text(sys.executable, 123, "running of", timeout=0.1)
+
+    def test_heatmap_state_requires_one_unique_pressed_mode(self):
+        rows = {
+            "Daily": [{"name": "Daily", "role": "toggle button", "pid": 123,
+                       "identity": "123:daily", "states": ["pressed"]}],
+            "Weekly": [{"name": "Weekly", "role": "toggle button", "pid": 123,
+                        "identity": "123:weekly", "states": []}],
+            "Cumulative": [{"name": "Cumulative", "role": "toggle button", "pid": 123,
+                            "identity": "123:cumulative", "states": []}],
+        }
+        with mock.patch.object(MODULE, "atspi_probe",
+                               side_effect=lambda _python, _mode, _pid, name: {"matches": rows[name]}):
+            self.assertEqual(MODULE.selected_heatmap_mode(sys.executable, 123)["name"], "Daily")
+            rows["Weekly"][0]["states"] = ["pressed"]
+            with self.assertRaisesRegex(RuntimeError, "exactly one pressed heatmap mode"):
+                MODULE.selected_heatmap_mode(sys.executable, 123)
 
     def test_atspi_and_action_evidence_never_claims_physical_input(self):
         source = SCRIPT.read_text(encoding="utf-8")

@@ -249,6 +249,59 @@ class NativeWaylandIsolatedHarnessTests(unittest.TestCase):
                              {"ok": True})
             probe.assert_called_once_with(sys.executable, "activate", 123, "fixture", identity)
 
+    def test_combo_option_selection_is_bound_to_app_pid_and_visible_control(self):
+        combo = {"name": "Icon style", "role": "combo box",
+                 "identity": "123:app[0]/combo:combo box:Icon style",
+                 "pid": 123, "showing": True, "visible": True, "action_count": 1}
+        selected = {"ok": True, "pid": 123,
+                    "combo_identity": combo["identity"], "option": "Icon and percentage",
+                    "option_index": 1, "selected_after": True,
+                    "action": "Atspi.Selection.select_child"}
+        with mock.patch.object(MODULE, "atspi_probe", return_value=selected) as probe:
+            result = MODULE.select_combo_option(sys.executable, 123, combo, "Icon and percentage")
+        self.assertEqual(result["combo_identity"], combo["identity"])
+        probe.assert_called_once_with(sys.executable, "select-child", 123, "Icon style",
+                                      combo["identity"], "Icon and percentage")
+        for invalid in (dict(selected, ok=False), dict(selected, pid=456)):
+            with self.subTest(invalid=invalid), mock.patch.object(MODULE, "atspi_probe",
+                                                                    return_value=invalid):
+                with self.assertRaisesRegex(RuntimeError, "combo selection failed closed"):
+                    MODULE.select_combo_option(sys.executable, 123, combo, "Icon and percentage")
+
+    def test_combo_control_requires_action_or_selection_and_reports_contract_gap(self):
+        combo = {"name": "Reset time format", "role": "combo box", "pid": 123,
+                 "identity": "123:app[0]/combo:combo box:Reset time format",
+                 "path": "app[0]/window:CodexBar Settings/panel:Display/panel[0]",
+                 "showing": True, "visible": True, "action_count": 0,
+                 "selection_available": True}
+        with mock.patch.object(MODULE, "atspi_probe", return_value={"matches": [combo]}):
+            self.assertEqual(MODULE.wait_visible_control(
+                sys.executable, 123, "Reset time format", ("combo box",), "Display",
+                timeout=0.1, allow_selection=True), combo)
+
+        unsupported = dict(combo, selection_available=False)
+        with mock.patch.object(MODULE, "atspi_probe", return_value={"matches": [unsupported]}):
+            with self.assertRaisesRegex(RuntimeError, "neither AT-SPI AccessibleAction nor Selection") as caught:
+                MODULE.wait_visible_control(
+                    sys.executable, 123, "Reset time format", ("combo box",), "Display",
+                    timeout=0.1, allow_selection=True)
+        self.assertEqual(caught.exception.contract_details[0]["identity"], combo["identity"])
+        self.assertEqual(caught.exception.contract_details[0]["selection_available"], False)
+
+    def test_residual_settings_batch_is_opt_in_and_uses_accessible_selection(self):
+        source = SCRIPT.read_text(encoding="utf-8")
+        self.assertIn('choices=("matrix", "advanced", "settings-residual"), default="matrix"', source)
+        self.assertIn('"Reset time format", "resetTimesOption", "absolute", "combo"', source)
+        self.assertIn('"Statistics time zone", "costUsageBucketTimeZone", "Africa/Abidjan", "combo"', source)
+        self.assertIn('run_residual_settings(', source)
+        self.assertIn('"full_settings_map_checked": True', source)
+        self.assertIn('"settings_diff"', source)
+        self.assertIn('elif mode == "select-child":', MODULE.AT_SPI_PROBE)
+        self.assertIn('showing and visible', MODULE.AT_SPI_PROBE)
+        self.assertIn('selection.select_child(index)', MODULE.AT_SPI_PROBE)
+        self.assertIn('selection.is_child_selected(index)', MODULE.AT_SPI_PROBE)
+        self.assertIn('if args.scenario == "matrix":', source)
+
     def test_visible_action_requires_one_enabled_same_process_actionable_node(self):
         row = {"name": "Export…", "role": "button", "pid": 123,
                "identity": "123:app[0]/button:Export", "showing": True,
@@ -275,7 +328,7 @@ class NativeWaylandIsolatedHarnessTests(unittest.TestCase):
 
     def test_advanced_scenario_is_opt_in_and_chooser_selection_is_exact(self):
         source = SCRIPT.read_text(encoding="utf-8")
-        self.assertIn('choices=("matrix", "advanced"), default="matrix"', source)
+        self.assertIn('choices=("matrix", "advanced", "settings-residual"), default="matrix"', source)
         self.assertIn('if args.scenario == "advanced":\n                run_advanced_preferences(', source)
         helper = (SCRIPT.parent / "select-native-file-chooser.py").read_text(encoding="utf-8")
         self.assertIn("row_has_exact_filename(child, basename, app_pid)", helper)

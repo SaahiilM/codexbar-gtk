@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Run a bounded native GTK Wayland action smoke in a private Weston session.
 
-This harness exercises app GActions and one AT-SPI action. Those are observable
-GTK actions, not physical Wayland pointer/key input or KDE shell parity.
+This harness exercises app GActions and AT-SPI actions/selections. Those are
+observable GTK operations, not physical Wayland input or KDE shell parity.
 """
 
 from __future__ import annotations
@@ -31,6 +31,17 @@ NOTIFICATION_CONTROLS = (
     "Quota warning notifications",
     "Limit reset notifications",
     "Pace warnings",
+)
+RESIDUAL_SETTINGS = (
+    ("Display", "Show used instead of remaining", "usageBarsShowUsed", True, "switch"),
+    ("Display", "Project usage at reset", "quotaBurndownEnabled", False, "switch"),
+    ("Usage & Spend", "Enable local cost scans", "costUsageEnabled", False, "switch"),
+    ("Display", "Reset time format", "resetTimesOption", "absolute", "combo"),
+    ("Display", "Workday ticks", "workdayTickAppearance", "highContrast", "combo"),
+    ("Menu Bar", "Icon style", "menuBarIconStyle", "iconPercent", "combo"),
+    ("Menu Bar", "Icon shows", "unifiedIconSource", "first", "combo"),
+    ("Menu Bar", "Provider rows", "switcherRowsOption", "details", "combo"),
+    ("Usage & Spend", "Statistics time zone", "costUsageBucketTimeZone", "Africa/Abidjan", "combo"),
 )
 HOST_SESSION_KEYS = (
     "DISPLAY", "WAYLAND_DISPLAY", "WAYLAND_SOCKET", "XAUTHORITY",
@@ -133,6 +144,11 @@ elif mode in ("states", "snapshot"):
                 try:
                     action_iface = node.get_action_iface()
                     entry["action_count"] = action_iface.get_n_actions() if action_iface else 0
+                    selection_iface = node.get_selection_iface()
+                    entry["selection_available"] = selection_iface is not None
+                    entry["child_count"] = node.get_child_count()
+                    entry["selected_child_count"] = (
+                        selection_iface.get_n_selected_children() if selection_iface else 0)
                     entry["showing"] = state_set.contains(Atspi.StateType.SHOWING)
                     entry["visible"] = state_set.contains(Atspi.StateType.VISIBLE)
                     entry["enabled"] = state_set.contains(Atspi.StateType.ENABLED)
@@ -162,7 +178,8 @@ elif mode == "tree":
 elif mode == "activate":
     matches = [(node, role, path) for node, name, role, path in nodes
                if name == expected and role in ("check box", "switch", "toggle button",
-                                                "button", "push button", "page tab", "tab")
+                                                "button", "push button", "page tab", "tab",
+                                                "combo box")
                and (expected_identity is None
                     or f"{pid}:{path}:{role}:{name}" == expected_identity)]
     if len(matches) != 1:
@@ -204,6 +221,64 @@ elif mode == "activate":
                       "after_pressed": bool(after) if role == "toggle button" else None,
                       "changed": bool(after != before), "action_succeeded": bool(ok)}))
     raise SystemExit(0 if ok and (after != before if toggling_role else True) else 6)
+elif mode == "select-child":
+    expected_identity = args[3]
+    expected_option = args[4]
+    matches = [(node, role, path) for node, name, role, path in nodes
+               if name == expected and role == "combo box"
+               and f"{pid}:{path}:{role}:{name}" == expected_identity]
+    if len(matches) != 1:
+        print(json.dumps({"ok": False, "reason": "expected exactly one identified combo box",
+                          "count": len(matches)}))
+        raise SystemExit(3)
+    combo, role, path = matches[0]
+    try:
+        node_pid = int(combo.get_process_id())
+        state_set = combo.get_state_set()
+        states = sorted(state.value_nick for state in state_set.get_states())
+        visible = state_set.contains(Atspi.StateType.VISIBLE)
+        showing = state_set.contains(Atspi.StateType.SHOWING)
+        selection = combo.get_selection_iface()
+        children = []
+        for index in range(min(combo.get_child_count(), 1000)):
+            child = combo.get_child_at_index(index)
+            children.append((index, child, child.get_name() or "", child.get_role_name() or ""))
+    except Exception as error:
+        print(json.dumps({"ok": False, "reason": f"combo selection inspection failed: {error}"}))
+        raise SystemExit(4)
+    candidates = [(index, child, child_role) for index, child, name, child_role in children
+                  if name == expected_option]
+    if node_pid != pid or not (showing and visible) or selection is None:
+        print(json.dumps({"ok": False, "reason": "combo is not a visible same-PID selectable control",
+                          "pid": node_pid, "states": states,
+                          "selection_available": selection is not None,
+                          "child_names": [name for _, _, name, _ in children[:80]]}))
+        raise SystemExit(5)
+    if len(candidates) != 1:
+        print(json.dumps({"ok": False, "reason": "expected exactly one combo child with selected value",
+                          "count": len(candidates), "child_names": [
+                              {"name": name, "role": child_role} for _, _, name, child_role in children[:80]]}))
+        raise SystemExit(6)
+    index, child, child_role = candidates[0]
+    before_selected = bool(selection.is_child_selected(index))
+    ok = bool(before_selected or selection.select_child(index))
+    deadline = time.monotonic() + 5
+    after_selected = False
+    while ok and time.monotonic() < deadline:
+        try:
+            after_selected = bool(selection.is_child_selected(index))
+        except Exception:
+            after_selected = False
+        if after_selected:
+            break
+        time.sleep(0.05)
+    print(json.dumps({"ok": bool(ok and after_selected), "pid": node_pid,
+                      "combo_identity": expected_identity, "combo_states": states,
+                      "option": expected_option, "option_role": child_role,
+                      "option_index": index, "already_selected": before_selected,
+                      "selected_after": after_selected,
+                      "action": "Atspi.Selection.select_child"}))
+    raise SystemExit(0 if ok and after_selected else 7)
 else:
     raise SystemExit("unknown AT-SPI probe mode")
 '''
@@ -436,10 +511,9 @@ def wait_until(description: str, predicate, timeout: float = 15.0):
 
 
 def atspi_probe(python: str, mode: str, pid: int, expected: str,
-                expected_identity: str | None = None) -> dict:
+                *extra_args: str) -> dict:
     command = [python, "-c", AT_SPI_PROBE, mode, str(pid), expected]
-    if expected_identity is not None:
-        command.append(expected_identity)
+    command.extend(extra_args)
     result = subprocess.run(command,
                             capture_output=True, text=True, timeout=15)
     if result.returncode:
@@ -460,6 +534,15 @@ def activate_accessible(python: str, pid: int, name: str,
     result = atspi_probe(python, "activate", pid, name, expected_identity)
     if not result.get("ok"):
         raise RuntimeError(f"AT-SPI action failed closed for {name!r}: {result}")
+    return result
+
+
+def select_combo_option(python: str, pid: int, row: dict, option: str) -> dict:
+    """Select the exact visible same-PID child through AT-SPI Selection."""
+    result = atspi_probe(python, "select-child", pid, row["name"], row["identity"], option)
+    if not result.get("ok") or result.get("pid") != pid:
+        raise RuntimeError(f"AT-SPI combo selection failed closed for {option!r}: {result}")
+    result["combo_identity"] = row["identity"]
     return result
 
 
@@ -494,7 +577,8 @@ def selected_range_control(python: str, pid: int, expected: str) -> dict | None:
 def wait_visible_control(python: str, pid: int, name: str,
                          expected_roles: tuple[str, ...],
                          expected_context: str,
-                         timeout: float = 12.0) -> dict:
+                         timeout: float = 12.0,
+                         allow_selection: bool = False) -> dict:
     last_candidates = []
     def visible_unique_node():
         snapshot = atspi_probe(python, "snapshot", pid, name)
@@ -502,12 +586,30 @@ def wait_visible_control(python: str, pid: int, name: str,
                 if row.get("name") == name and row.get("pid") == pid
                 and row.get("role") in expected_roles]
         last_candidates[:] = [{key: row.get(key) for key in
-                               ("identity", "path", "role", "showing", "visible", "action_count")}
+                               ("identity", "path", "role", "showing", "visible", "action_count",
+                                "selection_available")}
                               for row in named_rows[:8]]
         rows = [row for row in named_rows
                 if f":{expected_context}/panel[" in row.get("path", "")
                 and row.get("showing") and row.get("visible")
-                and row.get("action_count", 0) > 0]
+                and (row.get("action_count", 0) > 0
+                     or (allow_selection and row.get("selection_available")))]
+        visible_candidates = [row for row in named_rows
+                              if f":{expected_context}/panel[" in row.get("path", "")
+                              and row.get("showing") and row.get("visible")]
+        unsupported_combos = [row for row in visible_candidates
+                              if row.get("role") == "combo box"
+                              and row.get("action_count", 0) == 0
+                              and not row.get("selection_available")]
+        if allow_selection and unsupported_combos:
+            error = RuntimeError("visible GTK combo exposes neither AT-SPI AccessibleAction "
+                                 "nor Selection interface")
+            error.contract_details = [
+                {key: row.get(key) for key in
+                 ("name", "pid", "identity", "path", "role", "action_count",
+                  "selection_available")}
+                for row in unsupported_combos]
+            raise error
         identities = {row["identity"]: row for row in rows}
         if len(identities) > 1:
             raise RuntimeError(f"ambiguous visible actionable AT-SPI control {name!r}: "
@@ -517,6 +619,8 @@ def wait_visible_control(python: str, pid: int, name: str,
         return wait_until(f"visible AT-SPI control {name!r}", visible_unique_node,
                           timeout=timeout)
     except RuntimeError as error:
+        if hasattr(error, "contract_details"):
+            raise
         raise RuntimeError(f"{error}; same-PID named candidates={last_candidates!r}") from error
 
 
@@ -830,6 +934,127 @@ def run_advanced_preferences(python: str, pid: int, prefs: pathlib.Path,
     ]
 
 
+def run_residual_settings(python: str, pid: int, prefs: pathlib.Path,
+                          evidence: dict, screenshooter: pathlib.Path,
+                          env: dict[str, str], scratch: pathlib.Path,
+                          artifact_dir: pathlib.Path) -> None:
+    """Exercise still-open conventional Settings controls through visible AT-SPI nodes."""
+    gaction("settings")
+    title = wait_until("native Settings window", lambda: atspi_probe(
+        python, "title", pid, "CodexBar Settings").get("match"))
+    evidence["actions"].append({"kind": "GAction", "name": "app.settings",
+                                "observed_window": title})
+    results = []
+    screenshots = {
+        "Display": (scratch / "capture-settings-display",
+                    artifact_dir / "settings-display.png"),
+        "Menu Bar": (scratch / "capture-settings-menu-bar",
+                     artifact_dir / "settings-menu-bar.png"),
+        "Usage & Spend": (scratch / "capture-settings-usage-spend",
+                          artifact_dir / "settings-usage-spend.png"),
+    }
+    captured = set()
+    active_page = None
+    before_map = json.loads(prefs.read_text(encoding="utf-8"))
+    current_map = dict(before_map)
+
+    def capture_page(page: str) -> None:
+        capture_dir, output = screenshots[page]
+        capture_screen(screenshooter, env, capture_dir, output)
+        evidence["screenshots"][page.lower().replace(" & ", "-").replace(" ", "-")] = str(output)
+        captured.add(page)
+
+    def open_page(page: str) -> None:
+        nonlocal active_page
+        if active_page == page:
+            return
+        if active_page is not None and active_page not in captured:
+            capture_page(active_page)
+        tab = wait_visible_control(python, pid, page,
+                                   ("page tab", "tab", "button"), "CodexBar Settings")
+        activated = activate_accessible(python, pid, page, tab["identity"])
+        selected = wait_until(f"{page} selected page state", lambda: next((row for row in
+            atspi_probe(python, "states", pid, page).get("matches", [])
+            if row.get("name") == page and row.get("pid") == pid
+            and row.get("identity") == tab["identity"]
+            and "selected" in row.get("states", [])), None))
+        results.append({"kind": "AT-SPI page navigation", "page": page,
+                        "identity": activated["identity"],
+                        "selected_state": selected["states"]})
+        active_page = page
+
+    for page, label, key, value, kind in RESIDUAL_SETTINGS:
+        open_page(page)
+        expected_roles = (("check box", "switch") if kind == "switch" else
+                          ("combo box", "button", "push button"))
+        try:
+            control = wait_visible_control(python, pid, label, expected_roles, page,
+                                           allow_selection=(kind == "combo"))
+        except RuntimeError as error:
+            if kind != "combo":
+                raise
+            if page not in captured:
+                capture_page(page)
+            completed = [{"page": item["page"], "control": item["control"],
+                          "key": item["key"], "value": item["value"]}
+                         for item in results if item.get("kind") == "AT-SPI preference action"]
+            actual_map = json.loads(prefs.read_text(encoding="utf-8"))
+            failure = RuntimeError(str(error))
+            failure.details = {
+                "scenario": "settings-residual",
+                "accessibility_contract_gap": getattr(error, "contract_details", []),
+                "completed_settings_controls": completed,
+                "persisted_settings_json": actual_map,
+                "binary_sha256": evidence.get("binary_sha256"),
+                "source_commit": evidence.get("source_commit"),
+                "host_session_handles_removed": evidence.get("host_session_handles_removed"),
+                "screenshots": evidence.get("screenshots", {}),
+            }
+            raise failure from error
+        before_control = atspi_probe(python, "states", pid, label)
+        same_control = [row for row in before_control.get("matches", [])
+                        if row.get("identity") == control["identity"]
+                        and row.get("pid") == pid]
+        if len(same_control) != 1:
+            raise RuntimeError(f"{label!r} lacks one exact same-PID visible control: {same_control!r}")
+        if kind == "switch":
+            desired_before = not value
+            if same_control[0].get("checked") is not desired_before:
+                raise RuntimeError(f"{label!r} fixture state is not {desired_before}: {same_control[0]!r}")
+            action = activate_accessible(python, pid, label, control["identity"])
+            if action.get("before_checked") is not desired_before or action.get("after_checked") is not value:
+                raise RuntimeError(f"{label!r} did not visibly toggle to {value}: {action!r}")
+        else:
+            # ComboRow exposes a Selection interface instead of an Action.
+            # Select its exact named model child through that UI interface.
+            selection = select_combo_option(python, pid, control, value)
+            action = {"selection": selection}
+
+        expected_map = dict(current_map)
+        expected_map[key] = value
+        wait_until(f"{key} exact isolated preference map", lambda expected_map=expected_map:
+                   json.loads(prefs.read_text(encoding="utf-8")) == expected_map)
+        current_map = expected_map
+        results.append({"kind": "AT-SPI preference action", "page": page,
+                        "control": label, "key": key, "value": value,
+                        "control_identity": control["identity"], "control_role": control["role"],
+                        "pid": pid, "action": action, "full_settings_map_checked": True})
+
+    if active_page is not None and active_page not in captured:
+        capture_page(active_page)
+    final_map = json.loads(prefs.read_text(encoding="utf-8"))
+    if final_map != current_map:
+        raise RuntimeError("residual Settings batch final full preference map changed unexpectedly")
+    evidence["actions"].extend(results)
+    evidence["persisted_settings_json"] = final_map
+    evidence["settings_diff"] = {key: [before_map.get(key), final_map.get(key)]
+                                 for key in final_map if before_map.get(key) != final_map.get(key)}
+    evidence["limits"] = [
+        "AT-SPI AccessibleAction and visible selection evidence is not physical Wayland pointer/keyboard input.",
+        "Private Weston does not establish KDE shell placement, portal input, or host compositor parity.",
+    ]
+
+
 def capture_screen(screenshooter: pathlib.Path, env: dict[str, str],
                    capture_dir: pathlib.Path, output: pathlib.Path) -> None:
     capture_dir.mkdir(mode=0o700)
@@ -908,8 +1133,16 @@ def inside_run(args) -> dict:
                             "usageBarsShowUsed": False, "launchAtLogin": False,
                             "showTray": False}
                            if args.scenario == "advanced" else
-                           {SETTING_KEY: False, "showTray": False})
-        if args.scenario != "advanced":
+                           ({**rust_default_preferences(),
+                             "refreshFrequency": "5m", "preferredCurrencyCode": "USD",
+                             "showTray": False, "usageBarsShowUsed": False,
+                             "resetTimesOption": "countdown", "workdayTickAppearance": "subtle",
+                             "quotaBurndownEnabled": True, "menuBarIconStyle": "meter",
+                             "unifiedIconSource": "highest", "switcherRowsOption": "progress",
+                             "costUsageEnabled": True, "costUsageBucketTimeZone": ""}
+                            if args.scenario == "settings-residual" else
+                           {SETTING_KEY: False, "showTray": False}))
+        if args.scenario == "matrix":
             seeded_settings.update({key: False for key in (
                 "sessionQuotaNotificationsEnabled", "quotaWarningNotificationsEnabled",
                 "limitResetNotificationsEnabled", "predictivePaceNotificationsEnabled")})
@@ -1039,6 +1272,9 @@ def inside_run(args) -> dict:
                 run_advanced_preferences(
                     python, app.pid, prefs, autostart, home, home / "cli-calls.log",
                     evidence, screenshooter, env, scratch, artifact_dir)
+            elif args.scenario == "settings-residual":
+                run_residual_settings(python, app.pid, prefs, evidence,
+                                      screenshooter, env, scratch, artifact_dir)
             else:
                 gaction("dashboard")
                 gaction("dashboard")
@@ -1404,7 +1640,7 @@ def inside_run(args) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--binary", required=True, help="built codexbar-gtk-native executable")
-    parser.add_argument("--scenario", choices=("matrix", "advanced"), default="matrix",
+    parser.add_argument("--scenario", choices=("matrix", "advanced", "settings-residual"), default="matrix",
                         help="isolated acceptance slice (default: existing matrix)")
     parser.add_argument("--artifact-dir", default=None,
                         help="directory for synthetic screenshots/evidence (default: /tmp temp directory)")
@@ -1469,7 +1705,7 @@ def main() -> int:
         evidence = inside_run(args)
     except Exception as exc:
         _write_failure_evidence(pathlib.Path(args.artifact_dir), str(exc),
-                                type(exc).__name__)
+                                type(exc).__name__, getattr(exc, "details", None))
         print(f"isolated native Wayland smoke failed: {exc}", file=sys.stderr)
         return 1
     print(json.dumps(evidence, indent=2))

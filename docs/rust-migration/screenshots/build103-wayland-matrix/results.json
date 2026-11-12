@@ -1,0 +1,173 @@
+{
+  "evidence_scope": "Synthetic-only, private rootless Weston Wayland run; AT-SPI/GAction observations, not physical input.",
+  "runner_source_commit": "dd58903109759846d6ae99bb00625b25258ac4cd",
+  "application_binary": {
+    "build": "0.82.0 (102)",
+    "sha256": "4a7d3aaad572a9495a19a78f8076210b3d2b4c56fdc90809d40e9cdf2baa9eaf",
+    "source_commit": "e86900bb2451603507c1f4913d5264f7a4ff52c7"
+  },
+  "runtime": {
+    "compositor": "rootless Weston headless Pixman",
+    "gdk_display_type": "GdkWaylandDisplay",
+    "host_session_handles_removed": true,
+    "cleanup": {
+      "app_exited": true,
+      "compositor_exited": true,
+      "private_runtime_removed": true,
+      "synthetic_home_removed": true,
+      "private_dbus_socket_removed": true
+    }
+  },
+  "settings": {
+    "general": {
+      "control": "Refresh when the panel opens",
+      "checked_before": false,
+      "checked_after": true,
+      "persisted": true,
+      "initial_partial_seed_materialized_defaults": true,
+      "only_user_action_change": "refreshAllProvidersOnMenuOpen"
+    },
+    "notifications": [
+      {
+        "control": "Session quota notifications",
+        "key": "sessionQuotaNotificationsEnabled",
+        "checked_before": false,
+        "checked_after": true,
+        "full_settings_map_checked": true
+      },
+      {
+        "control": "Quota warning notifications",
+        "key": "quotaWarningNotificationsEnabled",
+        "checked_before": false,
+        "checked_after": true,
+        "full_settings_map_checked": true
+      },
+      {
+        "control": "Limit reset notifications",
+        "key": "limitResetNotificationsEnabled",
+        "checked_before": false,
+        "checked_after": true,
+        "full_settings_map_checked": true
+      },
+      {
+        "control": "Pace warnings",
+        "key": "predictivePaceNotificationsEnabled",
+        "checked_before": false,
+        "checked_after": true,
+        "full_settings_map_checked": true
+      }
+    ],
+    "show_tray": {
+      "control": "Show the tray icon",
+      "checked_before": false,
+      "checked_after": true,
+      "full_settings_map_checked": true
+    },
+    "hooks": {
+      "control": "Enable hooks",
+      "checked_before": true,
+      "checked_after": false,
+      "synthetic_cli_call_count": 1,
+      "cli_postcondition": {
+        "enabled": false,
+        "events": []
+      },
+      "preferences_unchanged": true
+    }
+  },
+  "usage_spend": {
+    "ranges": [
+      {
+        "value": "7 days",
+        "selected_by_pressed_state": true
+      },
+      {
+        "value": "30 days",
+        "selected_by_pressed_state": true
+      },
+      {
+        "value": "90 days",
+        "selected_by_pressed_state": true
+      },
+      {
+        "value": "All",
+        "selected_by_pressed_state": true
+      }
+    ],
+    "heatmap_modes": [
+      {
+        "mode": "Daily",
+        "action_changed_state": false,
+        "initially_selected": true
+      },
+      {
+        "mode": "Weekly",
+        "action_changed_state": true,
+        "initially_selected": false
+      },
+      {
+        "mode": "Cumulative",
+        "action_changed_state": true,
+        "initially_selected": false
+      }
+    ],
+    "final_daily_return": {
+      "mode": "Daily",
+      "action_changed_state": true
+    }
+  },
+  "sessions": [
+    {
+      "fixture_mode": "loading",
+      "visible_status": "Refreshing · showing the last successful result · 1 running of 1 known sessions",
+      "visible_error": null,
+      "synthetic_cli_call_count": 1,
+      "capture": null
+    },
+    {
+      "fixture_mode": "success",
+      "visible_status": "1 running of 1 known sessions",
+      "visible_error": null,
+      "synthetic_cli_call_count": 1,
+      "capture": "sessions-success.png"
+    },
+    {
+      "fixture_mode": "empty",
+      "visible_status": "The last successful scan found no agent sessions.",
+      "visible_error": null,
+      "synthetic_cli_call_count": 1,
+      "capture": "sessions-empty.png"
+    },
+    {
+      "fixture_mode": "error",
+      "visible_status": "Session scan failed · showing the last successful result · 0 running of 0 known sessions",
+      "visible_error": "The session scan returned unreadable data. Existing rows remain available when present.",
+      "synthetic_cli_call_count": 1,
+      "capture": "sessions-error.png"
+    }
+  ],
+  "sessions_error_limit": {
+    "preceding_fixture_mode": "empty",
+    "visible_rows_at_error": 0,
+    "retained_nonempty_error_behavior": "not_proven"
+  },
+  "screenshots": [
+    {
+      "file": "sessions-success.png",
+      "sha256": "2cbd317a80e556457888609331e8e34b85373e0ac9b10b5221c3d7e8bc1c2182",
+      "bytes": 148799
+    },
+    {
+      "file": "sessions-empty.png",
+      "sha256": "6e860d337f73e65f86e86d6dc2cf6a070ee94295c070f371a6350f4cc13729dc",
+      "bytes": 145106
+    },
+    {
+      "file": "sessions-error.png",
+      "sha256": "f982ce06efd5a4062f6f703d3d50e5196d007beb7254bec2b6f2913f1d649b2c",
+      "bytes": 150817
+    }
+  ],
+  "gate": "UG remains NOT PASSED; Python remains the default.",
+  "runner_worktree_script_sha256": "f0d41ae029d768c0329823b8bfc724f90e554c46444b7adba9b96f267cbef850"
+}

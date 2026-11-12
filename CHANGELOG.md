@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.82.0 (103) — 2026-11-12
+
+Completes the synthetic private Weston Wayland matrix captures for Sessions
+success, empty and error states after visible-state assertions and fixture
+completion. Spend-range and heatmap states are observed, including a final
+Daily return after Weekly and Cumulative. The app binary is build 102; runner
+and metadata are build 103. The Sessions error follows an empty successful
+scan, so retained nonempty error behavior remains unproven. UG remains
+**NOT PASSED**, and Python remains the default launcher.
+
+- See migration audit E206 and the sanitized [build-103 Wayland results](docs/rust-migration/screenshots/build103-wayland-matrix/results.json).
+
 ## 0.82.0 (102) — 2026-11-10
 
 Hardens the private native installer command-target proof with fresh release

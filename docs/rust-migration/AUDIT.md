@@ -6775,3 +6775,76 @@ Correction verification: the cancellation process-group test passed 15
 consecutive local runs; all 10 focused login, command-target parser and proof
 regressions passed together. `git diff --check` passed. No runtime application
 code or cancellation policy changed.
+
+### E206 — 2026-11-12: BUILD103 synthetic private Weston matrix completion
+
+- **Claim/base/build:** BUILD103 / E206 on
+  `orchestrated/luna-ug-wayland-matrix`, based on observed PR #103 merge
+  `5a5495b6b39e142cad7fe1f46660c59a7584ad7f`. Its exact head
+  `ff630a2e0413af24ddb16d0b0796ee405088c972` passed all three required checks
+  in run `42919746929`; no reviews, comments or threads were reported. This is
+  base evidence; no CI result for this implementation is claimed. Build 103
+  keeps marketing version 0.82.0.
+- **Harness changes:** the private Weston runner captures Sessions success,
+  empty and error images only after a same-PID visible-text assertion and
+  completion of the corresponding synthetic CLI fixture. A focused regression
+  checks that capture ordering. After initially observing Daily selected with
+  no action, the Spend matrix selects Weekly and Cumulative, then performs and
+  verifies a real final return action to Daily. The native app source is
+  unchanged; the runner/worktree script SHA-256 used for this run is
+  `f0d41ae029d768c0329823b8bfc724f90e554c46444b7adba9b96f267cbef850`.
+- **Private runtime provenance:** the run used rootless Weston headless Pixman
+  and observed `GdkWaylandDisplay`, with host session handles removed. Runner
+  source HEAD was `dd58903109759846d6ae99bb00625b25258ac4cd`; that commit marker
+  alone does not include the E206 uncommitted runner edit, so the script hash
+  above identifies the exact edited file. The native application binary was
+  explicitly build `0.82.0 (102)`, built from application source
+  `e86900bb2451603507c1f4913d5264f7a4ff52c7`, SHA-256
+  `4a7d3aaad572a9495a19a78f8076210b3d2b4c56fdc90809d40e9cdf2baa9eaf`.
+  Build 103 evidence therefore describes build-102 application behavior under
+  the changed synthetic harness, not a build-103 application binary.
+- **Observed matrix:** General refresh changed false→true (the initial partial
+  preference seed materialized defaults on first write; this is not a claim
+  that every default was individually changed). Each of four Notifications
+  controls changed false→true with the full settings map checked. `showTray`
+  changed false→true with the full map checked. Hooks changed true→false,
+  issued exactly one synthetic `hooks disable` CLI call and left preferences
+  unchanged. All four Spend range states were observed. Daily was already
+  selected on entry (`action_changed_state=false`); Weekly and Cumulative each
+  changed state; the final Daily return changed state after Cumulative.
+  Sessions showed loading with one retained running fixture row, then success
+  with that row, then empty, then a visible scan error with zero rows. Every
+  refresh made one synthetic CLI call. The error follows the empty successful
+  result; retained nonempty rows during an error remain **unproven**.
+- **Reviewed captures/results:** personally inspected the three newly kept
+  synthetic images:
+  [`sessions-success.png`](screenshots/build103-wayland-matrix/sessions-success.png),
+  [`sessions-empty.png`](screenshots/build103-wayland-matrix/sessions-empty.png),
+  and [`sessions-error.png`](screenshots/build103-wayland-matrix/sessions-error.png).
+  Sanitized relative action results and hashes are in
+  [`results.json`](screenshots/build103-wayland-matrix/results.json). No raw
+  temporary paths, app logs, long AT-SPI identities or non-synthetic data are
+  tracked. The existing eleven failed attempts remain failures, not passes;
+  their retained diagnostics show harness context/role and timing causes
+  including duplicate/stale accessible nodes across Settings tabs, a control
+  that did not visibly update, Spend toggle discoverability/context mismatch,
+  and a Sessions refresh-status timeout. Those causes were handled in harness
+  iteration; the final bounded rerun is a separate pass.
+- **Checks actually run:** `python3 -m unittest
+  tests.test_native_wayland_isolated_harness -q` passed 16 tests; Python
+  compilation, the Python build-metadata regression, and the focused Rust GTK
+  `version_metadata_tracks_the_root_version_file` test passed. The runner
+  completed successfully inside its 240-second bound with all five cleanup
+  assertions true: app, compositor, private runtime, synthetic home and private
+  D-Bus socket removed. The three retained PNGs were decoded and personally
+  inspected; JSON/hash, Markdown-link, version-display and diff checks passed.
+  No broad Rust suite was run and no app rebuild was needed because native app
+  source did not change.
+- **Limits/handoff:** this is a synthetic accessible-action and private capture
+  slice, not physical pointer/keyboard input, KDE placement/portal behavior,
+  or full UG. The existing CI step runs this runner with its six-minute job
+  bound, but branch CI remains unobserved. Actual KDE input/placement,
+  keyboard parity, chooser/provider/login interactions, notification delivery,
+  and the retained-nonempty-error case remain open. UG is **NOT PASSED**, Python
+  remains default, and no C gate/cutover is accepted. Root owns final gates and
+  publication.

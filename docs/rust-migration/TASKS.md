@@ -1307,3 +1307,28 @@ smoke script. Final `bash -n scripts/smoke-native-settings.sh`,
 passed. Build 104 is unchanged and no fresh native build was run. Root owns
 review/publication; UG remains **NOT PASSED**, Python remains default, and the
 exact-head CI failure remains open.
+
+### BUILD104/E207 follow-up — integrated Ctrl+A result (2026-11-12)
+
+The smoke script now sends Ctrl+L, Ctrl+A, the absolute path to the synthetic
+fixture, then Return. The app-native Xvfb/private-D-Bus run still failed at the
+valid-import chooser-close assertion. One second bounded diagnostic run enabled
+AT-SPI in the app smoke environment and captured the chooser before Return; it
+also failed at the same assertion. The screenshot shows the location field
+active with the typed path visibly clipped and the Import button disabled, but
+does not expose the exact field value. The read-only AT-SPI observer did not
+return the entry text, so the path cannot be claimed selected. GTK 4.14.5 is
+the linked/runtime version shared with the passing standalone GTK probe, but
+the app chooser's exact GTK widget/backend and differing process environment
+remain unconfirmed. Diagnostic records are under
+`/tmp/codexbar-build104-settings-smokes-20261112T155822Z/`.
+
+Two integrated full-smoke attempts failed at the same chooser boundary; no
+further full-smoke retries were made. Valid/empty import persistence, Plugins
+reload after empty import, reset/update tail and final shutdown assertions have
+no pass result. The bounded task is to identify the app chooser's actual
+location-entry value/component with working scoped accessibility or equivalent
+read-only instrumentation, then retain the existing close/persistence/reload
+assertions and obtain fresh-home smoke passes. Build 104 and Python-default
+status are unchanged; UG remains **NOT PASSED**. Root owns review and
+publication.

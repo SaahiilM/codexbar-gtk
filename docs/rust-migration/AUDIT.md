@@ -7074,3 +7074,63 @@ code or cancellation policy changed.
   step is to establish a selection/observation path in the actual app chooser,
   retain the real accept/close and existing downstream assertions, then run
   two complete fresh-home smokes.
+
+### E207 local follow-up — 2026-11-12: integrated Ctrl+A still leaves chooser open
+
+- **Scope and preserved state:** Continued from BUILD104 worktree head
+  `77899553b4bc1f35a7e247b7f1869b54648ef9f7`, preserving the existing root
+  patch. The only smoke interaction change in this continuation adds explicit
+  Ctrl+A with cleared modifiers after Ctrl+L and before typing the absolute
+  synthetic import path. The BUILD104 native binary was not rebuilt; its
+  SHA-256 remains
+  `9b8e670276db6faef63959fcea75a680b73d47488530b6ba8297ba37c8b22cbd`.
+  Native application source, VERSION and BUILD remain unchanged.
+- **Private runtime:** Xvfb and D-Bus were private. The tool packages were
+  extracted under `/tmp/codexbar-x11-tools.oNOJop` and supplied through a
+  private PATH/LD_LIBRARY_PATH; no system package was installed. Both runs
+  used synthetic Settings fixtures, isolated HOME, and a loopback-only update
+  fixture. No host display, input, session bus, service, portal, auth, provider
+  HTTP, or credentials were used. During the second run the app requested the
+  private D-Bus portal service despite `GTK_USE_PORTAL=0`; activation remained
+  inside that private D-Bus session.
+- **Integrated full-smoke result:** The first absolute-binary run included the
+  updated Ctrl+L → Ctrl+A → absolute path → Return sequence and reached the
+  valid-import chooser. It failed after the bounded Import-button fallback:
+  `native Import chooser did not close after selecting preferences-import.json`.
+  Log: `/tmp/codexbar-build104-settings-smokes-20261112T155822Z/ctrl-a-integrated-run1.log`.
+- **Bounded diagnostic repeat:** One diagnostic full run requested
+  `GTK_A11Y=atspi` in the app smoke environment and kept a synthetic chooser
+  screenshot immediately before Return. It failed the same chooser-close
+  assertion after Return and the bounded Import-button fallback. The X window
+  was the app-owned `Import preferences` dialog (`WM_CLASS=codexbar-gtk-native`,
+  PID 2031756); it remained viewable after accept. The pre-Return screenshot is
+  `/tmp/codexbar-build104-settings-smokes-20261112T155822Z/ctrl-a-import-selected-run2.png`.
+  It shows the location field active with text clipped at the right edge, the
+  target not selected, and Import disabled. It does not establish the exact
+  entry value. The read-only AT-SPI watcher did not return the chooser entry;
+  its log records a missing AT-SPI cache object and no matching entry text:
+  `/tmp/codexbar-build104-settings-smokes-20261112T155822Z/ctrl-a-atspi-run2.log`.
+  The watcher started before the app-side accessibility variable was set, so
+  its own environment is not evidence of the app process environment. The app
+  was launched with the smoke's explicit AT-SPI setting for this run, but no
+  app-side environment dump was captured.
+- **GTK comparison and limits:** The native binary resolves `libgtk-4.so.1`
+  from `/lib/x86_64-linux-gnu`; pkg-config and the diagnostic GI runtime report
+  GTK 4.14.5, the same version used by the passing standalone GTK chooser
+  probe. That probe uses `Gtk.FileChooserNative` and observes the exact
+  synthetic GFile and ACCEPT callback after Ctrl+L, Ctrl+A, path, Return. The
+  app window title/class/PID are known, but the app chooser's exact GTK widget
+  or backend and its entry text were not returned by this diagnostic. Therefore
+  the standalone result does not establish app selection or explain the
+  difference.
+- **Coverage and checks:** Two integrated full-smoke attempts failed at the
+  same valid-import chooser boundary; no more full-smoke retry was made. The
+  run did not reach import persistence, empty-import Plugins reload, reset,
+  update tail, or final clean shutdown assertions. No full Settings smoke pass
+  or fresh-home pass pair is claimed. The diagnostic-only accessibility
+  override was removed; default `GTK_A11Y=none` is unchanged. Build 104 remains
+  unchanged, UG is **NOT PASSED**, Python remains default, and the exact-head
+  CI failure remains open. The next step is to capture the actual app chooser's
+  exact location-entry text and component with scoped read-only instrumentation,
+  then preserve the real accept/close and downstream assertions. Root owns
+  review and publication.

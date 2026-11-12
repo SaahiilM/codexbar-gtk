@@ -722,7 +722,9 @@ select_chooser_path() {
         # exact synthetic fixture path directly instead of deriving a row
         # coordinate from GTK's current sort order and theme-dependent row
         # height. Return asks the chooser to open/accept that exact file.
-        xdotool key ctrl+l
+        xdotool key --clearmodifiers ctrl+l
+        # Clear any existing folder/completion text, as in the passing GTK probe.
+        xdotool key --clearmodifiers ctrl+a
         xdotool type --clearmodifiers --delay 1 "$path"
         if [[ "$target_name" == "preferences-import.json" ]]; then
             capture_native_size "$chooser" "${NATIVE_SETTINGS_IMPORT_SELECTED_SCREENSHOT:-}"

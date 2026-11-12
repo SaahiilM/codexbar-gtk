@@ -6848,3 +6848,52 @@ code or cancellation policy changed.
   and the retained-nonempty-error case remain open. UG is **NOT PASSED**, Python
   remains default, and no C gate/cutover is accepted. Root owns final gates and
   publication.
+
+### E207 — 2026-11-12: BUILD104 restores the native Settings smoke to CI
+
+- **Claim/base/build:** BUILD104 / E207 on
+  `orchestrated/luna-ug-settings-ci-reliability`, based on reviewed Settings
+  smoke fix `67a9ad999239fce333dde119b4ebecf44c0980cc` and PR #104's normal
+  merge at `d3199f21cdff4b95da3066621f99f01256ab5738`. The fetched
+  `origin/main` matched that merge. Root's handoff reports PR #104 exact head
+  `04abd6b48a559f8d143ae9e21f62272caa34e6ef` passed all three required checks
+  in run `43243981287`, with no reviews/comments/threads; that is base evidence
+  only, not CI for this branch. Build 104 retains marketing version 0.82.0.
+- **Workflow change:** `.github/workflows/rust-core.yml` restores
+  `./scripts/smoke-native-settings.sh` as a required step after the native
+  Spend/Sessions Xvfb smoke, with `timeout-minutes: 15`. The obsolete workflow
+  comments describing the chooser as disabled due to fixed-coordinate
+  failures are removed; historical failure records in this audit remain
+  unchanged. The dependency install already includes `xvfb`, `xauth`,
+  `xdotool`, `x11-utils` (including `xprop`), and `xfwm4`, all required by the
+  isolated smoke. The smoke emits failures to the CI step log. Its optional
+  keep-temp mode retains synthetic key/login fixtures, so no such directory or
+  screenshot is configured for upload.
+- **Prior runtime provenance:** the worker handoff reports two consecutive
+  complete Settings smoke passes with synthetic CLI/preferences/import-export
+  fixtures in private Xvfb and private D-Bus. Both used native application
+  build 102, SHA-256
+  `a521829c7301c9de7cf36c277f0c9a0bedad12d835ddc61ed46db1c9bf7763a1`, and
+  the reviewed Settings smoke source commit above. The cached binary in
+  `.task-target-x11/debug/codexbar-gtk-native` independently matches that
+  hash. The raw bounded run logs/artifact paths were not present in the resumed
+  checkout; the two pass count is handoff-reported, not independently
+  re-derived. No build-104 runtime pass is claimed.
+- **Checks actually run on this change:** Rust GTK focused
+  `version_metadata_tracks_the_root_version_file` passed 1/1 using the
+  existing `.task-target-x11` Cargo target cache; Python
+  `tests.test_app.VersionMetadataTests` passed 1/1; `bash -n` and ShellCheck
+  passed for `scripts/smoke-native-settings.sh`; PyYAML parsed the workflow and
+  assertions confirmed step command, 15-minute timeout, position, dependencies
+  and removal of the obsolete comment. `git diff --check` and Markdown-link
+  validation are recorded after this entry is written. No app source changed,
+  so no fresh native application build was needed. The full Settings smoke was
+  not rerun here: `xvfb-run` and `xdotool` are absent from this shell's PATH.
+  No host GUI/session, D-Bus, provider HTTP, auth or real credentials were
+  used.
+- **Limits/handoff:** exact-head CI for BUILD104 remains pending. This restores
+  repeatability coverage for the existing comprehensive X11 Settings harness;
+  it does not provide Wayland input, complete UG, or alter the Python default.
+  UG remains **NOT PASSED**; marketing version remains 0.82.0; Python remains
+  default; BG is passed while C gates remain open. Next step: root reviews the
+  tracked diff and publishes the commit/PR, then checks exact-head CI.

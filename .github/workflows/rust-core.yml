@@ -110,6 +110,9 @@ jobs:
             --artifact-dir "$RUNNER_TEMP/native-wayland-evidence"
       - name: Exercise native Spend and Sessions with synthetic data
         run: ./scripts/smoke-native-usage-pages.sh
+      - name: Exercise native Settings interactions with synthetic data
+        timeout-minutes: 15
+        run: ./scripts/smoke-native-settings.sh
       - name: Build native release artifact (C01 prototype)
         run: |
           cargo build --manifest-path rust-gtk/Cargo.toml --locked --release --bin codexbar-gtk-native
@@ -117,10 +120,6 @@ jobs:
         run: ./scripts/smoke-native-install.sh
       - name: Verify native binary has no Python linkage (linkage inspection only, C02 unproven)
         run: cargo test --manifest-path rust-gtk/Cargo.toml --locked --test python_free_linkage
-      # Keep the comprehensive Settings smoke available for local verification.
-      # Its fixed-coordinate native file chooser interaction failed twice in
-      # CI at different points; the other native GTK Xvfb smokes remain enabled.
-
       - name: Retain synthetic private Wayland smoke evidence
         if: always()
         uses: actions/upload-artifact@v4

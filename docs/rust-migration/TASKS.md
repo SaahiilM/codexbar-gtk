@@ -10,11 +10,11 @@ history. A checked box means **verified and merged**, not merely implemented.
 | --- | --- |
 | Goal | Fully native Rust GTK4/libadwaita application with verified packaging and legacy runtime removal. |
 | Current phase | BG passed and U01–U08 implementation merged. UG **NOT PASSED**; Python default. |
-| Last observed merge | PR #102 merged normally at `07e6fb2e6d9ed40d517c8c89b55c10e83466b049` (build 101). Its three required checks all succeeded on exact head `a4512a45f43992ba149ceae5aef0f4c7140e0800` in run `42914850286`; no reviews/comments/threads were reported. This is base-only evidence for BUILD102, not CI for this branch. The merge did not accept UG or C gates. |
-| Active implementation | BUILD103/E206 isolated native Wayland matrix capture completion; branch `orchestrated/luna-ug-wayland-matrix`, based on PR #103 merge `5a5495b6b39e142cad7fe1f46660c59a7584ad7f`. The bounded private Weston rerun passed; Sessions success/empty/error captures follow visible assertions and fixture completion, all three images were inspected, and the range/heatmap selection states include a final Daily return action. |
+| Last observed merge | PR #104 merged normally at `d3199f21cdff4b95da3066621f99f01256ab5738` (build 103). Its three required checks succeeded on exact head `04abd6b48a559f8d143ae9e21f62272caa34e6ef` in run `43243981287`; no reviews, comments or threads were reported. This is base-only evidence for BUILD104, not CI for this branch. The merge did not accept UG or C gates. |
+| Active implementation | BUILD104/E207 restores the native Settings smoke in required CI; branch `orchestrated/luna-ug-settings-ci-reliability`, based on reviewed Settings-smoke fix `67a9ad999239fce333dde119b4ebecf44c0980cc` plus normally merged PR #104. The prior worker reports two consecutive full private Xvfb/D-Bus smoke passes using the build-102 app binary. This branch restores the step with a 15-minute limit and increments metadata; no build-104 app smoke or branch CI is claimed. |
 | Installer/runtime verification | E198 records the merged build-95 installed-prefix/Python-free runtime proof. E199 records prior local 13-case activation smoke evidence in a Python-free container; its first attempt lacked `file`, and the portable `od`/`ldd` check passed. These component results do not pass C02 or authorize cutover. |
 | UI acceptance | E195 records one Display action; E200 records seven guarded Settings actions and three tab transitions. Broader Wayland controls/navigation remain open. UG is **NOT PASSED** and Python remains the default; see `UG_GATE.md`. |
-| Next | Root reviews and publishes BUILD103/E206, then observes exact-head CI. The evidence is a synthetic private Weston slice; actual KDE input/placement and keyboard parity remain open. UG remains **NOT PASSED**, Python remains default, and no C gate/cutover is accepted. |
+| Next | Root reviews and publishes BUILD104/E207, then observes exact-head CI for the restored Settings smoke. Actual KDE input/placement, keyboard parity and broader Settings interactions remain open. UG remains **NOT PASSED**, Python remains default, and no C gate/cutover is accepted. |
 
 PR #103 correction: run `42918673780` on `7e16a47` passed tray and the full
 Python-free/activated command-target proof. The Rust-opt-in suite failed on a
@@ -1200,3 +1200,17 @@ slice independently from build-96 `main`. Continue afterward with the safe
 Claude warning slice, then the ClaudePlatform stdin-login slice. Keep these as
 separate reviewable changes; do not mix their feature code into this evidence
 commit. Root owns the PR, push and merge for this build-97 batch.
+
+### BUILD104/E207 — native Settings smoke restored to CI
+
+Owner: `orchestrated/luna-ug-settings-ci-reliability`, based on reviewed
+Settings smoke fix `67a9ad999239fce333dde119b4ebecf44c0980cc` and normally
+merged PR #104 build 103. E207 records workflow restoration and build 104
+metadata. The prior worker reports two consecutive full Settings smoke passes
+with synthetic fixtures/private Xvfb and D-Bus, using build-102 application
+binary SHA-256 `a521829c7301c9de7cf36c277f0c9a0bedad12d835ddc61ed46db1c9bf7763a1`.
+The raw bounded logs were not available in the resumed checkout; this is
+handoff-reported evidence, not a rerun or independently verified artifact.
+Current exact-head CI remains pending. The new 15-minute CI step invokes
+`scripts/smoke-native-settings.sh` after the other native Xvfb smokes. Python
+remains default and UG remains **NOT PASSED**.

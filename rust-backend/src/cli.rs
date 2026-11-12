@@ -754,11 +754,22 @@ mod tests {
 
     async fn wait_for_process_exit(pid: i32) -> bool {
         for _ in 0..300 {
-            let running = fs::read_to_string(format!("/proc/{pid}/stat"))
-                .ok()
-                .and_then(|stat| stat.rsplit_once(") ").map(|(_, tail)| tail.to_owned()))
-                .and_then(|tail| tail.chars().next())
-                .is_some_and(|state| state != 'Z' && state != 'X');
+            let running = match fs::read_to_string(format!("/proc/{pid}/stat")) {
+                Ok(stat) => match stat
+                    .rsplit_once(") ")
+                    .and_then(|(_, tail)| tail.chars().next())
+                {
+                    Some(state) => state != 'Z' && state != 'X',
+                    None => return false,
+                },
+                Err(error)
+                    if error.kind() == std::io::ErrorKind::NotFound
+                        || error.raw_os_error() == Some(libc::ESRCH) =>
+                {
+                    false
+                }
+                Err(_) => return false,
+            };
             if !running {
                 return true;
             }

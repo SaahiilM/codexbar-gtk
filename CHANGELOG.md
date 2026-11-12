@@ -11,6 +11,18 @@ private Xvfb and D-Bus. This is a focused recovery feature; UG remains
 - See migration audit E209 for local source/binary identity, capture provenance,
   checks, and the pending base/CI reconciliation.
 
+## 0.82.0 (105) — 2026-11-12
+
+Adds a bounded advanced Settings acceptance scenario to the required private
+Weston Wayland job. The scenario checks portable preferences export/import,
+empty import, and Reset cancel/confirm using synthetic data, and retains only
+its own evidence artifact. A chooser import is accepted only when one selected
+same-process row contains the exact visible fixture filename. UG remains
+**NOT PASSED**, and Python remains the default launcher.
+
+- See migration audit E208 for base PR #105 evidence and this implementation's
+  exact local verification and binary provenance in the [sanitized results](docs/rust-migration/screenshots/build105-wayland-advanced/results.json).
+
 ## 0.82.0 (104) — 2026-11-12
 
 Restore the full native Settings interaction smoke to required Rust GTK CI.

@@ -182,6 +182,11 @@ parity; UG remains **NOT PASSED**, and Python remains the default. See the
 [build-103 evidence](docs/rust-migration/screenshots/build103-wayland-matrix/results.json)
 and audit E206.
 
+Build 105 adds an advanced private Weston Settings acceptance scenario with
+synthetic portable preferences and Reset evidence. It checks exact chooser row
+selection and runs beside the existing Wayland matrix; the full X11 Settings
+smoke remains required. UG remains **NOT PASSED**, and Python remains default.
+
 Build 104 restores the comprehensive native Settings smoke to required CI
 after two consecutive full private Xvfb/D-Bus runs passed with the reviewed
 chooser-focus fix. It uses synthetic fixtures and a bounded 15-minute step.

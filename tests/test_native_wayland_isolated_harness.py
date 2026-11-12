@@ -89,7 +89,7 @@ class NativeWaylandIsolatedHarnessTests(unittest.TestCase):
                 "XDG_RUNTIME_DIR": "/run/user/1000", "GDK_BACKEND": "x11",
                 "GSK_RENDERER": "gl", "GTK_USE_PORTAL": "1",
             }, root / "home", root / "runtime", "wayland-private",
-               root / "fake-codexbar", "unix:path=/private/session-bus")
+               root / "fake-codexbar", "unix:path=/private/session-bus", root / "diagnostics")
             for key in ("DISPLAY", "WAYLAND_SOCKET", "XAUTHORITY", "DBUS_SYSTEM_BUS_ADDRESS",
                         "DBUS_STARTER_ADDRESS", "DBUS_STARTER_BUS_TYPE", "AT_SPI_BUS_ADDRESS"):
                 self.assertNotIn(key, env)
@@ -242,6 +242,43 @@ class NativeWaylandIsolatedHarnessTests(unittest.TestCase):
             self.assertEqual(MODULE.activate_accessible(sys.executable, 123, "fixture", identity),
                              {"ok": True})
             probe.assert_called_once_with(sys.executable, "activate", 123, "fixture", identity)
+
+    def test_visible_action_requires_one_enabled_same_process_actionable_node(self):
+        row = {"name": "Export…", "role": "button", "pid": 123,
+               "identity": "123:app[0]/button:Export", "showing": True,
+               "visible": True, "states": ["sensitive"], "action_count": 1,
+               "path": "app[0]/panel[0]:Advanced/button[0]"}
+        with mock.patch.object(MODULE, "atspi_probe", return_value={"matches": [row]}):
+            self.assertEqual(MODULE.wait_visible_action(
+                sys.executable, 123, "Export…", ("button",), timeout=0.1,
+                context="Advanced"), row)
+        for invalid in (dict(row, pid=456), dict(row, visible=False),
+                        dict(row, states=[]), dict(row, action_count=0)):
+            with self.subTest(invalid=invalid), mock.patch.object(
+                    MODULE, "atspi_probe", return_value={"matches": [invalid]}):
+                with self.assertRaisesRegex(RuntimeError, "timed out waiting for visible action"):
+                    MODULE.wait_visible_action(
+                        sys.executable, 123, "Export…", ("button",), timeout=0.05,
+                        context="Advanced")
+        duplicate = dict(row, identity=row["identity"] + "/duplicate")
+        with mock.patch.object(MODULE, "atspi_probe", return_value={"matches": [row, duplicate]}):
+            with self.assertRaisesRegex(RuntimeError, "ambiguous visible action"):
+                MODULE.wait_visible_action(
+                    sys.executable, 123, "Export…", ("button",), timeout=0.1,
+                    context="Advanced")
+
+    def test_advanced_scenario_is_opt_in_and_chooser_selection_is_exact(self):
+        source = SCRIPT.read_text(encoding="utf-8")
+        self.assertIn('choices=("matrix", "advanced"), default="matrix"', source)
+        self.assertIn('if args.scenario == "advanced":\n                run_advanced_preferences(', source)
+        helper = (SCRIPT.parent / "select-native-file-chooser.py").read_text(encoding="utf-8")
+        self.assertIn('basename in (child.get_name() or "")', helper)
+        self.assertIn('child.get_process_id() == app_pid', helper)
+        self.assertIn('selection.select_child(index)', helper)
+        self.assertIn('read_text(location_entry) == path', helper)
+        self.assertNotIn('xdotool', helper)
+        selector = helper.split("def select_file_row", 1)[1].split("def save_default", 1)[0]
+        self.assertNotIn("Ctrl+L", selector)
 
     def test_visible_text_requires_exact_pid_and_unique_identity(self):
         row = {"name": "1 running of 1 known sessions", "pid": 123,

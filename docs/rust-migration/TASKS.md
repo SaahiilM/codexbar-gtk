@@ -10,11 +10,11 @@ history. A checked box means **verified and merged**, not merely implemented.
 | --- | --- |
 | Goal | Fully native Rust GTK4/libadwaita application with verified packaging and legacy runtime removal. |
 | Current phase | BG passed and U01–U08 implementation merged. UG **NOT PASSED**; Python default. |
-| Last observed merge | PR #107 merged normally at `2b8d5b70765e36b7baa511a4c9001737cc9c7aaa` (build 106). Exact head `33f433b7951677e7167c1d35d8b382c4aba33ac0` passed all three checks in run `43287961284`, including the empty-dashboard widget regression. No reviews, comments or review threads were present. |
-| Active implementation | BUILD107/E210 contains test-only CLI process-group lifecycle regression and fixture cleanup. Production CLI behavior is unchanged. The verified build-106 main was merged normally; local backend checks passed, fresh exact-head CI pending. |
+| Last observed merge | PR #108 merged normally at `a73e10c90e363faa970f50cb455629d75d85147e` (build 107). Exact head `cbcd45ec72c2b23090f52bd09fc1c3f5743dd028` passed all three checks in run `43290374919`; no reviews, comments or review threads were present. |
+| Active implementation | BUILD108/E211 relocates provider artwork to shared `assets/provider_icons/`, updates native embedding and transitional Python lookup/install paths. Focused native decode and legacy-install lookup passed locally; fresh exact-head CI pending. |
 | Installer/runtime verification | E198 records the merged build-95 installed-prefix/Python-free runtime proof. E199 records prior local 13-case activation smoke evidence in a Python-free container; its first attempt lacked `file`, and the portable `od`/`ldd` check passed. These component results do not pass C02 or authorize cutover. |
 | UI acceptance | E195 records one Display action; E200 records seven guarded Settings actions and three tab transitions. Broader Wayland controls/navigation remain open. UG is **NOT PASSED** and Python remains the default; see `UG_GATE.md`. |
-| Next | Publish BUILD107 and observe exact-head CI before normal merge. Residual private-Wayland Settings acceptance proceeds separately. UG NOT PASSED, Python default, C gates open. |
+| Next | Publish BUILD108 and observe exact-head CI before normal merge. Native tray, native launcher and residual Settings acceptance are separate parallel slices awaiting review/build allocation. UG NOT PASSED, Python default, C gates open. |
 
 PR #103 correction: run `42918673780` on `7e16a47` passed tray and the full
 Python-free/activated command-target proof. The Rust-opt-in suite failed on a

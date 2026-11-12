@@ -70,6 +70,9 @@ chmod +x "${BIN_DIR}/codexbar-gtk"
 # Application code ----------------------------------------------------------
 rm -rf "${APP_DIR}/codexbar_gtk"
 cp -r "${ROOT}/codexbar_gtk" "${APP_DIR}/codexbar_gtk"
+rm -rf "${APP_DIR}/assets/provider_icons"
+mkdir -p "${APP_DIR}/assets"
+cp -r "${ROOT}/assets/provider_icons" "${APP_DIR}/assets/provider_icons"
 find "${APP_DIR}" -name '__pycache__' -type d -prune -exec rm -rf {} + 2>/dev/null || true
 
 # Private runtime dependencies (GTK4 typelibs, libadwaita, the cairo bridge)

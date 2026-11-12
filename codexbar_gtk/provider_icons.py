@@ -6,7 +6,9 @@ from pathlib import Path
 
 from .providers import canonical_id
 
-ASSET_DIR = Path(__file__).with_name("assets") / "provider_icons"
+# Shared artwork lives outside the Python package so the native build can
+# consume it without depending on the transitional Python application.
+ASSET_DIR = Path(__file__).resolve().parent.parent / "assets" / "provider_icons"
 
 # These provider descriptors intentionally reuse another provider's upstream icon.
 ICON_ALIASES = {

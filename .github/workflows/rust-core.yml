@@ -9,7 +9,7 @@ on:
       - "rust-python/**"
       - "rust-backend/**"
       - "rust-gtk/**"
-      - "codexbar_gtk/assets/provider_icons/**"
+      - "assets/provider_icons/**"
       - "scripts/smoke-native-gtk.sh"
       - "scripts/smoke-native-dashboard.sh"
       - "scripts/smoke-native-wayland-assets.sh"

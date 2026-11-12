@@ -752,6 +752,72 @@ mod tests {
         panic!("fixture process did not write a complete child PID");
     }
 
+    async fn wait_for_process_exit(pid: i32) -> bool {
+        for _ in 0..300 {
+            let running = fs::read_to_string(format!("/proc/{pid}/stat"))
+                .ok()
+                .and_then(|stat| stat.rsplit_once(") ").map(|(_, tail)| tail.to_owned()))
+                .and_then(|tail| tail.chars().next())
+                .is_some_and(|state| state != 'Z' && state != 'X');
+            if !running {
+                return true;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        false
+    }
+
+    async fn run_and_assert_process_group_termination(cancel: bool) {
+        let fixture = Fixture::new(
+            "sleep 30 & echo $! > {DIR}/descendant.pid; echo $$ > {DIR}/leader.pid; wait",
+        );
+        let service = CliService::new(&fixture.executable, None);
+        let leader_path = fixture.dir.join("leader.pid");
+        let descendant_path = fixture.dir.join("descendant.pid");
+
+        let (sender, receiver) = watch::channel(false);
+        let cancellation = cancel.then_some(Cancellation { receiver });
+        let timeout = if cancel {
+            Duration::from_secs(10)
+        } else {
+            Duration::from_millis(500)
+        };
+        let task = tokio::spawn(async move { service.run(&[], timeout, cancellation).await });
+        let leader = wait_for_fixture_pid(&leader_path).await;
+        let descendant = wait_for_fixture_pid(&descendant_path).await;
+        if cancel {
+            sender.send_replace(true);
+        }
+
+        let result = time::timeout(Duration::from_secs(3), task).await;
+        let Ok(result) = result else {
+            kill_process_group(Some(leader as u32));
+            panic!("CLI task did not finish after process-group termination");
+        };
+        let error = result.unwrap().unwrap_err();
+        assert_eq!(
+            error.kind,
+            if cancel {
+                CliErrorKind::Cancelled
+            } else {
+                CliErrorKind::Timeout
+            }
+        );
+        let leader_stopped = wait_for_process_exit(leader).await;
+        let descendant_stopped = wait_for_process_exit(descendant).await;
+        if !leader_stopped || !descendant_stopped {
+            unsafe {
+                libc::kill(leader, libc::SIGKILL);
+                libc::kill(descendant, libc::SIGKILL);
+            }
+        }
+        assert!(leader_stopped, "leader process {leader} survived");
+        assert!(
+            descendant_stopped,
+            "descendant process {descendant} survived"
+        );
+    }
+
     #[tokio::test]
     async fn command_uses_argv_boundaries_and_returns_both_streams_and_status() {
         let _guard = PROCESS_TEST_LOCK.lock().await;
@@ -797,6 +863,13 @@ mod tests {
         let error = task.await.unwrap().unwrap_err();
         assert_eq!(error.kind, CliErrorKind::Cancelled);
         assert!(!Path::new(&format!("/proc/{pid}")).exists());
+    }
+
+    #[tokio::test]
+    async fn timeout_and_cancellation_terminate_the_entire_process_group() {
+        let _guard = PROCESS_TEST_LOCK.lock().await;
+        run_and_assert_process_group_termination(false).await;
+        run_and_assert_process_group_termination(true).await;
     }
 
     #[tokio::test]

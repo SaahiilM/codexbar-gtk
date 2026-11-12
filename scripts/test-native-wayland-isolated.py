@@ -36,20 +36,21 @@ RESIDUAL_SETTINGS = (
     ("Display", "Show used instead of remaining", "usageBarsShowUsed", True, "switch"),
     ("Display", "Project usage at reset", "quotaBurndownEnabled", False, "switch"),
     ("Usage & Spend", "Enable local cost scans", "costUsageEnabled", False, "switch"),
-    ("Display", "Reset time format", "resetTimesOption", "absolute", "combo"),
-    ("Display", "Workday ticks", "workdayTickAppearance", "highContrast", "combo"),
-    ("Menu Bar", "Icon style", "menuBarIconStyle", "iconPercent", "combo"),
-    ("Menu Bar", "Icon shows", "unifiedIconSource", "first", "combo"),
-    ("Menu Bar", "Provider rows", "switcherRowsOption", "details", "combo"),
-    ("Usage & Spend", "Statistics time zone", "costUsageBucketTimeZone", "Africa/Abidjan", "combo"),
 )
-RESIDUAL_OPTION_LABELS = {
-    ("resetTimesOption", "absolute"): "Absolute time",
-    ("workdayTickAppearance", "highContrast"): "High contrast",
-    ("menuBarIconStyle", "iconPercent"): "Icon and percentage",
-    ("unifiedIconSource", "first"): "First enabled provider",
-    ("switcherRowsOption", "details"): "Quota details",
-}
+COMBO_DIAGNOSTIC_SETTINGS = (
+    ("Display", "Reset time format", "resetTimesOption", "absolute", "combo",
+     "scripts/smoke-native-settings.sh: wait_for_preference resetTimesOption both"),
+    ("Display", "Workday ticks", "workdayTickAppearance", "highContrast", "combo",
+     "scripts/smoke-native-settings.sh: wait_for_preference workdayTickAppearance highContrast"),
+    ("Menu Bar", "Icon style", "menuBarIconStyle", "iconPercent", "combo",
+     "scripts/smoke-native-settings.sh: wait_for_preference menuBarIconStyle iconPercent"),
+    ("Menu Bar", "Icon shows", "unifiedIconSource", "first", "combo",
+     "scripts/smoke-native-settings.sh: wait_for_preference unifiedIconSource automatic"),
+    ("Menu Bar", "Provider rows", "switcherRowsOption", "details", "combo",
+     "scripts/smoke-native-settings.sh: wait_for_preference switcherRowsOption details"),
+    ("Usage & Spend", "Statistics time zone", "costUsageBucketTimeZone", "Africa/Abidjan", "combo",
+     "scripts/smoke-native-settings.sh: wait_for_nonempty_preference costUsageBucketTimeZone"),
+)
 HOST_SESSION_KEYS = (
     "DISPLAY", "WAYLAND_DISPLAY", "WAYLAND_SOCKET", "XAUTHORITY",
     "DBUS_SESSION_BUS_ADDRESS", "DBUS_SESSION_BUS_PID", "DBUS_SYSTEM_BUS_ADDRESS",
@@ -1106,7 +1107,7 @@ def run_residual_settings(python: str, pid: int, prefs: pathlib.Path,
                           evidence: dict, screenshooter: pathlib.Path,
                           env: dict[str, str], scratch: pathlib.Path,
                           artifact_dir: pathlib.Path) -> None:
-    """Exercise still-open conventional Settings controls through visible AT-SPI nodes."""
+    """Exercise the three verified conventional Settings switches."""
     gaction("settings")
     title = wait_until("native Settings window", lambda: atspi_probe(
         python, "title", pid, "CodexBar Settings").get("match"))
@@ -1116,8 +1117,6 @@ def run_residual_settings(python: str, pid: int, prefs: pathlib.Path,
     screenshots = {
         "Display": (scratch / "capture-settings-display",
                     artifact_dir / "settings-display.png"),
-        "Menu Bar": (scratch / "capture-settings-menu-bar",
-                     artifact_dir / "settings-menu-bar.png"),
         "Usage & Spend": (scratch / "capture-settings-usage-spend",
                           artifact_dir / "settings-usage-spend.png"),
     }
@@ -1125,6 +1124,14 @@ def run_residual_settings(python: str, pid: int, prefs: pathlib.Path,
     active_page = None
     before_map = json.loads(prefs.read_text(encoding="utf-8"))
     current_map = dict(before_map)
+    action_captures = {
+        "usageBarsShowUsed": (scratch / "capture-switch-usage-bars",
+                              artifact_dir / "switch-usage-bars.png"),
+        "quotaBurndownEnabled": (scratch / "capture-switch-quota-burndown",
+                                 artifact_dir / "switch-quota-burndown.png"),
+        "costUsageEnabled": (scratch / "capture-switch-local-cost-scan",
+                             artifact_dir / "switch-local-cost-scan.png"),
+    }
 
     def capture_page(page: str) -> None:
         capture_dir, output = screenshots[page]
@@ -1152,84 +1159,53 @@ def run_residual_settings(python: str, pid: int, prefs: pathlib.Path,
         active_page = page
 
     for page, label, key, value, kind in RESIDUAL_SETTINGS:
-        option_label = RESIDUAL_OPTION_LABELS.get((key, value), value)
         open_page(page)
-        expected_roles = (("check box", "switch") if kind == "switch" else
-                          ("combo box", "button", "push button"))
-        try:
-            control = wait_visible_control(python, pid, label, expected_roles, page,
-                                           allow_selection=(kind == "combo"))
-        except RuntimeError as error:
-            if kind != "combo":
-                raise
-            if page not in captured:
-                capture_page(page)
-            gap = getattr(error, "contract_details", [])
-            completed = [{"page": item["page"], "control": item["control"],
-                          "key": item["key"], "value": item["value"]}
-                         for item in results if item.get("kind") == "AT-SPI preference action"]
-            failure = RuntimeError(str(error))
-            failure.details = {
-                "scenario": "settings-residual",
-                "accessibility_contract_gap": gap,
-                "completed_settings_controls": completed,
-                "persisted_settings_json": json.loads(prefs.read_text(encoding="utf-8")),
-                "binary_sha256": evidence.get("binary_sha256"),
-                "source_commit": evidence.get("source_commit"),
-                "host_session_handles_removed": evidence.get("host_session_handles_removed"),
-                "screenshots": evidence.get("screenshots", {}),
-            }
-            raise failure from error
+        control = wait_visible_control(python, pid, label,
+                                       ("check box", "switch"), page)
         before_control = atspi_probe(python, "states", pid, label)
         same_control = [row for row in before_control.get("matches", [])
                         if row.get("identity") == control["identity"]
                         and row.get("pid") == pid]
         if len(same_control) != 1:
             raise RuntimeError(f"{label!r} lacks one exact same-PID visible control: {same_control!r}")
-        if kind == "switch":
-            desired_before = not value
-            if same_control[0].get("checked") is not desired_before:
-                raise RuntimeError(f"{label!r} fixture state is not {desired_before}: {same_control[0]!r}")
-            action = activate_accessible(python, pid, label, control["identity"])
-            if action.get("before_checked") is not desired_before or action.get("after_checked") is not value:
-                raise RuntimeError(f"{label!r} did not visibly toggle to {value}: {action!r}")
-        else:
-            if control.get("selection_available"):
-                selection = select_combo_option(python, pid, control, option_label)
-                action = {"selection": selection}
-            elif control.get("action_count", 0) > 0:
-                opened = activate_accessible(python, pid, label, control["identity"])
-                option_snapshot, selection = select_open_popup_option(python, pid,
-                                                                      option_label, label)
-                action = {"accessible_activation": opened,
-                          "visible_popup_option": option_snapshot,
-                          "selection": selection}
-            elif control.get("activation_child"):
-                child = control["activation_child"]
-                opened = activate_accessible(python, pid, child["name"], child["identity"])
-                option_snapshot, selection = select_open_popup_option(python, pid,
-                                                                      option_label, label)
-                action = {"accessible_child_activation": opened,
-                          "visible_popup_option": option_snapshot,
-                          "selection": selection}
-            else:
-                raise RuntimeError(f"combo {label!r} exposed no usable accessible UI operation")
+        if not {"showing", "visible", "sensitive"}.issubset(set(same_control[0].get("states", []))):
+            raise RuntimeError(f"{label!r} is not showing, visible, and sensitive: {same_control[0]!r}")
+        desired_before = not value
+        if same_control[0].get("checked") is not desired_before:
+            raise RuntimeError(f"{label!r} fixture state is not {desired_before}: {same_control[0]!r}")
+        action = activate_accessible(python, pid, label, control["identity"])
+        if action.get("before_checked") is not desired_before or action.get("after_checked") is not value:
+            raise RuntimeError(f"{label!r} did not visibly toggle to {value}: {action!r}")
 
         expected_map = dict(current_map)
         expected_map[key] = value
         wait_until(f"{key} exact isolated preference map", lambda expected_map=expected_map:
                    json.loads(prefs.read_text(encoding="utf-8")) == expected_map)
         current_map = expected_map
+        applied_status = wait_visible_text(
+            python, pid, "Settings applied; a refresh was queued.",
+            context=page)
+        capture_dir, capture_path = action_captures[key]
+        capture_screen(screenshooter, env, capture_dir, capture_path)
+        evidence["screenshots"][key] = str(capture_path)
         results.append({"kind": "AT-SPI preference action", "page": page,
                         "control": label, "key": key, "value": value,
                         "control_identity": control["identity"], "control_role": control["role"],
-                        "pid": pid, "action": action, "full_settings_map_checked": True})
+                        "pid": pid, "action": action, "full_settings_map_checked": True,
+                        "visible_result": applied_status["name"],
+                        "visible_capture": str(capture_path)})
 
     if active_page is not None and active_page not in captured:
         capture_page(active_page)
     final_map = json.loads(prefs.read_text(encoding="utf-8"))
     if final_map != current_map:
-        raise RuntimeError("residual Settings batch final full preference map changed unexpectedly")
+        raise RuntimeError("three-switch Settings batch final full preference map changed unexpectedly")
+    completed = [item for item in results if item.get("kind") == "AT-SPI preference action"]
+    expected_actions = [(page, label, key, value)
+                        for page, label, key, value, _kind in RESIDUAL_SETTINGS]
+    if len(completed) != 3 or [(item["page"], item["control"], item["key"], item["value"])
+                               for item in completed] != expected_actions:
+        raise RuntimeError(f"settings-residual requires all three exact switch actions: {completed!r}")
     evidence["actions"].extend(results)
     evidence["persisted_settings_json"] = final_map
     evidence["settings_diff"] = {key: [before_map.get(key), final_map.get(key)]
@@ -1238,6 +1214,27 @@ def run_residual_settings(python: str, pid: int, prefs: pathlib.Path,
         "AT-SPI AccessibleAction and visible selection evidence is not physical Wayland pointer/keyboard input.",
         "Private Weston does not establish KDE shell placement, portal input, or host compositor parity.",
     ]
+
+
+def combo_diagnostic_result(binary: pathlib.Path, runner_commit: str) -> dict:
+    """Return the known unsupported combo scope without launching or probing GTK."""
+    digest = hashlib.sha256(binary.read_bytes()).hexdigest()
+    return {
+        "scenario": "settings-combo-diagnostic",
+        "status": "unsupported",
+        "reason": ("The observed native GTK AT-SPI path does not expose usable combo "
+                   "selection/action for these controls; combo tree probes are not repeated."),
+        "runner_commit": runner_commit,
+        "binary_sha256": digest,
+        "controls": [{"page": page, "label": label, "key": key,
+                      "wayland_target": value, "kind": kind,
+                      "x11_assertion": x11_assertion, "status": "unsupported"}
+                     for page, label, key, value, kind, x11_assertion
+                     in COMBO_DIAGNOSTIC_SETTINGS],
+        "exit_code": 3,
+        "limits": ["No GTK app, AT-SPI tree, or combo action was launched in this diagnostic.",
+                   "The six controls map to X11 smoke assertions; this is not a product defect claim."],
+    }
 
 
 def capture_screen(screenshooter: pathlib.Path, env: dict[str, str],
@@ -1825,7 +1822,8 @@ def inside_run(args) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--binary", required=True, help="built codexbar-gtk-native executable")
-    parser.add_argument("--scenario", choices=("matrix", "advanced", "settings-residual"), default="matrix",
+    parser.add_argument("--scenario", choices=("matrix", "advanced", "settings-residual",
+                                                "settings-combo-diagnostic"), default="matrix",
                         help="isolated acceptance slice (default: existing matrix)")
     parser.add_argument("--artifact-dir", default=None,
                         help="directory for synthetic screenshots/evidence (default: /tmp temp directory)")
@@ -1833,6 +1831,28 @@ def main() -> int:
     args = parser.parse_args()
     if args.artifact_dir is None:
         args.artifact_dir = tempfile.mkdtemp(prefix="codexbar-native-wayland-evidence-")
+    if args.scenario == "settings-combo-diagnostic":
+        binary = pathlib.Path(args.binary).resolve()
+        if not binary.is_file() or not os.access(binary, os.X_OK):
+            print(f"native GTK binary not found or not executable: {binary}", file=sys.stderr)
+            return 2
+        artifact_dir = pathlib.Path(args.artifact_dir).resolve()
+        if artifact_dir.exists() and (not artifact_dir.is_dir() or any(artifact_dir.iterdir())):
+            print(f"artifact directory must be new or empty: {artifact_dir}", file=sys.stderr)
+            return 2
+        artifact_dir.mkdir(parents=True, mode=0o700, exist_ok=True)
+        artifact_dir.chmod(0o700)
+        runner_commit = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=pathlib.Path(__file__).resolve().parents[1],
+            capture_output=True, text=True, check=True, timeout=5).stdout.strip()
+        evidence = combo_diagnostic_result(binary, runner_commit)
+        evidence["artifact_dir"] = str(artifact_dir)
+        evidence_path = artifact_dir / "evidence.json"
+        evidence_path.write_text(json.dumps(evidence, indent=2) + "\n", encoding="utf-8")
+        evidence_path.chmod(0o600)
+        print(json.dumps(evidence, indent=2))
+        print("UNSUPPORTED: native combo accessibility is not verified", file=sys.stderr)
+        return 3
     if not args.inside_private_bus:
         private_env = private_bus_environment(os.environ)
         command = ["dbus-run-session", "--", sys.executable, __file__,

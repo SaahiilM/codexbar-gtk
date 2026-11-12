@@ -7327,3 +7327,49 @@ loopback acceptance.
   exact-head CI before treating the slice as verified or merged.
 
 **Root base reconciliation:** PR #106 merged normally at `ca1535c9e937d0a832047e03f68712f976f8d4ce`; exact head `3fb5d2d07cd5b63301d9cbceccb1bf88c183ca66` passed all three jobs in run `43284913776`. Default and Advanced private Wayland and full X11 Settings steps passed; reviews/comments/threads were empty. BUILD106 merged that main normally, retaining both changelog entries and E208/E209. No production code conflicts occurred; fresh BUILD106 CI remains pending.
+
+### Provisional BUILD107/E210 — synthetic CLI process-group regression coverage
+
+**Base and serialization:** PR [#106](https://github.com/SaahiilM/codexbar-gtk/pull/106)
+merged normally at `ca1535c9e937d0a832047e03f68712f976f8d4ce` (build 105).
+Its exact head `3fb5d2d07cd5b63301d9cbceccb1bf88c183ca66` passed all three
+checks in run `43284913776`; no reviews, comments or threads were reported.
+This is base evidence, not CI for this slice. The branch merge commit
+`54b9fc5` incorporates `origin/main` without conflict while preserving the
+preexisting implementation commits. BUILD106 remains reserved for the
+in-flight native UI slice; BUILD107 and this entry are provisional until root
+reconciles the final base after UI BUILD106 merges.
+
+**Implementation scope:** `rust-backend/src/cli.rs` contains the test-only
+changes from `d375a0c` (timeout/cancellation process-group regression coverage),
+`1b0b230` (fail closed when `/proc/<pid>/stat` evidence is malformed or
+unreadable, except recognized process disappearance), and `ad6aaaf` (RAII
+fixture process-group cleanup plus leader/descendant termination assertions).
+The wait helper recognizes zombie/dead states and normal `ENOENT`/`ESRCH` as
+stopped; unreadable or malformed evidence cannot satisfy the assertion. The
+cleanup guard kills remaining members on early test exit. Root reviewed
+`ad6aaaf`; this slice does not change production CLI behavior, add a new port,
+or claim upstream/UG acceptance.
+
+**Observed local checks:** `cargo test --manifest-path
+rust-backend/Cargo.toml --locked` passed 97 unit tests and 1 headless backend
+integration test. The focused
+`cli::tests::timeout_and_cancellation_terminate_the_entire_process_group`
+test passed three consecutive runs with one test thread. The test is included
+in the 97 unit-test result; the repeats add stability evidence, not unique
+coverage. `cargo fmt --manifest-path rust-backend/Cargo.toml -- --check` and
+`cargo clippy --manifest-path rust-backend/Cargo.toml --all-targets
+--all-features -- -D warnings` passed. The version metadata regression test
+`VersionMetadataTests.test_display_string_matches_version_file` passed after
+provisional BUILD107 updates.
+
+**Limits and next step:** no full multi-crate/Python suite, native app build,
+GTK smoke, UI smoke, or full application runtime path was run for this
+test-only slice. No host desktop/app/service, D-Bus session, real account,
+credential, provider HTTP, or authentication flow was used. Python remains the
+default; UG remains **NOT PASSED**; BG/C gates remain open. No push, PR, merge,
+or exact-head CI result is claimed. Root must reconcile the final base and
+provisional build metadata after the reserved UI BUILD106 slice merges, then
+own publication and live exact-head CI verification.
+
+**Root base reconciliation:** PR #107 merged normally at `2b8d5b70765e36b7baa511a4c9001737cc9c7aaa`; exact head `33f433b7951677e7167c1d35d8b382c4aba33ac0` passed all three jobs in run `43287961284`, including the empty-dashboard X11 widget regression. Reviews/comments/threads were empty. BUILD107 merged that base normally, retaining E209/E210 and both changelog entries. Conflicts were release metadata/handoff only; no source conflict. Fresh exact-head CI remains pending.

@@ -182,6 +182,11 @@ parity; UG remains **NOT PASSED**, and Python remains the default. See the
 [build-103 evidence](docs/rust-migration/screenshots/build103-wayland-matrix/results.json)
 and audit E206.
 
+Build 107 strengthens synthetic CLI process-group lifecycle regression tests
+and guarantees fixture cleanup on test failure. It does not change production
+CLI behavior or add a new backend port. Python remains the default; UG remains
+**NOT PASSED**.
+
 Build 105 adds an advanced private Weston Settings acceptance scenario with
 synthetic portable preferences and Reset evidence. It checks exact chooser row
 selection and runs beside the existing Wayland matrix; the full X11 Settings
@@ -290,7 +295,7 @@ The GTK front-end uses the same version pair as the macOS bundle:
   this client is feature-compatible with (`0.82.0`).
 * `CURRENT_PROJECT_VERSION` is the build number of the Linux front-end.
 * `codexbar_gtk/version.py` turns the pair into the macOS-style
-  `"0.82.0 (106)"` string shown under Settings → About, in the tray menu and by
+  `"0.82.0 (107)"` string shown under Settings → About, in the tray menu and by
   `./run.sh --about`.
 
 Increment `CURRENT_PROJECT_VERSION` for each merged PR and keep it in sync with

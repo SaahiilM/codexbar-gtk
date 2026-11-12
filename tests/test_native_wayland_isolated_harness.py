@@ -249,64 +249,18 @@ class NativeWaylandIsolatedHarnessTests(unittest.TestCase):
                              {"ok": True})
             probe.assert_called_once_with(sys.executable, "activate", 123, "fixture", identity)
 
-    def test_combo_option_selection_is_bound_to_app_pid_and_visible_control(self):
-        combo = {"name": "Icon style", "role": "combo box",
-                 "identity": "123:app[0]/combo:combo box:Icon style",
-                 "pid": 123, "showing": True, "visible": True, "action_count": 1}
-        selected = {"ok": True, "pid": 123,
-                    "combo_identity": combo["identity"], "option": "Icon and percentage",
-                    "option_index": 1, "selected_after": True,
-                    "action": "Atspi.Selection.select_child"}
-        with mock.patch.object(MODULE, "atspi_probe", return_value=selected) as probe:
-            result = MODULE.select_combo_option(sys.executable, 123, combo, "Icon and percentage")
-        self.assertEqual(result["combo_identity"], combo["identity"])
-        probe.assert_called_once_with(sys.executable, "select-child", 123, "Icon style",
-                                      combo["identity"], "Icon and percentage")
-        for invalid in (dict(selected, ok=False), dict(selected, pid=456)):
-            with self.subTest(invalid=invalid), mock.patch.object(MODULE, "atspi_probe",
-                                                                    return_value=invalid):
-                with self.assertRaisesRegex(RuntimeError, "combo selection failed closed"):
-                    MODULE.select_combo_option(sys.executable, 123, combo, "Icon and percentage")
-
-    def test_combo_control_uses_a_real_visible_same_pid_descendant_action_when_present(self):
+    def test_combo_without_accessible_action_is_not_accepted_as_activated_control(self):
         combo = {"name": "Reset time format", "role": "combo box", "pid": 123,
                  "identity": "123:app[0]/combo:combo box:Reset time format",
                  "path": "app[0]/window:CodexBar Settings/panel:Display/panel[0]",
-                 "showing": True, "visible": True, "action_count": 0,
-                 "selection_available": False,
-                 "subtree": [{"name": "Reset time format", "role": "toggle button",
-                              "identity": "123:app[0]/combo/button:toggle button:Reset time format",
-                              "pid": 123, "states": ["showing", "visible", "sensitive"],
-                              "action_names": ["click"]}]}
+                 "showing": True, "visible": True, "action_count": 0}
         with mock.patch.object(MODULE, "atspi_probe", return_value={"matches": [combo]}):
-            selected = MODULE.wait_visible_control(
-                sys.executable, 123, "Reset time format", ("combo box",), "Display",
-                timeout=0.1, allow_selection=True)
-        self.assertEqual(selected["identity"], combo["identity"])
-        self.assertEqual(selected["activation_child"]["identity"], combo["subtree"][0]["identity"])
-
-    def test_combo_control_does_not_treat_current_value_list_as_option_selection(self):
-        combo = {"name": "Reset time format", "role": "combo box", "pid": 123,
-                 "identity": "123:app[0]/combo:combo box:Reset time format",
-                 "path": "app[0]/window:CodexBar Settings/panel:Display/panel[0]",
-                 "showing": True, "visible": True, "action_count": 0,
-                 "selection_available": False,
-                 "subtree": [{"name": "", "role": "list", "pid": 123,
-                              "states": ["showing", "visible", "focusable"],
-                              "selection_available": True,
-                              "children": [{"name": "", "role": "list item", "pid": 123,
-                                            "states": ["showing", "visible"],
-                                            "action_names": ["listitem.scroll-to"],
-                                            "children": [{"name": "Countdown", "role": "label",
-                                                          "pid": 123, "states": ["showing", "visible"],
-                                                          "action_names": ["clipboard.copy"]}]}]}]}
-        with mock.patch.object(MODULE, "atspi_probe", return_value={"matches": [combo]}):
-            with self.assertRaisesRegex(RuntimeError, "neither AT-SPI AccessibleAction nor Selection") as caught:
+            with self.assertRaisesRegex(RuntimeError, "timed out waiting for visible AT-SPI control"):
                 MODULE.wait_visible_control(
                     sys.executable, 123, "Reset time format", ("combo box",), "Display",
-                    timeout=0.1, allow_selection=True)
-        self.assertEqual(caught.exception.contract_details[0]["identity"], combo["identity"])
-        self.assertEqual(caught.exception.contract_details[0]["selection_available"], False)
+                    timeout=0.1)
+        self.assertEqual(combo["pid"], 123)
+        self.assertEqual(combo["action_count"], 0)
 
     def test_residual_settings_batch_is_exactly_three_switch_actions(self):
         self.assertEqual(len(MODULE.RESIDUAL_SETTINGS), 3)
@@ -321,8 +275,10 @@ class NativeWaylandIsolatedHarnessTests(unittest.TestCase):
         self.assertIn('if len(completed) != 3', source)
         self.assertIn('full_settings_map_checked": True', source)
         self.assertIn('"showing", "visible", "sensitive"', source)
-        self.assertNotIn('select_combo_option(python, pid, control', source)
-        self.assertNotIn('select_open_popup_option(python, pid', source)
+        self.assertNotIn('select_combo_option', source)
+        self.assertNotIn('select_open_popup_option', source)
+        self.assertNotIn('selection.select_child', source)
+        self.assertNotIn('"subtree"', source)
 
     def test_six_combo_controls_are_isolated_as_explicit_unsupported_diagnostic(self):
         self.assertEqual(len(MODULE.COMBO_DIAGNOSTIC_SETTINGS), 6)
@@ -343,6 +299,12 @@ class NativeWaylandIsolatedHarnessTests(unittest.TestCase):
         self.assertEqual(len(diagnostic["controls"]), 6)
         self.assertTrue(all(row["status"] == "unsupported" for row in diagnostic["controls"]))
         self.assertIn("not repeated", diagnostic["reason"])
+        self.assertEqual(diagnostic["historical_observation"]["source_commit"],
+                         "3e442c1dfe46a5ba153fdccc406ae28f76f490d1")
+        self.assertIn("private Wayland", diagnostic["historical_observation"]["scope"])
+        self.assertEqual(diagnostic["current_run"],
+                         "static mapping only; no application binary launched")
+        self.assertIn("not runtime evidence", " ".join(diagnostic["limits"]))
         source = SCRIPT.read_text(encoding="utf-8")
         self.assertIn('"settings-combo-diagnostic"', source)
         self.assertIn('return 3', source)

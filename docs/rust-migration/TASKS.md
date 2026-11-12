@@ -11,10 +11,10 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Goal | Fully native Rust GTK4/libadwaita application with verified packaging and legacy runtime removal. |
 | Current phase | BG passed and U01–U08 implementation merged. UG **NOT PASSED**; Python default. |
 | Last observed merge | PR #108 merged normally at `a73e10c90e363faa970f50cb455629d75d85147e` (build 107). Exact head `cbcd45ec72c2b23090f52bd09fc1c3f5743dd028` passed all three checks in run `43290374919`; no reviews, comments or review threads were present. |
-| Active implementation | BUILD108/E211 relocates provider artwork to shared `assets/provider_icons/`, updates native embedding and transitional Python lookup/install paths. Focused native decode and legacy-install lookup passed locally; fresh exact-head CI pending. |
+| Active implementation | BUILD109/E212, branch `t3/native-settings-acceptance`: bounded private-Weston acceptance for three conventional Settings switches, a static historical combo limitation/X11 mapping, and removal of unused combo-probe machinery. Local review and exact-head CI remain pending. |
 | Installer/runtime verification | E198 records the merged build-95 installed-prefix/Python-free runtime proof. E199 records prior local 13-case activation smoke evidence in a Python-free container; its first attempt lacked `file`, and the portable `od`/`ldd` check passed. These component results do not pass C02 or authorize cutover. |
 | UI acceptance | E195 records one Display action; E200 records seven guarded Settings actions and three tab transitions. Broader Wayland controls/navigation remain open. UG is **NOT PASSED** and Python remains the default; see `UG_GATE.md`. |
-| Next | Publish BUILD108 and observe exact-head CI before normal merge. Native tray, native launcher and residual Settings acceptance are separate parallel slices awaiting review/build allocation. UG NOT PASSED, Python default, C gates open. |
+| Next | Root reviews and publishes BUILD109/E212, then observes exact-head CI. The three switch actions are partial evidence only; combo/Wayland UI action and broader UG coverage remain open. UG NOT PASSED, Python default, C gates open. |
 
 PR #103 correction: run `42918673780` on `7e16a47` passed tray and the full
 Python-free/activated command-target proof. The Rust-opt-in suite failed on a
@@ -1369,3 +1369,51 @@ temporary homes/private Xvfb/private D-Bus sessions. See AUDIT E207 chooser
 repair for exact logs and limitations. No rebuild, push, or exact-head CI result
 is claimed. **Next:** root reviews the local commit, publishes it, and observes
 the required CI result before updating remote status.
+
+### BUILD109/E212 — residual Settings switches and combo diagnostic
+
+**Owner/status:** `t3/native-settings-acceptance`, local implementation complete;
+root review and publication pending. Base PR #108 merged at
+`a73e10c90e363faa970f50cb455629d75d85147e`; exact head
+`cbcd45ec72c2b23090f52bd09fc1c3f5743dd028` passed all three checks in run
+`43290374919`. BUILD109 is reserved. This is not a merge or exact-head CI claim.
+
+**Scope:** `scripts/test-native-wayland-isolated.py` now covers only three
+residual conventional switches, retains a static six-control combo-to-X11
+assertion mapping, and removes unused combo selection/action and child-subtree
+probe code. Shared exact-PID identity checks and the generic bounded tree
+diagnostic remain. The unsupported diagnostic labels the combo result as a
+historical native GTK/AT-SPI observation tied to the recorded source runtime;
+it hashes the supplied binary as identity metadata but explicitly does not
+launch it. `.github/workflows/rust-core.yml` adds a required six-minute
+`settings-residual` step and a dedicated always-uploaded synthetic artifact.
+The default matrix, Advanced step, and X11 Settings smoke remain enabled.
+
+The three-switch Wayland run passed on the cached native binary from source
+`3e442c1dfe46a5ba153fdccc406ae28f76f490d1` (embedded BUILD108,
+`e2423c661c4c466e55a5f9f85b91458d1c96328d6d594872c4bc7a72de32e75a`). It
+verified `usageBarsShowUsed=false→true`, `quotaBurndownEnabled=true→false`, and
+`costUsageEnabled=true→false`, each with visible same-PID AT-SPI state, visible
+result text, and exact complete preference-map comparison. The retained
+synthetic captures and sanitized relative results are in
+[`build109-wayland-settings-residual/`](../../screenshots/build109-wayland-settings-residual/).
+The BUILD109 release metadata was not embedded in the runtime binary.
+
+**Local verification:** 24 focused harness tests passed;
+`python3 -m py_compile scripts/test-native-wayland-isolated.py
+ tests/test_native_wayland_isolated_harness.py`, the version metadata regression
+test, and `git diff --check` passed. The post-trim private-Weston residual
+scenario passed. Because shared AT-SPI snapshot handling changed, the existing
+default matrix and Advanced scenarios were also rerun serially and passed on
+the same BUILD108 binary. Initial concurrent runs failed at AT-SPI bus
+connection; those outputs were discarded. The static diagnostic tests confirm
+that it makes no GTK launch. No live combo probes were repeated.
+
+**Limits/next step:** combo controls remain OPEN for Wayland actions. X11 target
+differences are recorded in UG_GATE.md: reset-time `absolute` vs `both`, icon
+source `first` vs `automatic`, and Wayland timezone `Africa/Abidjan` vs X11's
+generic nonempty assertion. Local X11 was not rerun; its required workflow
+step is unchanged. No full suite, exact-head CI, PR/push, UG PASS, Python
+removal/default flip, or migration-gate completion is claimed. Root reviews
+and publishes this commit, then observes exact-head CI. UG remains **NOT
+PASSED**, Python remains the default, and C gates remain open.

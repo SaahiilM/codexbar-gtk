@@ -6940,3 +6940,137 @@ code or cancellation policy changed.
   publish the correction and require fresh exact-head CI. UG stays **NOT
   PASSED**, Python remains default, and the failed CI check remains a blocker
   until its replacement result is observed.
+
+### E207 local follow-up — 2026-11-12: WM ordering verified; GTK import path remains blocked
+
+- **Scope and source identity:** Continued the BUILD104/E207 harness worktree
+  at `f9186afca7a64dbd87e6427eb5da1f7c67f7d898`, preserving the root's two
+  uncommitted edits. `scripts/smoke-native-settings.sh` is the only application
+  source adjacent to this work; no native app source, VERSION or build metadata
+  changed. The build-104 native executable at
+  `.task-target-x11/debug/codexbar-gtk-native` was used as-is; SHA-256
+  `9b8e670276db6faef63959fcea75a680b73d47488530b6ba8297ba37c8b22cbd`.
+- **Harness changes:** The private XFWM4 window manager is started and its root
+  ownership verified before the native app launch. The later chooser call is
+  idempotent. Focus comparisons use `normalize_window_id` to compare X property
+  hex IDs with xdotool decimal IDs. After the Ctrl+L full fixture path is
+  entered, the selector submits the location and attempts the actual Import
+  button using chooser geometry; the chooser-close and downstream import
+  persistence/reload assertions remain enabled. This is a partial, unverified
+  harness correction, not an accepted selector fix.
+- **Focused checks:** `bash -n scripts/smoke-native-settings.sh`,
+  `shellcheck scripts/smoke-native-settings.sh`, and `git diff --check` passed
+  after the final harness edit. Build/version metadata independently read as
+  `CURRENT_PROJECT_VERSION=104` and `BUILD = 104`. No extra application build
+  was run.
+- **Private runtime setup:** `xvfb-run`, `Xvfb` and `xdotool` were absent from
+  PATH. Rootless `apt-get download` plus `dpkg-deb -x` provisioned `xvfb`,
+  `xdotool` and `libxdo3` under `/tmp/codexbar-x11-tools.oNOJop`; no package was
+  installed system-wide. Runtime invocations used `env -i` before the Xvfb
+  wrapper with only tool paths, `HOME=/tmp`, locale, temp directory and the
+  smoke keep-temp setting. Thus the wrapper did not inherit host DISPLAY,
+  Wayland, session-bus, portal, input or provider environment. The app and WM
+  ran inside private Xvfb/private D-Bus; only synthetic CLI/account/login
+  fixtures and the smoke's loopback update server were configured. Private
+  D-Bus activated GTK/XFCE services; no host bus or portal was used.
+- **Runtime attempts and exact failures:** The first invocation used a relative
+  binary argument, which correctly failed at launch after the harness changed
+  into its synthetic HOME; this was an invocation error and is not counted as
+  a runtime blocker. With the absolute binary path, the full smoke launched the
+  native Settings window and verified its owner PID while XFWM4 owned the root.
+  Run 1 then exported preferences and passed the earlier Settings/provider/
+  synthetic login actions, but failed the valid import close assertion at
+  `scripts/smoke-native-settings.sh:750`:
+  `native Import chooser did not close after selecting preferences-import.json`.
+  Bounded log: `/tmp/codexbar-build104-settings-smokes-20261112T155822Z/absolute-run1.log`;
+  chooser XWD: `/tmp/tmp.rCV0FvQ7la/import-chooser-failure.xwd`.
+- **Narrow follow-up and repeated blocker:** The capture showed Ctrl+L had put
+  the full path in GTK's location entry, but one Return left the chooser open.
+  A narrow harness edit then submitted that path and clicked the visible Import
+  button. The next full attempt failed the same close assertion after the
+  bounded click. Its chooser capture shows the field as
+  `/tmp/tmp.8Ze9xGTGQU/home/preferences-import.json/`, an empty file list, and
+  the Import button; the path is being resolved as a directory, not as the
+  selected fixture. Bounded log:
+  `/tmp/codexbar-build104-settings-smokes-20261112T155822Z/fixed-run1.log`;
+  chooser XWD: `/tmp/tmp.8Ze9xGTGQU/import-chooser-failure.xwd`. Per the
+  two-occurrence stop condition, no blind whole-smoke retry was made.
+- **Coverage limits and handoff:** Two absolute-path full-smoke attempts failed
+  at the same valid-import chooser blocker; zero full smoke passes and no
+  consecutive fresh-home pass pair. The export assertions and earlier Settings,
+  provider, and synthetic login actions were reached in both. Import persistence,
+  empty-preferences Plugins reload, post-import reset/update tail, and the final
+  success message were not reached. The empty import, reset and update
+  assertions remain in the harness. The next implementation step is to make
+  GTK select the exact synthetic file after Ctrl+L, then invoke the real Import
+  response and observe chooser closure before retaining the existing persisted
+  value and empty Plugins reload proofs. No build-104 runtime pass, exact-head
+  CI success, UG acceptance or cutover is claimed. Python remains the default;
+  root owns review and publication.
+
+### E207 local follow-up — 2026-11-12: focused GTK selection works; app chooser remains unobservable
+
+- **Scope and preserved work:** Continued the private BUILD104/E207 investigation
+  at `f9186afca7a64dbd87e6427eb5da1f7c67f7d898`. Preserved the existing
+  uncommitted window-manager-before-app ordering, XID normalization, chooser
+  button attempt and earlier audit/task changes. Removed the experimental
+  AT-SPI helper integration after the actual app chooser did not expose file
+  rows; no Rust application source, VERSION or build metadata changed. The
+  cached build-104 executable remained SHA-256
+  `9b8e670276db6faef63959fcea75a680b73d47488530b6ba8297ba37c8b22cbd`.
+- **Standalone native GTK probe:** A focused Python GI `Gtk.FileChooserNative`
+  test used private Xvfb and D-Bus with synthetic fixtures. After Ctrl+L,
+  explicit Ctrl+A, absolute fixture path entry and Return, `get_file()` matched
+  the exact regular file before Return and in the response callback for both
+  `preferences-import.json` and the zero-byte
+  `empty-preferences-import.json`; response was `-3` (GTK ACCEPT). Evidence:
+  `/tmp/gtk-native-chooser-probe-20261112T111314.log`.
+- **Standalone visible-row probe:** A second GTK-only probe navigated into the
+  synthetic home, found the exact filename table cell, selected its row through
+  the file list's AT-SPI Selection interface, and activated the exposed Import
+  button click action. The chooser callback again reported the exact selected
+  GFile path and ACCEPT response for each file. Evidence:
+  `/tmp/gtk-native-chooser-selection-probe2.log`. This proves those operations
+  in that standalone GTK chooser only, not in the Rust app.
+- **Actual app chooser evidence:** A focused private run opened Settings >
+  Advanced > Import in the Rust app. The chooser XID's `_NET_WM_PID` matched
+  the app PID and title `Import preferences`. With `GTK_A11Y=atspi`, the AT-SPI
+  tree exposed the app, Settings frame, chooser dialog, and Import response
+  button, but no file list or rows. Navigating to synthetic HOME did not add
+  rows. On the normal private bus the app requested
+  `org.freedesktop.portal.Desktop` despite `GTK_USE_PORTAL=0`; xdg-desktop-portal
+  selected `gtk.portal` as a fallback. A bounded private bus without portal
+  activation also left the app chooser tree without file rows. Evidence:
+  `/tmp/gtk-native-app-chooser-focused-dump.log` and
+  `/tmp/gtk-native-app-chooser-private-bus-home.log`. This does not establish
+  whether portal selection or another GTK accessibility/backend detail is the
+  cause. It does establish that no exact selected GFile can currently be
+  observed through the actual app chooser in this harness.
+- **Full smoke result:** The preexisting location-entry-plus-Import-button
+  attempt still failed to close the valid import chooser. The capture showed
+  `/tmp/tmp.8Ze9xGTGQU/home/preferences-import.json/` with an empty visible
+  file list; log `/tmp/codexbar-build104-settings-smokes-20261112T155822Z/fixed-run1.log`.
+  Adding explicit Ctrl+A to the full-path entry did not close it either:
+  `/tmp/codexbar-build104-settings-smokes-20261112T155822Z/cleared-run1.log`.
+  Experimental AT-SPI integration attempts did not expose the target row and
+  failed bounded chooser discovery/selection in
+  `/tmp/codexbar-build104-settings-smokes-20261112T155822Z/match-run1.log` and
+  `noportal-run1.log`; that helper and its smoke integration were removed.
+  No full smoke pair was run after this diagnosis. There are zero full smoke
+  passes, and valid-import persistence, empty-import Plugins reload, reset and
+  update tail, and autostart-retention assertions have no pass result here.
+- **Checks and isolation:** `bash -n scripts/smoke-native-settings.sh`,
+  `shellcheck scripts/smoke-native-settings.sh`, and `git diff --check` all
+  passed after the final harness/documentation edits and before the local
+  commit. No full smoke rerun was made after the app-chooser limitation was
+  established. No fresh app build was needed or run; build 104 and its metadata
+  are unchanged. Tests used temporary homes, synthetic fixtures and a private
+  Xvfb/private D-Bus session; the focused app diagnosis also used a private bus
+  with no portal activation. Any portal activation was private to that test
+  session. No host GUI, input, bus, service or portal, real credentials, auth,
+  provider HTTP or remote publication was used. The smoke's synthetic update
+  server remained loopback-only. This investigation does not pass BUILD104/E207
+  or UG; Python remains default. Root owns review and publication. The next
+  step is to establish a selection/observation path in the actual app chooser,
+  retain the real accept/close and existing downstream assertions, then run
+  two complete fresh-home smokes.

@@ -354,8 +354,6 @@ wait_for_file "$scratch/update-port" "loopback update fixture server port"
 update_port=$(cat "$scratch/update-port")
 export CODEXBAR_NATIVE_TEST_UPDATE_URL="http://127.0.0.1:$update_port/VERSION"
 
-(cd "$HOME" && exec "$binary" --settings) >"$scratch/app.log" 2>&1 &
-app_pid=$!
 
 wait_for_window() {
     local pattern=$1 deadline=$((SECONDS + 15)) window="" candidate map_state candidate_title confirmed_title confirmed_map_state owner_pid confirmed_owner_pid
@@ -612,8 +610,8 @@ scroll_window_at() {
 
 dismiss_combo_popup_if_focused() {
     local focus
-    focus=$(xdotool getwindowfocus 2>/dev/null || true)
-    if [[ -n "${settings_window:-}" && -n "$focus" && "$focus" != "$settings_window" ]]; then
+    focus=$(normalize_window_id "$(xdotool getwindowfocus 2>/dev/null || true)")
+    if [[ -n "${settings_window:-}" && -n "$focus" && "$focus" != "$(normalize_window_id "$settings_window")" ]]; then
         xdotool key Escape
     fi
 }
@@ -732,9 +730,17 @@ select_chooser_path() {
             capture_native_size "$chooser" "${NATIVE_SETTINGS_EMPTY_IMPORT_SELECTED_SCREENSHOT:-}"
         fi
         xdotool key Return
-        # The path entry can issue the response directly. Keep the existing
-        # exact-path postcondition: a chooser that remains visible is failure,
-        # and downstream persistence/reload assertions prove import behavior.
+        sleep 0.2
+        if [[ -n "${NATIVE_SETTINGS_CHOOSER_AFTER_SCREENSHOT:-}" ]]; then
+            capture_root_debug "$NATIVE_SETTINGS_CHOOSER_AFTER_SCREENSHOT"
+        fi
+        # The Import response button is bottom-right in GTK's native dialog.
+        # Read the current window dimensions instead of assuming a monitor
+        # size; click_window_at also validates the point and the focused XID.
+        local chooser_size chooser_width chooser_height
+        chooser_size=$(window_size "$chooser")
+        read -r chooser_width chooser_height <<<"$chooser_size"
+        click_window_at "$chooser" "$((chooser_width - 50))" "$((chooser_height - 29))" "accept $title chooser"
         local close_deadline=$((SECONDS + 5))
         while xwininfo -id "$chooser" 2>/dev/null | grep -Fq 'Map State: IsViewable' \
             && (( SECONDS < close_deadline )); do sleep 0.05; done
@@ -802,6 +808,11 @@ capture_root_debug() {
     ffmpeg -nostdin -y -loglevel error -f xwd_pipe -i "$scratch/root.xwd" -frames:v 1 "$output"
     [[ -s "$output" ]] || { echo "native GTK root screenshot is empty: $output" >&2; exit 1; }
 }
+
+# Let the private WM own the root before GTK maps any app windows.
+start_test_window_manager
+(cd "$HOME" && exec "$binary" --settings) >"$scratch/app.log" 2>&1 &
+app_pid=$!
 
 settings_window=$(wait_for_window 'CodexBar Settings')
 wait_for_calls 'config providers'

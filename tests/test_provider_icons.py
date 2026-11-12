@@ -5,13 +5,19 @@ from __future__ import annotations
 import os
 import sys
 import unittest
+from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from codexbar_gtk.provider_icons import provider_icon_path
+from codexbar_gtk.provider_icons import ASSET_DIR, provider_icon_path
 
 
 class ProviderIconTests(unittest.TestCase):
+    def test_artwork_catalog_is_shared_outside_the_python_package(self):
+        repo_root = Path(__file__).resolve().parents[1]
+        self.assertEqual(ASSET_DIR, repo_root / "assets" / "provider_icons")
+        self.assertTrue((ASSET_DIR / "LICENSE-CodexBar").is_file())
+
     def test_codex_prefers_curated_brand_artwork(self):
         path = provider_icon_path("codex")
         self.assertIsNotNone(path)

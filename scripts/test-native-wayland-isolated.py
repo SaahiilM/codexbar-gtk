@@ -52,7 +52,9 @@ import gi
 gi.require_version("Atspi", "2.0")
 from gi.repository import Atspi
 
-mode, pid_text, expected = sys.argv[1:]
+args = sys.argv[1:]
+mode, pid_text, expected = args[:3]
+expected_identity = args[3] if len(args) > 3 else None
 pid = int(pid_text)
 Atspi.init()
 desktop = Atspi.get_desktop(0)
@@ -140,7 +142,9 @@ elif mode in ("states", "snapshot"):
 elif mode == "activate":
     matches = [(node, role, path) for node, name, role, path in nodes
                if name == expected and role in ("check box", "switch", "toggle button",
-                                                "button", "push button", "page tab", "tab")]
+                                                "button", "push button", "page tab", "tab")
+               and (expected_identity is None
+                    or f"{pid}:{path}:{role}:{name}" == expected_identity)]
     if len(matches) != 1:
         print(json.dumps({"ok": False, "reason": "expected exactly one named toggle", "count": len(matches)}))
         raise SystemExit(3)
@@ -369,7 +373,7 @@ case "${1:-}" in
       mode=$(cat "$NATIVE_SESSIONS_MODE_FILE")
     fi
     case "$mode" in
-      loading) printf '%s\n' "sessions-fixture-$mode-start" >> "$NATIVE_CLI_LOG"; sleep 2; printf '%s\n' "sessions-fixture-$mode-done" >> "$NATIVE_CLI_LOG"; printf '%s\n' '[{"id":"fixture-session","provider":"codex","state":"running","projectName":"synthetic","cwd":"/tmp/synthetic","pid":10,"host":"fixture"}]' ;;
+      loading) printf '%s\n' "sessions-fixture-$mode-start" >> "$NATIVE_CLI_LOG"; sleep 15; printf '%s\n' "sessions-fixture-$mode-done" >> "$NATIVE_CLI_LOG"; printf '%s\n' '[{"id":"fixture-session","provider":"codex","state":"running","projectName":"synthetic","cwd":"/tmp/synthetic","pid":10,"host":"fixture"}]' ;;
       success) printf '%s\n' "sessions-fixture-$mode-start" "sessions-fixture-$mode-done" >> "$NATIVE_CLI_LOG"; printf '%s\n' '[{"id":"fixture-session","provider":"codex","state":"running","projectName":"synthetic","cwd":"/tmp/synthetic","pid":10,"host":"fixture"}]' ;;
       empty) printf '%s\n' "sessions-fixture-$mode-start" "sessions-fixture-$mode-done" >> "$NATIVE_CLI_LOG"; printf '[]\n' ;;
       error) printf '%s\n' "sessions-fixture-$mode-start" "sessions-fixture-$mode-done" >> "$NATIVE_CLI_LOG"; printf 'synthetic session scan failure\n' >&2; exit 7 ;;
@@ -409,8 +413,12 @@ def wait_until(description: str, predicate, timeout: float = 15.0):
     raise RuntimeError(f"timed out waiting for {description}; last result={last!r}")
 
 
-def atspi_probe(python: str, mode: str, pid: int, expected: str) -> dict:
-    result = subprocess.run([python, "-c", AT_SPI_PROBE, mode, str(pid), expected],
+def atspi_probe(python: str, mode: str, pid: int, expected: str,
+                expected_identity: str | None = None) -> dict:
+    command = [python, "-c", AT_SPI_PROBE, mode, str(pid), expected]
+    if expected_identity is not None:
+        command.append(expected_identity)
+    result = subprocess.run(command,
                             capture_output=True, text=True, timeout=15)
     if result.returncode:
         raise RuntimeError(f"AT-SPI {mode} probe failed: {result.stderr.strip()} {result.stdout.strip()}")
@@ -425,8 +433,9 @@ def gaction(name: str, parameter: str | None = None) -> None:
                    stderr=subprocess.PIPE, text=True, timeout=10)
 
 
-def activate_accessible(python: str, pid: int, name: str) -> dict:
-    result = atspi_probe(python, "activate", pid, name)
+def activate_accessible(python: str, pid: int, name: str,
+                        expected_identity: str | None = None) -> dict:
+    result = atspi_probe(python, "activate", pid, name, expected_identity)
     if not result.get("ok"):
         raise RuntimeError(f"AT-SPI action failed closed for {name!r}: {result}")
     return result
@@ -460,16 +469,33 @@ def selected_range_control(python: str, pid: int, expected: str) -> dict | None:
     return selected if expected in selected["name"] else None
 
 
-def wait_visible_control(python: str, pid: int, name: str, timeout: float = 12.0) -> dict:
+def wait_visible_control(python: str, pid: int, name: str,
+                         expected_roles: tuple[str, ...],
+                         expected_context: str,
+                         timeout: float = 12.0) -> dict:
+    last_candidates = []
     def visible_unique_node():
-        rows = [row for row in atspi_probe(python, "snapshot", pid, name).get("matches", [])
+        snapshot = atspi_probe(python, "snapshot", pid, name)
+        named_rows = [row for row in snapshot.get("matches", [])
                 if row.get("name") == name and row.get("pid") == pid
-                and row.get("showing") and row.get("visible")]
+                and row.get("role") in expected_roles]
+        last_candidates[:] = [{key: row.get(key) for key in
+                               ("identity", "path", "role", "showing", "visible", "action_count")}
+                              for row in named_rows[:8]]
+        rows = [row for row in named_rows
+                if f":{expected_context}/panel[" in row.get("path", "")
+                and row.get("showing") and row.get("visible")
+                and row.get("action_count", 0) > 0]
         identities = {row["identity"]: row for row in rows}
         if len(identities) > 1:
-            raise RuntimeError(f"ambiguous visible AT-SPI control {name!r}: {sorted(identities)}")
+            raise RuntimeError(f"ambiguous visible actionable AT-SPI control {name!r}: "
+                               f"{sorted(identities)}")
         return next(iter(identities.values()), None)
-    return wait_until(f"visible AT-SPI control {name!r}", visible_unique_node, timeout=timeout)
+    try:
+        return wait_until(f"visible AT-SPI control {name!r}", visible_unique_node,
+                          timeout=timeout)
+    except RuntimeError as error:
+        raise RuntimeError(f"{error}; same-PID named candidates={last_candidates!r}") from error
 
 
 def wait_visible_text(python: str, pid: int, text: str, timeout: float = 12.0) -> dict:
@@ -710,13 +736,17 @@ def inside_run(args) -> dict:
                 ) from error
             evidence["actions"].append({"kind": "GAction", "name": "app.settings",
                                         "observed_window": settings_window["match"]})
-            wait_visible_control(python, app.pid, SETTING_LABEL)
+            setting_control = wait_visible_control(
+                python, app.pid, SETTING_LABEL, ("check box", "switch"), "General")
             capture_screen(screenshooter, env, scratch / "capture-settings",
                            artifact_dir / "settings.png")
             evidence["screenshots"]["settings"] = str(artifact_dir / "settings.png")
 
             before_settings = json.loads(prefs.read_text(encoding="utf-8"))
-            toggled = activate_accessible(python, app.pid, SETTING_LABEL)
+            toggled = activate_accessible(python, app.pid, SETTING_LABEL,
+                                          setting_control["identity"])
+            if toggled["before_checked"] or not toggled["after_checked"]:
+                raise RuntimeError(f"{SETTING_LABEL} did not change from unchecked to checked: {toggled!r}")
             wait_until("isolated Settings preference persistence", lambda:
                        json.loads(prefs.read_text(encoding="utf-8")).get(SETTING_KEY) is True)
             evidence["persisted_settings_json"] = json.loads(prefs.read_text(encoding="utf-8"))
@@ -734,19 +764,25 @@ def inside_run(args) -> dict:
 
             setting_actions = []
             notification_before = json.loads(prefs.read_text(encoding="utf-8"))
-            activate_accessible(python, app.pid, "Notifications")
+            notification_tab = wait_visible_control(
+                python, app.pid, "Notifications", ("page tab", "tab", "button"),
+                "CodexBar Settings")
+            activate_accessible(python, app.pid, "Notifications", notification_tab["identity"])
             for label, key in zip(NOTIFICATION_CONTROLS, (
                 "sessionQuotaNotificationsEnabled", "quotaWarningNotificationsEnabled",
                 "limitResetNotificationsEnabled", "predictivePaceNotificationsEnabled")):
-                wait_visible_control(python, app.pid, label)
+                notification_control = wait_visible_control(
+                    python, app.pid, label, ("check box", "switch"), "Notifications")
                 state_before = atspi_probe(python, "states", app.pid, label)
                 exact = [row for row in state_before.get("matches", []) if row["name"] == label
-                         and row["role"] in ("switch", "check box")]
+                         and row["role"] in ("switch", "check box")
+                         and row["identity"] == notification_control["identity"]]
                 if len(exact) != 1 or exact[0]["checked"]:
                     raise RuntimeError(f"{label} did not have one unchecked fixture control: {exact!r}")
-                result = activate_accessible(python, app.pid, label)
-                if not result["before_checked"] or result["after_checked"]:
-                    raise RuntimeError(f"{label} did not visibly change to checked: {result!r}")
+                result = activate_accessible(python, app.pid, label,
+                                             notification_control["identity"])
+                if result["before_checked"] or not result["after_checked"]:
+                    raise RuntimeError(f"{label} did not visibly change from unchecked to checked: {result!r}")
                 wait_until(f"{key} preference persistence", lambda key=key:
                     json.loads(prefs.read_text(encoding="utf-8")).get(key) is True)
                 after = json.loads(prefs.read_text(encoding="utf-8"))
@@ -763,12 +799,17 @@ def inside_run(args) -> dict:
             evidence["actions"].append({"kind": "AT-SPI AccessibleAction.DoAction",
                                         "page": "Notifications", "controls": setting_actions})
 
-            activate_accessible(python, app.pid, "Menu Bar")
-            wait_visible_control(python, app.pid, "Show the tray icon")
+            menu_tab = wait_visible_control(
+                python, app.pid, "Menu Bar", ("page tab", "tab", "button"),
+                "CodexBar Settings")
+            activate_accessible(python, app.pid, "Menu Bar", menu_tab["identity"])
+            tray_control = wait_visible_control(
+                python, app.pid, "Show the tray icon", ("check box", "switch"), "Menu Bar")
             menu_before = json.loads(prefs.read_text(encoding="utf-8"))
-            show_tray = activate_accessible(python, app.pid, "Show the tray icon")
-            if not show_tray["before_checked"] or not show_tray["after_checked"]:
-                raise RuntimeError(f"showTray did not visibly change to checked: {show_tray!r}")
+            show_tray = activate_accessible(python, app.pid, "Show the tray icon",
+                                            tray_control["identity"])
+            if show_tray["before_checked"] or not show_tray["after_checked"]:
+                raise RuntimeError(f"showTray did not visibly change from unchecked to checked: {show_tray!r}")
             wait_until("showTray preference persistence", lambda:
                 json.loads(prefs.read_text(encoding="utf-8")).get("showTray") is True)
             menu_after = json.loads(prefs.read_text(encoding="utf-8"))
@@ -783,11 +824,16 @@ def inside_run(args) -> dict:
                                         "identity": show_tray["identity"],
                                         "full_settings_map_checked": True})
 
-            activate_accessible(python, app.pid, "Hooks")
-            wait_visible_control(python, app.pid, "Enable hooks")
+            hooks_tab = wait_visible_control(
+                python, app.pid, "Hooks", ("page tab", "tab", "button"),
+                "CodexBar Settings")
+            activate_accessible(python, app.pid, "Hooks", hooks_tab["identity"])
+            hooks_control = wait_visible_control(
+                python, app.pid, "Enable hooks", ("check box", "switch"), "Hooks")
             hook_before_calls = (home / "cli-calls.log").read_text(encoding="utf-8").splitlines() \
                 if (home / "cli-calls.log").exists() else []
-            hook_result = activate_accessible(python, app.pid, "Enable hooks")
+            hook_result = activate_accessible(python, app.pid, "Enable hooks",
+                                              hooks_control["identity"])
             if not hook_result["before_checked"] or hook_result["after_checked"]:
                 raise RuntimeError(f"Hooks switch did not visibly change to disabled: {hook_result!r}")
             def hooks_disabled_call_observed():
@@ -804,11 +850,14 @@ def inside_run(args) -> dict:
                 raise RuntimeError(f"Hooks CLI postcondition was not disabled: {hook_cli_state.stdout!r}")
             hook_state = atspi_probe(python, "states", app.pid, "Enable hooks")
             hook_toggle = [row for row in hook_state.get("matches", [])
-                           if row["name"] == "Enable hooks" and row["role"] == "switch"]
+                           if row["name"] == "Enable hooks"
+                           and row["role"] in ("switch", "check box")
+                           and row["identity"] == hooks_control["identity"]]
             if len(hook_toggle) != 1 or hook_toggle[0]["checked"]:
                 raise RuntimeError(f"Hooks switch result was not visibly disabled: {hook_toggle!r}")
             if json.loads(prefs.read_text(encoding="utf-8")) != menu_after:
                 raise RuntimeError("Hooks toggle unexpectedly changed preferences")
+            evidence["persisted_settings_json_after_settings_matrix"] = menu_after
             evidence["actions"].append({"kind": "AT-SPI AccessibleAction.DoAction",
                                         "page": "Hooks", "control": "Enable hooks",
                                         "checked_before": hook_result["before_checked"],
@@ -839,7 +888,9 @@ def inside_run(args) -> dict:
                 gaction("spend-range", f"'{label}'")
                 selected = wait_until(f"Spend {label} range selection", lambda label=label:
                     selected_range_control(python, app.pid, label))
-                visible_range = wait_visible_control(python, app.pid, selected["name"])
+                visible_range = wait_visible_control(
+                    python, app.pid, selected["name"], ("toggle button",),
+                    "CodexBar GTK — Usage & Spend")
                 if visible_range["identity"] != selected["identity"]:
                     raise RuntimeError(f"Spend {label} selected node was not the visible node")
                 range_results.append({"value": label, "selected_control": selected["name"],
@@ -854,7 +905,9 @@ def inside_run(args) -> dict:
                                         "selections": range_results})
             mode_results = []
             for mode in HEATMAP_MODES:
-                visible_mode = wait_visible_control(python, app.pid, mode)
+                visible_mode = wait_visible_control(
+                    python, app.pid, mode, ("toggle button",),
+                    "CodexBar GTK — Usage & Spend")
                 before = atspi_probe(python, "states", app.pid, mode)
                 before_rows = [row for row in before.get("matches", [])
                                if row["name"] == mode and row["role"] == "toggle button"]
@@ -863,7 +916,7 @@ def inside_run(args) -> dict:
                 already_selected = "pressed" in before_rows[0]["states"]
                 result = ({"changed": False, "action_succeeded": None,
                            "already_selected": True} if already_selected else
-                          activate_accessible(python, app.pid, mode))
+                          activate_accessible(python, app.pid, mode, visible_mode["identity"]))
                 state = wait_until(f"heatmap {mode} pressed state", lambda mode=mode:
                     next((row for row in atspi_probe(python, "states", app.pid, mode)["matches"]
                           if row["name"] == mode and row["role"] == "toggle button"
@@ -901,6 +954,13 @@ def inside_run(args) -> dict:
                 wait_until(f"synthetic sessions fixture {mode} started", lambda mode=mode:
                     f"sessions-fixture-{mode}-start" in call_log.read_text(encoding="utf-8").splitlines())
                 visible = wait_visible_text(python, app.pid, expected_text, timeout=timeout)
+                if mode == "loading":
+                    capture_screen(screenshooter, env, scratch / "capture-sessions-loading",
+                                   artifact_dir / "sessions-loading.png")
+                    wait_visible_text(python, app.pid,
+                                      "Refreshing · showing the last successful result")
+                    evidence["screenshots"]["sessions_loading"] = str(
+                        artifact_dir / "sessions-loading.png")
                 sessions_statuses.append({"fixture_mode": mode, "visible_status": visible["name"],
                                           "role": visible["role"], "pid": visible["pid"]})
                 wait_until(f"synthetic sessions fixture {mode} completed", lambda mode=mode:
@@ -916,10 +976,6 @@ def inside_run(args) -> dict:
                     error_text = wait_visible_text(
                         python, app.pid, "Existing rows remain available")
                     sessions_statuses[-1]["visible_error"] = error_text["name"]
-                if mode == "loading":
-                    capture_screen(screenshooter, env, scratch / "capture-sessions-loading",
-                                   artifact_dir / "sessions-loading.png")
-                    evidence["screenshots"]["sessions_loading"] = str(artifact_dir / "sessions-loading.png")
             evidence["actions"].append({"kind": "GAction and synthetic CLI",
                                         "name": "app.page('sessions')",
                                         "observed_window": sessions_title,

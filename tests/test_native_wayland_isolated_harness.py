@@ -192,18 +192,42 @@ class NativeWaylandIsolatedHarnessTests(unittest.TestCase):
                 "hooks list --format json", "hooks disable", "hooks list --format json"])
             self.assertEqual(disabled.returncode, 0)
 
-    def test_visible_control_identity_requires_one_exact_pid_node(self):
-        row = {"name": "Session quota notifications", "pid": 123,
-               "identity": "123:app[0]/tab[1]:switch:Session quota notifications",
-               "showing": True, "visible": True}
-        with mock.patch.object(MODULE, "atspi_probe", return_value={"matches": [row]}):
-            found = MODULE.wait_visible_control(sys.executable, 123, row["name"], timeout=0.1)
+    def test_visible_actionable_control_identity_ignores_same_name_label_nodes(self):
+        row = {"name": "Refresh when the panel opens", "role": "check box", "pid": 123,
+               "identity": "123:app[0]/tab[1]:check box:Refresh when the panel opens",
+               "path": "app[0]/window:CodexBar Settings/panel:General/panel[0]",
+               "showing": True, "visible": True, "action_count": 1}
+        label = {"name": row["name"], "role": "label", "pid": 123,
+                 "identity": "123:app[0]/label:Refresh when the panel opens",
+                 "path": "app[0]/window:CodexBar Settings/panel:General/panel[0]",
+                 "showing": True, "visible": True, "action_count": 0}
+        item = {"name": row["name"], "role": "list item", "pid": 123,
+                "identity": "123:app[0]/item:Refresh when the panel opens",
+                "path": "app[0]/window:CodexBar Settings/panel:General/panel[0]",
+                "showing": True, "visible": True, "action_count": 0}
+        stale = dict(row, identity=row["identity"] + "/stale",
+                     path="app[0]/window:CodexBar Settings/panel:Notifications/panel[0]")
+        with mock.patch.object(MODULE, "atspi_probe",
+                               return_value={"matches": [label, row, item, stale]}):
+            found = MODULE.wait_visible_control(
+                sys.executable, 123, row["name"], ("check box", "switch"),
+                "General", timeout=0.1)
             self.assertEqual(found["identity"], row["identity"])
 
         duplicate = dict(row, identity=row["identity"] + "/duplicate")
-        with mock.patch.object(MODULE, "atspi_probe", return_value={"matches": [row, duplicate]}):
-            with self.assertRaisesRegex(RuntimeError, "ambiguous visible AT-SPI control"):
-                MODULE.wait_visible_control(sys.executable, 123, row["name"], timeout=0.1)
+        with mock.patch.object(MODULE, "atspi_probe",
+                               return_value={"matches": [row, duplicate]}):
+            with self.assertRaisesRegex(RuntimeError, "ambiguous visible actionable AT-SPI control"):
+                MODULE.wait_visible_control(
+                    sys.executable, 123, row["name"], ("check box", "switch"),
+                    "General", timeout=0.1)
+
+    def test_accessible_activation_can_be_bound_to_observed_identity(self):
+        identity = "123:app[0]/tab[1]:check box:fixture"
+        with mock.patch.object(MODULE, "atspi_probe", return_value={"ok": True}) as probe:
+            self.assertEqual(MODULE.activate_accessible(sys.executable, 123, "fixture", identity),
+                             {"ok": True})
+            probe.assert_called_once_with(sys.executable, "activate", 123, "fixture", identity)
 
     def test_visible_text_requires_exact_pid_and_unique_identity(self):
         row = {"name": "1 running of 1 known sessions", "pid": 123,

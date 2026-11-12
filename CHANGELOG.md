@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.82.0 (108) — 2026-11-12
+
+Move provider artwork and attribution into the shared `assets/provider_icons/`
+catalog. Native builds no longer read assets from the Python package; artwork
+remains embedded in the native executable. Preserve Python-default artwork
+lookup and legacy installation during transition. UG remains **NOT PASSED**.
+
+- See migration audit E211 for decode and compatibility verification.
+
 ## 0.82.0 (107) — 2026-11-12
 
 Strengthens synthetic Rust CLI process lifecycle regression coverage. Timeout

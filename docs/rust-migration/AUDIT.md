@@ -7257,3 +7257,5 @@ remains the default, and C gates remain open. Next: root reviews and publishes
 this slice, then observes exact-head CI; afterward continue the residual
 B-phase Settings audit and UG's remaining Settings/Pages/States/update-check
 loopback acceptance.
+
+**Root integration review:** E208 is reflected in the Advanced UG matrix row as partial: the evidenced accessible export/import/reset actions are covered; Wayland CLI-path Apply and general/KDE chooser parity are not claimed. Overall UG and C gates remain unchanged.

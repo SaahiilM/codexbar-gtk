@@ -11,10 +11,10 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Goal | Fully native Rust GTK4/libadwaita application with verified packaging and legacy runtime removal. |
 | Current phase | BG passed and U01–U08 implementation merged. UG **NOT PASSED**; Python default. |
 | Last observed merge | PR #104 merged normally at `d3199f21cdff4b95da3066621f99f01256ab5738` (build 103). Its three required checks succeeded on exact head `04abd6b48a559f8d143ae9e21f62272caa34e6ef` in run `43243981287`; no reviews, comments or threads were reported. This is base-only evidence for BUILD104, not CI for this branch. The merge did not accept UG or C gates. |
-| Active implementation | BUILD104/E207 restores the native Settings smoke in required CI; branch `orchestrated/luna-ug-settings-ci-reliability`, based on reviewed Settings-smoke fix `67a9ad999239fce333dde119b4ebecf44c0980cc` plus normally merged PR #104. The prior worker reports two consecutive full private Xvfb/D-Bus smoke passes using the build-102 app binary. This branch restores the step with a 15-minute limit and increments metadata; no build-104 app smoke or branch CI is claimed. |
+| Active implementation | BUILD104/E207 repairs the native Settings smoke selector on `orchestrated/luna-ug-settings-ci-reliability`, based on reviewed Settings-smoke fix `67a9ad999239fce333dde119b4ebecf44c0980cc` plus merged PR #104. CI run `43247495456`, test job `131283988678`, failed at the empty-preferences import chooser; see E207 correction. The selector now enters the exact synthetic fixture path through GTK Ctrl+L. Local end-to-end verification is blocked before Settings actions by this environment's X11 window remap/title behavior; no selector pass or exact-head CI is claimed. |
 | Installer/runtime verification | E198 records the merged build-95 installed-prefix/Python-free runtime proof. E199 records prior local 13-case activation smoke evidence in a Python-free container; its first attempt lacked `file`, and the portable `od`/`ldd` check passed. These component results do not pass C02 or authorize cutover. |
 | UI acceptance | E195 records one Display action; E200 records seven guarded Settings actions and three tab transitions. Broader Wayland controls/navigation remain open. UG is **NOT PASSED** and Python remains the default; see `UG_GATE.md`. |
-| Next | Root reviews and publishes BUILD104/E207, then observes exact-head CI for the restored Settings smoke. Actual KDE input/placement, keyboard parity and broader Settings interactions remain open. UG remains **NOT PASSED**, Python remains default, and no C gate/cutover is accepted. |
+| Next | Root reviews the BUILD104/E207 selector correction, publishes it, then observes fresh exact-head CI. Resolve the local Xvfb startup/window-remap blocker if CI does not provide reviewable selector evidence. Actual KDE input/placement, keyboard parity and broader Settings interactions remain open. UG remains **NOT PASSED**, Python remains default, and no C gate/cutover is accepted. |
 
 PR #103 correction: run `42918673780` on `7e16a47` passed tray and the full
 Python-free/activated command-target proof. The Rust-opt-in suite failed on a
@@ -1214,3 +1214,45 @@ handoff-reported evidence, not a rerun or independently verified artifact.
 Current exact-head CI remains pending. The new 15-minute CI step invokes
 `scripts/smoke-native-settings.sh` after the other native Xvfb smokes. Python
 remains default and UG remains **NOT PASSED**.
+
+### BUILD104/E207 correction — chooser selection repair and CI failure
+
+The restored workflow's exact-head run `43247495456` failed in test job
+`131283988678` at approximately 15:34:15Z, while accepting
+`empty-preferences-import.json`. The chooser remained mapped with focus on
+window `2099497`, geometry `825x384` at `227,320`. Export and
+the preceding valid import had progressed. The log reported
+`native Import chooser did not close after selecting empty-preferences-import.json`.
+The other Rust/Python/Clippy/Wayland/Xvfb checks passed. This is a smoke
+interaction failure; it does not establish an application import defect.
+
+The row selector (`y = 95 + sorted-file-index * 36`) has been removed. The
+visible GTK chooser now receives Ctrl+L, the absolute path of the exact fixture
+in isolated HOME, an optional chooser-only capture of that entered path, and
+Return. Import acceptance still requires the chooser to close; the subsequent
+known-key persistence checks and empty-import Hooks/Plugins reload checks remain
+in place. A failure reports the exact synthetic target, focus, chooser tree,
+title/class/PID and a chooser-only XWD capture under the private scratch
+directory. Window title lookup uses X properties and rechecks app PID plus
+viewable state; focused IDs are compared in a canonical hex form.
+
+Local verification used a newly built native binary from this worktree at
+SHA-256 `9b8e670276db6faef63959fcea75a680b73d47488530b6ba8297ba37c8b22cbd`,
+with `CARGO_BUILD_JOBS=2 cargo build --manifest-path rust-gtk/Cargo.toml
+--target-dir .task-target-x11 -j 2`. Rootless packages for Xvfb/xdotool were
+downloaded and extracted under a unique `/tmp` directory; no host X session was
+used. Initial attempts exposed the missing extracted `libxdo.so.3`, then the
+smoke still failed before the first Settings action: after the private xfwm4
+startup/resize, the app's titled XID was replaced and the harness could not
+reconfirm a unique titled app window. Thus there are **zero completed final
+Settings smoke passes** on this correction; valid and empty imports, reset,
+exports, login/provider/hooks/plugins/update flows and autostart retention were
+not rerun to completion. No app source changed and no selector behavior is
+claimed locally.
+
+`bash -n scripts/smoke-native-settings.sh`, ShellCheck and `git diff --check`
+are the remaining final checks. No build metadata bump is added: this is the
+same BUILD104 correction requested for E207. Root should review/publish and
+require fresh exact-head CI before treating the smoke as restored. UG remains
+**NOT PASSED**, Python remains default, and the CI failure is not converted to
+a test skip or success.

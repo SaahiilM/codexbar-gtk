@@ -354,7 +354,7 @@ wait_for_file "$scratch/update-port" "loopback update fixture server port"
 update_port=$(cat "$scratch/update-port")
 export CODEXBAR_NATIVE_TEST_UPDATE_URL="http://127.0.0.1:$update_port/VERSION"
 
-(cd "$HOME" && "$binary" --settings) >"$scratch/app.log" 2>&1 &
+(cd "$HOME" && exec "$binary" --settings) >"$scratch/app.log" 2>&1 &
 app_pid=$!
 
 wait_for_window() {
@@ -362,7 +362,8 @@ wait_for_window() {
     while [[ -z "$window" ]] && (( SECONDS < deadline )); do
         while IFS= read -r candidate; do
             [[ -n "$candidate" ]] || continue
-            candidate_title=$(xdotool getwindowname "$candidate" 2>/dev/null || true)
+            candidate_title=$(xprop -id "$candidate" _NET_WM_NAME WM_NAME 2>/dev/null \
+                | sed -n 's/^[^=]*= "\(.*\)"$/\1/p' | head -n 1)
             [[ "$candidate_title" =~ $pattern ]] || continue
             owner_pid=$(xprop -id "$candidate" _NET_WM_PID 2>/dev/null \
                 | sed -n 's/.* = \([0-9][0-9]*\)$/\1/p')
@@ -373,7 +374,8 @@ wait_for_window() {
                 # a native chooser maps. Require its title, owner and map state
                 # to agree on a second read before returning an ID for input.
                 sleep 0.05
-                confirmed_title=$(xdotool getwindowname "$candidate" 2>/dev/null || true)
+                confirmed_title=$(xprop -id "$candidate" _NET_WM_NAME WM_NAME 2>/dev/null \
+                    | sed -n 's/^[^=]*= "\(.*\)"$/\1/p' | head -n 1)
                 confirmed_map_state=$(xwininfo -id "$candidate" 2>/dev/null | sed -n 's/^  Map State: //p')
                 confirmed_owner_pid=$(xprop -id "$candidate" _NET_WM_PID 2>/dev/null \
                     | sed -n 's/.* = \([0-9][0-9]*\)$/\1/p')
@@ -384,16 +386,21 @@ wait_for_window() {
                     break
                 fi
             fi
-        done < <(xdotool search --name "$pattern" 2>/dev/null || true)
+        done < <(xwininfo -root -tree 2>/dev/null | awk '$1 ~ /^0x[[:xdigit:]]+$/ { print $1 }')
         [[ -n "$window" ]] || sleep 0.05
     done
     [[ -n "$window" ]] || {
         cat "$scratch/app.log" >&2
+        echo "window lookup diagnostics: app_pid=$app_pid pattern=$pattern" >&2
         while read -r visible_window; do
-            printf 'mapped window %s: ' "$visible_window" >&2
-            xdotool getwindowname "$visible_window" >&2 || true
-            xwininfo -id "$visible_window" 2>/dev/null | sed -n 's/^  Map State: /map state: /p' >&2 || true
-        done < <(xdotool search --name '.*' 2>/dev/null || true)
+            visible_title=$(xprop -id "$visible_window" _NET_WM_NAME WM_NAME 2>/dev/null \
+                | sed -n 's/^[^=]*= "\(.*\)"$/\1/p' | head -n 1)
+            visible_pid=$(xprop -id "$visible_window" _NET_WM_PID 2>/dev/null | tail -n 1)
+            visible_state=$(xwininfo -id "$visible_window" 2>/dev/null \
+                | sed -n 's/^  Map State: /map state: /p')
+            printf 'candidate %s title=%q pid-property=%q %s\n' \
+                "$visible_window" "$visible_title" "$visible_pid" "$visible_state" >&2
+        done < <(xwininfo -root -tree 2>/dev/null | awk '$1 ~ /^0x[[:xdigit:]]+$/ { print $1 }')
         if command -v xwininfo >/dev/null 2>&1; then
             xwininfo -root -tree >&2 || true
         fi
@@ -498,6 +505,21 @@ window_size() {
     '
 }
 
+normalize_window_id() {
+    local window_id=$1
+    if [[ "$window_id" =~ ^0[xX][[:xdigit:]]+$ ]]; then
+        printf '0x%x' "$((window_id))"
+    elif [[ "$window_id" =~ ^[0-9]+$ ]]; then
+        printf '0x%x' "$window_id"
+    fi
+}
+
+window_title() {
+    local window=$1
+    xprop -id "$window" _NET_WM_NAME WM_NAME 2>/dev/null \
+        | sed -n 's/^[^=]*= "\(.*\)"$/\1/p' | head -n 1
+}
+
 wait_for_window_size() {
     local window=$1 expected_width=$2 expected_height=$3 description=$4
     local deadline=$((SECONDS + 5)) observed=""
@@ -545,12 +567,12 @@ click_window_at() {
         return 1
     }
     xdotool windowactivate --sync "$window"
-    focus=$(xdotool getwindowfocus 2>/dev/null || true)
-    while [[ "$focus" != "$window" ]] && (( SECONDS < focus_deadline )); do
+    focus=$(normalize_window_id "$(xdotool getwindowfocus 2>/dev/null || true)")
+    while [[ "$focus" != "$(normalize_window_id "$window")" ]] && (( SECONDS < focus_deadline )); do
         sleep 0.05
-        focus=$(xdotool getwindowfocus 2>/dev/null || true)
+        focus=$(normalize_window_id "$(xdotool getwindowfocus 2>/dev/null || true)")
     done
-    [[ "$focus" == "$window" ]] || {
+    [[ "$focus" == "$(normalize_window_id "$window")" ]] || {
         printf 'native click target did not receive focus for %s at %s,%s (target=%s focus=%s)\n' \
             "$description" "$x" "$y" "$window" "${focus:-unavailable}" >&2
         return 1
@@ -635,7 +657,7 @@ select_chooser_path() {
     resize_window_to "$settings_window" 1120 820 "Settings before $title chooser"
     click_window_at "$settings_window" "$button_x" "$button_y" "open $title chooser"
     chooser=$(wait_for_window "^${title}$")
-    [[ "$(xdotool getwindowname "$chooser")" == "$title" ]] || {
+    [[ "$(window_title "$chooser")" == "$title" ]] || {
         echo "native file chooser title did not match the requested action: $title" >&2
         exit 1
     }
@@ -651,8 +673,8 @@ select_chooser_path() {
         fi
     fi
     local focused_window
-    focused_window=$(xdotool getwindowfocus 2>/dev/null || true)
-    [[ "$focused_window" == "$chooser" ]] || {
+    focused_window=$(normalize_window_id "$(xdotool getwindowfocus 2>/dev/null || true)")
+    [[ "$focused_window" == "$(normalize_window_id "$chooser")" ]] || {
         echo "native file chooser did not receive keyboard focus (title: $title)" >&2
         exit 1
     }
@@ -696,58 +718,23 @@ select_chooser_path() {
             echo "synthetic import target must be a present fixture in the isolated HOME" >&2
             exit 1
         }
-        # Force a fresh directory enumeration after the preceding Save
-        # chooser, then select the visible synthetic fixture row.
-        xdotool key ctrl+l
-        xdotool type --clearmodifiers --delay 1 "${HOME%/*}"
-        xdotool key Return
-        xdotool key Tab
-        sleep 0.3
-        xdotool key ctrl+l
-        xdotool type --clearmodifiers --delay 1 "$HOME"
-        xdotool key Return
-        xdotool key Tab
-        sleep 1.5
+        local target_name=${path##*/}
         capture_native_size "$chooser" "${NATIVE_SETTINGS_IMPORT_CHOOSER_SCREENSHOT:-}"
-        local target_name=${path##*/} row_index=-1 row_y
-        local -a listed_json_files=()
-        mapfile -t listed_json_files < <(find "$HOME" -maxdepth 1 -type f -name '*.json' -printf '%f\n' | LC_ALL=C sort)
-        for index in "${!listed_json_files[@]}"; do
-            if [[ "${listed_json_files[$index]}" == "$target_name" ]]; then
-                row_index=$index
-                break
-            fi
-        done
-        (( row_index >= 0 )) || {
-            echo "synthetic import fixture is absent from isolated HOME after chooser navigation: $target_name" >&2
-            exit 1
-        }
-        row_y=$((95 + row_index * 36))
-        chooser=$(wait_for_window "^${title}$")
-        click_window_at "$chooser" 300 "$row_y" "synthetic import file row $target_name"
-        sleep 0.35
+        # GTK's native chooser has a location entry on Ctrl+L. Address the
+        # exact synthetic fixture path directly instead of deriving a row
+        # coordinate from GTK's current sort order and theme-dependent row
+        # height. Return asks the chooser to open/accept that exact file.
+        xdotool key ctrl+l
+        xdotool type --clearmodifiers --delay 1 "$path"
         if [[ "$target_name" == "preferences-import.json" ]]; then
             capture_native_size "$chooser" "${NATIVE_SETTINGS_IMPORT_SELECTED_SCREENSHOT:-}"
         else
             capture_native_size "$chooser" "${NATIVE_SETTINGS_EMPTY_IMPORT_SELECTED_SCREENSHOT:-}"
         fi
-        chooser=$(wait_for_window "^${title}$")
-        # Re-establish exact chooser focus after list selection, then use its
-        # default accept response rather than a theme-dependent button point.
-        local import_focus
-        import_focus=$(xdotool getwindowfocus 2>/dev/null || true)
-        if [[ "$import_focus" != "$chooser" ]]; then
-            xdotool windowactivate --sync "$chooser"
-            import_focus=$(xdotool getwindowfocus 2>/dev/null || true)
-        fi
-        [[ "$import_focus" == "$chooser" ]] || {
-            echo "native Import chooser lost focus after selecting $target_name" >&2
-            printf 'focused window: %s; chooser: %s (%s)\n' \
-                "$import_focus" "$chooser" "$(xdotool getwindowname "$chooser" 2>/dev/null || true)" >&2
-            xwininfo -id "$chooser" >&2 || true
-            exit 1
-        }
         xdotool key Return
+        # The path entry can issue the response directly. Keep the existing
+        # exact-path postcondition: a chooser that remains visible is failure,
+        # and downstream persistence/reload assertions prove import behavior.
         local close_deadline=$((SECONDS + 5))
         while xwininfo -id "$chooser" 2>/dev/null | grep -Fq 'Map State: IsViewable' \
             && (( SECONDS < close_deadline )); do sleep 0.05; done
@@ -755,9 +742,13 @@ select_chooser_path() {
             if [[ -n "${NATIVE_SETTINGS_IMPORT_AFTER_SCREENSHOT:-}" ]]; then
                 capture_native_size "$chooser" "$NATIVE_SETTINGS_IMPORT_AFTER_SCREENSHOT"
             fi
-            import_focus=$(xdotool getwindowfocus 2>/dev/null || true)
-            echo "native Import chooser remained mapped after accept (focus=$import_focus, chooser=$chooser)" >&2
+            import_focus=$(normalize_window_id "$(xdotool getwindowfocus 2>/dev/null || true)")
+            echo "native Import chooser remained mapped after accept (target=$path, focus=$import_focus, chooser=$chooser)" >&2
             xwininfo -id "$chooser" >&2 || true
+            xwininfo -id "$chooser" -tree >&2 || true
+            xprop -id "$chooser" WM_NAME WM_CLASS _NET_WM_PID 2>&1 || true
+            echo "synthetic chooser-only diagnostic image: $scratch/import-chooser-failure.xwd" >&2
+            xwd -silent -id "$chooser" -out "$scratch/import-chooser-failure.xwd" 2>/dev/null || true
             echo "native Import chooser did not close after selecting $target_name" >&2
             exit 1
         fi
@@ -818,9 +809,8 @@ wait_for_calls 'hooks list --format json'
 wait_for_calls 'plugins list'
 wait_for_file "$plugin_requested_file" "initial synthetic Plugins request"
 sleep 0.4
-# Keep pointer-based checks independent of whether CI requested screenshots.
-# Focused xdotool input requires the private Xvfb window manager even before
-# the first native file chooser is opened. The chooser path reuses this WM.
+# Keep pointer input under one verified private window manager. The chooser
+# path reuses this WM.
 start_test_window_manager
 resize_window_to "$settings_window" 1120 820 "initial Settings page"
 click_window_at "$settings_window" 758 800 "fixed-coordinate control"

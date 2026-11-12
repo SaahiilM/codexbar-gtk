@@ -6897,3 +6897,46 @@ code or cancellation policy changed.
   UG remains **NOT PASSED**; marketing version remains 0.82.0; Python remains
   default; BG is passed while C gates remain open. Next step: root reviews the
   tracked diff and publishes the commit/PR, then checks exact-head CI.
+
+### E207 correction — 2026-11-12: exact-head chooser failure and selector repair
+
+- **Observed CI failure:** exact-head run `43247495456`, test job
+  `131283988678`, failed at approximately 15:34:15Z while accepting the empty
+  preferences fixture. The chooser remained mapped with focus/chooser window
+  `2099497`, geometry `825x384` at `227,320`; the log was
+  `native Import chooser did not close after selecting
+  empty-preferences-import.json`. Export and the previous valid import had
+  progressed. The other Rust/Python/Clippy/Wayland/Xvfb checks passed. This is
+  evidence of a smoke interaction failure, not an inferred application import
+  defect.
+- **Selector change:** `scripts/smoke-native-settings.sh` no longer estimates a
+  row Y coordinate from sorted fixture position. It sends Ctrl+L and the exact
+  absolute fixture path to the visible native GTK chooser, optionally captures
+  that chooser after path entry, then sends Return. The bounded close assertion
+  and existing known-key persistence plus empty-import reload assertions stay
+  active. Failure context includes the synthetic target path, focused ID,
+  chooser X tree/title/class/PID and a chooser-only XWD capture in private
+  scratch. Window discovery reads X properties and retains exact app PID and
+  viewable-map checks; focus/window IDs are normalized before comparison.
+- **Local attempt and limitation:** the cached binary was build 102, so a fresh
+  incremental native build was run with two jobs. The resulting binary SHA-256
+  is `9b8e670276db6faef63959fcea75a680b73d47488530b6ba8297ba37c8b22cbd`.
+  Rootless Xvfb/xdotool packages and `libxdo.so.3` were extracted under a unique
+  temporary tools directory. With these tools, the private run reached the
+  Settings window; after xfwm4 startup/resize, the titled app XID was replaced
+  and the bounded finder could not reconfirm its title. No final Settings
+  smoke completed, so valid/empty import, export/reset, login/provider,
+  hooks/plugins/update and autostart-retention behavior have no fresh local
+  result from this correction. No app source was changed. This is a local test
+  environment blocker, not a passing or ignored test.
+- **Checks:** `bash -n scripts/smoke-native-settings.sh`,
+  `shellcheck scripts/smoke-native-settings.sh`, and `git diff --check` all
+  passed after the final edits. The exact-worktree native app build passed as
+  recorded above; no full Cargo test suite, Python suite or runtime integration
+  pass is claimed. No host GUI/session,
+  host bus/input, provider HTTP, auth or real credentials were used; only the
+  isolated Xvfb/private-D-Bus/synthetic fixture path was attempted.
+- **Handoff:** BUILD104 metadata is unchanged as requested. Root must review and
+  publish the correction and require fresh exact-head CI. UG stays **NOT
+  PASSED**, Python remains default, and the failed CI check remains a blocker
+  until its replacement result is observed.

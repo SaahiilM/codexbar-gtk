@@ -19,7 +19,13 @@ on:
       - "scripts/select-native-file-chooser.py"
       - "scripts/native_atspi_rows.py"
       - "scripts/build-native.sh"
+      - "scripts/test-run-native.sh"
+      - "run.sh"
+      - "run-python.sh"
+      - "scripts/run-native.sh"
+      - "scripts/install.sh"
       - "scripts/install-native.sh"
+      - "scripts/install-python.sh"
       - "scripts/smoke-native-install.sh"
       - "scripts/native/**"
       - "rust-gtk/tests/python_free_linkage.rs"
@@ -139,6 +145,8 @@ jobs:
           cargo build --manifest-path rust-gtk/Cargo.toml --locked --release --bin codexbar-gtk-native
       - name: Exercise isolated native install/uninstall/upgrade/rollback smoke
         run: ./scripts/smoke-native-install.sh
+      - name: Verify default source-tree native launcher argv and failures
+        run: ./scripts/test-run-native.sh
       - name: Verify native binary has no Python linkage (linkage inspection only, C02 unproven)
         run: cargo test --manifest-path rust-gtk/Cargo.toml --locked --test python_free_linkage
       - name: Retain synthetic private Wayland smoke evidence

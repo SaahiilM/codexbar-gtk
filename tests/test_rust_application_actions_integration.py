@@ -297,7 +297,7 @@ class RustApplicationActionsIntegrationTests(unittest.TestCase):
 
 
 class LauncherWrapperTests(unittest.TestCase):
-    """Verify development and installed wrappers exec the same Python module."""
+    """Verify native defaults and the explicit Python parity launcher."""
 
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory(prefix="codexbar-launcher-fixture-")
@@ -311,6 +311,12 @@ class LauncherWrapperTests(unittest.TestCase):
             encoding="utf-8",
         )
         python.chmod(0o700)
+        native = self.fake_bin / "codexbar-gtk-native"
+        native.write_text(
+            "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$NATIVE_ARGV_CAPTURE\"\n",
+            encoding="utf-8",
+        )
+        native.chmod(0o700)
 
     def tearDown(self) -> None:
         self.temp.cleanup()
@@ -321,37 +327,91 @@ class LauncherWrapperTests(unittest.TestCase):
             {
                 "PATH": os.pathsep.join((str(self.fake_bin), env.get("PATH", ""))),
                 "PYTHON_ARGV_CAPTURE": str(self.capture),
+                "NATIVE_ARGV_CAPTURE": str(self.capture),
+                "CODEXBAR_NATIVE_BINARY": str(self.fake_bin / "codexbar-gtk-native"),
             }
         )
         subprocess.run([str(wrapper), arg], env=env, check=True, timeout=10)
         return self.capture.read_text(encoding="utf-8").splitlines()
 
-    def test_development_run_sh_execs_module_and_preserves_flags(self) -> None:
+    def test_default_run_sh_execs_native_binary_and_preserves_flags(self) -> None:
         wrapper = Path(__file__).resolve().parents[1] / "run.sh"
+        self.assertEqual(self._run_wrapper(wrapper, "--settings"), ["--settings"])
+
+    def test_explicit_python_launcher_retains_module_and_flags(self) -> None:
+        wrapper = Path(__file__).resolve().parents[1] / "run-python.sh"
         self.assertEqual(
-            self._run_wrapper(wrapper, "--settings"),
-            ["-m", "codexbar_gtk", "--settings"],
+            self._run_wrapper(wrapper, "--about"),
+            ["-m", "codexbar_gtk", "--about"],
         )
 
-    def test_installed_launcher_execs_module_and_preserves_flags(self) -> None:
+    def test_default_installer_stages_native_binary_without_activation(self) -> None:
         repo = Path(__file__).resolve().parents[1]
         home = self.root / "home"
         prefix = self.root / "prefix"
         home.mkdir()
+        settings_dir = home / ".config/codexbar-gtk"
+        settings_dir.mkdir(parents=True)
+        settings = settings_dir / "settings.json"
+        history = settings_dir / "history.jsonl"
+        settings.write_text('{"synthetic":true}\n', encoding="utf-8")
+        history.write_text('{"provider":"synthetic","usage":0}\n', encoding="utf-8")
+        before = (settings.read_bytes(), history.read_bytes())
         env = os.environ.copy()
         env.update({"HOME": str(home), "PREFIX": str(prefix)})
+        legacy_launcher = prefix / "bin/codexbar-gtk"
+        legacy_launcher.parent.mkdir(parents=True)
+        legacy_launcher.write_text("synthetic legacy Python launcher\n", encoding="utf-8")
+        desktop = prefix / "share/applications/codexbar-gtk.desktop"
+        desktop.parent.mkdir(parents=True)
+        desktop.write_text("Exec=/usr/bin/python3 -m codexbar_gtk\n", encoding="utf-8")
+        service = home / ".config/systemd/user/codexbar-gtk.service"
+        service.parent.mkdir(parents=True)
+        service.write_text("ExecStart=/usr/bin/python3 -m codexbar_gtk\n", encoding="utf-8")
+        prior_legacy = legacy_launcher.read_bytes()
+        prior_desktop = desktop.read_bytes()
+        prior_service = service.read_bytes()
+        artifact = self.fake_bin / "codexbar-gtk-native"
         subprocess.run(
-            [str(repo / "scripts/install.sh"), "--no-autostart"],
+            [str(repo / "scripts/install.sh"), "--artifact", str(artifact)],
             env=env,
             check=True,
             timeout=30,
             stdout=subprocess.DEVNULL,
         )
-        launcher = prefix / "bin/codexbar-gtk"
-        self.assertEqual(
-            self._run_wrapper(launcher, "--about"),
-            ["-m", "codexbar_gtk", "--about"],
+        installed = prefix / "bin/codexbar-gtk-native"
+        self.assertEqual(installed.read_bytes(), artifact.read_bytes())
+        manifest = (prefix / "share/codexbar-gtk/native-manifest").read_text()
+        self.assertIn("activated=0", manifest)
+        self.assertEqual(legacy_launcher.read_bytes(), prior_legacy)
+        self.assertEqual(desktop.read_bytes(), prior_desktop)
+        self.assertEqual(service.read_bytes(), prior_service)
+        self.assertEqual((settings.read_bytes(), history.read_bytes()), before)
+
+    def test_legacy_installer_refuses_to_mutate_an_installed_native_package(self) -> None:
+        repo = Path(__file__).resolve().parents[1]
+        home = self.root / "legacy-home"
+        prefix = self.root / "legacy-prefix"
+        (prefix / "share/codexbar-gtk").mkdir(parents=True)
+        (prefix / "share/codexbar-gtk/native-manifest").write_text(
+            "synthetic native ownership\n", encoding="utf-8"
         )
+        launcher = prefix / "bin/codexbar-gtk"
+        launcher.parent.mkdir(parents=True)
+        launcher.write_text("synthetic legacy launcher\n", encoding="utf-8")
+        env = os.environ.copy()
+        env.update({"HOME": str(home), "PREFIX": str(prefix)})
+        result = subprocess.run(
+            [str(repo / "scripts/install-python.sh"), "--uninstall"],
+            env=env,
+            text=True,
+            capture_output=True,
+            timeout=10,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("uninstall the native package first", result.stderr)
+        self.assertEqual(launcher.read_text(encoding="utf-8"), "synthetic legacy launcher\n")
+        self.assertTrue((prefix / "share/codexbar-gtk/native-manifest").exists())
 
 
 if __name__ == "__main__":

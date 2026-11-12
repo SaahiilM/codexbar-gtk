@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.82.0 (110) — 2026-11-12
+
+Make the Rust GTK application the repository source-launcher and installer
+default by explicit user instruction. Keep Python launch/install entrypoints as
+parity and rollback paths. The additive native install preserves an existing
+legacy command and leaves desktop/service files untouched by default; `--activate`
+opts into ownership-tracked desktop/service replacement. Activation still does
+not enable/start the service or create autostart. UG
+remains **NOT PASSED** and C01–CG remain unaccepted; this policy exception does
+not migrate an existing host installation.
+
+- See migration audit E213 for exact implementation, checks and limits.
+
 ## 0.82.0 (109) — 2026-11-12
 
 Add a bounded private-Weston Settings acceptance batch for three conventional

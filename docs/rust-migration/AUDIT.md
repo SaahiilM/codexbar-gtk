@@ -7463,3 +7463,68 @@ unchanged. No full Python/Rust suite, native rebuild, current-metadata runtime,
 exact-head CI, full UG gate, migration gate, Python removal, or default flip was
 performed. The precise next step is root diff review followed by publication
 and exact-head CI observation.
+
+### E213 — BUILD110 native repository launcher default by explicit instruction
+
+**Owner/base/status:** branch `t3/opt-in-native-launcher`, based on the clean
+build-109 branch head `b99d7d8`; local implementation and focused verification
+complete, root review/publication pending. User-supplied provenance for the
+base: PR #110 merged normally at
+`ec356d7a77a3f19dc4dbd359bb8cbf27f5ae7e18`; exact head
+`534097f01e7754367bf4b619c318e9015360a7ac` passed all three checks in run
+`43305059554`, with no reviews, comments or review threads. No merge or CI
+result for BUILD110 is claimed.
+
+**Authority and gate status:** the user explicitly directed that the repository
+Rust launcher become the default despite UG remaining **NOT PASSED**. This is a
+repository launcher/installer policy exception; it is not a UG pass, not C01,
+C02, C03 or CG acceptance, and not a claim of complete native-app parity.
+Previously recorded Python-default observations remain historical.
+
+**Paths and behavior:** `run.sh` dispatches to `scripts/run-native.sh`, which
+selects/builds `codexbar-gtk-native` and forwards argv; `run-python.sh` preserves
+the explicit Python source path. `scripts/install.sh` builds or stages the
+native binary through `scripts/install-native.sh`; `scripts/install-python.sh`
+retains the legacy installer and refuses to proceed while the native ownership
+manifest exists. Default native installation is additive and preserves an
+existing `PREFIX/bin/codexbar-gtk`, desktop entry and service; it does not
+create autostart or enable/start/stop a service. `--activate` writes the
+ownership-tracked native desktop and user-service files, but still does not
+create autostart or enable/start/stop the service. Uninstalling the native
+installation restores untouched backed-up desktop/service files. Existing
+host-installed commands/services are not migrated by this repository change.
+
+BUILD110 increments `VERSION`, `codexbar_gtk/version.py` and README's displayed
+build, and adds the matching CHANGELOG entry. Normal-user README setup now
+documents Rust/GTK build and runtime requirements, native install/uninstall,
+explicit activation and Python parity/rollback commands. The current task board,
+migration overview and UG ledger state the policy exception while retaining the
+NOT PASSED gate and open C tasks. Historical audit entries were not rewritten.
+CI path filters now include launcher/install entrypoints and
+`scripts/test-run-native.sh`; the existing release install smoke now calls the
+default `scripts/install.sh` wrapper for first install and upgrade, asserts the
+legacy command is preserved, and verifies the legacy-installer manifest guard.
+Existing jobs and smokes remain in place.
+
+**Local checks:**
+
+- `python3 -m unittest tests.test_rust_application_actions_integration.LauncherWrapperTests tests.test_app.VersionMetadataTests -v` — 5 passed (4 launcher/installer tests and version metadata test).
+- `./scripts/test-run-native.sh` — passed explicit override argv boundaries, debug selection, fake-Cargo build fallback, fail-closed override/missing-binary/Cargo errors.
+- `bash -n` on `run.sh`, `run-python.sh`, `scripts/run-native.sh`, both installers, and the two launcher/install smoke scripts — passed.
+- `shellcheck --exclude=SC2317,SC2231,SC2002` on those changed shell paths — passed. The unfiltered smoke-script lint reports those three pre-existing callback/glob/cat style diagnostics in `scripts/smoke-native-install.sh`; they are not new findings from this slice.
+- `CARGO_TARGET_DIR=/tmp/codexbar-build110-target cargo test --manifest-path rust-gtk/Cargo.toml --locked --lib version_metadata_tracks_the_root_version_file` — 1 passed.
+- `cargo metadata --locked --manifest-path rust-gtk/Cargo.toml --no-deps --format-version 1`, workflow YAML/path-filter assertions, local Markdown-link checks for changed current-facing docs, and `git diff --check` — passed. A broad historical AUDIT link scan still reports the pre-existing E211 pointer to the moved `codexbar_gtk/assets/provider_icons/UPSTREAM-PROVENANCE.md`; append-only history was left unchanged.
+- Built BUILD110 debug and release artifacts with `scripts/build-native.sh`, `CARGO_TARGET_DIR=/tmp/codexbar-build110-target`, and `OUT_DIR=/tmp/codexbar-build110-artifacts` (builds passed).
+- In the preinstalled `codexbar-no-python:smoke` image with `--network=none`, ran `scripts/smoke-native-install.sh` using a temporary HOME/prefix, private D-Bus and Xvfb. All 13 numbered scenarios passed. It launched the installed debug app to Settings, the release app to About, and the rolled-back debug app, verifying D-Bus owner PID, `/proc` executable target, SHA-256 and ELF linkage. It verified default install via `scripts/install.sh`, preservation of a synthetic legacy launcher/desktop/service, rejection by `install-python.sh` while the native manifest existed, history/settings preservation, activation/restore, user-edit preservation, and installer failure paths. Debug SHA-256: `650ccd0232249faabbf1fe9f9d2c1e07ed5f736a7208b8e5655f510a5ca8d7b7`; release SHA-256: `119e4bf0320d8fc859b3bc2af30c536103d4282eac6e487309d0c742aa8d77a6`.
+
+**Limits:** the older E198/E199 installed-prefix evidence used a BUILD109
+source/binary identity; the focused E213 smoke above is a separate local run
+with BUILD110 artifacts, not exact-head CI and not a full C02 pass. The smoke's
+About assertion checks window routing, not the displayed version text. No full
+Python/Rust suite, full UG matrix, live host GUI/service interaction, credentials,
+provider requests, commit, push or PR was performed. The Docker HOME/prefix and
+runtime were temporary and removed; no host app/service was started or changed.
+
+**Next:** root reviews this complete branch diff, commits/publishes when ready,
+and observes exact-head CI. UG stays **NOT PASSED** and all C gates remain
+unaccepted until their requirements are separately met.

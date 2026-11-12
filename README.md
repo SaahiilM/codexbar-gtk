@@ -50,7 +50,9 @@ Screenshots use synthetic fixture data and do not show real account information.
 ## Requirements
 
 - Linux with a Wayland or X11 session (developed against KDE Plasma 6 / Wayland)
-- Python 3.10+, GTK 4 and libadwaita 1.4+
+- Rust stable/Cargo, `pkg-config`, and GTK 4/libadwaita development files for
+  source builds; GTK 4, libadwaita 1.4+ and `librsvg2-common` at runtime (see
+  [`runtime_deps.txt`](scripts/native/runtime_deps.txt))
 - The `codexbar` CLI (0.79 or newer; newer provider data is optional)
 
 ## Install
@@ -58,28 +60,61 @@ Screenshots use synthetic fixture data and do not show real account information.
 ```sh
 git clone https://github.com/SaahiilM/codexbar-gtk.git
 cd codexbar-gtk
-./scripts/bootstrap-deps.sh    # only if the Gtk-4.0/Adw-1 typelibs are missing
-./scripts/install.sh           # launcher, icon, systemd user service, autostart
-~/.local/bin/codexbar-gtk
+./scripts/install.sh           # builds and installs codexbar-gtk-native
+~/.local/bin/codexbar-gtk-native --about
 ```
 
-`bootstrap-deps.sh` fetches the GTK4 introspection data into a private prefix
-without root. If your distribution ships it, install it directly instead:
+The default install is additive: it installs `~/.local/bin/codexbar-gtk-native`
+and its ownership manifest. It does not replace an existing
+`~/.local/bin/codexbar-gtk`, desktop entry, or user service, and it does not
+enable/start a service or create autostart. The native binary is named
+`codexbar-gtk-native`; the repository's `run.sh` and `scripts/install.sh` now
+select/build/install that binary, but an already-installed legacy command keeps
+its prior behavior until you explicitly replace/reinstall it. Activation
+changes the desktop/service files only; it does not replace the legacy command
+or stop/restart a running legacy service.
+
+To write the native desktop entry and user service, explicitly request:
 
 ```sh
-sudo apt install gir1.2-gtk-4.0 gir1.2-adw-1 python3-gi-cairo
+./scripts/install.sh --activate
 ```
+
+`--activate` ownership-tracks and backs up existing desktop/service files. It
+does not enable or start the service and does not create an autostart entry.
+Review and start/enable the service yourself if desired.
 
 Useful flags:
 
 ```sh
-codexbar-gtk            # start the app
-codexbar-gtk --panel    # start it with the compact panel open
-codexbar-gtk --settings # start it and open the settings
-codexbar-gtk --page sessions|spend
+~/.local/bin/codexbar-gtk-native            # start the app
+~/.local/bin/codexbar-gtk-native --panel    # start with the compact panel open
+~/.local/bin/codexbar-gtk-native --settings # start and open Settings
+~/.local/bin/codexbar-gtk-native --page sessions # or: --page spend
 ```
 
-Uninstall with `./scripts/install.sh --uninstall`.
+Uninstall the native package with `./scripts/install.sh --uninstall`. This
+removes its owned native binary/manifest and restores backed-up desktop/service
+files when their installed contents have not been edited. Settings and history
+remain in `~/.config/codexbar-gtk/`.
+
+### Python parity and rollback
+
+The Python GTK implementation remains available as a parity/rollback path.
+Run it from the checkout with `./run-python.sh`; install it explicitly with
+`./scripts/install-python.sh` (this legacy installer enables its user service
+and autostart by default). If a native manifest exists in the same prefix, the
+legacy installer refuses to proceed. First remove the native installation,
+then install Python:
+
+```sh
+./scripts/install.sh --uninstall --prefix "$HOME/.local"
+./scripts/install-python.sh
+```
+
+If you only need to switch the repository launcher back for a checkout, run
+`./run-python.sh` directly. The default-launcher change does not update or stop
+any host-installed Python command or service.
 
 ## How it talks to CodexBar
 
@@ -103,11 +138,12 @@ cost refresh fails, the previous totals remain visible as a marked known
 subtotal until a successful refresh. The tray's update check fetches only the
 public client `VERSION` marker from GitHub; it does not install or download code.
 
-## Incremental Rust port
+## Native Rust application and Python parity path
 
-The application remains primarily Python. The Rust core is being integrated one
-module at a time behind an opt-in PyO3 extension. The live Rust paths currently
-cover provider metadata (canonical IDs, names and colors), Usage & Spend
+The repository launcher and installer now default to the native Rust GTK
+application. Python remains available as the transition parity path: its Rust
+core integrations remain behind an opt-in PyO3 extension. The live Rust paths
+currently cover provider metadata (canonical IDs, names and colors), Usage & Spend
 activity helpers, display formatting, monthly allowance daily targets, quota
 history storage and queries, sparkline geometry, and the first typed payload
 primitives from `data.py` (UTC timestamp parsing, numeric validation and
@@ -125,8 +161,11 @@ CodexBar version or claim complete v0.84 compatibility.
 The approved destination is a **fully native Rust GTK4/libadwaita app**, with the
 backend migrated **before** the UI. The PyO3 bridge and Python shell are
 temporary. Backend gate BG passed in PR #54. U01's native bootstrap merged in
-PR #56, and all U01–U08 implementation PRs are now merged. UG acceptance is
-still open; see the explicit [gate ledger](docs/rust-migration/UG_GATE.md).
+PR #56, and all U01–U08 implementation PRs are now merged. By explicit user
+instruction, BUILD110 makes the repository launcher/installer native by
+default while UG remains **NOT PASSED** and C01–CG remain unaccepted. This is a
+policy exception, not gate completion or host migration; see the explicit
+[gate ledger](docs/rust-migration/UG_GATE.md).
 
 - [Architecture, source inventory and stage gates](docs/rust-migration/README.md)
 - [Task checklist and current model handoff](docs/rust-migration/TASKS.md)
@@ -145,7 +184,7 @@ screenshots are catalogued in the [UG evidence
 ledger](docs/rust-migration/UG_GATE.md); the login completion capture follows
 an assertion of the GTK success result. UG remains **NOT PASSED** because the
 Wayland action matrix and repeatable local panel focus/SNI evidence remain
-open. The Python launcher remains the default until the gate passes. See E086
+open. The Python launcher remains available for parity and rollback. See E086
 for the BG merge, B11 CI limitation and B15 compatibility bounds.
 
 Build 95 adds a required CI proof for the installed native prefix in a Python-free runtime image. It does not change the default launcher or pass a cutover gate.
@@ -295,7 +334,7 @@ The GTK front-end uses the same version pair as the macOS bundle:
   this client is feature-compatible with (`0.82.0`).
 * `CURRENT_PROJECT_VERSION` is the build number of the Linux front-end.
 * `codexbar_gtk/version.py` turns the pair into the macOS-style
-  `"0.82.0 (109)"` string shown under Settings → About, in the tray menu and by
+  `"0.82.0 (110)"` string shown under Settings → About, in the tray menu and by
   `./run.sh --about`.
 
 Increment `CURRENT_PROJECT_VERSION` for each merged PR and keep it in sync with
@@ -339,9 +378,10 @@ print("GTK", Gtk.get_major_version(), "ready; libadwaita ready")
 PY
 ```
 
-Without root access, run `./scripts/bootstrap-deps.sh`. It downloads and unpacks
-the typelibs/runtime libraries into the ignored local `.deps/` directory; `run.sh`
-and `tools/preview.py` add those paths automatically. Do not commit `.deps/`.
+For the explicit Python parity path, without root access run
+`./scripts/bootstrap-deps.sh`. It downloads and unpacks the typelibs/runtime
+libraries into the ignored local `.deps/` directory; `run-python.sh` and
+`tools/preview.py` add those paths automatically. Do not commit `.deps/`.
 The preview needs a working X11/Wayland display; use `xvfb-run -a` for a virtual
 X display if available. The `offscreen` GDK backend is not included in every GTK
 build. Use synthetic CLI data when capturing previews.
@@ -350,11 +390,14 @@ build. Use synthetic CLI data when capturing previews.
 
 U01 adds a separate native bootstrap binary. It talks directly to
 `rust-backend` and owns no Python bridge. U02–U08 screens have landed, but the
-full interaction gate remains open. The Python launcher remains the default
-until UG passes.
+full interaction gate remains open. By explicit user instruction, BUILD110
+makes the repository launcher/installer native by default while UG remains
+**NOT PASSED**. This does not migrate a host installation or mark the gate
+complete.
 
-Native builds need GTK development metadata and headers in addition to Python
-typelibs:
+Native builds need GTK development metadata and headers, not Python typelibs.
+Install the Python typelibs only when working on the explicit legacy parity
+path described above:
 
 ```sh
 sudo apt install libgtk-4-dev libadwaita-1-dev

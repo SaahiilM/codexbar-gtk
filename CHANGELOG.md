@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.82.0 (104) — 2026-11-12
+
+Restore the full native Settings interaction smoke to required Rust GTK CI.
+The step runs against synthetic fixtures in private Xvfb and D-Bus, with a
+15-minute timeout. The two local full-smoke passes used the build-102
+application binary and the reviewed chooser-focus fix; build 104 itself has
+not yet been exercised by this smoke. UG remains **NOT PASSED**, and Python
+remains the default launcher.
+
+- See migration audit E207 for evidence provenance and current CI handoff.
+
 ## 0.82.0 (103) — 2026-11-12
 
 Completes the synthetic private Weston Wayland matrix captures for Sessions

@@ -182,6 +182,11 @@ parity; UG remains **NOT PASSED**, and Python remains the default. See the
 [build-103 evidence](docs/rust-migration/screenshots/build103-wayland-matrix/results.json)
 and audit E206.
 
+Build 104 restores the comprehensive native Settings smoke to required CI
+after two consecutive full private Xvfb/D-Bus runs passed with the reviewed
+chooser-focus fix. It uses synthetic fixtures and a bounded 15-minute step.
+UG remains **NOT PASSED**, and Python remains the default.
+
 Build 94 carries the additive isolated-prefix installer; its no-activation path does not change the default launcher.
 
 Build 93 records one guarded synthetic Wayland Display action: `hidePersonalInfo`
@@ -280,7 +285,7 @@ The GTK front-end uses the same version pair as the macOS bundle:
   this client is feature-compatible with (`0.82.0`).
 * `CURRENT_PROJECT_VERSION` is the build number of the Linux front-end.
 * `codexbar_gtk/version.py` turns the pair into the macOS-style
-  `"0.82.0 (103)"` string shown under Settings → About, in the tray menu and by
+  `"0.82.0 (104)"` string shown under Settings → About, in the tray menu and by
   `./run.sh --about`.
 
 Increment `CURRENT_PROJECT_VERSION` for each merged PR and keep it in sync with

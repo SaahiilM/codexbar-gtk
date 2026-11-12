@@ -14,6 +14,11 @@ remaining work; backend unit tests do not count as GTK interaction evidence.
   and Settings preference evidence is tracked separately below and in E143.
   PR #72 and the earlier portal lifecycle results remain historical in E139–E140.
 - Build-67 U05 Xvfb results remain in E123; those actions do not pass UG.
+- E207 reports two consecutive full synthetic Settings Xvfb/private-D-Bus
+  smoke passes on the build-102 app binary with the reviewed chooser-focus
+  fix. BUILD104 restores this smoke to required CI; exact-head CI for the
+  restoration is pending. This improves X11 smoke repeatability evidence only
+  and does not pass UG.
 - U08 PR [#66](https://github.com/SaahiilM/codexbar-gtk/pull/66) merged at
   `5de83def98ad5ebd09035ee9120698fbf710541c`, the prior base for UG PR #67.
   Exact head `fb89f0b6c702dff92992916e14951b385f5189bf` passed both

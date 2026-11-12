@@ -74,8 +74,8 @@ wait_for_file() {
     [[ -e "$path" ]] || { cat "$scratch/app.log" >&2; echo "timed out waiting for $description" >&2; exit 1; }
 }
 
-python3 -c 'import dbus, gi' >/dev/null 2>&1 || {
-    echo "native Settings notification smoke needs python3-dbus and python3-gi" >&2
+python3 -c 'import dbus, gi; gi.require_version("Atspi", "2.0"); from gi.repository import Atspi' >/dev/null 2>&1 || {
+    echo "native Settings smoke needs python3-dbus, python3-gi, and AT-SPI introspection" >&2
     exit 2
 }
 
@@ -331,7 +331,9 @@ export NATIVE_SETTINGS_CLAUDEPLATFORM_COOKIE_RECEIVED="$claudeplatform_cookie_fi
 export CODEXBAR_NATIVE_SETTINGS_CLAUDEPLATFORM_STATUS_REPORT="$claudeplatform_status_file"
 export NATIVE_SETTINGS_NOTIFICATION_LOG="$scratch/notifications"
 export CODEXBAR_NATIVE_SETTINGS_ICON_REPORT=1
-export GTK_A11Y=none GTK_USE_PORTAL=0 GDK_BACKEND=x11 GSK_RENDERER=cairo
+# GTK_A11Y must be set before application launch so the live native chooser's
+# editable location field and response action can be verified through AT-SPI.
+export GTK_A11Y=atspi GTK_USE_PORTAL=0 GDK_BACKEND=x11 GSK_RENDERER=cairo
 printf '%s\n' 'true' > "$NATIVE_SETTINGS_HOOKS_ENABLED"
 
 python3 "$scratch/notifications.py" "$NATIVE_SETTINGS_NOTIFICATION_LOG" >"$scratch/notifications.log" 2>&1 &
@@ -354,39 +356,51 @@ wait_for_file "$scratch/update-port" "loopback update fixture server port"
 update_port=$(cat "$scratch/update-port")
 export CODEXBAR_NATIVE_TEST_UPDATE_URL="http://127.0.0.1:$update_port/VERSION"
 
-(cd "$HOME" && "$binary" --settings) >"$scratch/app.log" 2>&1 &
-app_pid=$!
 
 wait_for_window() {
-    local pattern=$1 deadline=$((SECONDS + 15)) window="" candidate map_state candidate_title confirmed_title confirmed_map_state
+    local pattern=$1 deadline=$((SECONDS + 15)) window="" candidate map_state candidate_title confirmed_title confirmed_map_state owner_pid confirmed_owner_pid
     while [[ -z "$window" ]] && (( SECONDS < deadline )); do
         while IFS= read -r candidate; do
             [[ -n "$candidate" ]] || continue
-            candidate_title=$(xdotool getwindowname "$candidate" 2>/dev/null || true)
+            candidate_title=$(xprop -id "$candidate" _NET_WM_NAME WM_NAME 2>/dev/null \
+                | sed -n 's/^[^=]*= "\(.*\)"$/\1/p' | head -n 1)
             [[ "$candidate_title" =~ $pattern ]] || continue
+            owner_pid=$(xprop -id "$candidate" _NET_WM_PID 2>/dev/null \
+                | sed -n 's/.* = \([0-9][0-9]*\)$/\1/p')
+            [[ "$owner_pid" == "$app_pid" ]] || continue
             map_state=$(xwininfo -id "$candidate" 2>/dev/null | sed -n 's/^  Map State: //p')
             if [[ "$map_state" == "IsViewable" ]]; then
                 # GTK and the window manager can replace transient XIDs while
-                # a native chooser maps. Require the same title and map state
-                # on a second read before returning an ID for input.
+                # a native chooser maps. Require its title, owner and map state
+                # to agree on a second read before returning an ID for input.
                 sleep 0.05
-                confirmed_title=$(xdotool getwindowname "$candidate" 2>/dev/null || true)
+                confirmed_title=$(xprop -id "$candidate" _NET_WM_NAME WM_NAME 2>/dev/null \
+                    | sed -n 's/^[^=]*= "\(.*\)"$/\1/p' | head -n 1)
                 confirmed_map_state=$(xwininfo -id "$candidate" 2>/dev/null | sed -n 's/^  Map State: //p')
-                if [[ "$confirmed_title" == "$candidate_title" && "$confirmed_map_state" == "IsViewable" ]]; then
+                confirmed_owner_pid=$(xprop -id "$candidate" _NET_WM_PID 2>/dev/null \
+                    | sed -n 's/.* = \([0-9][0-9]*\)$/\1/p')
+                if [[ "$confirmed_title" == "$candidate_title" \
+                    && "$confirmed_map_state" == "IsViewable" \
+                    && "$confirmed_owner_pid" == "$app_pid" ]]; then
                     window=$candidate
                     break
                 fi
             fi
-        done < <(xdotool search --name "$pattern" 2>/dev/null || true)
+        done < <(xwininfo -root -tree 2>/dev/null | awk '$1 ~ /^0x[[:xdigit:]]+$/ { print $1 }')
         [[ -n "$window" ]] || sleep 0.05
     done
     [[ -n "$window" ]] || {
         cat "$scratch/app.log" >&2
+        echo "window lookup diagnostics: app_pid=$app_pid pattern=$pattern" >&2
         while read -r visible_window; do
-            printf 'mapped window %s: ' "$visible_window" >&2
-            xdotool getwindowname "$visible_window" >&2 || true
-            xwininfo -id "$visible_window" 2>/dev/null | sed -n 's/^  Map State: /map state: /p' >&2 || true
-        done < <(xdotool search --name '.*' 2>/dev/null || true)
+            visible_title=$(xprop -id "$visible_window" _NET_WM_NAME WM_NAME 2>/dev/null \
+                | sed -n 's/^[^=]*= "\(.*\)"$/\1/p' | head -n 1)
+            visible_pid=$(xprop -id "$visible_window" _NET_WM_PID 2>/dev/null | tail -n 1)
+            visible_state=$(xwininfo -id "$visible_window" 2>/dev/null \
+                | sed -n 's/^  Map State: /map state: /p')
+            printf 'candidate %s title=%q pid-property=%q %s\n' \
+                "$visible_window" "$visible_title" "$visible_pid" "$visible_state" >&2
+        done < <(xwininfo -root -tree 2>/dev/null | awk '$1 ~ /^0x[[:xdigit:]]+$/ { print $1 }')
         if command -v xwininfo >/dev/null 2>&1; then
             xwininfo -root -tree >&2 || true
         fi
@@ -433,7 +447,7 @@ wait_for_array_preference() {
         sleep 0.05
     done
     cat "$scratch/app.log" >&2
-    echo "native Settings did not persist $key[$index]=$expected (observed $value)" >&2
+    echo "native Settings did not persist ${key}[$index]=$expected (observed $value)" >&2
     exit 1
 }
 
@@ -482,6 +496,128 @@ assert_pointer_within_window_tree() {
     fi
 }
 
+window_size() {
+    local window=$1
+    xwininfo -id "$window" 2>/dev/null | awk '
+        /^  Width: / { width = $2 }
+        /^  Height: / { height = $2 }
+        END { if (width && height) print width, height; else exit 1 }
+    '
+}
+
+normalize_window_id() {
+    local window_id=$1
+    if [[ "$window_id" =~ ^0[xX][[:xdigit:]]+$ ]]; then
+        printf '0x%x' "$((window_id))"
+    elif [[ "$window_id" =~ ^[0-9]+$ ]]; then
+        printf '0x%x' "$window_id"
+    fi
+}
+
+window_title() {
+    local window=$1
+    xprop -id "$window" _NET_WM_NAME WM_NAME 2>/dev/null \
+        | sed -n 's/^[^=]*= "\(.*\)"$/\1/p' | head -n 1
+}
+
+wait_for_window_size() {
+    local window=$1 expected_width=$2 expected_height=$3 description=$4
+    local deadline=$((SECONDS + 5)) observed=""
+    while (( SECONDS < deadline )); do
+        observed=$(window_size "$window" 2>/dev/null || true)
+        if [[ "$observed" == "$expected_width $expected_height" ]]; then
+            return 0
+        fi
+        sleep 0.05
+    done
+    printf 'native window did not reach requested size for %s (expected %sx%s, observed %s)\n' \
+        "$description" "$expected_width" "$expected_height" "${observed:-unavailable}" >&2
+    xwininfo -id "$window" >&2 || true
+    return 1
+}
+
+resize_window_to() {
+    local window=$1 width=$2 height=$3 description=$4
+    xdotool windowsize "$window" "$width" "$height"
+    wait_for_window_size "$window" "$width" "$height" "$description"
+}
+
+click_window_at() {
+    local window=$1 x=$2 y=$3 description=${4:-window control} size width height focus
+    local focus_deadline=$((SECONDS + 2))
+    if [[ -n "${settings_window:-}" && "$window" == "$settings_window" ]]; then
+        if ! xwininfo -id "$window" 2>/dev/null | grep -Fq 'Map State: IsViewable'; then
+            # GTK may replace the top-level XID while a transient closes.
+            settings_window=$(wait_for_window '^CodexBar Settings$')
+            window=$settings_window
+        fi
+    fi
+    xwininfo -id "$window" 2>/dev/null | grep -Fq 'Map State: IsViewable' || {
+        echo "native click target is not viewable: $description" >&2
+        return 1
+    }
+    size=$(window_size "$window") || {
+        echo "native click target has no readable geometry: $description" >&2
+        return 1
+    }
+    read -r width height <<<"$size"
+    (( x >= 0 && y >= 0 && x < width && y < height )) || {
+        printf 'native click target is outside window bounds for %s (point=%s,%s size=%s,%s)\n' \
+            "$description" "$x" "$y" "$width" "$height" >&2
+        return 1
+    }
+    xdotool windowactivate --sync "$window"
+    focus=$(normalize_window_id "$(xdotool getwindowfocus 2>/dev/null || true)")
+    while [[ "$focus" != "$(normalize_window_id "$window")" ]] && (( SECONDS < focus_deadline )); do
+        sleep 0.05
+        focus=$(normalize_window_id "$(xdotool getwindowfocus 2>/dev/null || true)")
+    done
+    [[ "$focus" == "$(normalize_window_id "$window")" ]] || {
+        printf 'native click target did not receive focus for %s at %s,%s (target=%s focus=%s)\n' \
+            "$description" "$x" "$y" "$window" "${focus:-unavailable}" >&2
+        return 1
+    }
+    xdotool mousemove --sync --window "$window" "$x" "$y"
+    # Let GTK process the motion/focus events before sending a short XTest
+    # click; this keeps repeated toggles from racing the preceding response.
+    sleep 0.05
+    assert_pointer_within_window_tree "$window" "$description"
+    xdotool mousedown --clearmodifiers 1
+    sleep 0.05
+    xdotool mouseup 1
+    sleep 0.1
+}
+
+scroll_window_at() {
+    local window=$1 x=$2 y=$3 button=$4 repeat=$5 description=$6
+    local size width height
+    xwininfo -id "$window" 2>/dev/null | grep -Fq 'Map State: IsViewable' || {
+        echo "native scroll target is not viewable: $description" >&2
+        return 1
+    }
+    size=$(window_size "$window") || {
+        echo "native scroll target has no readable geometry: $description" >&2
+        return 1
+    }
+    read -r width height <<<"$size"
+    (( x >= 0 && y >= 0 && x < width && y < height )) || {
+        printf 'native scroll target is outside window bounds for %s (point=%s,%s size=%s,%s)\n' \
+            "$description" "$x" "$y" "$width" "$height" >&2
+        return 1
+    }
+    xdotool mousemove --sync --window "$window" "$x" "$y"
+    assert_pointer_within_window_tree "$window" "$description"
+    xdotool click --repeat "$repeat" --delay 35 "$button"
+}
+
+dismiss_combo_popup_if_focused() {
+    local focus
+    focus=$(normalize_window_id "$(xdotool getwindowfocus 2>/dev/null || true)")
+    if [[ -n "${settings_window:-}" && -n "$focus" && "$focus" != "$(normalize_window_id "$settings_window")" ]]; then
+        xdotool key Escape
+    fi
+}
+
 start_test_window_manager() {
     if [[ -n "$window_manager_pid" ]] && kill -0 "$window_manager_pid" 2>/dev/null; then
         local existing_deadline=$((SECONDS + 5))
@@ -518,23 +654,13 @@ select_chooser_path() {
     # run under the same verified X root owner.
     start_test_window_manager
     settings_window=$(wait_for_window '^CodexBar Settings$')
-    xdotool windowactivate --sync "$settings_window"
-    local focused_settings
-    focused_settings=$(xdotool getwindowfocus 2>/dev/null || true)
-    [[ "$focused_settings" == "$settings_window" ]] || {
-        echo "native Settings window did not receive focus before opening chooser: $title" >&2
-        exit 1
-    }
-    xdotool mousemove --window "$settings_window" "$button_x" "$button_y"
-    assert_pointer_within_window_tree "$settings_window" "focused Settings row for $title"
-    xdotool click 1
+    resize_window_to "$settings_window" 1120 820 "Settings before $title chooser"
+    click_window_at "$settings_window" "$button_x" "$button_y" "open $title chooser"
     chooser=$(wait_for_window "^${title}$")
-    [[ "$(xdotool getwindowname "$chooser")" == "$title" ]] || {
+    [[ "$(window_title "$chooser")" == "$title" ]] || {
         echo "native file chooser title did not match the requested action: $title" >&2
         exit 1
     }
-    sleep 0.35
-    chooser=$(wait_for_window "^${title}$")
     if [[ "$title" == "Export preferences" ]]; then
         capture_native_size "$chooser" "${NATIVE_SETTINGS_EXPORT_CHOOSER_SCREENSHOT:-}"
     fi
@@ -547,8 +673,8 @@ select_chooser_path() {
         fi
     fi
     local focused_window
-    focused_window=$(xdotool getwindowfocus 2>/dev/null || true)
-    [[ "$focused_window" == "$chooser" ]] || {
+    focused_window=$(normalize_window_id "$(xdotool getwindowfocus 2>/dev/null || true)")
+    [[ "$focused_window" == "$(normalize_window_id "$chooser")" ]] || {
         echo "native file chooser did not receive keyboard focus (title: $title)" >&2
         exit 1
     }
@@ -563,7 +689,6 @@ select_chooser_path() {
             exit 1
         fi
     fi
-    sleep 0.1
     if [[ -n "${NATIVE_SETTINGS_CHOOSER_ROOT_SCREENSHOT:-}" ]]; then
         capture_root_debug "$NATIVE_SETTINGS_CHOOSER_ROOT_SCREENSHOT"
     fi
@@ -593,60 +718,30 @@ select_chooser_path() {
             echo "synthetic import target must be a present fixture in the isolated HOME" >&2
             exit 1
         }
-        # Force a fresh directory enumeration after the preceding Save
-        # chooser, then select the visible synthetic fixture row.
-        xdotool key ctrl+l
-        xdotool type --clearmodifiers --delay 1 "${HOME%/*}"
-        xdotool key Return
-        xdotool key Tab
-        sleep 0.3
-        xdotool key ctrl+l
-        xdotool type --clearmodifiers --delay 1 "$HOME"
-        xdotool key Return
-        xdotool key Tab
-        sleep 1.5
+        local target_name=${path##*/}
         capture_native_size "$chooser" "${NATIVE_SETTINGS_IMPORT_CHOOSER_SCREENSHOT:-}"
-        local target_name=${path##*/} row_index=-1 row_y
-        local -a listed_json_files=()
-        mapfile -t listed_json_files < <(find "$HOME" -maxdepth 1 -type f -name '*.json' -printf '%f\n' | LC_ALL=C sort)
-        for index in "${!listed_json_files[@]}"; do
-            if [[ "${listed_json_files[$index]}" == "$target_name" ]]; then
-                row_index=$index
-                break
-            fi
-        done
-        (( row_index >= 0 )) || {
-            echo "synthetic import fixture is absent from isolated HOME after chooser navigation: $target_name" >&2
-            exit 1
-        }
-        row_y=$((95 + row_index * 36))
-        chooser=$(wait_for_window "^${title}$")
-        xdotool mousemove --window "$chooser" 300 "$row_y"
-        assert_pointer_within_window_tree "$chooser" "synthetic import file row $target_name"
-        xdotool click 1
-        sleep 0.35
+        # Ctrl+L exposes GTK's real location entry. Read and set that entry
+        # through AT-SPI on the verified app-owned chooser, then require the
+        # actual visible Import response action to accept the exact fixture.
+        xdotool key --clearmodifiers ctrl+l
+        python3 "$repo_root/scripts/select-native-file-chooser.py" read "$app_pid" "$title" "$path"
+        xdotool key --clearmodifiers ctrl+a
+        python3 "$repo_root/scripts/select-native-file-chooser.py" read "$app_pid" "$title" "$path"
+        python3 "$repo_root/scripts/select-native-file-chooser.py" set "$app_pid" "$title" "$path"
         if [[ "$target_name" == "preferences-import.json" ]]; then
             capture_native_size "$chooser" "${NATIVE_SETTINGS_IMPORT_SELECTED_SCREENSHOT:-}"
         else
             capture_native_size "$chooser" "${NATIVE_SETTINGS_EMPTY_IMPORT_SELECTED_SCREENSHOT:-}"
         fi
-        chooser=$(wait_for_window "^${title}$")
-        # Re-establish exact chooser focus after list selection, then use its
-        # default accept response rather than a theme-dependent button point.
-        local import_focus
-        import_focus=$(xdotool getwindowfocus 2>/dev/null || true)
-        if [[ "$import_focus" != "$chooser" ]]; then
-            xdotool windowactivate --sync "$chooser"
-            import_focus=$(xdotool getwindowfocus 2>/dev/null || true)
-        fi
-        [[ "$import_focus" == "$chooser" ]] || {
-            echo "native Import chooser lost focus after selecting $target_name" >&2
-            printf 'focused window: %s; chooser: %s (%s)\n' \
-                "$import_focus" "$chooser" "$(xdotool getwindowname "$chooser" 2>/dev/null || true)" >&2
-            xwininfo -id "$chooser" >&2 || true
-            exit 1
-        }
+        # Return gives GTK's location entry its normal key event. If it leaves
+        # the chooser open, use the exact visible Import action through AT-SPI.
         xdotool key Return
+        if [[ -n "${NATIVE_SETTINGS_CHOOSER_AFTER_SCREENSHOT:-}" ]]; then
+            capture_root_debug "$NATIVE_SETTINGS_CHOOSER_AFTER_SCREENSHOT"
+        fi
+        if xwininfo -id "$chooser" 2>/dev/null | grep -Fq 'Map State: IsViewable'; then
+            python3 "$repo_root/scripts/select-native-file-chooser.py" accept "$app_pid" "$title" "$path"
+        fi
         local close_deadline=$((SECONDS + 5))
         while xwininfo -id "$chooser" 2>/dev/null | grep -Fq 'Map State: IsViewable' \
             && (( SECONDS < close_deadline )); do sleep 0.05; done
@@ -654,9 +749,13 @@ select_chooser_path() {
             if [[ -n "${NATIVE_SETTINGS_IMPORT_AFTER_SCREENSHOT:-}" ]]; then
                 capture_native_size "$chooser" "$NATIVE_SETTINGS_IMPORT_AFTER_SCREENSHOT"
             fi
-            import_focus=$(xdotool getwindowfocus 2>/dev/null || true)
-            echo "native Import chooser remained mapped after accept (focus=$import_focus, chooser=$chooser)" >&2
+            import_focus=$(normalize_window_id "$(xdotool getwindowfocus 2>/dev/null || true)")
+            echo "native Import chooser remained mapped after accept (target=$path, focus=$import_focus, chooser=$chooser)" >&2
             xwininfo -id "$chooser" >&2 || true
+            xwininfo -id "$chooser" -tree >&2 || true
+            xprop -id "$chooser" WM_NAME WM_CLASS _NET_WM_PID 2>&1 || true
+            echo "synthetic chooser-only diagnostic image: $scratch/import-chooser-failure.xwd" >&2
+            xwd -silent -id "$chooser" -out "$scratch/import-chooser-failure.xwd" 2>/dev/null || true
             echo "native Import chooser did not close after selecting $target_name" >&2
             exit 1
         fi
@@ -684,8 +783,7 @@ capture() {
     local window=$1 output=$2
     [[ -n "$output" ]] || return 0
     mkdir -p "$(dirname "$output")"
-    xdotool windowsize "$window" 1120 820
-    sleep 0.3
+    resize_window_to "$window" 1120 820 "captured Settings page"
     if [[ "${NATIVE_SETTINGS_DEBUG:-0}" == "1" ]] && command -v xwininfo >/dev/null; then
         xwininfo -id "$window" >&2
     fi
@@ -712,57 +810,64 @@ capture_root_debug() {
     [[ -s "$output" ]] || { echo "native GTK root screenshot is empty: $output" >&2; exit 1; }
 }
 
+# Let the private WM own the root before GTK maps any app windows.
+start_test_window_manager
+(cd "$HOME" && exec "$binary" --settings) >"$scratch/app.log" 2>&1 &
+app_pid=$!
+
 settings_window=$(wait_for_window 'CodexBar Settings')
 wait_for_calls 'config providers'
 wait_for_calls 'hooks list --format json'
 wait_for_calls 'plugins list'
 wait_for_file "$plugin_requested_file" "initial synthetic Plugins request"
 sleep 0.4
-# Keep pointer-based checks independent of whether CI requested screenshots.
-xdotool windowsize "$settings_window" 1120 820
-sleep 0.3
-xdotool mousemove --window "$settings_window" 758 800 click 1
+# Keep pointer input under one verified private window manager. The chooser
+# path reuses this WM.
+start_test_window_manager
+resize_window_to "$settings_window" 1120 820 "initial Settings page"
+click_window_at "$settings_window" 758 800 "fixed-coordinate control"
 sleep 0.25
 capture "$settings_window" "${NATIVE_SETTINGS_PLUGINS_LOADING_SCREENSHOT:-}"
 touch "$plugin_release_file"
 wait_for_plugins_loaded 0
 capture "$settings_window" "${NATIVE_SETTINGS_PLUGINS_SCREENSHOT:-}"
-xdotool mousemove --window "$settings_window" 68 800 click 1
+click_window_at "$settings_window" 68 800 "fixed-coordinate control"
 sleep 0.3
 capture "$settings_window" "${NATIVE_SETTINGS_GENERAL_SCREENSHOT:-}"
 
 # Exercise the remaining General controls using visible GTK controls and wait
 # for the serialized preference write before the next pointer action.
-xdotool mousemove --window "$settings_window" 810 260 click 1
+click_window_at "$settings_window" 500 260 "fixed-coordinate control"
 sleep 0.2
 xdotool key Home Down Down Down Return
 wait_for_preference refreshFrequency 5m
-xdotool mousemove --window "$settings_window" 810 488 click 1
+dismiss_combo_popup_if_focused
+click_window_at "$settings_window" 500 488 "show panel on start row"
 wait_for_preference showPopupOnStart True
-xdotool mousemove --window "$settings_window" 810 488 click 1
+click_window_at "$settings_window" 500 488 "show panel on start row"
 wait_for_preference showPopupOnStart False
 capture "$settings_window" "${NATIVE_SETTINGS_GENERAL_ACTIONS_SCREENSHOT:-}"
 
 # Exercise one live preference mutation and verify the durable JSON value.
-xdotool mousemove --window "$settings_window" 810 315 click 1
+click_window_at "$settings_window" 500 315 "fixed-coordinate control"
 wait_for_preference refreshAllProvidersOnMenuOpen False
 
 # Exercise the native launch-at-login switch and verify its private desktop
 # entry is created atomically, then removed again through SettingsActor.
-xdotool mousemove --window "$settings_window" 810 432 click 1
+click_window_at "$settings_window" 500 432 "fixed-coordinate control"
 wait_for_preference launchAtLogin True
 autostart_deadline=$((SECONDS + 8))
 while [[ ! -s "$autostart_file" ]] && (( SECONDS < autostart_deadline )); do sleep 0.05; done
 expected_executable=$(readlink -f "$binary")
-[[ -s "$autostart_file" ]] && grep -Fx -- "Exec=\"$expected_executable\"" "$autostart_file" >/dev/null || {
+if [[ ! -s "$autostart_file" ]] || ! grep -Fx -- "Exec=\"$expected_executable\"" "$autostart_file" >/dev/null; then
     cat "$scratch/app.log" >&2
     echo "native launch-at-login switch did not write the expected executable entry" >&2
     exit 1
-}
+fi
 # Do not send the off click until SettingsActor has persisted the enabled state
 # and its response-settle interval has elapsed. Then require both the disabled
 # preference and removal of the desktop entry; either failure remains visible.
-xdotool mousemove --window "$settings_window" 810 432 click 1
+click_window_at "$settings_window" 500 432 "fixed-coordinate control"
 wait_for_preference launchAtLogin False
 autostart_deadline=$((SECONDS + 8))
 while [[ -e "$autostart_file" ]] && (( SECONDS < autostart_deadline )); do sleep 0.05; done
@@ -773,64 +878,69 @@ while [[ -e "$autostart_file" ]] && (( SECONDS < autostart_deadline )); do sleep
 }
 
 # Capture representative panes from the live PreferencesWindow.
-xdotool mousemove --window "$settings_window" 267 800 click 1
+click_window_at "$settings_window" 267 800 "fixed-coordinate control"
 sleep 0.3
 capture "$settings_window" "${NATIVE_SETTINGS_MENU_BAR_SCREENSHOT:-}"
 
 # Exercise every Menu Bar preference through its visible GTK control and verify
 # each write reaches the isolated PreferencesStore. The isolated home keeps the
 # final hidden-tray value from changing the user's real preferences.
-xdotool mousemove --window "$settings_window" 810 142 click 1
+click_window_at "$settings_window" 500 142 "fixed-coordinate control"
 sleep 0.2
 xdotool key End Return
 wait_for_preference menuBarIconStyle iconPercent
-xdotool mousemove --window "$settings_window" 810 198 click 1
+dismiss_combo_popup_if_focused
+click_window_at "$settings_window" 500 198 "unified icon source row"
 sleep 0.2
 xdotool key Home Return
 wait_for_preference unifiedIconSource automatic
-xdotool mousemove --window "$settings_window" 810 252 click 1
+dismiss_combo_popup_if_focused
+click_window_at "$settings_window" 500 252 "fixed-coordinate control"
 sleep 0.2
 xdotool key End Return
 wait_for_preference switcherRowsOption details
-xdotool mousemove --window "$settings_window" 810 307 click 1
+dismiss_combo_popup_if_focused
+click_window_at "$settings_window" 500 307 "fixed-coordinate control"
 wait_for_preference showTray False
 capture "$settings_window" "${NATIVE_SETTINGS_MENU_BAR_ACTIONS_SCREENSHOT:-}"
 
-xdotool mousemove --window "$settings_window" 68 800 click 1
+click_window_at "$settings_window" 68 800 "fixed-coordinate control"
 sleep 0.3
-xdotool mousemove --window "$settings_window" 810 605 click 1
+click_window_at "$settings_window" 500 605 "fixed-coordinate control"
 sleep 0.2
 xdotool key Down Return
 wait_for_preference preferredCurrencyCode USD
+dismiss_combo_popup_if_focused
 
-xdotool mousemove --window "$settings_window" 166 800 click 1
+click_window_at "$settings_window" 166 800 "fixed-coordinate control"
 sleep 0.3
-xdotool mousemove --window "$settings_window" 540 178 click 1
+click_window_at "$settings_window" 540 178 "fixed-coordinate control"
 sleep 0.3
 capture "$settings_window" "${NATIVE_SETTINGS_PROVIDERS_SCREENSHOT:-}"
-xdotool mousemove --window "$settings_window" 810 234 click 1
+click_window_at "$settings_window" 500 234 "fixed-coordinate control"
 wait_for_calls 'config disable --provider codex'
 [[ "$(cat "$provider_enabled_file")" == "false" ]] || {
     echo "native provider switch did not disable the synthetic Codex provider" >&2
     exit 1
 }
-xdotool mousemove --window "$settings_window" 810 234 click 1
+click_window_at "$settings_window" 500 234 "fixed-coordinate control"
 wait_for_calls 'config enable --provider codex'
 [[ "$(cat "$provider_enabled_file")" == "true" ]] || {
     echo "native provider switch did not re-enable the synthetic Codex provider" >&2
     exit 1
 }
-xdotool mousemove --window "$settings_window" 810 289 click 1
+click_window_at "$settings_window" 500 289 "fixed-coordinate control"
 sleep 0.2
 xdotool key End Return
 wait_for_calls 'config set-source --provider codex --source api'
+dismiss_combo_popup_if_focused
 [[ "$(cat "$provider_source_file")" == "api" ]] || {
     echo "native provider source selector did not reach the synthetic CLI" >&2
     exit 1
 }
-xdotool mousemove --window "$settings_window" 500 398 click 1
+click_window_at "$settings_window" 500 398 "fixed-coordinate control"
 xdotool type --clearmodifiers --delay 1 "$api_key_sentinel"
-xdotool mousemove --window "$settings_window" 777 398 click 1
+click_window_at "$settings_window" 777 398 "fixed-coordinate control"
 wait_for_file "$api_key_received_file" "synthetic API-key Apply action"
 for log_file in "$preferences_file" "$NATIVE_SETTINGS_CALLS" "$scratch/app.log" "$NATIVE_SETTINGS_NOTIFICATION_LOG"; do
     if [[ -f "$log_file" ]] && grep -Fq -- "$api_key_sentinel" "$log_file"; then
@@ -842,14 +952,14 @@ capture "$settings_window" "${NATIVE_SETTINGS_PROVIDERS_ACTIONS_SCREENSHOT:-}"
 
 # Exercise the visible sign-in button with a synthetic PTY process. The code is
 # submitted through the dialog, never printed into a test log or screenshot.
-xdotool mousemove --window "$settings_window" 790 345 click 1
+click_window_at "$settings_window" 790 345 "fixed-coordinate control"
 login_window=$(wait_for_window '^Sign in to CODEX$')
 wait_for_file "$login_started_file" "synthetic login PTY start"
 sleep 0.35
 capture_native_size "$login_window" "${NATIVE_SETTINGS_LOGIN_PROMPT_SCREENSHOT:-}"
-xdotool mousemove --window "$login_window" 250 160 click 1
+click_window_at "$login_window" 250 160 "fixed-coordinate control"
 xdotool type --clearmodifiers --delay 1 "$login_code_sentinel"
-xdotool mousemove --window "$login_window" 465 205 click 1
+click_window_at "$login_window" 465 205 "fixed-coordinate control"
 wait_for_file "$login_complete_file" "synthetic login completion" 12
 wait_for_file "$login_status_file" "GTK sign-in completion result" 5
 [[ "$(cat "$login_status_file")" == "Sign-in completed." ]] || {
@@ -858,7 +968,7 @@ wait_for_file "$login_status_file" "GTK sign-in completion result" 5
 }
 sleep 0.4
 capture_native_size "$login_window" "${NATIVE_SETTINGS_LOGIN_COMPLETE_SCREENSHOT:-}"
-xdotool mousemove --window "$login_window" 465 252 click 1
+click_window_at "$login_window" 465 252 "fixed-coordinate control"
 login_close_deadline=$((SECONDS + 5))
 while xdotool getwindowname "$login_window" >/dev/null 2>&1 && (( SECONDS < login_close_deadline )); do sleep 0.05; done
 ! xdotool getwindowname "$login_window" >/dev/null 2>&1 || {
@@ -876,20 +986,20 @@ capture "$settings_window" "${NATIVE_SETTINGS_PROVIDERS_LOGIN_COMPLETE_SCREENSHO
 # Exercise the ClaudePlatform one-shot stdin flow with synthetic input. Only
 # status-only dialog frames are retained; the password field is cleared on
 # submit and the masked input frame is never written as an artifact.
-xdotool mousemove --window "$settings_window" 700 600 click --repeat 12 --delay 35 5
+scroll_window_at "$settings_window" 700 600 5 12 "Claude Platform provider row"
 sleep 0.3
 capture "$settings_window" "${NATIVE_SETTINGS_CLAUDEPLATFORM_ROW_SCREENSHOT:-}"
-xdotool mousemove --window "$settings_window" 520 620 click 1
+click_window_at "$settings_window" 520 620 "fixed-coordinate control"
 sleep 0.2
-xdotool mousemove --window "$settings_window" 700 720 click 5
+scroll_window_at "$settings_window" 700 720 5 1 "Claude Platform provider details"
 sleep 0.2
 capture "$settings_window" "${NATIVE_SETTINGS_CLAUDEPLATFORM_EXPANDED_SCREENSHOT:-}"
-xdotool mousemove --window "$settings_window" 790 693 click 1
+click_window_at "$settings_window" 790 693 "fixed-coordinate control"
 claudeplatform_window=$(wait_for_window '^Sign in to Claude Platform$')
 capture_native_size "$claudeplatform_window" "${NATIVE_SETTINGS_CLAUDEPLATFORM_PROMPT_SCREENSHOT:-}"
-xdotool mousemove --window "$claudeplatform_window" 220 68 click 1
+click_window_at "$claudeplatform_window" 220 68 "fixed-coordinate control"
 xdotool type --clearmodifiers --delay 1 'sessionKey=synthetic-cookie-candidate'
-xdotool mousemove --window "$claudeplatform_window" 230 114 click 1
+click_window_at "$claudeplatform_window" 230 114 "fixed-coordinate control"
 wait_for_file "$claudeplatform_cookie_file" "synthetic ClaudePlatform stdin submission"
 wait_for_file "$claudeplatform_status_file" "ClaudePlatform sanitized completion status"
 [[ "$(cat "$claudeplatform_status_file")" == "Claude Platform sign-in completed." ]] || {
@@ -908,7 +1018,14 @@ done
     echo "synthetic ClaudePlatform CLI did not receive the exact stdin value" >&2
     exit 1
 }
-xdotool key Escape
+click_window_at "$claudeplatform_window" 430 114 "close synthetic Claude Platform dialog"
+claudeplatform_close_deadline=$((SECONDS + 5))
+while xdotool getwindowname "$claudeplatform_window" >/dev/null 2>&1 \
+    && (( SECONDS < claudeplatform_close_deadline )); do sleep 0.05; done
+! xdotool getwindowname "$claudeplatform_window" >/dev/null 2>&1 || {
+    echo "synthetic Claude Platform dialog did not close after completion" >&2
+    exit 1
+}
 sleep 0.2
 if [[ "${NATIVE_SETTINGS_CLAUDEPLATFORM_ONLY:-0}" == "1" ]]; then
     gapplication action com.steipete.CodexBarGTK quit
@@ -917,53 +1034,55 @@ if [[ "${NATIVE_SETTINGS_CLAUDEPLATFORM_ONLY:-0}" == "1" ]]; then
     printf 'native ClaudePlatform synthetic stdin login and joined shutdown smoke passed\n'
     exit 0
 fi
-xdotool mousemove --window "$settings_window" 365 800 click 1
+click_window_at "$settings_window" 365 800 "fixed-coordinate control"
 sleep 0.3
 capture "$settings_window" "${NATIVE_SETTINGS_DISPLAY_SCREENSHOT:-}"
-xdotool mousemove --window "$settings_window" 810 142 click 1
+click_window_at "$settings_window" 500 142 "fixed-coordinate control"
 wait_for_preference usageBarsShowUsed False
-xdotool mousemove --window "$settings_window" 810 197 click 1
+click_window_at "$settings_window" 500 197 "fixed-coordinate control"
 sleep 0.2
 xdotool key End Return
 wait_for_preference resetTimesOption both
-xdotool mousemove --window "$settings_window" 810 498 click 1
+dismiss_combo_popup_if_focused
+click_window_at "$settings_window" 500 498 "fixed-coordinate control"
 sleep 0.2
 xdotool key End Return
 wait_for_preference workdayTickAppearance highContrast
-xdotool mousemove --window "$settings_window" 810 552 click 1
+dismiss_combo_popup_if_focused
+click_window_at "$settings_window" 500 552 "fixed-coordinate control"
 wait_for_preference quotaBurndownEnabled False
-xdotool mousemove --window "$settings_window" 810 252 click 1
+click_window_at "$settings_window" 500 252 "fixed-coordinate control"
 wait_for_preference paceVisible False
-xdotool mousemove --window "$settings_window" 810 307 click 1
+click_window_at "$settings_window" 500 307 "fixed-coordinate control"
 wait_for_preference hidePersonalInfo True
-xdotool mousemove --window "$settings_window" 746 443 click 1
+click_window_at "$settings_window" 746 443 "fixed-coordinate control"
 xdotool key ctrl+a
 xdotool type --clearmodifiers 6
 xdotool key Return
 wait_for_preference weeklyProgressWorkDays 6
-xdotool mousemove --window "$settings_window" 746 689 click 1
+click_window_at "$settings_window" 746 689 "fixed-coordinate control"
 xdotool key ctrl+a
 xdotool type --clearmodifiers 70
 xdotool key Return
 wait_for_array_preference quotaWarningThresholds 0 70
-xdotool mousemove --window "$settings_window" 746 744 click 1
+click_window_at "$settings_window" 746 744 "fixed-coordinate control"
 xdotool key ctrl+a
 xdotool type --clearmodifiers 85
 xdotool key Return
 wait_for_array_preference quotaWarningThresholds 1 85
 capture "$settings_window" "${NATIVE_SETTINGS_DISPLAY_ACTIONS_SCREENSHOT:-}"
-xdotool mousemove --window "$settings_window" 463 800 click 1
+click_window_at "$settings_window" 463 800 "fixed-coordinate control"
 sleep 0.3
 capture "$settings_window" "${NATIVE_SETTINGS_NOTIFICATIONS_SCREENSHOT:-}"
-xdotool mousemove --window "$settings_window" 810 142 click 1
+click_window_at "$settings_window" 500 142 "fixed-coordinate control"
 wait_for_preference sessionQuotaNotificationsEnabled False
-xdotool mousemove --window "$settings_window" 810 197 click 1
+click_window_at "$settings_window" 500 197 "fixed-coordinate control"
 wait_for_preference quotaWarningNotificationsEnabled False
-xdotool mousemove --window "$settings_window" 810 252 click 1
+click_window_at "$settings_window" 500 252 "fixed-coordinate control"
 wait_for_preference limitResetNotificationsEnabled False
-xdotool mousemove --window "$settings_window" 810 307 click 1
+click_window_at "$settings_window" 500 307 "fixed-coordinate control"
 wait_for_preference predictivePaceNotificationsEnabled False
-xdotool mousemove --window "$settings_window" 800 362 click 1
+click_window_at "$settings_window" 800 362 "fixed-coordinate control"
 notification_deadline=$((SECONDS + 8))
 while ! grep -q 'CodexBar GTK test notification' "$NATIVE_SETTINGS_NOTIFICATION_LOG" 2>/dev/null \
     && (( SECONDS < notification_deadline )); do sleep 0.05; done
@@ -973,45 +1092,46 @@ grep -q 'CodexBar GTK test notification' "$NATIVE_SETTINGS_NOTIFICATION_LOG" || 
     exit 1
 }
 capture "$settings_window" "${NATIVE_SETTINGS_NOTIFICATION_ACTION_SCREENSHOT:-}"
-xdotool mousemove --window "$settings_window" 562 800 click 1
+click_window_at "$settings_window" 562 800 "fixed-coordinate control"
 sleep 0.3
 capture "$settings_window" "${NATIVE_SETTINGS_SPEND_SCREENSHOT:-}"
-xdotool mousemove --window "$settings_window" 810 142 click 1
+click_window_at "$settings_window" 500 142 "fixed-coordinate control"
 wait_for_preference costUsageEnabled False
-xdotool mousemove --window "$settings_window" 810 278 click 1
+click_window_at "$settings_window" 500 278 "fixed-coordinate control"
 sleep 0.2
 xdotool key Home Down Return
 wait_for_nonempty_preference costUsageBucketTimeZone
+dismiss_combo_popup_if_focused
 capture "$settings_window" "${NATIVE_SETTINGS_SPEND_ACTION_SCREENSHOT:-}"
-xdotool mousemove --window "$settings_window" 660 800 click 1
+click_window_at "$settings_window" 660 800 "fixed-coordinate control"
 sleep 0.3
 capture "$settings_window" "${NATIVE_SETTINGS_HOOKS_SCREENSHOT:-}"
-xdotool mousemove --window "$settings_window" 810 160 click 1
+click_window_at "$settings_window" 500 160 "fixed-coordinate control"
 wait_for_calls 'hooks disable'
 [[ "$(cat "$NATIVE_SETTINGS_HOOKS_ENABLED")" == "false" ]] || {
     echo "native Hooks switch did not persist disabled state through the synthetic CLI" >&2
     exit 1
 }
 capture "$settings_window" "${NATIVE_SETTINGS_HOOKS_ACTIONS_SCREENSHOT:-}"
-xdotool mousemove --window "$settings_window" 810 160 click 1
+click_window_at "$settings_window" 500 160 "fixed-coordinate control"
 wait_for_calls 'hooks enable'
 [[ "$(cat "$NATIVE_SETTINGS_HOOKS_ENABLED")" == "true" ]] || {
     echo "native Hooks switch did not persist enabled state through the synthetic CLI" >&2
     exit 1
 }
-xdotool mousemove --window "$settings_window" 758 800 click 1
+click_window_at "$settings_window" 758 800 "fixed-coordinate control"
 sleep 0.3
 capture "$settings_window" "${NATIVE_SETTINGS_PLUGINS_SCREENSHOT:-}"
-xdotool mousemove --window "$settings_window" 856 800 click 1
+click_window_at "$settings_window" 856 800 "fixed-coordinate control"
 sleep 0.3
 capture "$settings_window" "${NATIVE_SETTINGS_ADVANCED_SCREENSHOT:-}"
 
 # Reconfigure to the same synthetic executable through the visible CLI-path
 # entry. This validates the GTK apply action without switching away from the
 # synthetic provider/auth fixture.
-xdotool mousemove --window "$settings_window" 500 158 click 1
+click_window_at "$settings_window" 500 158 "fixed-coordinate control"
 xdotool type --clearmodifiers --delay 1 "$CODEXBAR_CLI"
-xdotool mousemove --window "$settings_window" 810 158 click 1
+click_window_at "$settings_window" 810 158 "apply synthetic CLI path"
 wait_for_preference cliPath "$CODEXBAR_CLI"
 capture "$settings_window" "${NATIVE_SETTINGS_CLI_PATH_ACTIONS_SCREENSHOT:-}"
 
@@ -1041,12 +1161,12 @@ PY
 
 # Keep a synthetic autostart entry present across Import and Reset. Both flows
 # must update persisted preferences without touching this OS integration file.
-xdotool mousemove --window "$settings_window" 68 800 click 1
+click_window_at "$settings_window" 68 800 "fixed-coordinate control"
 sleep 0.25
-xdotool mousemove --window "$settings_window" 810 432 click 1
+click_window_at "$settings_window" 500 432 "fixed-coordinate control"
 wait_for_preference launchAtLogin True
 wait_for_file "$autostart_file" "autostart entry before import/reset" 8
-xdotool mousemove --window "$settings_window" 856 800 click 1
+click_window_at "$settings_window" 856 800 "fixed-coordinate control"
 sleep 0.25
 
 # Export through the native Save chooser and verify the resulting portable JSON.
@@ -1105,10 +1225,10 @@ while [[ "$(cat "$hooks_served_file" 2>/dev/null || true)" != "empty" ]] && (( S
     echo "Settings reload did not query the empty synthetic Hooks rules" >&2
     exit 1
 }
-xdotool mousemove --window "$settings_window" 660 800 click 1
+click_window_at "$settings_window" 660 800 "fixed-coordinate control"
 sleep 0.4
 capture "$settings_window" "${NATIVE_SETTINGS_HOOKS_EMPTY_RULES_SCREENSHOT:-}"
-xdotool mousemove --window "$settings_window" 758 800 click 1
+click_window_at "$settings_window" 758 800 "fixed-coordinate control"
 sleep 0.4
 capture "$settings_window" "${NATIVE_SETTINGS_PLUGINS_EMPTY_SCREENSHOT:-}"
 
@@ -1116,20 +1236,20 @@ capture "$settings_window" "${NATIVE_SETTINGS_PLUGINS_EMPTY_SCREENSHOT:-}"
 printf '%s\n' 'error' > "$plugins_mode_file"
 rm -f "$plugin_loaded_file"
 plugins_before=$(cat "$plugins_request_count_file")
-xdotool mousemove --window "$settings_window" 856 800 click 1
+click_window_at "$settings_window" 856 800 "fixed-coordinate control"
 sleep 0.25
 select_chooser_path "Import preferences" "$empty_import_file" 790 388
 wait_for_plugins_loaded "$plugins_before"
 sleep 0.35
-xdotool mousemove --window "$settings_window" 758 800 click 1
+click_window_at "$settings_window" 758 800 "fixed-coordinate control"
 sleep 0.3
 capture "$settings_window" "${NATIVE_SETTINGS_PLUGINS_ERROR_SCREENSHOT:-}"
 
 # Reset requires explicit confirmation. First cancel and prove the imported
 # values remain; then confirm and verify defaults while the autostart file stays.
-xdotool mousemove --window "$settings_window" 856 800 click 1
+click_window_at "$settings_window" 856 800 "fixed-coordinate control"
 sleep 0.25
-xdotool mousemove --window "$settings_window" 790 443 click 1
+click_window_at "$settings_window" 790 443 "fixed-coordinate control"
 reset_cancel_window=$(wait_for_window 'Reset all preferences')
 capture_native_size "$reset_cancel_window" "${NATIVE_SETTINGS_RESET_CONFIRMATION_SCREENSHOT:-}"
 xdotool key Escape
@@ -1140,8 +1260,8 @@ wait_for_preference refreshFrequency 2m
     echo "cancelling Preferences reset changed the autostart desktop entry" >&2
     exit 1
 }
-xdotool mousemove --window "$settings_window" 790 443 click 1
-reset_window=$(wait_for_window 'Reset all preferences')
+click_window_at "$settings_window" 790 443 "fixed-coordinate control"
+wait_for_window 'Reset all preferences' >/dev/null
 xdotool key Tab
 xdotool key Return
 wait_for_preference refreshFrequency adaptive
@@ -1177,7 +1297,7 @@ while xdotool getwindowname "$update_result_window" >/dev/null 2>&1 && (( SECOND
     exit 1
 }
 
-xdotool mousemove --window "$settings_window" 790 333 click 1
+click_window_at "$settings_window" 790 333 "fixed-coordinate control"
 new_dialog_windows=$(wait_for_window '^Export preferences$')
 capture_native_size "$new_dialog_windows" "${NATIVE_SETTINGS_CANCEL_CHOOSER_SCREENSHOT:-}"
 dialog_deadline=$((SECONDS + 8))
@@ -1206,10 +1326,10 @@ if [[ -n "$still_open_windows" ]]; then
     echo "native file chooser did not close after the cancel response" >&2
     exit 1
 fi
-xdotool mousemove --window "$settings_window" 1052 800 click 1
+click_window_at "$settings_window" 1052 800 "fixed-coordinate control"
 sleep 0.3
 capture "$settings_window" "${NATIVE_SETTINGS_ABOUT_SCREENSHOT:-}"
-xdotool mousemove --window "$settings_window" 955 800 click 1
+click_window_at "$settings_window" 955 800 "fixed-coordinate control"
 sleep 0.3
 capture "$settings_window" "${NATIVE_SETTINGS_ACKNOWLEDGEMENTS_SCREENSHOT:-}"
 

@@ -178,6 +178,7 @@ class NativeWaylandIsolatedHarnessTests(unittest.TestCase):
             ("CodexBar GTK — Usage & Spend", "Sessions", "CodexBar GTK — Sessions"),
             ("CodexBar GTK — Sessions", "Dashboard", "CodexBar GTK — Dashboard"),
             ("CodexBar GTK — Dashboard", "Settings", "CodexBar Settings"),
+            ("CodexBar Settings", "Return to dashboard", "CodexBar GTK — Dashboard"),
             ("CodexBar GTK — Dashboard", "About", "About CodexBar GTK"),
         ):
             self.assertIn(f'route("{control}", "{source_title}", "{target_title}"', source)
@@ -188,6 +189,7 @@ class NativeWaylandIsolatedHarnessTests(unittest.TestCase):
                         scenario.index('wait_visible_text(\n        python, pid, "$12.50 · partial"'))
         self.assertIn('"retained_nonempty_total": True', scenario)
         self.assertIn('"same_pid": bool(error_text and error_text["pid"] == retained_total["pid"])', scenario)
+        self.assertIn('"The harness starts on Sessions so all six page-navigation transitions', scenario)
         self.assertLess(scenario.index('if not error_text:'), scenario.index(
             'route("Sessions", "CodexBar GTK — Usage & Spend"'))
         self.assertIn('return 0 if evidence.get("status", "passed") == "passed" else 1',

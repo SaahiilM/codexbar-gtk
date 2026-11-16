@@ -1717,16 +1717,12 @@ def run_page_state(python: str, pid: int, evidence: dict,
           "dashboard", "page-state-dashboard.png")
     route("Settings", "CodexBar GTK — Dashboard", "CodexBar Settings",
           "settings", "page-state-settings.png")
-    # Settings is a separate window. The public dashboard action dismisses it;
-    # navigation to Settings above is the visible user action being evidenced.
-    gaction("dashboard")
-    wait_until("Dashboard visible after Settings", lambda: atspi_probe(
-        python, "title", pid, "CodexBar GTK — Dashboard").get("match"))
+    route("Return to dashboard", "CodexBar Settings", "CodexBar GTK — Dashboard",
+          "dashboard_after_settings", "page-state-dashboard-after-settings.png")
     route("About", "CodexBar GTK — Dashboard", "About CodexBar GTK",
           "about", "page-state-about.png")
     evidence["navigation_limits"] = [
-        "The harness starts on Sessions so all five page-navigation transitions in the app's existing controls are exercised visibly.",
-        "The return from Settings uses app.dashboard because Settings is a separate window; it is recorded as a route reset, not visible navigation.",
+        "The harness starts on Sessions so all six page-navigation transitions in the app's existing controls are exercised visibly.",
         "Accessible GTK actions prove named control activation, not physical input or KDE shell parity.",
     ]
     if error_text:

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.82.0 (111) — 2026-11-16
+
+Run the required `tray-dbus` check against the native Rust tray implementation
+inside a private D-Bus session. The native job installs Rust and GTK build
+dependencies without Python D-Bus/GI packages; existing Python tray parity
+tests remain in the broader test job. UG remains **NOT PASSED**, and C gates
+remain open.
+
+- See migration audit E214 for assertion mapping, exact checks, and limits.
+
 ## 0.82.0 (110) — 2026-11-12
 
 Make the Rust GTK application the repository source-launcher and installer

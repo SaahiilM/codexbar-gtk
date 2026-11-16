@@ -12,8 +12,13 @@ and keeps its ownership-manifest upgrade/rollback protections.
 
 This candidate is for root review only. It does not pass UG or C01–CG, allocate
 a project build number, or claim all former assertions have native replacements.
-Root must reconcile the assertion map and this handoff before integration. The
-remainder of this guide records the migration plan and historical evidence.
+The coverage peer's local commit `e7973fa` supplies a full method-level map for
+the old application and Python settings-facade tests, including 26 retirement
+candidates, but is not included here. It records unresolved permissive CLI-path,
+missing-binary, and startup callback contracts. Root requires both Python
+execution modes on the peer coverage branch before integration. Details and
+policy dispositions are in [`tests/reference/python/README.md`](../../tests/reference/python/README.md).
+The remainder of this guide records the migration plan and historical evidence.
 
 **Approved destination:** a Rust GTK4/libadwaita application with no Python
 runtime, PyO3 bridge, or PyGObject dependency in the shipped application.

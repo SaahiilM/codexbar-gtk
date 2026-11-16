@@ -727,9 +727,11 @@ mod tests {
             ));
             fs::create_dir_all(&dir).unwrap();
             let executable = dir.join("fake-cli");
+            let staged = dir.join("fake-cli.tmp");
             let script = script.replace("{DIR}", dir.to_string_lossy().as_ref());
-            fs::write(&executable, format!("#!/bin/sh\n{script}\n")).unwrap();
-            fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
+            fs::write(&staged, format!("#!/bin/sh\n{script}\n")).unwrap();
+            fs::set_permissions(&staged, fs::Permissions::from_mode(0o700)).unwrap();
+            fs::rename(staged, &executable).unwrap();
             Self { dir, executable }
         }
     }

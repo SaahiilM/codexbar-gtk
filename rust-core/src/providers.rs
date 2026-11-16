@@ -948,6 +948,19 @@ mod tests {
     }
 
     #[test]
+    fn recent_upstream_provider_names_and_colors_match_legacy_assertions() {
+        for (provider_id, name, color) in [
+            ("soniox", "Soniox", "#253772"),
+            ("abliteration", "abliteration.ai", "#1B1B1B"),
+            ("chatbox", "Chatbox AI", "#228BE6"),
+            ("traecn", "Trae CN", "#4D7CFE"),
+        ] {
+            assert_eq!(display_name(provider_id), name);
+            assert_eq!(accent_color(provider_id), color);
+        }
+    }
+
+    #[test]
     fn unicode_unknown_provider_titles_use_titlecase_expansions() {
         assert_eq!(display_name("ß-provider"), "Ss Provider");
         assert_eq!(display_name("ǆ-provider"), "ǅ Provider");

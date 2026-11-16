@@ -9,12 +9,49 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Field | Current checkpoint |
 | --- | --- |
 | Goal | Fully native Rust GTK4/libadwaita application with verified packaging and legacy runtime removal. |
-| Current phase | BG passed and U01–U08 implementation merged. UG **NOT PASSED**; Python default. |
-| Last observed merge | PR #107 merged normally at `2b8d5b70765e36b7baa511a4c9001737cc9c7aaa` (build 106). Exact head `33f433b7951677e7167c1d35d8b382c4aba33ac0` passed all three checks in run `43287961284`, including the empty-dashboard widget regression. No reviews, comments or review threads were present. |
-| Active implementation | BUILD107/E210 contains test-only CLI process-group lifecycle regression and fixture cleanup. Production CLI behavior is unchanged. The verified build-106 main was merged normally; local backend checks passed, fresh exact-head CI pending. |
+| Current phase | BG passed and U01–U08 implementation merged. UG **NOT PASSED**. By explicit user instruction, BUILD110 makes the repository launcher/installer native by default; C01–CG remain unaccepted. |
+| Last observed merge | User-supplied PR #110 merged normally at `ec356d7a77a3f19dc4dbd359bb8cbf27f5ae7e18` (build 109). Exact head `534097f01e7754367bf4b619c318e9015360a7ac` passed all three checks in run `43305059554`; no reviews, comments or review threads were present. |
+| Active implementation | BUILD110/E213, branch `t3/opt-in-native-launcher`: native source launcher and installer defaults, explicit Python parity/rollback paths, current-facing documentation, and CI proof for the default wrapper. Local review and exact-head CI remain pending. |
 | Installer/runtime verification | E198 records the merged build-95 installed-prefix/Python-free runtime proof. E199 records prior local 13-case activation smoke evidence in a Python-free container; its first attempt lacked `file`, and the portable `od`/`ldd` check passed. These component results do not pass C02 or authorize cutover. |
-| UI acceptance | E195 records one Display action; E200 records seven guarded Settings actions and three tab transitions. Broader Wayland controls/navigation remain open. UG is **NOT PASSED** and Python remains the default; see `UG_GATE.md`. |
-| Next | Publish BUILD107 and observe exact-head CI before normal merge. Residual private-Wayland Settings acceptance proceeds separately. UG NOT PASSED, Python default, C gates open. |
+| UI acceptance | E195 records one Display action; E200 records seven guarded Settings actions and three tab transitions. Broader Wayland controls/navigation remain open. UG is **NOT PASSED**; Python remains the explicit parity/rollback path under the BUILD110 launcher-default exception. See `UG_GATE.md`. |
+| Next | Root reviews and publishes BUILD110/E213, then observes exact-head CI. UG remains **NOT PASSED**; the native repository default is an explicit user-authorized policy exception, not a gate pass. Existing host installations are not migrated. |
+
+### BUILD110/E213 — native repository launcher default by explicit instruction
+
+**Owner/status:** `t3/opt-in-native-launcher`, implementation complete locally;
+root review/publication pending. Base is build 109 commit `b99d7d8`. This entry
+records the user's explicit instruction to make Rust the repository default;
+it does not claim UG, C01, C02, C03 or CG passed. User-supplied base provenance:
+PR #110 merged at `ec356d7a77a3f19dc4dbd359bb8cbf27f5ae7e18`; exact head
+`534097f01e7754367bf4b619c318e9015360a7ac` passed all three required checks
+in run `43305059554`, with no reviews, comments or threads.
+
+**Behavior/scope:** `run.sh` and `scripts/install.sh` use the Rust GTK binary
+`codexbar-gtk-native`; `run-python.sh` and `scripts/install-python.sh` remain
+explicit parity/rollback entrypoints. The default installer is additive. It
+installs the native executable and manifest, preserves a pre-existing legacy
+`codexbar-gtk` launcher/desktop/service, and does not register autostart or
+enable/start a service. `--activate` opts into writing the ownership-tracked
+desktop and user-service files, still without enabling/starting the service or
+creating autostart. The legacy installer refuses to run while the native
+manifest is present; rollback removes the native install first. None of these
+repository changes update a host's already-installed Python command or stop its
+existing service.
+
+**Policy exception and evidence limits:** UG remains **NOT PASSED**; remaining
+Wayland actions and other acceptance gaps stay open. C01–CG remain unchecked.
+The earlier installed-prefix proof came from BUILD109 source and its recorded
+binary hash. This slice separately rebuilt BUILD110 debug/release artifacts and
+ran the private installed-prefix smoke locally; that focused result does not
+complete C02, pass UG, or establish exact-head CI. No host GUI/session action,
+full suite, commit, push, PR, or exact-head CI result is claimed here. BUILD110
+adds the default installer wrapper and preservation/manifest assertions to the
+existing private install smoke, plus an argv/fail-closed launcher test to
+required CI.
+
+**Next:** root reviews the local diff and focused checks, commits/publishes the
+slice, then observes exact-head CI. Keep UG and all C gates unaccepted until
+their recorded requirements are actually met.
 
 PR #103 correction: run `42918673780` on `7e16a47` passed tray and the full
 Python-free/activated command-target proof. The Rust-opt-in suite failed on a
@@ -685,12 +722,18 @@ provide input; cover or explicitly disposition the Plugins empty/loading/error
 list states (there is no plugin mutation action); complete or explicitly
 justify the Wayland per-action matrix; resolve or disposition the flaky local
 panel smoke.
-Do not change the Python default or mark UG passed until this matrix is complete.
-Then proceed to C01 isolated-prefix/home upgrade and rollback, C02 no-Python /
+Do not mark UG passed until this matrix is complete. The BUILD110 user-authorized
+repository-default exception supersedes the previous Python-default restriction;
+it does not change the outstanding matrix. Then proceed to C01 isolated-prefix/home upgrade and rollback, C02 no-Python /
 PyGObject / PyO3 proof, C03 removal only after equivalent coverage, and CG final
 audit. C01 package checks must include `librsvg2-common`.
 
-## Phase C — native cutover (blocked by UG)
+## Phase C — native cutover (acceptance gates remain open)
+
+BUILD110 changes the repository launcher/installer default under explicit user
+instruction while UG remains **NOT PASSED**. This exception does not check any
+C task or authorize claims that C01–CG have passed. Continue tracking each
+packaging, clean-environment and removal requirement below independently.
 
 - [ ] **C01** Native build/release and installer/uninstaller, desktop entry,
   service/autostart, upgrade and rollback. Preserve identity/config/history;
@@ -1369,3 +1412,51 @@ temporary homes/private Xvfb/private D-Bus sessions. See AUDIT E207 chooser
 repair for exact logs and limitations. No rebuild, push, or exact-head CI result
 is claimed. **Next:** root reviews the local commit, publishes it, and observes
 the required CI result before updating remote status.
+
+### BUILD109/E212 — residual Settings switches and combo diagnostic
+
+**Owner/status:** `t3/native-settings-acceptance`, local implementation complete;
+root review and publication pending. Base PR #108 merged at
+`a73e10c90e363faa970f50cb455629d75d85147e`; exact head
+`cbcd45ec72c2b23090f52bd09fc1c3f5743dd028` passed all three checks in run
+`43290374919`. BUILD109 is reserved. This is not a merge or exact-head CI claim.
+
+**Scope:** `scripts/test-native-wayland-isolated.py` now covers only three
+residual conventional switches, retains a static six-control combo-to-X11
+assertion mapping, and removes unused combo selection/action and child-subtree
+probe code. Shared exact-PID identity checks and the generic bounded tree
+diagnostic remain. The unsupported diagnostic labels the combo result as a
+historical native GTK/AT-SPI observation tied to the recorded source runtime;
+it hashes the supplied binary as identity metadata but explicitly does not
+launch it. `.github/workflows/rust-core.yml` adds a required six-minute
+`settings-residual` step and a dedicated always-uploaded synthetic artifact.
+The default matrix, Advanced step, and X11 Settings smoke remain enabled.
+
+The three-switch Wayland run passed on the cached native binary from source
+`3e442c1dfe46a5ba153fdccc406ae28f76f490d1` (embedded BUILD108,
+`e2423c661c4c466e55a5f9f85b91458d1c96328d6d594872c4bc7a72de32e75a`). It
+verified `usageBarsShowUsed=false→true`, `quotaBurndownEnabled=true→false`, and
+`costUsageEnabled=true→false`, each with visible same-PID AT-SPI state, visible
+result text, and exact complete preference-map comparison. The retained
+synthetic captures and sanitized relative results are in
+[`build109-wayland-settings-residual/`](../../screenshots/build109-wayland-settings-residual/).
+The BUILD109 release metadata was not embedded in the runtime binary.
+
+**Local verification:** 24 focused harness tests passed;
+`python3 -m py_compile scripts/test-native-wayland-isolated.py
+ tests/test_native_wayland_isolated_harness.py`, the version metadata regression
+test, and `git diff --check` passed. The post-trim private-Weston residual
+scenario passed. Because shared AT-SPI snapshot handling changed, the existing
+default matrix and Advanced scenarios were also rerun serially and passed on
+the same BUILD108 binary. Initial concurrent runs failed at AT-SPI bus
+connection; those outputs were discarded. The static diagnostic tests confirm
+that it makes no GTK launch. No live combo probes were repeated.
+
+**Limits/next step:** combo controls remain OPEN for Wayland actions. X11 target
+differences are recorded in UG_GATE.md: reset-time `absolute` vs `both`, icon
+source `first` vs `automatic`, and Wayland timezone `Africa/Abidjan` vs X11's
+generic nonempty assertion. Local X11 was not rerun; its required workflow
+step is unchanged. No full suite, exact-head CI, PR/push, UG PASS, Python
+removal/default flip, or migration-gate completion is claimed. Root reviews
+and publishes this commit, then observes exact-head CI. UG remains **NOT
+PASSED**, Python remains the default, and C gates remain open.

@@ -7,14 +7,12 @@ fn provider_artwork_decodes_outside_repository_cwd_and_keeps_textual_fallback() 
     let original_dir = std::env::current_dir().expect("test working directory");
     std::env::set_current_dir(std::env::temp_dir()).expect("switch to unrelated working directory");
 
-    let codex_brand =
-        include_bytes!("../../codexbar_gtk/assets/provider_icons/Brand-ProviderIcon-codex.png");
+    let codex_brand = include_bytes!("../../assets/provider_icons/Brand-ProviderIcon-codex.png");
     let codex_texture = gtk::gdk::Texture::from_bytes(&gtk::glib::Bytes::from_static(codex_brand))
         .unwrap_or_else(|error| panic!("GDK failed to decode bundled Codex brand PNG: {error}"));
     assert_eq!(codex_texture.width(), 104);
 
-    let claude_brand =
-        include_bytes!("../../codexbar_gtk/assets/provider_icons/Brand-ProviderIcon-claude.svg");
+    let claude_brand = include_bytes!("../../assets/provider_icons/Brand-ProviderIcon-claude.svg");
     let claude_texture = gtk::gdk::Texture::from_bytes(&gtk::glib::Bytes::from_static(
         claude_brand,
     ))
@@ -26,18 +24,15 @@ fn provider_artwork_decodes_outside_repository_cwd_and_keeps_textual_fallback() 
     for (provider_id, artwork) in [
         (
             "opendesign",
-            include_bytes!("../../codexbar_gtk/assets/provider_icons/ProviderIcon-opendesign.svg")
-                .as_slice(),
+            include_bytes!("../../assets/provider_icons/ProviderIcon-opendesign.svg").as_slice(),
         ),
         (
             "siliconflow",
-            include_bytes!("../../codexbar_gtk/assets/provider_icons/ProviderIcon-siliconflow.svg")
-                .as_slice(),
+            include_bytes!("../../assets/provider_icons/ProviderIcon-siliconflow.svg").as_slice(),
         ),
         (
             "tripo",
-            include_bytes!("../../codexbar_gtk/assets/provider_icons/ProviderIcon-tripo.svg")
-                .as_slice(),
+            include_bytes!("../../assets/provider_icons/ProviderIcon-tripo.svg").as_slice(),
         ),
     ] {
         let texture = gtk::gdk::Texture::from_bytes(&gtk::glib::Bytes::from_static(artwork))

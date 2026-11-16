@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.82.0 (110) — 2026-11-12
+
+Make the Rust GTK application the repository source-launcher and installer
+default by explicit user instruction. Keep Python launch/install entrypoints as
+parity and rollback paths. The additive native install preserves an existing
+legacy command and leaves desktop/service files untouched by default; `--activate`
+opts into ownership-tracked desktop/service replacement. Activation still does
+not enable/start the service or create autostart. UG
+remains **NOT PASSED** and C01–CG remain unaccepted; this policy exception does
+not migrate an existing host installation.
+
+- See migration audit E213 for exact implementation, checks and limits.
+
+## 0.82.0 (109) — 2026-11-12
+
+Add a bounded private-Weston Settings acceptance batch for three conventional
+switches, retain sanitized synthetic evidence, and explicitly map six remaining
+combo controls to their X11 smoke assertions without repeating live combo probes.
+This is partial Wayland action evidence, not full UG acceptance. Python remains
+the default and UG remains **NOT PASSED**.
+
+- See migration audit E212 for exact runtime provenance, checks, and limits.
+
+## 0.82.0 (108) — 2026-11-12
+
+Move provider artwork and attribution into the shared `assets/provider_icons/`
+catalog. Native builds no longer read assets from the Python package; artwork
+remains embedded in the native executable. Preserve Python-default artwork
+lookup and legacy installation during transition. UG remains **NOT PASSED**.
+
+- See migration audit E211 for decode and compatibility verification.
+
 ## 0.82.0 (107) — 2026-11-12
 
 Strengthens synthetic Rust CLI process lifecycle regression coverage. Timeout

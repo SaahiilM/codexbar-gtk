@@ -12,8 +12,7 @@ use gtk::prelude::*;
 #[ignore = "requires librsvg2-common ABSENT (negative precondition); run manually without loader"]
 fn bundled_svg_fails_gracefully_without_loader() {
     gtk::init().expect("GTK display for SVG negative test");
-    let claude_brand =
-        include_bytes!("../../codexbar_gtk/assets/provider_icons/Brand-ProviderIcon-claude.svg");
+    let claude_brand = include_bytes!("../../assets/provider_icons/Brand-ProviderIcon-claude.svg");
     let decoded = gtk::gdk::Texture::from_bytes(&gtk::glib::Bytes::from_static(claude_brand));
     // Negative precondition: SVG must fail to decode without the loader.
     assert!(

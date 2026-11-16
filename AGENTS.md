@@ -39,8 +39,12 @@ completed Rust backend or native application.
   `codexbar_gtk/version.py` for each PR intended to merge, including docs PRs.
   Update `CHANGELOG.md` and README's displayed build. Marketing version follows
   supported upstream CodexBar; Cargo package metadata is not a separate release.
-- Rust remains opt-in (`CODEXBAR_RUST_CORE=1`) until an explicit, tested cutover.
-  Explicit opt-in must fail clearly if the extension is unavailable.
+- Rust-backed Python modules remain opt-in (`CODEXBAR_RUST_CORE=1`) and must
+  fail clearly if the extension is unavailable. By explicit user instruction,
+  BUILD110 changes the repository launcher and installer defaults to the native
+  binary while UG remains **NOT PASSED** and C01–CG remain unaccepted. This is a
+  launcher-default policy exception, not a gate pass or proof that installed
+  host commands/services have migrated.
 - Use synthetic CLI/account/history/login fixtures. Never put real accounts,
   API keys, OAuth codes, credential-bearing URLs, or authentication output in
   screenshots, tests, logs committed to git, or the audit trail.

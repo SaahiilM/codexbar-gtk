@@ -12,6 +12,13 @@ future coding agents to follow these documents.
 
 ## Actual starting point
 
+**Current repository policy (BUILD110):** by explicit user instruction,
+`run.sh` and `scripts/install.sh` default to the native Rust GTK application
+even though UG remains **NOT PASSED** and C01–CG remain unaccepted. This is a
+launcher-default policy exception, not a gate pass. Existing host commands,
+desktop entries and services are not migrated by the repository change.
+See `TASKS.md` and the root README's Python rollback section.
+
 Code baseline: `46f44d0` (PR #17), GTK build `0.81.0 (16)`. The initial planning
 PR increments the build to `0.81.0 (17)` without changing runtime behavior.
 
@@ -147,8 +154,10 @@ Python GTK widgets                        Rust GTK4/libadwaita widgets
   remains its only subprocess integration. U02 provides the native dashboard
   and U03 adds a compact panel; U04 owns Sessions and Spend, U05 owns Settings,
   U06 owns StatusNotifierItem/dbusmenu, and U07 owns desktop notification and OS
-  lifecycle integration. The existing Python launcher remains the default
-  until UG passes.
+  lifecycle integration. Python remains an explicit parity/rollback path. The
+  repository launcher default changed under explicit instruction in BUILD110
+  while UG remains NOT PASSED; this does not imply native UI acceptance or host
+  migration.
 - The backend publishes immutable snapshots/state; the frontend marshals them
   to its GUI thread. `watch` deliberately coalesces intermediate updates; if a
   future user-visible operation needs a lossless event stream, define a bounded
@@ -345,8 +354,9 @@ no workspace commands are assumed.
 - **UG — native UI complete:** all U01–U08 implementation PRs have merged, but
   the gate is **NOT PASSED** until full feature/action parity and the required
   Wayland/X11/private-D-Bus evidence matrix are accepted. Current evidence and
-  uncovered actions are itemized in [UG_GATE.md](UG_GATE.md). Preserve the
-  Python app as the default until this gate passes.
+  uncovered actions are itemized in [UG_GATE.md](UG_GATE.md). Preserve Python
+  as an explicit parity/rollback implementation. BUILD110's repository default
+  is a user-authorized exception while UG remains NOT PASSED.
 - **CG — cutover complete:** native release/install works without Python,
   PyGObject or `_rust_core.so`; preferences/history survive the switch; native
   CI and packaging are proven. Remove bridge, fallback implementations, Python
@@ -359,6 +369,7 @@ Python-free runtime image. Debug install, release install, and debug rollback
 exercise the installed executable through private D-Bus and Xvfb inside Docker;
 the runtime container has no network, Python, libpython, PyO3, or `_rust_core`
 mapping. This is component evidence only. It does not finish C02, verify
-activation/service/autostart, prove a genuine version migration, pass UG, or
-authorize the default-launcher cutover. Python remains the default. See
+activation/service/autostart, prove a genuine version migration, or pass UG.
+BUILD110 changed the repository default by explicit instruction; this proof
+does not establish that policy exception's acceptance gates. See
 AUDIT E198 for exact results and remaining scope.

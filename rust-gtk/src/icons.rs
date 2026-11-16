@@ -1,6 +1,6 @@
 //! Bundled provider artwork and side-effect-free SNI pixmap rendering.
 //!
-//! Provider assets are embedded from the existing, licensed Python catalog at
+//! Provider assets are embedded from the shared, licensed artwork catalog at
 //! build time. GTK decodes those bytes for card display; all generated SNI
 //! pixels come directly from Cairo and are returned in network ARGB order.
 

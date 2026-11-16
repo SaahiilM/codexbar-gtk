@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.82.0 (112) — 2026-11-16
+
+Add assertion-level Rust service coverage for selected CodexBar CLI wrapper
+contracts using a synthetic executable. The Python wrapper remains in use for
+rollback, so `tests/test_cli_service.py` stays as adapter coverage. This scope
+does not establish Python retirement readiness, UI acceptance, or a migration
+gate pass.
+
+- See migration audit E215 for assertion mapping, checks and limits.
+
 ## 0.82.0 (110) — 2026-11-12
 
 Make the Rust GTK application the repository source-launcher and installer

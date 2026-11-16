@@ -9,12 +9,35 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Field | Current checkpoint |
 | --- | --- |
 | Goal | Fully native Rust GTK4/libadwaita application with verified packaging and legacy runtime removal. |
-| Current phase | BG passed and U01–U08 implementation merged. UG **NOT PASSED**. By explicit user instruction, BUILD110 makes the repository launcher/installer native by default; C01–CG remain unaccepted. |
-| Last observed merge | User-supplied PR #110 merged normally at `ec356d7a77a3f19dc4dbd359bb8cbf27f5ae7e18` (build 109). Exact head `534097f01e7754367bf4b619c318e9015360a7ac` passed all three checks in run `43305059554`; no reviews, comments or review threads were present. |
-| Active implementation | BUILD110/E213, branch `t3/opt-in-native-launcher`: native source launcher and installer defaults, explicit Python parity/rollback paths, current-facing documentation, and CI proof for the default wrapper. Local review and exact-head CI remain pending. |
+| Current phase | BG passed and U01–U08 implementation merged. UG **NOT PASSED**. By explicit user instruction, BUILD110 makes the repository launcher/installer native by default; Python remains the explicit parity/rollback path and C01–CG remain unaccepted. |
+| Last observed merge | PR #111 merged normally at `bc0dce990f77ac7c62ebf912640c48e35be99694` (build 110). Exact head `7e629c8c266d511cc3843a598bed1d520d137f66` passed all three checks in run `43312803349`; no reviews, comments or review threads were present. |
+| Active implementation | BUILD111/E214, branch `t3/native-tray-dbus-coverage`: required tray D-Bus coverage runs against the native Rust tray under a private bus; Python parity tests remain in the broader suite. Root review/publication pending. |
 | Installer/runtime verification | E198 records the merged build-95 installed-prefix/Python-free runtime proof. E199 records prior local 13-case activation smoke evidence in a Python-free container; its first attempt lacked `file`, and the portable `od`/`ldd` check passed. These component results do not pass C02 or authorize cutover. |
 | UI acceptance | E195 records one Display action; E200 records seven guarded Settings actions and three tab transitions. Broader Wayland controls/navigation remain open. UG is **NOT PASSED**; Python remains the explicit parity/rollback path under the BUILD110 launcher-default exception. See `UG_GATE.md`. |
-| Next | Root reviews and publishes BUILD110/E213, then observes exact-head CI. UG remains **NOT PASSED**; the native repository default is an explicit user-authorized policy exception, not a gate pass. Existing host installations are not migrated. |
+| Next | Root reviews BUILD111/E214, publishes it, then observes exact-head CI. UG remains **NOT PASSED**; the native repository default is an explicit user-authorized policy exception, not a gate pass. Existing host installations are not migrated. |
+
+### BUILD111/E214 — native tray D-Bus required-check coverage
+
+**Claim/base/status:** BUILD111/E214 is claimed on branch
+`t3/native-tray-dbus-coverage`, based on the normal merge of verified
+`origin/main` `bc0dce990f77ac7c62ebf912640c48e35be99694` (PR #111, build 110).
+The implementation commit `5a74611342e804cbfbd74ff76d32efcd6d6ccff9` was
+preserved and merged normally into that base. Root review and publication are
+pending; no PR or CI result is claimed for this slice.
+
+**Implementation:** the required workflow job retains the `tray-dbus` job name
+and replaces the legacy Python invocation with
+`scripts/test-native-tray-dbus.sh`. It installs the stable Rust toolchain,
+`libgtk-4-dev`, `libadwaita-1-dev`, and `dbus-daemon`, with no Python D-Bus or
+GI dependency. The workflow path filter includes the new script. Existing
+`tests/test_tray_signals.py` remains in the broader Python suite and is not
+removed. Native payload coverage and assertion mapping are recorded in AUDIT
+E214; the temporary root handoff at `/tmp/native-tray-dbus-coverage.md` is
+supporting context only.
+
+**Gate state:** the change covers protocol behavior on a private D-Bus session;
+it does not claim GTK window interaction, pass UG, close C gates, or change the
+Python parity/rollback path. Root owns final review and publication.
 
 ### BUILD110/E213 — native repository launcher default by explicit instruction
 

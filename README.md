@@ -163,8 +163,10 @@ backend migrated **before** the UI. The PyO3 bridge and Python shell are
 temporary. Backend gate BG passed in PR #54. U01's native bootstrap merged in
 PR #56, and all U01–U08 implementation PRs are now merged. By explicit user
 instruction, BUILD110 makes the repository launcher/installer native by
-default while UG remains **NOT PASSED** and C01–CG remain unaccepted. This is a
-policy exception, not gate completion or host migration; see the explicit
+default while UG remains **NOT PASSED** and C01–CG remain unaccepted. This
+launcher-default policy is an exception, not gate completion or host migration.
+BUILD111 moves tray D-Bus CI coverage to the native Rust implementation while
+keeping Python parity tests in the broader suite; see the explicit
 [gate ledger](docs/rust-migration/UG_GATE.md).
 
 - [Architecture, source inventory and stage gates](docs/rust-migration/README.md)
@@ -334,7 +336,7 @@ The GTK front-end uses the same version pair as the macOS bundle:
   this client is feature-compatible with (`0.82.0`).
 * `CURRENT_PROJECT_VERSION` is the build number of the Linux front-end.
 * `codexbar_gtk/version.py` turns the pair into the macOS-style
-  `"0.82.0 (110)"` string shown under Settings → About, in the tray menu and by
+  `"0.82.0 (111)"` string shown under Settings → About, in the tray menu and by
   `./run.sh --about`.
 
 Increment `CURRENT_PROJECT_VERSION` for each merged PR and keep it in sync with

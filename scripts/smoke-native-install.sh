@@ -146,10 +146,10 @@ grep -q "^activated=0$" "$MANIFEST" || fail "default must be activated=0"
 [[ "$(sha256sum "$PY_SVC" | awk '{print $1}')" == "$PY_SVC_SHA" ]] || fail "default clobbered service"
 [[ "$(sha256sum "$PY_DSK" | awk '{print $1}')" == "$PY_DSK_SHA" ]] || fail "default clobbered desktop"
 [[ "$(sha256sum "$LEGACY_BIN" | awk '{print $1}')" == "$LEGACY_BIN_SHA" ]] || fail "default clobbered legacy command"
-if PREFIX="$PREFIX" "$ROOT/scripts/install-python.sh" >"$SCRATCH/legacy-block.out" 2>&1; then
-  fail "legacy installer unexpectedly ran over native manifest"
-fi
-grep -Fq "native installation manifest exists" "$SCRATCH/legacy-block.out" || fail "legacy installer did not explain native manifest block"
+[[ ! -e "$ROOT/scripts/install-python.sh" ]] || fail "legacy Python installer remains in the shipped setup"
+[[ "$(sha256sum "$PY_SVC" | awk '{print $1}')" == "$PY_SVC_SHA" ]] || fail "native install changed the pre-existing legacy service"
+[[ "$(sha256sum "$PY_DSK" | awk '{print $1}')" == "$PY_DSK_SHA" ]] || fail "native install changed the pre-existing legacy desktop entry"
+[[ "$(sha256sum "$LEGACY_BIN" | awk '{print $1}')" == "$LEGACY_BIN_SHA" ]] || fail "native install changed the pre-existing legacy launcher"
 [[ ! -e "$TEST_HOME/.config/autostart/codexbar-gtk.desktop" ]] || fail "default created autostart"
 ok "default install: binary+manifest only"
 

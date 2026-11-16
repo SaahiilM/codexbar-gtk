@@ -1,5 +1,20 @@
 # Native Rust migration
 
+## Local retirement candidate status
+
+The `t3/retire-python-runtime` working-tree candidate removes the active Python
+application package, PyO3 crate and Python launcher/install/build setup. It
+archives the former implementation, tests and preview tools under
+`tests/reference/python/`; archived assertions are not run by CI and are not
+claimed as covered. The current native GTK metadata test now reads root
+`VERSION` directly. The native installer preserves pre-existing legacy files
+and keeps its ownership-manifest upgrade/rollback protections.
+
+This candidate is for root review only. It does not pass UG or C01–CG, allocate
+a project build number, or claim all former assertions have native replacements.
+Root must reconcile the assertion map and this handoff before integration. The
+remainder of this guide records the migration plan and historical evidence.
+
 **Approved destination:** a Rust GTK4/libadwaita application with no Python
 runtime, PyO3 bridge, or PyGObject dependency in the shipped application.
 **Sequence:** complete the backend first, then migrate the UI, then remove the

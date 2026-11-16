@@ -6,7 +6,6 @@ on:
     branches: [main]
     paths:
       - "rust-core/**"
-      - "rust-python/**"
       - "rust-backend/**"
       - "rust-gtk/**"
       - "assets/provider_icons/**"
@@ -21,11 +20,9 @@ on:
       - "scripts/build-native.sh"
       - "scripts/test-run-native.sh"
       - "run.sh"
-      - "run-python.sh"
       - "scripts/run-native.sh"
       - "scripts/install.sh"
       - "scripts/install-native.sh"
-      - "scripts/install-python.sh"
       - "scripts/smoke-native-install.sh"
       - "scripts/native/**"
       - "rust-gtk/tests/python_free_linkage.rs"
@@ -33,17 +30,7 @@ on:
       - "scripts/native/render_activation.sh"
       - "scripts/test-native-activation-renderer.sh"
       - "scripts/capture-native-gtk-wayland.sh"
-      - "codexbar_gtk/providers.py"
-      - "codexbar_gtk/activity.py"
-      - "codexbar_gtk/format.py"
-      - "codexbar_gtk/pace.py"
-      - "codexbar_gtk/history.py"
-      - "codexbar_gtk/charts.py"
-      - "codexbar_gtk/rust_bridge.py"
-      - "codexbar_gtk/ui/app.py"
-      - "codexbar_gtk/ui/settings.py"
-      - "codexbar_gtk/ui/tray.py"
-      - "scripts/build-rust-core.sh"
+      - "scripts/test-native-harness-units.sh"
       - "scripts/test-native-tray-dbus.sh"
       - "tests/**"
       - ".github/workflows/rust-core.yml"
@@ -75,7 +62,6 @@ jobs:
       - name: Check Rust formatting
         run: |
           cargo fmt --manifest-path rust-core/Cargo.toml -- --check
-          cargo fmt --manifest-path rust-python/Cargo.toml -- --check
           cargo fmt --manifest-path rust-backend/Cargo.toml -- --check
           cargo fmt --manifest-path rust-gtk/Cargo.toml -- --check
       - name: Run Rust core tests
@@ -92,16 +78,11 @@ jobs:
         run: xvfb-run -a dbus-run-session -- cargo test --manifest-path rust-gtk/Cargo.toml --locked --lib rendered_dashboard_contains_safe_warning_and_both_quotas -- --ignored
       - name: Verify empty dashboard Settings action on X11
         run: xvfb-run -a dbus-run-session -- cargo test --manifest-path rust-gtk/Cargo.toml --locked --lib empty_dashboard_offers_settings_action -- --ignored
-      - name: Build PyO3 extension
-        run: ./scripts/build-rust-core.sh
-      - name: Run Python tests with default backend
-        run: python3 -m unittest discover -s tests -v
-      - name: Run Python tests with Rust backend
-        run: CODEXBAR_RUST_CORE=1 python3 -m unittest discover -s tests -v
+      - name: Run retained native automation harness unit tests
+        run: ./scripts/test-native-harness-units.sh
       - name: Run Clippy
         run: |
           cargo clippy --manifest-path rust-core/Cargo.toml --all-targets --all-features -- -D warnings
-          cargo clippy --manifest-path rust-python/Cargo.toml --all-targets --all-features -- -D warnings
           cargo clippy --manifest-path rust-backend/Cargo.toml --all-targets --all-features -- -D warnings
           cargo clippy --manifest-path rust-gtk/Cargo.toml --all-targets -- -D warnings
       - name: Build native GTK application

@@ -52,7 +52,7 @@ fi
 
 if [[ -x "$PREFIX_DIR/bin/codexbar-gtk" ]]; then
   echo "Existing legacy launcher retained: $PREFIX_DIR/bin/codexbar-gtk" >&2
-  echo "It was not replaced. To remove that legacy package, first roll back the native install, then use scripts/install-python.sh --uninstall." >&2
+  echo "It was not replaced or migrated. Review and remove that pre-existing installation manually after confirming the native app works." >&2
 fi
 
 echo "Native binary installed at: $PREFIX_DIR/bin/codexbar-gtk-native"

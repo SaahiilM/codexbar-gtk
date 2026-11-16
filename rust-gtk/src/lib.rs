@@ -271,16 +271,10 @@ mod tests {
     fn version_metadata_tracks_the_root_version_file() {
         let metadata = BuildMetadata::current().unwrap();
         let expected = include_str!("../../VERSION");
-        let python_version = include_str!("../../codexbar_gtk/version.py");
         let readme = include_str!("../../README.md");
         assert!(expected.contains(&format!("MARKETING_VERSION={}", metadata.marketing_version)));
         assert!(expected.contains(&format!("CURRENT_PROJECT_VERSION={}", metadata.build)));
         assert!(readme.contains(&format!("\"{}\"", metadata.display())));
-        assert!(python_version.contains(&format!(
-            "SHORT_VERSION = \"{}\"",
-            metadata.marketing_version
-        )));
-        assert!(python_version.contains(&format!("BUILD = {}", metadata.build)));
         assert_eq!(
             metadata.display(),
             format!("{} ({})", metadata.marketing_version, metadata.build)

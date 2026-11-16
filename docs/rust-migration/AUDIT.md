@@ -7638,3 +7638,52 @@ limited to one. `cargo fmt --manifest-path rust-backend/Cargo.toml -- --check`,
 replacement CI was run or observed; root owns the updated diff, publication,
 and CI observation. This follow-up adds no release metadata change and does
 not alter BUILD111's scope or gate claims.
+
+### E215 — BUILD112 Rust CLI service assertion coverage
+
+**Base/status:** local branch `t3/rust-parity-assertions`, based on merged main
+`bc0dce990f77ac7c62ebf912640c48e35be99694` (BUILD110), with source commit
+`831b2574a4b8550fa72dbbabf0ecdb59951030bc`. BUILD111/E214 tray work is
+concurrently reserved and unmerged, so BUILD112 is provisional. Root will
+reconcile release metadata after E214 before publishing. No PR/push/merge or
+exact-head CI result is claimed.
+
+**Paths and assertion mapping:** `rust-backend/tests/cli_service.rs` creates
+and removes a temporary synthetic shell executable, then calls the public
+`codexbar_backend::cli::CliService` API directly. No Python interpreter or
+Python wrapper participates in that Rust test. Against
+`tests/test_cli_service.py`, assertions cover `version()` output; `usage()`
+provider selection, all-accounts flag and timezone; `cost()`, `dashboard()`
+and `sessions()` JSON results; parsed `config_providers()` entries; `hooks()`
+and `plugins()` results; `set_api_key()` and `provider_action("set-source", …)`
+preservation of exact argv tokens including a value with spaces;
+`provider_action("enable", …)` success status; and `run()` timeout
+classification. This establishes equivalence for these selected public
+service contracts. Keep `tests/test_cli_service.py`: its Python adapter remains
+the transitional/rollback path and is not made redundant by the new test.
+
+**Checks:** prior verification ran
+`cargo test --manifest-path rust-backend/Cargo.toml --locked` (97 unit tests,
+2 integration tests). Its first full attempt hit a transient Claude Platform
+login fixture failure; the focused retry and full retry passed. This follow-up
+ran `cargo test --manifest-path rust-backend/Cargo.toml --locked --test
+cli_service` (1 passed),
+`python3 -m unittest tests.test_app.VersionMetadataTests.test_display_string_matches_version_file
+-v` (1 passed), and
+`cargo fmt --manifest-path rust-backend/Cargo.toml -- --check` (passed). The
+new/current-facing local Markdown link targets and BUILD112 metadata were
+checked by a focused script and passed; `git diff --check` passed. A broad
+AUDIT link scan also finds the historical E211 pointer to the old
+provider-artwork path; append-only history is retained. No full backend suite
+or Clippy rerun was done for this documentation-only follow-up. Existing
+workflow `.github/workflows/rust-core.yml` runs the backend's locked `cargo
+test` at line 82, so no workflow change is needed.
+
+**Limits:** production behavior is unchanged. This is source-level API/contract
+coverage; no GUI/native runtime path or UI smoke was run. Python adapter
+retirement, runtime deletion readiness, global UG acceptance, and migration
+gate completion remain unproven. Root should reconcile build metadata after
+E214 and then review/publish this focused slice; no push, PR, or remote status
+is claimed here.
+
+**Root integration reconciliation:** PR #112 merged normally at `cffed57d756b025b7bb0d29efb863408febd732d`; exact head `bbd07d182d50b2a36d01783af2161a9da14ad278` passed all three jobs in run `43953622135`. No reviews/comments/review threads were present. BUILD112 merged this verified base normally, retaining E214/E215 and both changelog entries. Conflicts affected release metadata and handoff only; native tray and login-fixture changes remain intact. Fresh BUILD112 CI is pending.

@@ -9,12 +9,55 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Field | Current checkpoint |
 | --- | --- |
 | Goal | Fully native Rust GTK4/libadwaita application with verified packaging and legacy runtime removal. |
-| Current phase | BG passed and U01–U08 implementation merged. UG **NOT PASSED**. By explicit user instruction, BUILD110 makes the repository launcher/installer native by default; Python remains the explicit parity/rollback path and C01–CG remain unaccepted. |
-| Last observed merge | PR #111 merged normally at `bc0dce990f77ac7c62ebf912640c48e35be99694` (build 110). Exact head `7e629c8c266d511cc3843a598bed1d520d137f66` passed all three checks in run `43312803349`; no reviews, comments or review threads were present. |
-| Active implementation | BUILD111/E214, branch `t3/native-tray-dbus-coverage`: required tray D-Bus coverage runs against the native Rust tray under a private bus; Python parity tests remain in the broader suite. Exact-head CI run `43952062156` passed `tray-dbus` but test job `133596861831` failed one backend test because fixture spawn returned Linux `ETXTBSY` (errno 26). Atomic fixture publication is fixed and locally verified; no replacement CI claim. Root review/publication pending. |
+| Current phase | BG passed and U01–U08 implementation merged. UG **NOT PASSED**. By explicit user instruction, BUILD110 makes the repository launcher/installer native by default; C01–CG remain unaccepted. |
+| Last observed merge | PR #112 merged normally at `cffed57d756b025b7bb0d29efb863408febd732d` (build 111). Exact head `bbd07d182d50b2a36d01783af2161a9da14ad278` passed all three checks in run `43953622135`; no reviews, comments or review threads were present. |
+| Active implementation | BUILD112/E215 adds native CLI service assertion coverage. Verified build-111 main was merged normally, preserving the native tray CI and synthetic login fixture correction. Local focused checks passed; fresh exact-head CI pending. Python adapter tests remain because the explicit legacy adapter is still used. |
 | Installer/runtime verification | E198 records the merged build-95 installed-prefix/Python-free runtime proof. E199 records prior local 13-case activation smoke evidence in a Python-free container; its first attempt lacked `file`, and the portable `od`/`ldd` check passed. These component results do not pass C02 or authorize cutover. |
 | UI acceptance | E195 records one Display action; E200 records seven guarded Settings actions and three tab transitions. Broader Wayland controls/navigation remain open. UG is **NOT PASSED**; Python remains the explicit parity/rollback path under the BUILD110 launcher-default exception. See `UG_GATE.md`. |
-| Next | Root reviews the updated BUILD111/E214 diff and local evidence, publishes it, then observes replacement exact-head CI. UG remains **NOT PASSED**; the native repository default is an explicit user-authorized policy exception, not a gate pass. Existing host installations are not migrated. |
+| Next | Publish BUILD112 and observe exact-head CI before normal merge. BUILD113 legacy developer-tool retirement is queued separately. Rust repository default; UG NOT PASSED and C gates unaccepted. |
+
+### BUILD112/E215 — Rust CLI service assertion coverage
+
+**Owner/status:** branch `t3/rust-parity-assertions`, based on merged main
+`bc0dce990f77ac7c62ebf912640c48e35be99694` (BUILD110). The source test is
+committed locally at `831b2574a4b8550fa72dbbabf0ecdb59951030bc`; this entry and
+BUILD112 metadata are provisional because BUILD111/E214 tray work is concurrently
+reserved and unmerged. Root will reconcile the version after E214 and publish
+only afterward. No PR, push, merge, or exact-head CI result is claimed.
+
+**Scope and mapping:** `rust-backend/tests/cli_service.rs` exercises the public
+`CliService` API with a temporary synthetic shell executable. It does not
+invoke Python or use an interpreter for the fixture. Assertions map to legacy
+`tests/test_cli_service.py` as follows: `version()` ↔ version assertion;
+`usage()` ↔ provider/all-accounts/TZ assertion; `cost()`, `dashboard()`, and
+`sessions()` ↔ corresponding JSON result assertions; `config_providers()`,
+`hooks()`, and `plugins()` ↔ parsed/result assertions; `set_api_key()` and
+`provider_action("set-source", …)` ↔ exact whitespace-containing argv-token
+preservation; `provider_action("enable", …)` ↔ successful status; and `run()`
+timeout ↔ timeout error classification. This is selected service-contract
+equivalence, not a claim that the Python adapter or its implementation tests
+are retired. Keep `tests/test_cli_service.py` while the wrapper remains the
+rollback path.
+
+**Observed checks:** prior verification recorded 97 unit tests and 2
+integration tests passing with `cargo test --manifest-path
+rust-backend/Cargo.toml --locked`. Its first attempt hit a transient Claude
+Platform login fixture failure; focused and full retries passed. This
+follow-up's focused Rust integration test (1), version metadata regression (1),
+Rust format check, focused current-facing local-link/metadata check, and
+`git diff --check` all passed. No full suite or Clippy rerun was done for this
+documentation-only follow-up. A broad AUDIT link scan finds the historical
+E211 pointer to the old provider-artwork path; append-only history is retained.
+Native backend CI already runs the locked Rust integration tests; no workflow
+change is needed.
+
+**Limits/next:** production code is unchanged. No GTK/native application runtime
+or UI smoke was run or needed for this source-only contract test. The separate
+runtime/adapter retirement evidence remains outstanding; do not report the
+Python test file as dead or deletion-ready. No global UG pass, Python runtime
+deletion, migration-gate completion, push, PR, or publication is claimed. After
+E214's BUILD111 merge, root reconciles BUILD112 and reviews/publishes this
+focused slice.
 
 ### BUILD111/E214 — native tray D-Bus required-check coverage
 

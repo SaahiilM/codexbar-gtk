@@ -141,6 +141,56 @@ class NativeWaylandIsolatedHarnessTests(unittest.TestCase):
             self.assertNotIn("oauth", MODULE.fake_cli_text().lower())
             self.assertNotIn("--url", MODULE.fake_cli_text().lower())
 
+    def test_cost_fixture_supports_success_then_three_failed_fallback_attempts(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            cli = root / "fake-codexbar"
+            cli.write_text(MODULE.fake_cli_text(), encoding="utf-8")
+            cli.chmod(0o700)
+            mode = root / "cost-mode"
+            count = root / "cost-error-count"
+            log = root / "calls.log"
+            mode.write_text("success\n", encoding="utf-8")
+            env = dict(os.environ, NATIVE_CLI_LOG=str(log),
+                       NATIVE_COST_MODE_FILE=str(mode),
+                       NATIVE_COST_ERROR_COUNT_FILE=str(count))
+            success = subprocess.run([str(cli), "cost"], env=env, capture_output=True,
+                                     text=True, check=True)
+            self.assertEqual(json.loads(success.stdout)[0]["totalCost"], 12.5)
+            self.assertIn("cost-fixture-success-done", log.read_text().splitlines())
+
+            mode.write_text("error\n", encoding="utf-8")
+            count.write_text("0\n", encoding="utf-8")
+            for provider in ("both", "codex", "claude"):
+                result = subprocess.run([str(cli), "cost", "--provider", provider],
+                                        env=env, capture_output=True, text=True, check=False)
+                self.assertEqual(result.returncode, 7)
+                self.assertIn("synthetic cost scan failure", result.stderr)
+            lines = log.read_text(encoding="utf-8").splitlines()
+            self.assertEqual(lines.count("cost-fixture-error-done"), 1)
+            self.assertEqual(count.read_text(encoding="utf-8"), "3\n")
+
+    def test_page_state_scenario_only_covers_new_visible_routes_and_retained_error(self):
+        source = SCRIPT.read_text(encoding="utf-8")
+        self.assertIn('"page-state"', source)
+        for source_title, control, target_title in (
+            ("CodexBar GTK — Sessions", "Spend", "CodexBar GTK — Usage & Spend"),
+            ("CodexBar GTK — Usage & Spend", "Sessions", "CodexBar GTK — Sessions"),
+            ("CodexBar GTK — Sessions", "Dashboard", "CodexBar GTK — Dashboard"),
+            ("CodexBar GTK — Dashboard", "Settings", "CodexBar Settings"),
+            ("CodexBar GTK — Dashboard", "About", "About CodexBar GTK"),
+        ):
+            self.assertIn(f'route("{control}", "{source_title}", "{target_title}"', source)
+        scenario = source.split("def run_page_state(", 1)[1].split("\ndef main", 1)[0]
+        self.assertLess(scenario.index('"cost-fixture-error-done"'),
+                        scenario.index('"The usage refresh could not run the local CLI."'))
+        self.assertLess(scenario.index('"The usage refresh could not run the local CLI."'),
+                        scenario.index('wait_visible_text(\n        python, pid, "$12.50 · partial"'))
+        self.assertIn('"retained_nonempty_total": True', scenario)
+        self.assertIn('"same_pid": True', scenario)
+        self.assertNotIn("spend-range", scenario)
+        self.assertNotIn("HEATMAP_MODES", scenario)
+
     def test_sessions_fixture_modes_produce_success_empty_delay_and_failure(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = pathlib.Path(temporary)
@@ -369,6 +419,20 @@ class NativeWaylandIsolatedHarnessTests(unittest.TestCase):
                 MODULE.wait_visible_action(
                     sys.executable, 123, "Export…", ("button",), timeout=0.1,
                     context="Advanced")
+
+    def test_visible_action_can_disambiguate_duplicate_controls_by_accessible_path(self):
+        header = {"name": "Refresh", "role": "push button", "pid": 123,
+                  "identity": "123:header:Refresh", "showing": True, "visible": True,
+                  "states": ["sensitive"], "action_count": 1,
+                  "path": "app[0]/frame[0]:CodexBar GTK — Usage & Spend/panel[0]:/button:Refresh"}
+        content = dict(header, identity="123:content:Refresh",
+                       path="app[0]/frame[0]:CodexBar GTK — Usage & Spend/panel[1]:/button:Refresh")
+        with mock.patch.object(MODULE, "atspi_probe", return_value={"matches": [header, content]}):
+            selected = MODULE.wait_visible_action(
+                sys.executable, 123, "Refresh", ("push button",), timeout=0.1,
+                context="CodexBar GTK — Usage & Spend",
+                path_fragment="CodexBar GTK — Usage & Spend/panel[0]:")
+            self.assertEqual(selected["identity"], header["identity"])
 
     def test_advanced_scenario_is_opt_in_and_chooser_selection_is_exact(self):
         source = SCRIPT.read_text(encoding="utf-8")

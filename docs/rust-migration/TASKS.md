@@ -11,10 +11,56 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Goal | Fully native Rust GTK4/libadwaita application with verified packaging and legacy runtime removal. |
 | Current phase | BG passed and U01–U08 implementation merged. UG **NOT PASSED**. By explicit user instruction, BUILD110 makes the repository launcher/installer native by default; C01–CG remain unaccepted. |
 | Last observed merge | PR #112 merged normally at `cffed57d756b025b7bb0d29efb863408febd732d` (build 111). Exact head `bbd07d182d50b2a36d01783af2161a9da14ad278` passed all three checks in run `43953622135`; no reviews, comments or review threads were present. |
-| Active implementation | BUILD112/E215 adds native CLI service assertion coverage. Verified build-111 main was merged normally, preserving the native tray CI and synthetic login fixture correction. Local focused checks passed; fresh exact-head CI pending. Python adapter tests remain because the explicit legacy adapter is still used. |
+| Active implementation | Provisional BUILD114/E217 on `t3/rust-backend-legacy-tests`, based on `e7973fa` above the verified BUILD112 main commit. It records retirement of 27 mapped Python assertion methods while retaining identified Python-only reconfiguration and startup exception contracts. BUILD113/PR #113 and the separate tool-113 slice are ahead in root's sequencing; reconcile this provisional version after those are verified. |
 | Installer/runtime verification | E198 records the merged build-95 installed-prefix/Python-free runtime proof. E199 records prior local 13-case activation smoke evidence in a Python-free container; its first attempt lacked `file`, and the portable `od`/`ldd` check passed. These component results do not pass C02 or authorize cutover. |
 | UI acceptance | E195 records one Display action; E200 records seven guarded Settings actions and three tab transitions. Broader Wayland controls/navigation remain open. UG is **NOT PASSED**; Python remains the explicit parity/rollback path under the BUILD110 launcher-default exception. See `UG_GATE.md`. |
-| Next | Publish BUILD112 and observe exact-head CI before normal merge. BUILD113 legacy developer-tool retirement is queued separately. Rust repository default; UG NOT PASSED and C gates unaccepted. |
+| Next | Root reconciles BUILD114 metadata with the pending BUILD113/PR #113 and tool-113 work, then reviews and publishes this task in sequence. No exact-head CI or merge is claimed here. Rust repository default; UG NOT PASSED and C gates unaccepted. |
+
+### BUILD114/E217 — mapped Python assertion retirement
+
+**Owner/status/base:** provisional local slice on branch
+`t3/rust-backend-legacy-tests`. Its source history is `e7973fa` (the mapped
+Python assertion retirement) followed by `cb0d2ba` (additional assertion
+precision), based on the verified BUILD112 main commit
+`cffed57d756b025b7bb0d29efb863408febd732d`. BUILD113/PR #113 remains pending
+and the separate tool-113 slice is ready; root must reconcile this provisional
+BUILD114 assignment after those are verified. The branch preserves its supplied
+base history and does not merge unpublished peer branches. No push, PR, merge,
+or exact-head CI result is claimed.
+
+**Scope and counts:** `rust-backend/tests/legacy_assertion_map.md` maps removed
+methods to Rust tests. The starting two Python modules had 106 test methods
+(104 in `tests/test_app.py`, 2 in `tests/test_python_settings_facade.py`); 27
+were retired (26 app methods and 1 facade method), leaving 79 methods (78 and
+1). This is an assertion-group map and local test retirement, not proof of
+application-adapter equivalence. The permissive Python CLI reconfiguration
+contract remains because Python accepts a nonexistent configured executable
+while Rust applies a stricter validation policy. The Python startup callback
+exception contract also remains: the native callback is non-fallible, and its
+missing-binary counterpart is handled in a separate runtime task. No claim is
+made that the Python runtime, PyO3, or adapters were removed.
+
+**Observed checks:** inherited local validation was reported as default Python
+suite: 318 tests, 22 skipped; Rust-opt-in Python suite: 318 tests, 0 skipped;
+`rust-core`: 92 tests; `rust-backend`: 97 unit tests plus 4 integration tests;
+Rust format and Clippy checks passed. The initial backend run had a transient
+synthetic fixture spawn failure caused by executable publication during file
+staging; the correction writes/chmods a temporary fixture and renames it into
+place after close. The failure/correction and rerun evidence are recorded in
+AUDIT's E214 follow-up; this entry makes no CI claim. The branch-level follow-up
+also tightened reset-credit truncation/empty assertions and portable export
+shape assertions in `rust-core` and `rust-backend`.
+
+This metadata/documentation update was checked with `git diff --check`, a
+focused version-pair consistency check, and changed-file Markdown-link checks.
+No broad suite rerun was needed for this metadata-only update. No GUI, host bus,
+service, authentication, provider, or runtime smoke was run for this slice.
+
+**Limits/next:** production application behavior is unchanged. This does not
+establish adapter equivalence, Python/PyO3 removal readiness, global UG
+acceptance, or a migration-gate pass. Root reconciles the provisional build
+number after BUILD113/tool-113 verification, reviews the complete branch diff,
+then sequences publication and exact-head CI observation.
 
 ### BUILD112/E215 — Rust CLI service assertion coverage
 

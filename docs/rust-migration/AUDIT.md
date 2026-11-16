@@ -7687,3 +7687,67 @@ E214 and then review/publish this focused slice; no push, PR, or remote status
 is claimed here.
 
 **Root integration reconciliation:** PR #112 merged normally at `cffed57d756b025b7bb0d29efb863408febd732d`; exact head `bbd07d182d50b2a36d01783af2161a9da14ad278` passed all three jobs in run `43953622135`. No reviews/comments/review threads were present. BUILD112 merged this verified base normally, retaining E214/E215 and both changelog entries. Conflicts affected release metadata and handoff only; native tray and login-fixture changes remain intact. Fresh BUILD112 CI is pending.
+
+### E217 — BUILD114 mapped Python assertion retirement
+
+**Claim/base/status:** provisional BUILD114 is on
+`t3/rust-backend-legacy-tests`, source commits `e7973fa` and `cb0d2ba`, based
+on BUILD112 main `cffed57d756b025b7bb0d29efb863408febd732d`. The supplied source
+history is preserved. BUILD113/PR #113 is pending and tool-113 is ready, so the
+build assignment must be reconciled by root after those items are verified.
+This records local evidence only: no PR, push, merge, or exact-head CI result is
+claimed.
+
+**Paths and retirement counts:** `rust-backend/tests/legacy_assertion_map.md`
+maps the retired methods from `tests/test_app.py` and
+`tests/test_python_settings_facade.py` to native Rust assertions. The two
+modules had 106 methods before the change (104 app and 2 settings-facade); 27
+were removed (26 app and 1 facade), leaving 79 (78 and 1). The map supports
+local Python test retirement for those assertion groups; it does not establish
+application-adapter equivalence. Python's permissive CLI reconfiguration
+contract remains because it accepts a nonexistent executable path while Rust
+uses stricter validation. The Python startup callback exception contract also
+remains because the native startup callback is non-fallible. Its missing-binary
+counterpart is assigned to a separate runtime task. The Python runtime, PyO3,
+and adapters remain present.
+
+The follow-up assertions in `rust-core/src/formatting.rs`,
+`rust-core/src/preferences.rs`, and `rust-backend/tests/settings_facade.rs`
+make the empty reset-credit result, countdown truncation (`270m59s` → `4h 30m`),
+and exact portable document top-level keys explicit. The original assertion
+mapping and source removals are in `e7973fa`; these precision additions are in
+`cb0d2ba`.
+
+**Observed checks:** `python3 -m unittest discover -s tests -v` passed 318
+tests with 22 skipped; `CODEXBAR_RUST_CORE=1 python3 -m unittest discover -s
+tests -v` passed 318 with 0 skipped. `cargo test --manifest-path
+rust-core/Cargo.toml --locked` passed 92 tests; `cargo test --manifest-path
+rust-backend/Cargo.toml --locked` passed 97 unit tests and 4 integration
+tests. Both `cargo fmt --manifest-path rust-core/Cargo.toml -- --check` and
+`cargo fmt --manifest-path rust-backend/Cargo.toml -- --check` passed, as did
+`cargo clippy --manifest-path rust-core/Cargo.toml --all-targets --all-features
+-- -D warnings` and the corresponding backend Clippy command. The first backend
+attempt encountered a transient synthetic-executable spawn failure while a
+fixture was being published. The fixture correction stages
+and chmods a temporary executable, then renames it after close; the failure
+and repeated local passes are documented in the E214 backend-fixture
+follow-up. No CI result is inferred from those local runs.
+
+No global UG change or workflow change was made. Existing CI runs the Rust core
+and backend integration coverage; the complete Python suite continues to run
+in both default and opt-in modes until the runtime candidate is addressed.
+This work did not run GUI, host bus, services, credentials/authentication,
+provider requests, or a production runtime smoke. It changes tests and release
+metadata only; production GUI behavior is unchanged.
+
+**Current checks for this documentation/metadata update:** `git diff --check`,
+focused root/Python version-pair consistency, and Markdown-link checks for the
+new handoff/changelog/map links passed. A broad historical AUDIT link scan still
+reports the known E211 link to the moved provider-artwork provenance file; no
+historical entry was rewritten. No broad test rerun was made because the update
+after the supplied source verification is documentation and version metadata
+only.
+
+**Next:** root reconciles BUILD114 after pending BUILD113/PR #113 and tool-113
+are verified, reviews the full branch diff, then decides the publication order
+and observes exact-head CI. UG remains **NOT PASSED** and C gates remain open.

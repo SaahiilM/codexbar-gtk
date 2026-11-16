@@ -59,6 +59,33 @@ deletion, migration-gate completion, push, PR, or publication is claimed. After
 E214's BUILD111 merge, root reconciles BUILD112 and reviews/publishes this
 focused slice.
 
+### BUILD111/E214 — native tray D-Bus required-check coverage
+
+**Claim/base/status:** BUILD111/E214 is claimed on branch
+`t3/native-tray-dbus-coverage`, based on the normal merge of verified
+`origin/main` `bc0dce990f77ac7c62ebf912640c48e35be99694` (PR #111, build 110).
+The implementation commit `5a74611342e804cbfbd74ff76d32efcd6d6ccff9` was
+preserved and merged normally into that base. Root review and publication are
+pending; no PR or CI result is claimed for this slice.
+
+**Implementation:** the required workflow job retains the `tray-dbus` job name
+and replaces the legacy Python invocation with
+`scripts/test-native-tray-dbus.sh`. It installs the stable Rust toolchain,
+`libgtk-4-dev`, `libadwaita-1-dev`, and `dbus-daemon`, with no Python D-Bus or
+GI dependency. The workflow path filter includes the new script. Existing
+`tests/test_tray_signals.py` remains in the broader Python suite and is not
+removed. Native payload coverage and assertion mapping are recorded in AUDIT
+E214; the temporary root handoff at `/tmp/native-tray-dbus-coverage.md` is
+supporting context only.
+
+**Gate state:** the change covers protocol behavior on a private D-Bus session;
+it does not claim GTK window interaction, pass UG, close C gates, or change the
+Python parity/rollback path. Root owns final review and publication.
+
+**CI follow-up:** see the appended E214 CI failure diagnosis and local rerun
+record in [AUDIT.md](AUDIT.md). The implementation scope remains unchanged;
+the root owner should review the fixture-only change before publication.
+
 ### BUILD110/E213 — native repository launcher default by explicit instruction
 
 **Owner/status:** `t3/opt-in-native-launcher`, implementation complete locally;

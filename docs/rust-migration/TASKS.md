@@ -11,10 +11,34 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Goal | Fully native Rust GTK4/libadwaita application with verified packaging and legacy runtime removal. |
 | Current phase | BG passed and U01–U08 implementation merged. UG **NOT PASSED**. By explicit user instruction, BUILD110 makes the repository launcher/installer native by default; C01–CG remain unaccepted. |
 | Last observed merge | User-supplied PR #110 merged normally at `ec356d7a77a3f19dc4dbd359bb8cbf27f5ae7e18` (build 109). Exact head `534097f01e7754367bf4b619c318e9015360a7ac` passed all three checks in run `43305059554`; no reviews, comments or review threads were present. |
-| Active implementation | BUILD110/E213, branch `t3/opt-in-native-launcher`: native source launcher and installer defaults, explicit Python parity/rollback paths, current-facing documentation, and CI proof for the default wrapper. Local review and exact-head CI remain pending. |
+| Active implementation | Provisional BUILD113/E216, branch `t3/legacy-python-tools-cleanup`: retire eight Python developer-only preview/smoke scripts and document retained native verification tools. Local commit is ready for root integration after the BUILD111/E214 and CLI assertion BUILD112/E215 slices are reconciled. This does not remove Python runtime/parity coverage. |
 | Installer/runtime verification | E198 records the merged build-95 installed-prefix/Python-free runtime proof. E199 records prior local 13-case activation smoke evidence in a Python-free container; its first attempt lacked `file`, and the portable `od`/`ldd` check passed. These component results do not pass C02 or authorize cutover. |
 | UI acceptance | E195 records one Display action; E200 records seven guarded Settings actions and three tab transitions. Broader Wayland controls/navigation remain open. UG is **NOT PASSED**; Python remains the explicit parity/rollback path under the BUILD110 launcher-default exception. See `UG_GATE.md`. |
-| Next | Root reviews and publishes BUILD110/E213, then observes exact-head CI. UG remains **NOT PASSED**; the native repository default is an explicit user-authorized policy exception, not a gate pass. Existing host installations are not migrated. |
+| Next | Root serially reconciles this local BUILD113/E216 commit after the pending BUILD111/E214 tray and BUILD112/E215 CLI assertion slices; then corrects the handoff with observed merge/CI evidence. UG remains **NOT PASSED**, the explicit Python rollback/runtime and active parity tests remain, and this tooling retirement provides no Python runtime/native coverage equivalence claim. |
+
+### BUILD113/E216 — retire legacy Python developer preview/smoke tools
+
+**Owner/status:** branch `t3/legacy-python-tools-cleanup`; provisional BUILD113
+because BUILD111/E214 tray and BUILD112/E215 CLI assertion slices are pending
+root reconciliation. Local implementation and scoped checks are recorded in
+AUDIT E216. Root integrates this local commit after those serial peer merges and
+updates this handoff only with observed merge/CI evidence. No Python runtime,
+rollback entrypoint, active parity test, or PyO3 integration is removed. This
+does not pass UG or any cutover gate and makes no claim of native coverage for
+the Python runtime.
+
+**Scope:** remove exactly eight developer-only scripts under `tools/` (the
+three `gtk_smoke_b13*.py` files plus `preview.py`, `preview_b09_synthetic.py`,
+`preview_b10_controller.py`, `preview_currency.py`, and
+`preview_notifications.py`). Their 1,918 source lines have no current callers.
+`tools/README.md` documents the retained native build, private X11 and private
+Wayland verification commands and their limits. The root README's obsolete
+preview command and setup text are removed; its surrounding BUILD110 installer
+and Python rollback guidance is retained.
+
+**Next:** root reconciles after E214/E215, updates the provisional build number
+if serial integration requires it, and records actual publication and exact-head
+CI status. Python rollback and active Python parity tests remain in place.
 
 ### BUILD110/E213 — native repository launcher default by explicit instruction
 

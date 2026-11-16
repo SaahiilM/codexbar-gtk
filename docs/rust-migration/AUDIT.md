@@ -7528,3 +7528,66 @@ runtime were temporary and removed; no host app/service was started or changed.
 **Next:** root reviews this complete branch diff, commits/publishes when ready,
 and observes exact-head CI. UG stays **NOT PASSED** and all C gates remain
 unaccepted until their requirements are separately met.
+
+### E216 — 2026-11-16: retire legacy Python developer preview/smoke tools
+
+**Owner/base/status:** branch `t3/legacy-python-tools-cleanup`, local slice based
+on `35dc266` (`origin/main` at `bc0dce9`). BUILD113 is provisional because
+BUILD111/E214 tray and BUILD112/E215 CLI assertion work is pending root's serial
+reconciliation. This entry records local evidence only; it claims no merge,
+publication, PR, or remote CI result. Root integrates after E214/E215 and then
+revises the handoff using observed merge/CI evidence.
+
+**Purpose and boundaries:** remove obsolete Python developer-preview and B13
+smoke tooling while preserving the BUILD110 Python rollback/runtime path and
+active Python parity tests. This retires testing tools only; it does not claim
+native coverage for the Python runtime, parity-test equivalence, UG acceptance,
+or any migration cutover gate. No runtime, PyO3, provider, or Rust production
+code changed. No host GUI, D-Bus, service, provider HTTP, credentials, push, or
+PR operation was performed.
+
+**Exactly eight removed files (1,918 source lines):**
+`tools/gtk_smoke_b13_settings.py` (351),
+`tools/gtk_smoke_b13_spend_tray.py` (489),
+`tools/gtk_smoke_b13b2_actions.py` (280), `tools/preview.py` (165),
+`tools/preview_b09_synthetic.py` (220), `tools/preview_b10_controller.py`
+(201), `tools/preview_currency.py` (72), and
+`tools/preview_notifications.py` (140). Their purpose was local widget
+previews and synthetic B13 UI/action smokes. Their source remains available in
+Git history. `tools/README.md` describes retained native verification:
+`./scripts/build-native.sh`; private-X11
+`scripts/smoke-native-dashboard.sh`, `scripts/smoke-native-usage-pages.sh`,
+and `scripts/smoke-native-settings.sh`; and private-Wayland
+`python3 scripts/test-native-wayland-isolated.py --binary <binary> --scenario
+matrix` (also `advanced` and `settings-residual`). It documents synthetic data,
+private sessions, dependencies, and the limits of AT-SPI/GAction evidence.
+
+The root README no longer advertises `./tools/preview.py` or its Python GTK
+preview setup. Its native-default installation and explicit Python
+parity/rollback guidance remain. `run-python.sh`,
+`scripts/install-python.sh`, and the Python test tree remain present. A caller
+scan of 108 tracked application, test, script, and CI paths found no reference
+to any of the eight retired filenames. Historical changelog/audit records and
+the explicit E216 inventory are retained as history, not executable callers.
+
+**Version/docs:** `VERSION`, `codexbar_gtk/version.py`, and the README displayed
+build now agree on provisional `0.82.0 (113)`; `CHANGELOG.md` adds the E216
+summary. `TASKS.md` records this branch and provisional ordering after E214 and
+E215 without changing gate status. Existing historical audit entries were not
+rewritten.
+
+**Local verification:** `python3 -m unittest tests.test_app.VersionMetadataTests`
+passed (1 test); `cargo metadata --locked --manifest-path rust-gtk/Cargo.toml
+--no-deps --format-version 1` passed (1 package); and
+`cargo test --manifest-path rust-gtk/Cargo.toml --locked --lib
+version_metadata_tracks_the_root_version_file` passed (1 test, 40 filtered).
+A direct static check confirmed `VERSION`, Python metadata, and README all say
+`0.82.0 (113)`. The caller scan above passed, and `git diff --check` passed.
+
+**Scope limits/next:** no full Python/Rust suite, build, native GUI/runtime
+smoke, or UI screenshot was run; production behavior is unchanged and this
+change only retires developer tools and updates documentation/version metadata.
+There is no need for a GUI smoke for this tooling/documentation slice. Root
+serially reconciles after E214/E215, adjusts the provisional build if needed,
+and records actual publication and exact-head CI evidence. UG remains
+**NOT PASSED**; Python rollback/runtime and active parity tests remain.

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.82.0 (113) — 2026-11-16
+
+Retire eight legacy Python preview and B13 smoke scripts (1,918 lines). These
+were developer-only tools, not the Python rollback runtime or active parity
+tests. Document the retained native build and UI verification commands; these
+do not establish Python runtime coverage or migration-gate acceptance. UG
+remains **NOT PASSED**.
+
+- See migration audit E216 for the exact paths, caller checks and scope limits.
+
 ## 0.82.0 (110) — 2026-11-12
 
 Make the Rust GTK application the repository source-launcher and installer

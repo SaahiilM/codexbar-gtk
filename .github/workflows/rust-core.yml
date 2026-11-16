@@ -44,20 +44,22 @@ on:
       - "codexbar_gtk/ui/settings.py"
       - "codexbar_gtk/ui/tray.py"
       - "scripts/build-rust-core.sh"
+      - "scripts/test-native-tray-dbus.sh"
       - "tests/**"
       - ".github/workflows/rust-core.yml"
 
 jobs:
   tray-dbus:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - name: Install D-Bus test dependencies
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install native GTK and D-Bus test dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends dbus-daemon python3-dbus python3-gi
-      - name: Verify tray update signals on a private session bus
-        run: /usr/bin/python3 -m unittest discover -s tests -p test_tray_signals.py -v
+          sudo apt-get install -y --no-install-recommends libgtk-4-dev libadwaita-1-dev dbus-daemon
+      - name: Verify native tray protocol on a private session bus
+        run: ./scripts/test-native-tray-dbus.sh
 
   test:
     runs-on: ubuntu-24.04

@@ -163,8 +163,10 @@ backend migrated **before** the UI. The PyO3 bridge and Python shell are
 temporary. Backend gate BG passed in PR #54. U01's native bootstrap merged in
 PR #56, and all U01–U08 implementation PRs are now merged. By explicit user
 instruction, BUILD110 makes the repository launcher/installer native by
-default while UG remains **NOT PASSED** and C01–CG remain unaccepted. This is a
-policy exception, not gate completion or host migration; see the explicit
+default while UG remains **NOT PASSED** and C01–CG remain unaccepted. This
+launcher-default policy is an exception, not gate completion or host migration.
+BUILD111 moves tray D-Bus CI coverage to the native Rust implementation while
+keeping Python parity tests in the broader suite; see the explicit
 [gate ledger](docs/rust-migration/UG_GATE.md).
 
 - [Architecture, source inventory and stage gates](docs/rust-migration/README.md)

@@ -10,11 +10,11 @@ history. A checked box means **verified and merged**, not merely implemented.
 | --- | --- |
 | Goal | Fully native Rust GTK4/libadwaita application with verified packaging and legacy runtime removal. |
 | Current phase | BG passed and U01–U08 implementation merged. UG **NOT PASSED**. By explicit user instruction, BUILD110 makes the repository launcher/installer native by default; C01–CG remain unaccepted. |
-| Last observed merge | User-supplied PR #110 merged normally at `ec356d7a77a3f19dc4dbd359bb8cbf27f5ae7e18` (build 109). Exact head `534097f01e7754367bf4b619c318e9015360a7ac` passed all three checks in run `43305059554`; no reviews, comments or review threads were present. |
-| Active implementation | BUILD112/E215, branch `t3/rust-parity-assertions`: assertion-level Rust CLI service contract coverage. BUILD111/E214 native tray integration is concurrently reserved and unmerged; BUILD112 is provisional until root reconciles metadata after E214. |
+| Last observed merge | PR #112 merged normally at `cffed57d756b025b7bb0d29efb863408febd732d` (build 111). Exact head `bbd07d182d50b2a36d01783af2161a9da14ad278` passed all three checks in run `43953622135`; no reviews, comments or review threads were present. |
+| Active implementation | BUILD112/E215 adds native CLI service assertion coverage. Verified build-111 main was merged normally, preserving the native tray CI and synthetic login fixture correction. Local focused checks passed; fresh exact-head CI pending. Python adapter tests remain because the explicit legacy adapter is still used. |
 | Installer/runtime verification | E198 records the merged build-95 installed-prefix/Python-free runtime proof. E199 records prior local 13-case activation smoke evidence in a Python-free container; its first attempt lacked `file`, and the portable `od`/`ldd` check passed. These component results do not pass C02 or authorize cutover. |
 | UI acceptance | E195 records one Display action; E200 records seven guarded Settings actions and three tab transitions. Broader Wayland controls/navigation remain open. UG is **NOT PASSED**; Python remains the explicit parity/rollback path under the BUILD110 launcher-default exception. See `UG_GATE.md`. |
-| Next | Root merges/publishes reserved BUILD111/E214 first, then reconciles BUILD112/E215 metadata and reviews this slice. Python adapter retirement and UI acceptance remain open; UG is **NOT PASSED**. |
+| Next | Publish BUILD112 and observe exact-head CI before normal merge. BUILD113 legacy developer-tool retirement is queued separately. Rust repository default; UG NOT PASSED and C gates unaccepted. |
 
 ### BUILD112/E215 — Rust CLI service assertion coverage
 

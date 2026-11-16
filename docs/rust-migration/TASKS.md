@@ -11,10 +11,60 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Goal | Fully native Rust GTK4/libadwaita application with verified packaging and legacy runtime removal. |
 | Current phase | BG passed and U01–U08 implementation merged. UG **NOT PASSED**. By explicit user instruction, BUILD110 makes the repository launcher/installer native by default; C01–CG remain unaccepted. |
 | Last observed merge | PR #112 merged normally at `cffed57d756b025b7bb0d29efb863408febd732d` (build 111). Exact head `bbd07d182d50b2a36d01783af2161a9da14ad278` passed all three checks in run `43953622135`; no reviews, comments or review threads were present. |
-| Active implementation | BUILD112/E215 adds native CLI service assertion coverage. Verified build-111 main was merged normally, preserving the native tray CI and synthetic login fixture correction. Local focused checks passed; fresh exact-head CI pending. Python adapter tests remain because the explicit legacy adapter is still used. |
+| Active implementation | BUILD115/E218 adds required private-Weston page-state coverage and sanitized retained-error/navigation evidence on `t3/wayland-page-state-harness`. Provisional metadata only; BUILD112 CLI coverage is pending, BUILD113 tool cleanup is ready, and BUILD114 coverage validation is active on peer work. Root serially reconciles release metadata; do not merge unpublished peers here. |
 | Installer/runtime verification | E198 records the merged build-95 installed-prefix/Python-free runtime proof. E199 records prior local 13-case activation smoke evidence in a Python-free container; its first attempt lacked `file`, and the portable `od`/`ldd` check passed. These component results do not pass C02 or authorize cutover. |
 | UI acceptance | E195 records one Display action; E200 records seven guarded Settings actions and three tab transitions. Broader Wayland controls/navigation remain open. UG is **NOT PASSED**; Python remains the explicit parity/rollback path under the BUILD110 launcher-default exception. See `UG_GATE.md`. |
-| Next | Publish BUILD112 and observe exact-head CI before normal merge. BUILD113 legacy developer-tool retirement is queued separately. Rust repository default; UG NOT PASSED and C gates unaccepted. |
+| Next | Root reconciles the unmerged BUILD112–114 peer slices and release metadata, reviews this BUILD115 diff, then publishes it and observes exact-head CI. UG remains NOT PASSED; C gates remain unaccepted. |
+
+### BUILD115/E218 — required Wayland page-state coverage
+
+**Owner/base/status:** branch `t3/wayland-page-state-harness`, based on
+`origin/main` `5aec9f3` (BUILD112); this worktree contains the two page-state
+harness commits atop that base. BUILD115 is provisional because BUILD112 CLI
+coverage is pending, BUILD113 tool cleanup is ready, and BUILD114 coverage
+validation is active on peer work. Do not merge those unpublished peers here;
+root serially reconciles metadata. No push, PR, merge, or exact-head CI result
+is claimed.
+
+**Workflow and evidence:** `.github/workflows/rust-core.yml` adds a required
+six-minute `page-state` private-Weston scenario and dedicated `if: always()`
+synthetic evidence artifact. The existing default Wayland matrix, Advanced and
+residual Settings scenarios, X11 smokes, native/Python-free proof, and all
+other jobs remain in place. The runner invokes the existing isolated
+`scripts/test-native-wayland-isolated.py --scenario page-state`; it uses a
+private Weston compositor, private D-Bus, and temporary HOME/runtime.
+
+The run used native binary source commit
+`5cd710318cc88d50bb4db61cd46757a07751e919`, SHA-256
+`8c3e3a2121e061f9ac4778316da58b4156487270dc520d730ae6ee35186b8d61`. Its
+About capture visibly shows `0.82.0 (112)`; source `VERSION` and
+`codexbar_gtk/version.py` at that commit both contain build 112. BUILD115 is
+release bookkeeping for this pending slice, not a label inferred for the
+captured binary. Sanitized relative evidence and personally inspected selected
+synthetic captures are in
+[`screenshots/build115-page-state/`](screenshots/build115-page-state/).
+
+**Observed behavior:** the synthetic successful scan displayed `$12.50 ·
+partial`. After a visible Refresh action, all three synthetic fallback CLI
+attempts completed; the same app PID exposed the unreadable-data error and
+retained the nonempty `$12.50 · partial` total. The retained-error capture also
+shows `$1.25 · partial`, token, and coverage cards. Six visible same-PID
+AT-SPI actions navigated Sessions→Spend, Spend→Sessions, Sessions→Dashboard,
+Dashboard→Settings, Settings→Dashboard via the visible “Return to dashboard”
+action, and Dashboard→About. App, compositor, synthetic HOME, private runtime
+and D-Bus cleanup all passed.
+
+**Local checks and limits:** exact checks/results are appended in audit E218.
+The selected 1280×900 retained-error screenshot is clipped at the right and
+bottom edges, although the relevant error and totals are visible; do not claim
+full-window pixel parity. AT-SPI actions are not physical input or KDE shell
+parity. This slice does not re-test covered Spend ranges, heatmap modes, or
+Settings. The prior E192 retained-error claim remains retracted and is
+superseded only by this narrow fresh retained-error proof; other E192 range
+and mode claims are not established here. Tooltip, pointer, KDE-specific
+behavior and other UG items remain open. UG stays **NOT PASSED**; do not mark
+UG PASS or accept C gates. Python retirement candidacy is independent of this
+UI result.
 
 ### BUILD112/E215 — Rust CLI service assertion coverage
 

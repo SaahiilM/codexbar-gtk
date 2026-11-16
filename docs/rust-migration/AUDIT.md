@@ -7687,3 +7687,82 @@ E214 and then review/publish this focused slice; no push, PR, or remote status
 is claimed here.
 
 **Root integration reconciliation:** PR #112 merged normally at `cffed57d756b025b7bb0d29efb863408febd732d`; exact head `bbd07d182d50b2a36d01783af2161a9da14ad278` passed all three jobs in run `43953622135`. No reviews/comments/review threads were present. BUILD112 merged this verified base normally, retaining E214/E215 and both changelog entries. Conflicts affected release metadata and handoff only; native tray and login-fixture changes remain intact. Fresh BUILD112 CI is pending.
+
+### E218 — BUILD115 private-Weston page-state coverage (2026-11-16)
+
+**Owner/base/status:** branch `t3/wayland-page-state-harness`, based on
+`origin/main` `5aec9f3` (BUILD112) with page-state harness source commits
+`5f44654` and `5cd7103`; current branch head before this bookkeeping change is
+`e453813682521783441c1ea92169077bb694d843`. BUILD115 is provisional while the
+BUILD112 CLI PR is pending, BUILD113 tool cleanup is ready, and BUILD114
+coverage validation is active on peer branches. Root owns serial integration
+of those unpublished peers and release metadata. No push, PR, merge, review, or
+exact-head CI result is claimed.
+
+**Workflow:** `.github/workflows/rust-core.yml` adds the required six-minute
+`page-state` private-Weston scenario and an independent synthetic evidence
+artifact uploaded with `if: always()`. Existing jobs, the default Wayland
+matrix, Advanced/residual Settings scenarios, X11 smokes, and native/Python-free
+proof were preserved. Scenario implementation is the existing
+`scripts/test-native-wayland-isolated.py --scenario page-state`; this slice
+changes CI wiring and documentation, not runtime code.
+
+**Fresh runtime evidence:** the supplied completed isolated run reports
+`status=passed`, private rootless Weston/Pixman, private Wayland and D-Bus,
+synthetic HOME/runtime, and successful app/compositor/runtime/HOME/bus cleanup.
+The native binary source commit is
+`5cd710318cc88d50bb4db61cd46757a07751e919`; SHA-256 is
+`8c3e3a2121e061f9ac4778316da58b4156487270dc520d730ae6ee35186b8d61`. The
+captured About page shows `0.82.0 (112)`. At source commit `5cd7103`, both
+`VERSION` and `codexbar_gtk/version.py` say build 112. This verifies the
+runtime's embedded build from the source and visible app metadata; it is not
+BUILD115. The evidence retained in this commit is sanitized to relative image
+paths and omits transient private socket/bus addresses and AT-SPI identities.
+
+The run observed a synthetic successful Spend total of `$12.50 · partial`,
+then activated visible Refresh and waited for all three synthetic fallback CLI
+attempts to complete. From the same app PID and Spend window, it observed the
+unreadable-data error and the retained nonempty `$12.50 · partial` total. The
+retained-error screenshot also visibly contains `$1.25 · partial`, token and
+coverage cards. Six visible same-PID AT-SPI actions navigated Sessions→Spend,
+Spend→Sessions, Sessions→Dashboard, Dashboard→Settings, Settings→Dashboard
+through the visible Return to dashboard action, and Dashboard→About. The
+selected captures and relative `evidence.json` are in
+[`screenshots/build115-page-state/`](screenshots/build115-page-state/); I
+personally inspected all seven selected captures.
+
+**Local verification:**
+
+- `python3 -m unittest tests.test_native_wayland_isolated_harness -v` — 27
+  passed, including the page-state scenario contract, synthetic three-failure
+  fixture, capture checks and fail-closed action identity behavior.
+- `python3 -m py_compile scripts/test-native-wayland-isolated.py
+  tests/test_native_wayland_isolated_harness.py` — passed.
+- `python3 -m unittest
+  tests.test_app.VersionMetadataTests.test_display_string_matches_version_file
+  -v` — passed with BUILD115.
+- `CARGO_TARGET_DIR=/tmp/codexbar-build115-version-metadata cargo test
+  --manifest-path rust-gtk/Cargo.toml --locked --lib
+  version_metadata_tracks_the_root_version_file` — 1 passed.
+- Workflow YAML parsed; structural assertions verified the six-minute
+  `page-state` step, always-upload artifact, and preserved matrix, Advanced,
+  residual Settings, X11 and Python suite steps.
+- Current-facing local Markdown links passed. The broad scan still finds the
+  pre-existing historical E211 link to the moved
+  `codexbar_gtk/assets/provider_icons/UPSTREAM-PROVENANCE.md`; that
+  append-only record was not rewritten.
+- Sanitized evidence JSON assertions and all seven selected PNG decode and
+  verify at 1280×900; `git diff --check` passed.
+
+**Limits and exact next step:** the selected retained-error capture is clipped
+at the right and bottom edges, though the error and totals are visible; no
+full-window pixel-parity claim is made. AT-SPI activation is not physical
+Wayland input or KDE shell parity. No Spend range, heatmap-mode, tooltip,
+pointer, Settings, or KDE-specific behavior was retested. This fresh evidence
+supersedes E192 only for its retained-error claim; it does not establish the
+other E192 range/mode claims. UG stays **NOT PASSED**, and no C gate is accepted.
+Python retirement candidacy is independent. No new private-Weston runtime was
+run because this diff makes no application/runtime code changes. Root's next
+step is to reconcile BUILD112–114 peer changes, review this provisional BUILD115
+diff, then publish and observe exact-head CI. Do not claim CI success before
+that observation.

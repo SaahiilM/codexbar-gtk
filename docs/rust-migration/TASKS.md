@@ -6,15 +6,29 @@ history. A checked box means **verified and merged**, not merely implemented.
 
 ## Resume here
 
+The latest local continuation is the **runtime-retirement review candidate**
+on `t3/retire-python-runtime`. It is partial and unallocated: it does not
+change project version metadata, pass UG/C gates, or finish Python assertion
+cleanup. It archives the former application and test references, removes the
+eight support-retired preview/GTK smoke files, repairs current validation
+instructions, and adds a per-file coverage crosswalk. The native missing-CLI
+regression covers typed spawn failure plus immediate first-refresh readiness.
+The coverage peer `e7973fa` is not included; root requires default and
+`CODEXBAR_RUST_CORE=1` test-suite PASS on that peer before integration. Root's
+required tray/CLI/tool/coverage slices and finite UG policy review remain
+integration dependencies. See the candidate details in
+[`tests/reference/python/README.md`](../../tests/reference/python/README.md)
+and the append-only audit entry E216.
+
 | Field | Current checkpoint |
 | --- | --- |
 | Goal | Fully native Rust GTK4/libadwaita application with verified packaging and legacy runtime removal. |
 | Current phase | BG passed and U01–U08 implementation merged. UG **NOT PASSED**. By explicit user instruction, BUILD110 makes the repository launcher/installer native by default; C01–CG remain unaccepted. |
 | Last observed merge | PR #112 merged normally at `cffed57d756b025b7bb0d29efb863408febd732d` (build 111). Exact head `bbd07d182d50b2a36d01783af2161a9da14ad278` passed all three checks in run `43953622135`; no reviews, comments or review threads were present. |
-| Active implementation | BUILD112/E215 adds native CLI service assertion coverage. Verified build-111 main was merged normally, preserving the native tray CI and synthetic login fixture correction. Local focused checks passed; fresh exact-head CI pending. Python adapter tests remain because the explicit legacy adapter is still used. |
-| Installer/runtime verification | E198 records the merged build-95 installed-prefix/Python-free runtime proof. E199 records prior local 13-case activation smoke evidence in a Python-free container; its first attempt lacked `file`, and the portable `od`/`ldd` check passed. These component results do not pass C02 or authorize cutover. |
-| UI acceptance | E195 records one Display action; E200 records seven guarded Settings actions and three tab transitions. Broader Wayland controls/navigation remain open. UG is **NOT PASSED**; Python remains the explicit parity/rollback path under the BUILD110 launcher-default exception. See `UG_GATE.md`. |
-| Next | Publish BUILD112 and observe exact-head CI before normal merge. BUILD113 legacy developer-tool retirement is queued separately. Rust repository default; UG NOT PASSED and C gates unaccepted. |
+| Active implementation | The retirement review candidate above is current. BUILD112/E215 is a prior checkpoint; no global build number is allocated for this candidate. Python implementations and assertions remain archived for coverage review. |
+| Installer/runtime verification | E198 records the merged build-95 installed-prefix/Python-free runtime proof. E199 records prior local 13-case activation smoke evidence in a Python-free container; its first attempt lacked `file`, and the portable `od`/`ldd` check passed. These are historical component results and do not pass C02 or authorize cutover. |
+| UI acceptance | E195 records one Display action; E200 records seven guarded Settings actions and three tab transitions. Broader Wayland controls/navigation remain open. UG is **NOT PASSED**; Python source/test material is archived for review and is not a runtime parity or rollback path. See `UG_GATE.md`. |
+| Next | Finish local candidate checks and hand back the delta for root review after the dependent tray/CLI/tool/coverage work and Python both-mode gate. No push, PR, merge or watch is part of this handoff. UG NOT PASSED; C01–CG unaccepted. |
 
 ### BUILD112/E215 — Rust CLI service assertion coverage
 

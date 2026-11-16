@@ -37,6 +37,22 @@ mod tests {
     use std::cell::Cell;
 
     #[test]
+    fn immediate_display_readiness_does_not_sleep() {
+        let attempts = Cell::new(0);
+        let ready = wait_for_display_with(
+            || {
+                attempts.set(attempts.get() + 1);
+                true
+            },
+            Duration::from_secs(2),
+            Duration::from_millis(250),
+            |_| panic!("already-ready display must not sleep"),
+        );
+        assert!(ready);
+        assert_eq!(attempts.get(), 1);
+    }
+
+    #[test]
     fn returns_when_display_becomes_ready() {
         let attempts = Cell::new(0);
         let sleeps = Cell::new(0);

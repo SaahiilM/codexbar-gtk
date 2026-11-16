@@ -7687,3 +7687,79 @@ E214 and then review/publish this focused slice; no push, PR, or remote status
 is claimed here.
 
 **Root integration reconciliation:** PR #112 merged normally at `cffed57d756b025b7bb0d29efb863408febd732d`; exact head `bbd07d182d50b2a36d01783af2161a9da14ad278` passed all three jobs in run `43953622135`. No reviews/comments/review threads were present. BUILD112 merged this verified base normally, retaining E214/E215 and both changelog entries. Conflicts affected release metadata and handoff only; native tray and login-fixture changes remain intact. Fresh BUILD112 CI is pending.
+
+### E216 — runtime-retirement review follow-up (partial, local)
+
+**Owner/base/status:** branch `t3/retire-python-runtime`, based on candidate
+HEAD `b295782a688bceebb78d98b1873ae2bd01ab15ff`; local follow-up only. No
+release build number was allocated, and no commit, push, PR, merge, exact-head
+CI or gate pass is claimed. The Python archive remains a transitional
+reference, not completed cleanup or rollback.
+
+**Coverage disposition:** the per-file archived-test crosswalk is in
+`tests/reference/python/README.md`. It maps every archived test module to
+named Rust tests or marks adapter/PyO3-only assertions as
+legacy-wrapper-only/retired, with remaining gaps stated. The full method-level
+`test_app.py` / settings-facade map is referenced at validated peer commit
+`cb0d2ba6ba9812433fd16e0a6fdebfe3280a715e` on top of `e7973fa`; it was not
+cherry-picked. Root provided that this peer is clean and passed atomic PyO3
+extension build, default Python (318 tests, 22 expected skips), Rust-opt-in
+Python (318 tests, zero skips), core (92 tests), backend (97 unit + 4
+integration tests), formatting and strict Clippy. This clears only the
+two-mode prerequisite; it does not map every other archived file or pass UG,
+C01–CG, or authorize removal of the remaining archive. Native test counts are
+not claimed as a substitute for the old Python assertion inventory. Root's
+accepted strict rejection of a nonexistent configured CLI path supersedes the
+older peer-map policy note.
+
+**Changes:** removed the eight explicitly support-retired preview/GTK smoke
+files from `tests/reference/python/tools/`; Git history retains them and the
+archive README does not reintroduce them. Corrected the current migration guide
+validation commands and marked its pre-native source inventory as historical.
+The current candidate/readme records the existing four ignored positive GTK
+CI checks (including the three requested artwork/accessibility/rendered
+content checks) and keeps the missing-SVG-loader negative precondition
+separate. The harness unit runner now discovers all top-level
+`tests/test_*.py` modules, so new active harness tests are not silently omitted.
+
+**Implementation and checks:** added
+`rust_backend::controller::tests::missing_cli_fails_first_refresh_immediately_with_typed_process_error`.
+It asserts missing-executable `CliErrorKind::NotFound` / `cli_usage`, the
+sanitized backend `Process/cli_usage` failure state, no fabricated snapshot,
+and failure within a 250 ms bound instead of waiting for the 500 ms polling
+tick. Also added GTK lifecycle unit test
+`immediate_display_readiness_does_not_sleep`, which requires one successful
+display check and panics if the ready path sleeps. The existing
+`starts_immediately_publishes_tray_and_typed_events_and_records_history`
+continues to cover successful immediate startup. The Rust `FnMut() -> bool`
+display callback is non-fallible, so Python callback-exception behavior stays
+legacy-wrapper-only; no panic catch was added.
+
+- Focused controller suite with unique `/tmp/codexbar-retire-python-target`
+  and `CARGO_BUILD_JOBS=1`: 12 passed, 0 failed; filtered integration tests
+  not run.
+- Focused GTK lifecycle test with the same unique Cargo target and one build
+  job: 1 passed, 0 failed. No GTK display was needed by this pure helper test.
+- `scripts/test-native-harness-units.sh`: 118 passed across all seven
+  top-level harness modules, no skips.
+- The first harness attempt exposed that `scripts/smoke-native-service.sh`
+  hashed deleted tracked paths. It now hashes existing working-tree files;
+  `tests.test_native_service_proof.NativeServiceProofTests.test_smoke_always_builds_in_fresh_target_before_docker_probe`
+  and all three `test_native_service_proof` tests passed. Docker runtime proof
+  itself was not run.
+- Rust backend `cargo fmt --check`, shell syntax checks for both changed
+  scripts, and `git diff --check` passed.
+- No GTK/UI code changed; GTK display smoke, private Wayland, host desktop/bus,
+  host services, authentication and provider-network calls were not run.
+
+**Remaining scope / next:** no active Python application runtime remains;
+Python is used by retained native automation harnesses and reference-only
+archived sources/tests. The retained archive is 58 Python files / 17,388
+Python lines, plus its README. Archive-wide test mapping still needs root
+review, and the full archived package is intentionally retained. UG remains NOT PASSED;
+C01–CG remain unaccepted. Root integrates this candidate only after its
+independent tray/CLI/tool/coverage sequence and remaining finite UG policy
+review. No global version allocation, cherrypick, publication, or watch was
+performed.
+
+Root candidate checkpoint: reviewed native missing-CLI and immediate-readiness assertions. The asynchronous controller test uses a two-second failure bound to avoid a scheduler-sensitive 250ms CI deadline; it still requires the initial manual-mode refresh to start without an external trigger. Focused missing-CLI test passed (1). Source hashing skips deleted paths with an explicit conditional so an absent final path cannot fail the shell loop under pipefail. Candidate remains unallocated/unpublished and does not accept any migration gate.

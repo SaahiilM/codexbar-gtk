@@ -4,11 +4,14 @@
 
 The `t3/retire-python-runtime` working-tree candidate removes the active Python
 application package, PyO3 crate and Python launcher/install/build setup. It
-archives the former implementation, tests and preview tools under
-`tests/reference/python/`; archived assertions are not run by CI and are not
-claimed as covered. The current native GTK metadata test now reads root
-`VERSION` directly. The native installer preserves pre-existing legacy files
-and keeps its ownership-manifest upgrade/rollback protections.
+archives the former implementation and tests under `tests/reference/python/`;
+the eight support-retired preview/GTK smoke tools stay deleted. Archived
+assertions are not run by CI and are not all claimed as covered. See the
+archive's per-file crosswalk and explicit remaining gaps. This remains a
+transitional review archive, not completed Python cleanup. The current native
+GTK metadata test reads root `VERSION` directly. The native installer preserves
+pre-existing legacy files and keeps its ownership-manifest upgrade/rollback
+protections.
 
 This candidate is for root review only. It does not pass UG or C01–CG, allocate
 a project build number, or claim all former assertions have native replacements.
@@ -30,14 +33,19 @@ Start with the [current handoff and checklist](TASKS.md), then read the
 [decision and audit log](AUDIT.md). Root [`AGENTS.md`](../../AGENTS.md) instructs
 future coding agents to follow these documents.
 
-## Actual starting point
+## Historical migration baseline (pre-native runtime)
+
+The detailed timeline below records the repository before native cutover work;
+it is retained as historical evidence and does not describe the current
+launcher or shipped runtime. The current runtime and this retirement
+candidate's exact limits are summarized at the top of this document.
 
 **Current repository policy (BUILD110):** by explicit user instruction,
 `run.sh` and `scripts/install.sh` default to the native Rust GTK application
 even though UG remains **NOT PASSED** and C01–CG remain unaccepted. This is a
 launcher-default policy exception, not a gate pass. Existing host commands,
 desktop entries and services are not migrated by the repository change.
-See `TASKS.md` and the root README's Python rollback section.
+See `TASKS.md` and the root README's native rollback section.
 
 Code baseline: `46f44d0` (PR #17), GTK build `0.81.0 (16)`. The initial planning
 PR increments the build to `0.81.0 (17)` without changing runtime behavior.
@@ -194,7 +202,10 @@ Python GTK widgets                        Rust GTK4/libadwaita widgets
   needed for deterministic tests. Prove the backend works headlessly without
   an interpreter before starting native UI implementation.
 
-## Remaining source inventory
+## Historical pre-migration source inventory
+
+This inventory records what the migration plan inspected before backend/UI
+porting. It is not a list of files that remain active in the current checkout.
 
 | Area / evidence in current Python | Backend responsibility / target |
 | --- | --- |
@@ -331,36 +342,36 @@ remaining compatibility differences deliberately.
    merged evidence; use `active` or `verified, PR pending` until then. Never
    predict a merge in the committed audit entry; its PR link is authoritative.
 
-## Validation commands available today
+## Current native validation commands
 
+The removed Python launcher, installer, bootstrap, PyO3 build script and
+`rust-python/` crate are historical only; do not use them as current checks.
 From the repository root (source `~/.cargo/env` if Cargo is not on PATH):
 
 ```sh
 cargo fmt --manifest-path rust-core/Cargo.toml -- --check
-cargo fmt --manifest-path rust-python/Cargo.toml -- --check
+cargo fmt --manifest-path rust-backend/Cargo.toml -- --check
+cargo fmt --manifest-path rust-gtk/Cargo.toml -- --check
 cargo test --manifest-path rust-core/Cargo.toml --locked
+cargo test --manifest-path rust-backend/Cargo.toml --locked
+cargo test --manifest-path rust-gtk/Cargo.toml --locked
 cargo clippy --manifest-path rust-core/Cargo.toml --all-targets --all-features -- -D warnings
-cargo clippy --manifest-path rust-python/Cargo.toml --all-targets --all-features -- -D warnings
-./scripts/build-rust-core.sh
-python3 -m unittest discover -s tests -v
-CODEXBAR_RUST_CORE=1 python3 -m unittest discover -s tests -v
-python3 -m unittest discover -s tests -p test_tray_signals.py -v
+cargo clippy --manifest-path rust-backend/Cargo.toml --all-targets --all-features -- -D warnings
+cargo clippy --manifest-path rust-gtk/Cargo.toml --all-targets -- -D warnings
+./scripts/build-native.sh
+./scripts/test-native-tray-dbus.sh
+./scripts/test-native-harness-units.sh
+./scripts/smoke-native-gtk.sh
+./scripts/smoke-native-install.sh
+./scripts/smoke-native-no-python.sh --help
 git diff --check
 ```
 
-The tray suite requires `dbus-run-session`, dbus-python and PyGObject. CI runs a
-separate dependency-equipped job. Some other environments skip it; record that.
-The extension build helper must retain atomic replacement for running apps.
-The B00 service crate checks are:
-
-```sh
-cargo fmt --manifest-path rust-backend/Cargo.toml -- --check
-cargo test --manifest-path rust-backend/Cargo.toml --locked
-cargo clippy --manifest-path rust-backend/Cargo.toml --all-targets --all-features -- -D warnings
-```
-
-Add the corresponding format/test/Clippy commands for each new crate to CI;
-no workspace commands are assumed.
+Display smokes need their named X11 or private Wayland dependencies. The tray
+test needs a private D-Bus session. `smoke-native-no-python.sh --help` is only
+usage discovery; the required full runtime proof runs in the dedicated Docker
+CI job. Keep its native build jobs at one and do not invoke host GUI, bus,
+services, authentication or provider network calls for isolated verification.
 
 ## Stage gates
 
@@ -374,9 +385,11 @@ no workspace commands are assumed.
 - **UG — native UI complete:** all U01–U08 implementation PRs have merged, but
   the gate is **NOT PASSED** until full feature/action parity and the required
   Wayland/X11/private-D-Bus evidence matrix are accepted. Current evidence and
-  uncovered actions are itemized in [UG_GATE.md](UG_GATE.md). Preserve Python
-  as an explicit parity/rollback implementation. BUILD110's repository default
-  is a user-authorized exception while UG remains NOT PASSED.
+  uncovered actions are itemized in [UG_GATE.md](UG_GATE.md). The former Python
+  implementation is retained under `tests/reference/python/` for review; it is
+  not an active parity runtime or rollback path. Rollback uses a verified
+  native commit/artifact and the ownership-aware installer. BUILD110's
+  repository-default decision remains historical; it did not pass UG.
 - **CG — cutover complete:** native release/install works without Python,
   PyGObject or `_rust_core.so`; preferences/history survive the switch; native
   CI and packaging are proven. Remove bridge, fallback implementations, Python

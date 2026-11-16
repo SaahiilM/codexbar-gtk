@@ -354,7 +354,6 @@ Rust controller and uses existing PyO3 module integrations for other ports.
 ```sh
 ./run.sh                                  # run from the checkout
 python3 -m unittest discover -s tests -v  # the test suite
-./tools/preview.py /tmp/preview           # render UI widgets with local state
 ```
 
 ### GTK4 / libadwaita typelibs
@@ -380,11 +379,8 @@ PY
 
 For the explicit Python parity path, without root access run
 `./scripts/bootstrap-deps.sh`. It downloads and unpacks the typelibs/runtime
-libraries into the ignored local `.deps/` directory; `run-python.sh` and
-`tools/preview.py` add those paths automatically. Do not commit `.deps/`.
-The preview needs a working X11/Wayland display; use `xvfb-run -a` for a virtual
-X display if available. The `offscreen` GDK backend is not included in every GTK
-build. Use synthetic CLI data when capturing previews.
+libraries into the ignored local `.deps/` directory; `run-python.sh` adds those
+paths automatically. Do not commit `.deps/`.
 
 ### Native Rust GTK bootstrap
 

@@ -149,6 +149,15 @@ fn settings_export_import_and_reset_preserve_portable_preferences_shape() {
     preferences_export_to(&preferences, &export).unwrap();
     let document: Value = serde_json::from_slice(&fs::read(&export).unwrap()).unwrap();
     assert_eq!(document["version"], json!(1));
+    assert_eq!(
+        document
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect::<Vec<_>>(),
+        ["preferences", "version"]
+    );
     assert_eq!(document["preferences"]["showTray"], json!(false));
 
     preferences.set("showTray", json!(true), true).unwrap();

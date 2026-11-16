@@ -423,6 +423,18 @@ mod tests {
     #[test]
     fn reset_credit_rollup_and_absolute_style_match_python_contract() {
         let now = now();
+        assert_eq!(format_reset_credits(&[], "countdown", now), None);
+
+        // Countdown presentation truncates sub-minute seconds, matching Python.
+        let rounded_down = format_reset_credits(
+            &[Some(now + Duration::minutes(270) + Duration::seconds(59))],
+            "countdown",
+            now,
+        )
+        .unwrap();
+        assert_eq!(rounded_down.0, "1 available");
+        assert_eq!(rounded_down.1, "4h 30m");
+
         let countdown = format_reset_credits(
             &[
                 Some(now + Duration::minutes(270)),

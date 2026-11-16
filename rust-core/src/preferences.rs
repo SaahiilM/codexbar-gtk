@@ -439,6 +439,15 @@ mod tests {
         assert!(store.refresh_is_manual());
         let document = store.export_document();
         assert_eq!(document["version"], json!(1));
+        assert_eq!(
+            document
+                .as_object()
+                .unwrap()
+                .keys()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            ["preferences", "version"]
+        );
         assert_eq!(document["preferences"]["unknown"], json!(true));
 
         store.reset().unwrap();

@@ -183,11 +183,15 @@ class NativeWaylandIsolatedHarnessTests(unittest.TestCase):
             self.assertIn(f'route("{control}", "{source_title}", "{target_title}"', source)
         scenario = source.split("def run_page_state(", 1)[1].split("\ndef main", 1)[0]
         self.assertLess(scenario.index('"cost-fixture-error-done"'),
-                        scenario.index('"The usage refresh could not run the local CLI."'))
-        self.assertLess(scenario.index('"The usage refresh could not run the local CLI."'),
+                        scenario.index('"The usage refresh returned unreadable data."'))
+        self.assertLess(scenario.index('"The usage refresh returned unreadable data."'),
                         scenario.index('wait_visible_text(\n        python, pid, "$12.50 · partial"'))
         self.assertIn('"retained_nonempty_total": True', scenario)
-        self.assertIn('"same_pid": True', scenario)
+        self.assertIn('"same_pid": bool(error_text and error_text["pid"] == retained_total["pid"])', scenario)
+        self.assertLess(scenario.index('if not error_text:'), scenario.index(
+            'route("Sessions", "CodexBar GTK — Usage & Spend"'))
+        self.assertIn('return 0 if evidence.get("status", "passed") == "passed" else 1',
+                      source.split("def main", 1)[1])
         self.assertNotIn("spend-range", scenario)
         self.assertNotIn("HEATMAP_MODES", scenario)
 

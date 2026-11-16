@@ -1669,30 +1669,45 @@ def run_page_state(python: str, pid: int, evidence: dict,
         "cost-fixture-error-done" in call_log.read_text(encoding="utf-8").splitlines())
     if not completed:
         raise RuntimeError("synthetic cost failure fallback attempts did not complete")
-    error_text = wait_visible_text(
-        python, pid, "The usage refresh could not run the local CLI.",
-        context="CodexBar GTK — Usage & Spend")
+    error_text = None
+    error_observation_failure = None
+    try:
+        error_text = wait_visible_text(
+            python, pid, "The usage refresh returned unreadable data.",
+            context="CodexBar GTK — Usage & Spend")
+    except RuntimeError as failure:
+        error_observation_failure = str(failure)
     retained_total = wait_visible_text(
         python, pid, "$12.50 · partial",
         context="CodexBar GTK — Usage & Spend", exact=True)
-    if error_text["pid"] != pid or retained_total["pid"] != pid:
-        raise RuntimeError("retained Spend error and nonempty total were not both visible from the app PID")
-    if error_text["path"].split("/window:", 1)[0] != retained_total["path"].split("/window:", 1)[0]:
-        raise RuntimeError("retained Spend error and total came from different accessible application trees")
+    if retained_total["pid"] != pid:
+        raise RuntimeError("retained Spend total was not visible from the native app PID")
+    if error_text and error_text["pid"] != pid:
+        raise RuntimeError("Spend error was not visible from the native app PID")
+    spend_window_marker = "frame[0]:CodexBar GTK — Usage & Spend"
+    if error_text and (spend_window_marker not in error_text["path"]
+                       or spend_window_marker not in retained_total["path"]):
+        raise RuntimeError("retained Spend error and total did not come from the same visible Spend window")
     calls = call_log.read_text(encoding="utf-8").splitlines()
     failures = [line for line in calls if line.startswith("cost-fixture-error-cost")]
     if len(failures) != 3:
         raise RuntimeError(f"Spend failure expected three completed CLI attempts, observed {failures!r}")
     evidence["spend_retained_error"] = {
+        "status": "passed" if error_text else "failed",
         "refresh_control": "AT-SPI AccessibleAction.DoAction",
         "refresh_identity": refresh_action["identity"],
         "fixture_completion_marker": "cost-fixture-error-done",
         "completed_cli_attempts": failures,
-        "visible_error": error_text["name"],
+        "visible_error": error_text["name"] if error_text else None,
+        "error_observation_failure": error_observation_failure,
         "visible_retained_total": retained_total["name"],
-        "same_pid": True,
+        "same_pid": bool(error_text and error_text["pid"] == retained_total["pid"]),
         "retained_nonempty_total": True,
     }
+    if not error_text:
+        evidence["status"] = "failed"
+        evidence.setdefault("blockers", []).append(
+            "Spend retained its nonempty total after the completed failing scan, but no accessible error text appeared.")
     capture("spend_error_observed", "page-state-spend-error-observed.png")
     capture("spend_retained_error", "page-state-spend-retained-error.png")
 
@@ -1710,10 +1725,12 @@ def run_page_state(python: str, pid: int, evidence: dict,
     route("About", "CodexBar GTK — Dashboard", "About CodexBar GTK",
           "about", "page-state-about.png")
     evidence["navigation_limits"] = [
-        "The harness starts on Sessions so all four navigation edges in the app's existing controls are exercised visibly.",
+        "The harness starts on Sessions so all five page-navigation transitions in the app's existing controls are exercised visibly.",
         "The return from Settings uses app.dashboard because Settings is a separate window; it is recorded as a route reset, not visible navigation.",
         "Accessible GTK actions prove named control activation, not physical input or KDE shell parity.",
     ]
+    if error_text:
+        evidence["status"] = "passed"
 
 
 def main() -> int:
@@ -1811,7 +1828,7 @@ def main() -> int:
         print(f"isolated native Wayland smoke failed: {exc}", file=sys.stderr)
         return 1
     print(json.dumps(evidence, indent=2))
-    return 0
+    return 0 if evidence.get("status", "passed") == "passed" else 1
 
 
 if __name__ == "__main__":

@@ -11,10 +11,10 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Goal | Fully native Rust GTK4/libadwaita application with verified packaging and legacy runtime removal. |
 | Current phase | BG passed and U01–U08 implementation merged. UG **NOT PASSED**. By explicit user instruction, BUILD110 makes the repository launcher/installer native by default; Python remains the explicit parity/rollback path and C01–CG remain unaccepted. |
 | Last observed merge | PR #111 merged normally at `bc0dce990f77ac7c62ebf912640c48e35be99694` (build 110). Exact head `7e629c8c266d511cc3843a598bed1d520d137f66` passed all three checks in run `43312803349`; no reviews, comments or review threads were present. |
-| Active implementation | BUILD111/E214, branch `t3/native-tray-dbus-coverage`: required tray D-Bus coverage runs against the native Rust tray under a private bus; Python parity tests remain in the broader suite. Root review/publication pending. |
+| Active implementation | BUILD111/E214, branch `t3/native-tray-dbus-coverage`: required tray D-Bus coverage runs against the native Rust tray under a private bus; Python parity tests remain in the broader suite. Exact-head CI run `43952062156` passed `tray-dbus` but test job `133596861831` failed one backend test because fixture spawn returned Linux `ETXTBSY` (errno 26). Atomic fixture publication is fixed and locally verified; no replacement CI claim. Root review/publication pending. |
 | Installer/runtime verification | E198 records the merged build-95 installed-prefix/Python-free runtime proof. E199 records prior local 13-case activation smoke evidence in a Python-free container; its first attempt lacked `file`, and the portable `od`/`ldd` check passed. These component results do not pass C02 or authorize cutover. |
 | UI acceptance | E195 records one Display action; E200 records seven guarded Settings actions and three tab transitions. Broader Wayland controls/navigation remain open. UG is **NOT PASSED**; Python remains the explicit parity/rollback path under the BUILD110 launcher-default exception. See `UG_GATE.md`. |
-| Next | Root reviews BUILD111/E214, publishes it, then observes exact-head CI. UG remains **NOT PASSED**; the native repository default is an explicit user-authorized policy exception, not a gate pass. Existing host installations are not migrated. |
+| Next | Root reviews the updated BUILD111/E214 diff and local evidence, publishes it, then observes replacement exact-head CI. UG remains **NOT PASSED**; the native repository default is an explicit user-authorized policy exception, not a gate pass. Existing host installations are not migrated. |
 
 ### BUILD111/E214 — native tray D-Bus required-check coverage
 
@@ -38,6 +38,10 @@ supporting context only.
 **Gate state:** the change covers protocol behavior on a private D-Bus session;
 it does not claim GTK window interaction, pass UG, close C gates, or change the
 Python parity/rollback path. Root owns final review and publication.
+
+**CI follow-up:** see the appended E214 CI failure diagnosis and local rerun
+record in [AUDIT.md](AUDIT.md). The implementation scope remains unchanged;
+the root owner should review the fixture-only change before publication.
 
 ### BUILD110/E213 — native repository launcher default by explicit instruction
 

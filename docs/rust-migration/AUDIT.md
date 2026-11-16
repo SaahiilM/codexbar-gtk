@@ -7598,3 +7598,43 @@ check.
 
 **Next:** root reviews the clean BUILD111 diff, publishes it, and observes
 exact-head required checks. This entry records local results only.
+
+#### E214 CI failure follow-up — synthetic fixture `ETXTBSY`
+
+The supplied exact-head CI result for run `43952062156` used source head
+`470f028e6b66dc975d16442b66fa896b51320def`. Required job `tray-dbus` passed;
+test job `133596861831` failed
+`claudeplatform_login::tests::nonzero_malformed_and_trailing_json_fail_closed`
+with 96 passed and 1 failed. The first synthetic CLI spawn returned the
+sanitized `LoginError::Spawn`, so the expected `LoginError::InvalidResponse`
+assertion failed before a response was evaluated. Same-fixture transient spawn
+failures had been observed previously, but that history alone did not identify
+the cause.
+
+For diagnosis, temporary test-only output included only `std::io::ErrorKind`
+and numeric `raw_os_error`; it emitted no executable path, stdout, stderr, or
+input. A bounded parallel backend run reproduced Linux
+`ErrorKind::ExecutableFileBusy`, errno 26 (`ETXTBSY`) while spawning the
+`oversized_stdout_is_drained_bounded_and_rejected` synthetic fixture. Thus the
+current observed failure is a text-file-busy spawn; the CI log itself exposed
+only the sanitized `Spawn` category. The prior fixture already used a unique
+PID-plus-atomic directory, `fs::write` (closed before chmod), mode 0700, and
+`Drop` cleanup. The production runner's child cleanup applies after spawn;
+this failure precedes child creation, so no child cleanup path was entered.
+
+**Correction:** the test fixture now writes and chmods `fake-codexbar.tmp`,
+then renames it to `fake-codexbar` only after the staging write has closed.
+Temporary diagnostics were removed. No production retry, wait, or error
+contract change was made. The nonzero-exit, malformed JSON, trailing JSON, and
+oversized-output checks remain fail-closed.
+
+**Local verification after correction:** the focused
+`nonzero_malformed_and_trailing_json_fail_closed` test passed 30 consecutive
+runs. The full locked backend suite passed 10 consecutive runs, each with 97
+unit tests and 1 `bg_gate_end_to_end` integration test. Cargo build jobs were
+limited to one. `cargo fmt --manifest-path rust-backend/Cargo.toml -- --check`,
+`cargo clippy --manifest-path rust-backend/Cargo.toml --all-targets
+--all-features -- -D warnings`, and `git diff --check` passed. No exact-head
+replacement CI was run or observed; root owns the updated diff, publication,
+and CI observation. This follow-up adds no release metadata change and does
+not alter BUILD111's scope or gate claims.

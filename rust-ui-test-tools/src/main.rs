@@ -14,8 +14,9 @@ use sha2::{Digest, Sha256};
 use std::{
     env, fs,
     io::Read,
-    path::Path,
-    process::{Command, ExitCode},
+    ops::{Deref, DerefMut},
+    path::{Path, PathBuf},
+    process::{Child, Command, ExitCode, ExitStatus, Stdio},
     time::Duration,
 };
 use tokio::time::{sleep, timeout, Instant};
@@ -29,6 +30,81 @@ fn is_within_tree(identity: &str, root: &str) -> bool {
         || identity
             .strip_prefix(root)
             .is_some_and(|suffix| suffix.starts_with('/'))
+}
+
+fn atspi_target_guard(
+    actual_pid: u32,
+    expected_pid: u32,
+    actual_identity: &str,
+    expected_identity: &str,
+    role: &str,
+    showing: bool,
+    visible: bool,
+    sensitive: bool,
+    has_action: bool,
+) -> bool {
+    actual_pid == expected_pid
+        && actual_identity == expected_identity
+        && matches!(role, "switch" | "check box" | "toggle button")
+        && showing
+        && visible
+        && sensitive
+        && has_action
+}
+fn cleanup_confirmed(app_reaped: bool, weston_reaped: bool, home_removed: bool) -> bool {
+    app_reaped && weston_reaped && home_removed
+}
+
+struct OwnedChild {
+    child: Child,
+    reaped: bool,
+}
+impl OwnedChild {
+    fn spawn(command: &mut Command) -> Result<Self, String> {
+        command
+            .spawn()
+            .map(|child| Self {
+                child,
+                reaped: false,
+            })
+            .map_err(|e| e.to_string())
+    }
+    fn terminate(&mut self) -> std::io::Result<ExitStatus> {
+        terminate_owned_group(self.child.id());
+        let _ = self.child.kill();
+        let status = self.child.wait()?;
+        self.reaped = true;
+        Ok(status)
+    }
+}
+impl Deref for OwnedChild {
+    type Target = Child;
+    fn deref(&self) -> &Child {
+        &self.child
+    }
+}
+impl DerefMut for OwnedChild {
+    fn deref_mut(&mut self) -> &mut Child {
+        &mut self.child
+    }
+}
+impl Drop for OwnedChild {
+    fn drop(&mut self) {
+        if !self.reaped {
+            let _ = self.terminate();
+        }
+    }
+}
+fn expected_toggled_map(
+    before: &serde_json::Value,
+    key: &str,
+) -> Result<serde_json::Value, String> {
+    let mut expected = before.clone();
+    expected
+        .as_object_mut()
+        .ok_or("settings map is not a JSON object")?
+        .insert(key.into(), serde_json::Value::Bool(true));
+    Ok(expected)
 }
 
 #[tokio::main]
@@ -48,7 +124,7 @@ async fn dispatch(args: Vec<String>) -> Result<u8, String> {
     };
     match command {
         "chooser" => chooser(&args[1..]).await,
-        "isolated-wayland" => isolated_wayland(&args[1..]),
+        "isolated-wayland" => isolated_wayland(&args[1..]).await,
         "settings-wayland" => unavailable_runner("settings-wayland", &args[1..]),
         "spend-wayland" => unavailable_runner("spend-wayland", &args[1..]),
         "update-check-wayland" => unavailable_runner("update-check-wayland", &args[1..]),
@@ -75,9 +151,9 @@ fn unavailable_runner(name: &str, args: &[String]) -> Result<u8, String> {
     ))
 }
 
-fn isolated_wayland(args: &[String]) -> Result<u8, String> {
+async fn isolated_wayland(args: &[String]) -> Result<u8, String> {
     if args.iter().any(|a| a == "--help" || a == "-h") {
-        println!("isolated-wayland --binary PATH [--scenario matrix|advanced|settings-residual|page-state|settings-combo-diagnostic] [--artifact-dir DIR]");
+        println!("isolated-wayland --binary PATH [--scenario matrix-core|matrix|advanced|settings-residual|page-state|settings-combo-diagnostic] [--artifact-dir DIR]");
         return Ok(0);
     }
     let value = |flag: &str, default: Option<&str>| -> Result<Option<String>, String> {
@@ -96,6 +172,9 @@ fn isolated_wayland(args: &[String]) -> Result<u8, String> {
         .unwrap_or_else(|| {
             env::temp_dir().join(format!("codexbar-native-wayland-{}", std::process::id()))
         });
+    if scenario == "matrix-core" {
+        return isolated_wayland_matrix_core(binary, artifact_dir).await;
+    }
     if scenario != "settings-combo-diagnostic" {
         return Err(format!("isolated-wayland {scenario:?} runner is incomplete; refusing to report captures or pass status"));
     }
@@ -169,6 +248,778 @@ fn isolated_wayland(args: &[String]) -> Result<u8, String> {
     );
     eprintln!("UNSUPPORTED: native combo accessibility is not verified");
     Ok(3)
+}
+
+// Deliberately bounded first native vertical slice. The legacy `matrix` name
+// remains unsupported until Notifications, Hooks, heatmap, and Sessions are
+// ported as well.
+async fn isolated_wayland_matrix_core(binary: String, artifacts: PathBuf) -> Result<u8, String> {
+    let binary = PathBuf::from(binary)
+        .canonicalize()
+        .map_err(|e| format!("native binary: {e}"))?;
+    if !is_executable(&binary) {
+        return Err(format!(
+            "native GTK binary is not executable: {}",
+            binary.display()
+        ));
+    }
+    if artifacts.exists()
+        && fs::read_dir(&artifacts)
+            .map_err(|e| e.to_string())?
+            .next()
+            .is_some()
+    {
+        return Err("artifact directory must be empty".into());
+    }
+    fs::create_dir_all(&artifacts).map_err(|e| e.to_string())?;
+    set_private_dir(&artifacts)?;
+    if env::var_os("CODEXBAR_UI_TEST_PRIVATE_BUS").is_none() {
+        let exe = env::current_exe().map_err(|e| e.to_string())?;
+        let mut cmd = tokio::process::Command::new("dbus-run-session");
+        cmd.args(["--"])
+            .arg(exe)
+            .args(["isolated-wayland", "--scenario", "matrix-core", "--binary"])
+            .arg(&binary)
+            .args(["--artifact-dir"])
+            .arg(&artifacts)
+            .arg("--private-bus");
+        cmd.env_clear();
+        for key in ["PATH", "HOME", "LANG", "LC_ALL"] {
+            if let Some(value) = env::var_os(key) {
+                cmd.env(key, value);
+            }
+        }
+        cmd.env("CODEXBAR_UI_TEST_PRIVATE_BUS", "1")
+            .kill_on_drop(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt;
+            cmd.as_std_mut().process_group(0);
+        }
+        let mut child = cmd
+            .spawn()
+            .map_err(|e| format!("start private D-Bus: {e}"))?;
+        let runner_pid = child.id().unwrap_or_default();
+        let interrupt = tokio::spawn(async move {
+            if tokio::signal::ctrl_c().await.is_ok() {
+                #[cfg(unix)]
+                {
+                    let _ = Command::new("kill")
+                        .args(["-INT", &format!("-{runner_pid}")])
+                        .status();
+                }
+            }
+        });
+        let result = timeout(Duration::from_secs(240), child.wait()).await;
+        interrupt.abort();
+        match result {
+            Ok(Ok(status)) if status.success() => {
+                let marker = artifacts.join("private-bus-socket.txt");
+                let socket = fs::read_to_string(&marker)
+                    .map_err(|e| format!("private D-Bus cleanup marker missing: {e}"))?;
+                let removed = !Path::new(socket.trim()).exists();
+                let _ = fs::remove_file(marker);
+                if !removed {
+                    return Err("private D-Bus socket remained after dbus-run-session exit".into());
+                }
+                let evidence_path = artifacts.join("evidence.json");
+                let mut evidence: serde_json::Value =
+                    serde_json::from_slice(&fs::read(&evidence_path).map_err(|e| e.to_string())?)
+                        .map_err(|e| e.to_string())?;
+                evidence["cleanup"]["private_dbus_socket_removed"] = serde_json::Value::Bool(true);
+                fs::write(
+                    &evidence_path,
+                    serde_json::to_vec_pretty(&evidence).map_err(|e| e.to_string())?,
+                )
+                .map_err(|e| e.to_string())?;
+                set_private_file(&evidence_path)?;
+                return Ok(0);
+            }
+            Ok(Ok(status)) => return Err(format!("private matrix-core runner exited {status}")),
+            Ok(Err(e)) => return Err(format!("wait for private runner: {e}")),
+            Err(_) => {
+                #[cfg(unix)]
+                {
+                    let _ = Command::new("kill")
+                        .args(["-TERM", &format!("-{}", child.id().unwrap_or_default())])
+                        .status();
+                }
+                let _ = timeout(Duration::from_secs(3), child.wait()).await;
+                return Err(
+                    "matrix-core exceeded 240 second deadline; private process group terminated"
+                        .into(),
+                );
+            }
+        }
+    }
+    match timeout(Duration::from_secs(210), run_matrix_core_private(&binary, &artifacts)).await {
+        Ok(result) => result?,
+        Err(_) => return Err("matrix-core exceeded its 210 second runtime deadline; owned child guards performed cleanup".into()),
+    }
+    Ok(0)
+}
+
+async fn run_matrix_core_private(binary: &Path, artifacts: &Path) -> Result<(), String> {
+    let scratch = env::temp_dir().join(format!(
+        "codexbar-ui-test-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    fs::create_dir(&scratch).map_err(|e| e.to_string())?;
+    set_private_dir(&scratch)?;
+    let home = scratch.join("home");
+    let runtime = scratch.join("runtime");
+    fs::create_dir(&home).map_err(|e| e.to_string())?;
+    fs::create_dir(&runtime).map_err(|e| e.to_string())?;
+    set_private_dir(&home)?;
+    set_private_dir(&runtime)?;
+    let config = home.join(".config/codexbar-gtk");
+    fs::create_dir_all(&config).map_err(|e| e.to_string())?;
+    let prefs = config.join("settings.json");
+    let before = serde_json::json!({"refreshAllProvidersOnMenuOpen":false,"showTray":false,"preferredCurrencyCode":"USD"});
+    fs::write(&prefs, serde_json::to_vec(&before).unwrap()).map_err(|e| e.to_string())?;
+    let cli = scratch.join("fake-codexbar");
+    fs::write(&cli, "#!/bin/sh\ncase \"$1\" in --version) echo 'synthetic CodexBar';; usage) echo '[{\"provider\":\"codex\",\"source\":\"synthetic\",\"usage\":{\"updatedAt\":\"2026-11-01T12:00:00Z\",\"primary\":{\"usedPercent\":42,\"resetsAt\":\"2026-11-01T18:00:00Z\",\"windowMinutes\":300}}}]';; cost) echo '[{\"provider\":\"codex\",\"currencyCode\":\"USD\",\"totalCost\":12.5,\"totalTokens\":1200,\"sessionCostUSD\":1.25,\"sessionTokens\":100,\"last30DaysCostUSD\":12.5,\"last30DaysTokens\":1200,\"coverage\":{\"priced\":3,\"unpriced\":1},\"provenance\":\"synthetic_history\",\"daily\":[],\"projects\":[],\"models\":[]}]';; *) echo '[]';; esac\n").map_err(|e|e.to_string())?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&cli, fs::Permissions::from_mode(0o700)).map_err(|e| e.to_string())?;
+    }
+    let (weston, screenshot, backend, shell, desktop, keyboard) = resolve_private_weston(&scratch)?;
+    let bus =
+        env::var("DBUS_SESSION_BUS_ADDRESS").map_err(|_| "private session bus unavailable")?;
+    let socket = bus
+        .strip_prefix("unix:path=")
+        .and_then(|rest| rest.split(',').next())
+        .ok_or("private D-Bus must use a filesystem socket")?;
+    let marker = artifacts.join("private-bus-socket.txt");
+    fs::write(&marker, socket).map_err(|e| e.to_string())?;
+    set_private_file(&marker)?;
+    let mut envs = std::collections::BTreeMap::new();
+    envs.insert("HOME".to_string(), home.display().to_string());
+    envs.insert("XDG_RUNTIME_DIR".into(), runtime.display().to_string());
+    envs.insert(
+        "XDG_CONFIG_HOME".into(),
+        home.join(".config").display().to_string(),
+    );
+    envs.insert(
+        "XDG_DATA_HOME".into(),
+        home.join(".local/share").display().to_string(),
+    );
+    envs.insert(
+        "XDG_CACHE_HOME".into(),
+        home.join(".cache").display().to_string(),
+    );
+    envs.insert(
+        "XDG_STATE_HOME".into(),
+        home.join(".local/state").display().to_string(),
+    );
+    envs.insert("XDG_SESSION_TYPE".into(), "wayland".into());
+    envs.insert("WAYLAND_DISPLAY".into(), "wayland-private".into());
+    envs.insert("DBUS_SESSION_BUS_ADDRESS".into(), bus.clone());
+    envs.insert("GDK_BACKEND".into(), "wayland".into());
+    envs.insert("GSK_RENDERER".into(), "cairo".into());
+    envs.insert("GTK_A11Y".into(), "atspi".into());
+    envs.insert("GTK_USE_PORTAL".into(), "0".into());
+    envs.insert("CODEXBAR_CLI".into(), cli.display().to_string());
+    envs.insert("PATH".into(), env::var("PATH").unwrap_or_default());
+    let config_file = scratch.join("weston.ini");
+    fs::write(
+        &config_file,
+        format!(
+            "[shell]\nclient={}\n[input-method]\npath={}\n",
+            desktop.display(),
+            keyboard.display()
+        ),
+    )
+    .map_err(|e| e.to_string())?;
+    let log = fs::File::create(artifacts.join("weston.log")).map_err(|e| e.to_string())?;
+    let mut west = Command::new(weston);
+    west.args([
+        "--backend=headless",
+        "--renderer=pixman",
+        "--socket=wayland-private",
+        "--width=1280",
+        "--height=900",
+        "--shell=desktop-shell.so",
+    ])
+    .arg(format!("--config={}", config_file.display()))
+    .arg("--idle-time=0")
+    .env_clear();
+    for (k, v) in &envs {
+        west.env(k, v);
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        west.process_group(0);
+    }
+    let ld_path = format!(
+        "{}:{}:{}",
+        backend.parent().unwrap_or(Path::new("/usr/lib")).display(),
+        backend
+            .parent()
+            .and_then(Path::parent)
+            .unwrap_or(Path::new("/usr/lib"))
+            .display(),
+        shell
+            .parent()
+            .unwrap_or(Path::new("/usr/lib/weston"))
+            .display()
+    );
+    west.env("LD_LIBRARY_PATH", ld_path)
+        .env(
+            "WESTON_DATA_DIR",
+            weston
+                .parent()
+                .and_then(Path::parent)
+                .unwrap_or(Path::new("/usr/share"))
+                .join("share/weston"),
+        )
+        .env(
+            "WESTON_MODULE_MAP",
+            format!(
+                "headless-backend.so={};desktop-shell.so={}",
+                backend.display(),
+                shell.display()
+            ),
+        )
+        .stdout(Stdio::from(log.try_clone().map_err(|e| e.to_string())?))
+        .stderr(Stdio::from(log));
+    let mut compositor =
+        OwnedChild::spawn(&mut west).map_err(|e| format!("launch private Weston: {e}"))?;
+    let mut app_reaped = false;
+    let result=async {
+        wait_for_path(&runtime.join("wayland-private"),Duration::from_secs(15)).await?;
+        #[cfg(unix)] { use std::os::unix::fs::PermissionsExt; fs::set_permissions(runtime.join("wayland-private"),fs::Permissions::from_mode(0o600)).map_err(|e|e.to_string())?; }
+        #[cfg(unix)] { use std::os::unix::fs::PermissionsExt; let r=fs::metadata(&runtime).map_err(|e|e.to_string())?.permissions().mode()&0o777;let s=fs::metadata(runtime.join("wayland-private")).map_err(|e|e.to_string())?.permissions().mode()&0o777;if r!=0o700||s!=0o600{return Err(format!("private Wayland permissions invalid: runtime={r:o}, socket={s:o}"))} }
+        let info=Command::new("wayland-info").env_clear().envs(&envs).output().map_err(|e|format!("wayland-info: {e}"))?;
+        if !info.status.success(){return Err("private wayland-info failed".into())}
+        let app_log=fs::File::create(artifacts.join("native-app.log")).map_err(|e|e.to_string())?;
+        let mut appcmd=Command::new(binary); appcmd.env_clear().envs(&envs).stdout(Stdio::from(app_log.try_clone().map_err(|e|e.to_string())?)).stderr(Stdio::from(app_log));
+        #[cfg(unix)] { use std::os::unix::process::CommandExt; appcmd.process_group(0); }
+        let mut app=OwnedChild::spawn(&mut appcmd).map_err(|e|format!("start native app: {e}"))?; let pid=app.id();
+        let run_result=async {
+            wait_for_name(Duration::from_secs(25)).await?;
+            let before_map: serde_json::Value = serde_json::from_slice(&fs::read(&prefs).map_err(|e|e.to_string())?).map_err(|e|format!("invalid initial preferences: {e}"))?;
+            if before_map.get("refreshAllProvidersOnMenuOpen") != Some(&serde_json::Value::Bool(false)) { return Err(format!("synthetic initial Settings state is not false: {before_map}")); }
+            gaction(&["dashboard"])?;
+            let dashboard=wait_window(pid,"CodexBar GTK — Dashboard",Duration::from_secs(15)).await?;
+            let dshot=artifacts.join("dashboard-initial.png"); take_screenshot(&screenshot,&runtime,&envs,&dshot)?;
+            gaction(&["settings"])?;
+            let settings=wait_window(pid,"CodexBar Settings",Duration::from_secs(15)).await?;
+            let (_, _, general_selected)=wait_control(pid,"General", &["page tab","tab"],Duration::from_secs(10)).await?;
+            if !general_selected {return Err("Settings General tab is not selected".into())}
+            let (control,identity,checked)=wait_control(pid,"Refresh when the panel opens", &["switch","check box"],Duration::from_secs(15)).await?;
+            if checked {return Err("seeded Settings switch unexpectedly checked".into())}
+            click_atspi(pid,&control,&identity).await?;
+            let persisted=wait_pref_true(&prefs,"refreshAllProvidersOnMenuOpen",Duration::from_secs(5)).await?;
+            let expected=expected_toggled_map(&before_map,"refreshAllProvidersOnMenuOpen")?;
+            if persisted!=expected {return Err(format!("Settings changed unexpected preference-map fields: {persisted}"))}
+            let sshot=artifacts.join("settings-after-toggle.png"); take_screenshot(&screenshot,&runtime,&envs,&sshot)?;
+            gaction(&["page","'spend'"])?;
+            let spend=wait_window(pid,"Usage & Spend",Duration::from_secs(15)).await?;
+            gaction(&["spend-range","'7 days'"])?;
+            let (range,range_id,pressed)=wait_control(pid,"7 days", &["toggle button"],Duration::from_secs(10)).await?;
+            if !pressed {return Err("Spend 7 days control lacks pressed state".into())}
+            let pshot=artifacts.join("spend-7-days.png"); take_screenshot(&screenshot,&runtime,&envs,&pshot)?;
+            let record=serde_json::json!({"scenario":"matrix-core","status":"passed","coverage":"dashboard route; Settings General AT-SPI switch and exact full preference-map persistence; Spend route and 7-day pressed selection","source_commit":git_head().unwrap_or_default(),"binary_sha256":sha256(binary)?,"private_bus":"dbus-run-session","gdk_backend":"wayland","runtime_permissions":"0700","wayland_socket_permissions":"0600","host_session_variables_removed":true,"app_pid":pid,"settings_general":{"selected":true},"settings_control":{"name":control,"identity":identity,"checked_before":false,"checked_after":true,"persisted_full_map":persisted},"dashboard":{"window":dashboard,"capture":"dashboard-initial.png"},"settings":{"window":settings,"capture":"settings-after-toggle.png"},"spend":{"window":spend,"selected_control":range,"identity":range_id,"pressed":pressed,"capture":"spend-7-days.png"},"limits":["This named matrix-core slice does not cover Notifications, Hooks, heatmap modes, or Sessions; the legacy Python matrix remains intact.","AT-SPI actions do not establish physical Wayland input or KDE parity."]});
+            let out=artifacts.join("evidence.json"); fs::write(&out,serde_json::to_vec_pretty(&record).map_err(|e|e.to_string())?).map_err(|e|e.to_string())?; set_private_file(&out)?;
+            Ok(())
+        }.await;
+        let status=app.terminate().map_err(|e|format!("reap native app: {e}"))?; app_reaped=app.reaped;
+        let _intentional_exit_status=status;
+        run_result
+    }.await;
+    let _ = compositor.terminate();
+    let weston_reaped = compositor.reaped;
+    let _ = fs::remove_dir_all(&scratch);
+    if result.is_ok() {
+        let p = artifacts.join("evidence.json");
+        let mut ev: serde_json::Value =
+            serde_json::from_slice(&fs::read(&p).map_err(|e| e.to_string())?)
+                .map_err(|e| e.to_string())?;
+        ev["cleanup"] = serde_json::json!({"native_app_reaped":app_reaped,"weston_reaped":weston_reaped,"private_home_removed":!scratch.exists()});
+        if !cleanup_confirmed(app_reaped, weston_reaped, !scratch.exists()) {
+            return Err("private process or HOME cleanup was not verified".into());
+        }
+        fs::write(
+            &p,
+            serde_json::to_vec_pretty(&ev).map_err(|e| e.to_string())?,
+        )
+        .map_err(|e| e.to_string())?;
+        set_private_file(&p)?;
+    }
+    result
+}
+
+fn gaction(args: &[&str]) -> Result<(), String> {
+    let output = Command::new("gapplication")
+        .arg("action")
+        .arg("com.steipete.CodexBarGTK")
+        .args(args)
+        .output()
+        .map_err(|e| e.to_string())?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(format!(
+            "GAction {:?} failed: {}",
+            args,
+            String::from_utf8_lossy(&output.stderr)
+        ))
+    }
+}
+fn terminate_owned_group(pid: u32) {
+    #[cfg(unix)]
+    {
+        let group = format!("-{pid}");
+        let _ = Command::new("kill").args(["-TERM", &group]).status();
+        std::thread::sleep(Duration::from_millis(150));
+        let _ = Command::new("kill").args(["-KILL", &group]).status();
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = pid;
+    }
+}
+fn wait_for_name(_duration: Duration) -> impl std::future::Future<Output = Result<(), String>> {
+    async move {
+        let deadline = Instant::now() + Duration::from_secs(25);
+        loop {
+            let o = Command::new("gdbus")
+                .args([
+                    "call",
+                    "--session",
+                    "--dest",
+                    "org.freedesktop.DBus",
+                    "--object-path",
+                    "/org/freedesktop/DBus",
+                    "--method",
+                    "org.freedesktop.DBus.NameHasOwner",
+                    "com.steipete.CodexBarGTK",
+                ])
+                .output();
+            if o.is_ok_and(|r| String::from_utf8_lossy(&r.stdout).contains("true")) {
+                return Ok(());
+            }
+            if Instant::now() > deadline {
+                return Err("native app did not acquire its private-bus name".into());
+            }
+            sleep(Duration::from_millis(100)).await
+        }
+    }
+}
+async fn wait_for_path(path: &Path, duration: Duration) -> Result<(), String> {
+    let end = Instant::now() + duration;
+    while Instant::now() < end {
+        if path.exists() {
+            return Ok(());
+        }
+        sleep(Duration::from_millis(50)).await
+    }
+    Err(format!("timed out waiting for {}", path.display()))
+}
+async fn wait_window(pid: u32, title: &str, duration: Duration) -> Result<String, String> {
+    let end = Instant::now() + duration;
+    while Instant::now() < end {
+        if let Ok((_, id, _)) = find_accessible(pid, title, &["frame", "window"], false).await {
+            return Ok(id);
+        }
+        sleep(Duration::from_millis(150)).await
+    }
+    Err(format!("app PID {pid} did not expose window {title:?}"))
+}
+async fn wait_control(
+    pid: u32,
+    name: &str,
+    roles: &[&str],
+    duration: Duration,
+) -> Result<(String, String, bool), String> {
+    let end = Instant::now() + duration;
+    while Instant::now() < end {
+        if let Ok(v) = find_accessible(pid, name, &roles, true).await {
+            return Ok(v);
+        }
+        sleep(Duration::from_millis(100)).await
+    }
+    Err(format!(
+        "app PID {pid} did not expose unique visible actionable {name:?}"
+    ))
+}
+async fn find_accessible(
+    pid: u32,
+    name: &str,
+    roles: &[&str],
+    actionable: bool,
+) -> Result<(String, String, bool), String> {
+    let conn = AccessibilityConnection::new()
+        .await
+        .map_err(|e| e.to_string())?;
+    let registry = conn
+        .root_accessible_on_registry()
+        .await
+        .map_err(|e| e.to_string())?;
+    let apps = registry.get_children().await.map_err(|e| e.to_string())?;
+    let mut q = Vec::new();
+    for (i, app) in apps.into_iter().enumerate().take(100) {
+        if object_pid(&conn, &app).await.ok() == Some(pid) {
+            q.push(Node {
+                object: app,
+                identity: format!("app[{i}]"),
+                depth: 0,
+            });
+        }
+    }
+    if q.is_empty() {
+        return Err(format!("AT-SPI registry has no root for PID {pid}"));
+    }
+    let mut found = Vec::new();
+    let mut seen = 0;
+    while let Some(n) = q.pop() {
+        if seen >= MAX_NODES || n.depth > MAX_DEPTH {
+            break;
+        }
+        seen += 1;
+        if object_pid(&conn, &n.object).await.ok() == Some(pid) {
+            let a = proxy(&conn, n.object.clone()).await?;
+            let nm = a.name().await.unwrap_or_default();
+            let role = a.get_role_name().await.unwrap_or_default();
+            let st = state(&conn, &n.object).await.unwrap_or_default();
+            if nm == name
+                && roles.contains(&role.as_str())
+                && st.contains(State::Showing)
+                && st.contains(State::Visible)
+                && st.contains(State::Sensitive)
+            {
+                let action = ActionProxy::builder(conn.connection())
+                    .destination(n.object.name_as_str().unwrap_or(""))
+                    .map_err(|e| e.to_string())?
+                    .path(n.object.path_as_str())
+                    .map_err(|e| e.to_string())?
+                    .build()
+                    .await;
+                let has_action = match action {
+                    Ok(p) => !p.get_actions().await.unwrap_or_default().is_empty(),
+                    Err(_) => false,
+                };
+                if !actionable || has_action {
+                    found.push((
+                        n.identity.clone(),
+                        format!("{}:{}:{}:{}", pid, n.identity, role, nm),
+                        st.contains(State::Checked)
+                            || st.contains(State::Pressed)
+                            || st.contains(State::Selected),
+                    ));
+                }
+            }
+            for i in 0..a
+                .child_count()
+                .await
+                .unwrap_or(0)
+                .clamp(0, MAX_CHILDREN as i32)
+            {
+                if let Ok(c) = a.get_child_at_index(i).await {
+                    q.push(Node {
+                        object: c,
+                        identity: format!("{}/{}", n.identity, i),
+                        depth: n.depth + 1,
+                    });
+                }
+            }
+        }
+    }
+    if found.len() != 1 {
+        return Err(format!(
+            "expected one visible actionable AT-SPI node {name:?} for PID {pid}, found {}",
+            found.len()
+        ));
+    }
+    Ok(found.remove(0))
+}
+async fn click_atspi(pid: u32, _control: &str, identity: &str) -> Result<(), String> {
+    let conn = AccessibilityConnection::new()
+        .await
+        .map_err(|e| e.to_string())?;
+    let registry = conn
+        .root_accessible_on_registry()
+        .await
+        .map_err(|e| e.to_string())?;
+    let apps = registry.get_children().await.map_err(|e| e.to_string())?;
+    let mut q = Vec::new();
+    for (i, app) in apps.into_iter().enumerate().take(100) {
+        if object_pid(&conn, &app).await.ok() == Some(pid) {
+            q.push(Node {
+                object: app,
+                identity: format!("app[{i}]"),
+                depth: 0,
+            })
+        }
+    }
+    let mut found = Vec::new();
+    while let Some(n) = q.pop() {
+        if n.depth > MAX_DEPTH {
+            continue;
+        }
+        if object_pid(&conn, &n.object).await.ok() == Some(pid) {
+            let a = proxy(&conn, n.object.clone()).await?;
+            let role = a.get_role_name().await.unwrap_or_default();
+            let name = a.name().await.unwrap_or_default();
+            if format!("{}:{}:{}:{}", pid, n.identity, role, name) == identity {
+                found.push(n.clone())
+            }
+            for i in 0..a
+                .child_count()
+                .await
+                .unwrap_or(0)
+                .clamp(0, MAX_CHILDREN as i32)
+            {
+                if let Ok(c) = a.get_child_at_index(i).await {
+                    q.push(Node {
+                        object: c,
+                        identity: format!("{}/{}", n.identity, i),
+                        depth: n.depth + 1,
+                    })
+                }
+            }
+        }
+    }
+    if found.len() != 1 {
+        return Err(format!("AT-SPI target identity is not unique in PID {pid}"));
+    }
+    let action = ActionProxy::builder(conn.connection())
+        .destination(found[0].object.name_as_str().unwrap_or(""))
+        .map_err(|e| e.to_string())?
+        .path(found[0].object.path_as_str())
+        .map_err(|e| e.to_string())?
+        .build()
+        .await
+        .map_err(|e| e.to_string())?;
+    let a = proxy(&conn, found[0].object.clone()).await?;
+    let role = a.get_role_name().await.unwrap_or_default();
+    let state = state(&conn, &found[0].object).await?;
+    let live_identity = format!(
+        "{}:{}:{}:{}",
+        pid,
+        found[0].identity,
+        role,
+        a.name().await.unwrap_or_default()
+    );
+    let has_action = !action
+        .get_actions()
+        .await
+        .map_err(|e| e.to_string())?
+        .is_empty();
+    if !atspi_target_guard(
+        object_pid(&conn, &found[0].object).await.unwrap_or(0),
+        pid,
+        &live_identity,
+        identity,
+        &role,
+        state.contains(State::Showing),
+        state.contains(State::Visible),
+        state.contains(State::Sensitive),
+        has_action,
+    ) {
+        return Err(
+            "AT-SPI target identity lost PID, role, visible, sensitive, or action guard".into(),
+        );
+    }
+    if !action.do_action(0).await.map_err(|e| e.to_string())? {
+        return Err("AT-SPI DoAction returned false".into());
+    }
+    Ok(())
+}
+async fn wait_pref_true(path: &Path, key: &str, d: Duration) -> Result<serde_json::Value, String> {
+    let end = Instant::now() + d;
+    while Instant::now() < end {
+        if let Ok(v) =
+            serde_json::from_slice::<serde_json::Value>(&fs::read(path).unwrap_or_default())
+        {
+            if v.get(key) == Some(&serde_json::Value::Bool(true)) {
+                return Ok(v);
+            }
+        }
+        sleep(Duration::from_millis(50)).await
+    }
+    Err(format!("preference {key} did not persist true"))
+}
+fn take_screenshot(
+    bin: &Path,
+    runtime: &Path,
+    envs: &std::collections::BTreeMap<String, String>,
+    output: &Path,
+) -> Result<(), String> {
+    let work = output.with_extension("capture");
+    fs::create_dir(&work).map_err(|e| e.to_string())?;
+    let mut e = envs.clone();
+    e.insert("XDG_RUNTIME_DIR".into(), runtime.display().to_string());
+    let r = Command::new(bin)
+        .current_dir(&work)
+        .env_clear()
+        .envs(&e)
+        .output()
+        .map_err(|x| x.to_string())?;
+    let png = fs::read_dir(&work)
+        .map_err(|x| x.to_string())?
+        .filter_map(Result::ok)
+        .map(|x| x.path())
+        .find(|p| p.extension().is_some_and(|e| e == "png"))
+        .ok_or_else(|| {
+            format!(
+                "Weston capture failed: {}",
+                String::from_utf8_lossy(&r.stderr)
+            )
+        })?;
+    if !r.status.success() {
+        return Err(format!("Weston screenshot status {}", r.status));
+    }
+    fs::copy(&png, output).map_err(|x| x.to_string())?;
+    set_private_file(output)?;
+    let _ = fs::remove_dir_all(work);
+    Ok(())
+}
+fn sha256(path: &Path) -> Result<String, String> {
+    let mut f = fs::File::open(path).map_err(|e| e.to_string())?;
+    let mut h = Sha256::new();
+    let mut b = [0; 65536];
+    loop {
+        let n = f.read(&mut b).map_err(|e| e.to_string())?;
+        if n == 0 {
+            break;
+        }
+        h.update(&b[..n])
+    }
+    Ok(format!("{:x}", h.finalize()))
+}
+fn git_head() -> Result<String, String> {
+    let o = Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .output()
+        .map_err(|e| e.to_string())?;
+    Ok(String::from_utf8_lossy(&o.stdout).trim().into())
+}
+fn resolve_private_weston(
+    root: &Path,
+) -> Result<(PathBuf, PathBuf, PathBuf, PathBuf, PathBuf, PathBuf), String> {
+    let w = which("weston");
+    let ss = which("weston-screenshooter");
+    if let (Some(w), Some(ss)) = (w, ss) {
+        let dirs = [
+            Path::new("/usr/lib/x86_64-linux-gnu"),
+            Path::new("/usr/lib/aarch64-linux-gnu"),
+            Path::new("/usr/lib"),
+        ];
+        for d in dirs {
+            if let Ok(entries) = fs::read_dir(d) {
+                for e in entries.flatten() {
+                    let p = e.path().join("headless-backend.so");
+                    if p.is_file() {
+                        let lib = e.path();
+                        let shell = lib.parent().unwrap_or(d).join("weston/desktop-shell.so");
+                        let de = PathBuf::from("/usr/libexec/weston-desktop-shell");
+                        let ke = PathBuf::from("/usr/libexec/weston-keyboard");
+                        if shell.is_file() && de.is_file() && ke.is_file() {
+                            return Ok((w, ss, p, shell, de, ke));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    let dl = root.join("weston-download");
+    let ex = root.join("weston-root");
+    fs::create_dir(&dl).map_err(|e| e.to_string())?;
+    fs::create_dir(&ex).map_err(|e| e.to_string())?;
+    let d = Command::new("apt-get")
+        .args(["download", "weston", "libweston-13-0"])
+        .current_dir(&dl)
+        .output()
+        .map_err(|e| format!("rootless Weston download: {e}"))?;
+    if !d.status.success() {
+        return Err(format!(
+            "rootless Weston download failed: {}",
+            String::from_utf8_lossy(&d.stderr)
+        ));
+    }
+    for e in fs::read_dir(&dl).map_err(|e| e.to_string())?.flatten() {
+        let p = e.path();
+        if p.extension().is_some_and(|x| x == "deb") {
+            let o = Command::new("dpkg-deb")
+                .args(["-x"])
+                .arg(p)
+                .arg(&ex)
+                .output()
+                .map_err(|e| e.to_string())?;
+            if !o.status.success() {
+                return Err("rootless Weston extraction failed".into());
+            }
+        }
+    }
+    let lib = fs::read_dir(ex.join("usr/lib"))
+        .map_err(|e| e.to_string())?
+        .flatten()
+        .map(|e| e.path())
+        .find(|p| p.to_string_lossy().contains("linux-gnu"))
+        .ok_or("Weston package library not found")?;
+    if let Some(versioned) = fs::read_dir(&lib)
+        .map_err(|e| e.to_string())?
+        .flatten()
+        .map(|e| e.path())
+        .find(|p| {
+            p.file_name()
+                .is_some_and(|n| n.to_string_lossy().starts_with("libweston-13.so.0."))
+        })
+    {
+        symlink_if_missing(&lib.join("libweston-13.so.0"), &versioned)?;
+    }
+    let weston_libdir = lib.join("weston");
+    if let Some(versioned) = fs::read_dir(&weston_libdir)
+        .map_err(|e| e.to_string())?
+        .flatten()
+        .map(|e| e.path())
+        .find(|p| {
+            p.file_name()
+                .is_some_and(|n| n.to_string_lossy().starts_with("libexec_weston.so.0."))
+        })
+    {
+        symlink_if_missing(&weston_libdir.join("libexec_weston.so.0"), &versioned)?;
+    }
+    let back = lib.join("libweston-13/headless-backend.so");
+    let sh = lib.join("weston/desktop-shell.so");
+    let w = ex.join("usr/bin/weston");
+    let ss = ex.join("usr/bin/weston-screenshooter");
+    let de = ex.join("usr/libexec/weston-desktop-shell");
+    let ke = ex.join("usr/libexec/weston-keyboard");
+    for p in [&back, &sh, &w, &ss, &de, &ke] {
+        if !p.is_file() {
+            return Err(format!(
+                "incomplete rootless Weston extraction: {}",
+                p.display()
+            ));
+        }
+    }
+    Ok((w, ss, back, sh, de, ke))
+}
+fn symlink_if_missing(link: &Path, target: &Path) -> Result<(), String> {
+    if !link.exists() {
+        let relative = target
+            .strip_prefix(link.parent().unwrap_or(Path::new(".")))
+            .unwrap_or(target);
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(relative, link).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+fn which(name: &str) -> Option<PathBuf> {
+    env::var_os("PATH").and_then(|p| {
+        env::split_paths(&p)
+            .map(|d| d.join(name))
+            .find(|p| p.is_file())
+    })
 }
 
 #[cfg(unix)]
@@ -742,7 +1593,7 @@ async fn wait_nonempty_file(path: &str, duration: Duration) -> Result<(), String
 
 #[cfg(test)]
 mod tests {
-    use super::is_within_tree;
+    use super::{atspi_target_guard, cleanup_confirmed, expected_toggled_map, is_within_tree};
 
     #[test]
     fn atspi_tree_identity_uses_path_boundaries() {
@@ -750,5 +1601,68 @@ mod tests {
         assert!(is_within_tree("app/2/7", "app/2"));
         assert!(!is_within_tree("app/20/7", "app/2"));
         assert!(!is_within_tree("other/2", "app/2"));
+    }
+
+    #[test]
+    fn matrix_action_guard_rejects_pid_identity_role_and_visibility_drift() {
+        assert!(atspi_target_guard(
+            41,
+            41,
+            "41:app[0]/3:switch:Refresh",
+            "41:app[0]/3:switch:Refresh",
+            "switch",
+            true,
+            true,
+            true,
+            true
+        ));
+        assert!(!atspi_target_guard(
+            42,
+            41,
+            "41:app[0]/3:switch:Refresh",
+            "41:app[0]/3:switch:Refresh",
+            "switch",
+            true,
+            true,
+            true,
+            true
+        ));
+        assert!(!atspi_target_guard(
+            41,
+            41,
+            "41:app[0]/4:switch:Refresh",
+            "41:app[0]/3:switch:Refresh",
+            "switch",
+            true,
+            true,
+            true,
+            true
+        ));
+        assert!(!atspi_target_guard(
+            41, 41, "id", "id", "button", true, true, true, true
+        ));
+        assert!(!atspi_target_guard(
+            41, 41, "id", "id", "switch", true, false, true, true
+        ));
+    }
+
+    #[test]
+    fn settings_map_assertion_preserves_every_unrelated_field() {
+        let before = serde_json::json!({"refreshAllProvidersOnMenuOpen":false,"showTray":false,"refreshFrequency":"5m","opaquePreference":{"future":true}});
+        let expected = expected_toggled_map(&before, "refreshAllProvidersOnMenuOpen").unwrap();
+        assert_eq!(
+            expected,
+            serde_json::json!({"refreshAllProvidersOnMenuOpen":true,"showTray":false,"refreshFrequency":"5m","opaquePreference":{"future":true}})
+        );
+        let changed = serde_json::json!({"refreshAllProvidersOnMenuOpen":true,"showTray":true,"refreshFrequency":"5m","opaquePreference":{"future":true}});
+        assert_ne!(changed, expected);
+    }
+
+    #[test]
+    fn cleanup_gate_requires_app_weston_and_private_home_removal() {
+        assert!(cleanup_confirmed(true, true, true));
+        assert!(!cleanup_confirmed(false, true, true));
+        assert!(!cleanup_confirmed(true, false, true));
+        assert!(!cleanup_confirmed(true, true, false));
     }
 }

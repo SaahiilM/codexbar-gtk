@@ -15,11 +15,17 @@ The chooser's former Recent/Home-place fallback has not yet been ported; when
 the exact synthetic file row is absent from the exposed chooser tree, `select`
 fails closed instead of navigating a different place.
 
-The matrix, Advanced, residual Settings, page-state, Settings, Spend, and update
-check runtime runners are not yet ported. Their native command routes fail
-closed and do not write a pass record. Keep the Python sources until the four
-required private-Weston scenarios pass in Rust with inspected synthetic
-captures. This slice does not establish that evidence.
+`isolated-wayland --scenario matrix-core` is a deliberately bounded live Rust
+scenario. It launches the supplied native binary under private D-Bus and
+rootless Weston with a synthetic HOME/CLI and `GDK_BACKEND=wayland`, then uses
+the Rust AT-SPI proxies to assert the Dashboard route, selected Settings
+General switch and full preference-map persistence, and Spend's pressed
+7-day selection. It captures those three states and checks private process and
+HOME cleanup. It is not the legacy `matrix`: Notifications, Hooks, heatmap
+modes and Sessions coverage remain unported. The legacy Python matrix stays
+available as the evidence reference. `matrix`, Advanced, residual Settings,
+page-state, Settings, Spend, and update-check native runner routes continue to
+fail closed; the unsupported combo diagnostic remains exit 3.
 
 ## Source and hash provenance
 

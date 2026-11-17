@@ -24,6 +24,7 @@ use tokio::time::{sleep, timeout, Instant};
 const MAX_NODES: usize = 10_000;
 const MAX_CHILDREN: usize = 4_096;
 const MAX_DEPTH: usize = 40;
+const WINDOW_ROLES: &[&str] = &["frame", "window", "application"];
 
 fn is_within_tree(identity: &str, root: &str) -> bool {
     identity == root
@@ -53,6 +54,14 @@ fn atspi_target_guard(
 }
 fn cleanup_confirmed(app_reaped: bool, weston_reaped: bool, home_removed: bool) -> bool {
     app_reaped && weston_reaped && home_removed
+}
+fn record_window_candidate(candidates: &mut Vec<String>, identity: &str, role: &str, name: &str) {
+    const MAX_WINDOW_CANDIDATES: usize = 24;
+    const MAX_ACCESSIBLE_NAME: usize = 160;
+    if candidates.len() < MAX_WINDOW_CANDIDATES {
+        let bounded_name: String = name.chars().take(MAX_ACCESSIBLE_NAME).collect();
+        candidates.push(format!("{identity}:{role}:{bounded_name:?}"));
+    }
 }
 
 struct OwnedChild {
@@ -379,7 +388,10 @@ async fn run_matrix_core_private(binary: &Path, artifacts: &Path) -> Result<(), 
     let config = home.join(".config/codexbar-gtk");
     fs::create_dir_all(&config).map_err(|e| e.to_string())?;
     let prefs = config.join("settings.json");
-    let before = serde_json::json!({"refreshAllProvidersOnMenuOpen":false,"showTray":false,"preferredCurrencyCode":"USD"});
+    let mut before = serde_json::Value::Object(codexbar_core::preferences::default_values());
+    before["refreshAllProvidersOnMenuOpen"] = serde_json::Value::Bool(false);
+    before["showTray"] = serde_json::Value::Bool(false);
+    before["preferredCurrencyCode"] = serde_json::Value::String("USD".into());
     fs::write(&prefs, serde_json::to_vec(&before).unwrap()).map_err(|e| e.to_string())?;
     let cli = scratch.join("fake-codexbar");
     fs::write(&cli, "#!/bin/sh\ncase \"$1\" in --version) echo 'synthetic CodexBar';; usage) echo '[{\"provider\":\"codex\",\"source\":\"synthetic\",\"usage\":{\"updatedAt\":\"2026-11-01T12:00:00Z\",\"primary\":{\"usedPercent\":42,\"resetsAt\":\"2026-11-01T18:00:00Z\",\"windowMinutes\":300}}}]';; cost) echo '[{\"provider\":\"codex\",\"currencyCode\":\"USD\",\"totalCost\":12.5,\"totalTokens\":1200,\"sessionCostUSD\":1.25,\"sessionTokens\":100,\"last30DaysCostUSD\":12.5,\"last30DaysTokens\":1200,\"coverage\":{\"priced\":3,\"unpriced\":1},\"provenance\":\"synthetic_history\",\"daily\":[],\"projects\":[],\"models\":[]}]';; *) echo '[]';; esac\n").map_err(|e|e.to_string())?;
@@ -437,7 +449,7 @@ async fn run_matrix_core_private(binary: &Path, artifacts: &Path) -> Result<(), 
     )
     .map_err(|e| e.to_string())?;
     let log = fs::File::create(artifacts.join("weston.log")).map_err(|e| e.to_string())?;
-    let mut west = Command::new(weston);
+    let mut west = Command::new(&weston);
     west.args([
         "--backend=headless",
         "--renderer=pixman",
@@ -445,6 +457,7 @@ async fn run_matrix_core_private(binary: &Path, artifacts: &Path) -> Result<(), 
         "--width=1280",
         "--height=900",
         "--shell=desktop-shell.so",
+        "--debug",
     ])
     .arg(format!("--config={}", config_file.display()))
     .arg("--idle-time=0")
@@ -470,6 +483,7 @@ async fn run_matrix_core_private(binary: &Path, artifacts: &Path) -> Result<(), 
             .unwrap_or(Path::new("/usr/lib/weston"))
             .display()
     );
+    envs.insert("LD_LIBRARY_PATH".into(), ld_path.clone());
     west.env("LD_LIBRARY_PATH", ld_path)
         .env(
             "WESTON_DATA_DIR",
@@ -521,7 +535,7 @@ async fn run_matrix_core_private(binary: &Path, artifacts: &Path) -> Result<(), 
             if persisted!=expected {return Err(format!("Settings changed unexpected preference-map fields: {persisted}"))}
             let sshot=artifacts.join("settings-after-toggle.png"); take_screenshot(&screenshot,&runtime,&envs,&sshot)?;
             gaction(&["page","'spend'"])?;
-            let spend=wait_window(pid,"Usage & Spend",Duration::from_secs(15)).await?;
+            let spend=wait_window(pid,"CodexBar GTK — Usage & Spend",Duration::from_secs(15)).await?;
             gaction(&["spend-range","'7 days'"])?;
             let (range,range_id,pressed)=wait_control(pid,"7 days", &["toggle button"],Duration::from_secs(10)).await?;
             if !pressed {return Err("Spend 7 days control lacks pressed state".into())}
@@ -625,13 +639,17 @@ async fn wait_for_path(path: &Path, duration: Duration) -> Result<(), String> {
 }
 async fn wait_window(pid: u32, title: &str, duration: Duration) -> Result<String, String> {
     let end = Instant::now() + duration;
+    let mut last_error = String::new();
     while Instant::now() < end {
-        if let Ok((_, id, _)) = find_accessible(pid, title, &["frame", "window"], false).await {
-            return Ok(id);
+        match find_accessible(pid, title, WINDOW_ROLES, false).await {
+            Ok((_, id, _)) => return Ok(id),
+            Err(error) => last_error = error,
         }
         sleep(Duration::from_millis(150)).await
     }
-    Err(format!("app PID {pid} did not expose window {title:?}"))
+    Err(format!(
+        "app PID {pid} did not expose window {title:?}; last AT-SPI observation: {last_error}"
+    ))
 }
 async fn wait_control(
     pid: u32,
@@ -678,6 +696,7 @@ async fn find_accessible(
         return Err(format!("AT-SPI registry has no root for PID {pid}"));
     }
     let mut found = Vec::new();
+    let mut window_candidates = Vec::new();
     let mut seen = 0;
     while let Some(n) = q.pop() {
         if seen >= MAX_NODES || n.depth > MAX_DEPTH {
@@ -689,6 +708,9 @@ async fn find_accessible(
             let nm = a.name().await.unwrap_or_default();
             let role = a.get_role_name().await.unwrap_or_default();
             let st = state(&conn, &n.object).await.unwrap_or_default();
+            if !role.is_empty() || !nm.is_empty() {
+                record_window_candidate(&mut window_candidates, &n.identity, &role, &nm);
+            }
             if nm == name
                 && roles.contains(&role.as_str())
                 && st.contains(State::Showing)
@@ -734,8 +756,8 @@ async fn find_accessible(
     }
     if found.len() != 1 {
         return Err(format!(
-            "expected one visible actionable AT-SPI node {name:?} for PID {pid}, found {}",
-            found.len()
+            "expected one visible actionable AT-SPI node {name:?} for PID {pid}, found {}; same-PID accessible sample: {window_candidates:?}",
+            found.len(),
         ));
     }
     Ok(found.remove(0))
@@ -1593,7 +1615,10 @@ async fn wait_nonempty_file(path: &str, duration: Duration) -> Result<(), String
 
 #[cfg(test)]
 mod tests {
-    use super::{atspi_target_guard, cleanup_confirmed, expected_toggled_map, is_within_tree};
+    use super::{
+        atspi_target_guard, cleanup_confirmed, expected_toggled_map, is_within_tree,
+        record_window_candidate, WINDOW_ROLES,
+    };
 
     #[test]
     fn atspi_tree_identity_uses_path_boundaries() {
@@ -1664,5 +1689,29 @@ mod tests {
         assert!(!cleanup_confirmed(false, true, true));
         assert!(!cleanup_confirmed(true, false, true));
         assert!(!cleanup_confirmed(true, true, false));
+    }
+
+    #[test]
+    fn window_diagnostics_bound_candidate_count_and_names() {
+        let mut candidates = Vec::new();
+        let long_name = "x".repeat(200);
+        for index in 0..30 {
+            record_window_candidate(
+                &mut candidates,
+                &format!("app[0]/{index}"),
+                "window",
+                &long_name,
+            );
+        }
+        assert_eq!(candidates.len(), 24);
+        assert!(candidates[0].chars().count() < 200);
+    }
+
+    #[test]
+    fn gtk4_toplevel_role_contract_includes_application_role() {
+        assert!(WINDOW_ROLES.contains(&"frame"));
+        assert!(WINDOW_ROLES.contains(&"window"));
+        assert!(WINDOW_ROLES.contains(&"application"));
+        assert!(!WINDOW_ROLES.contains(&"button"));
     }
 }

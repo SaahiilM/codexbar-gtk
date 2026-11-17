@@ -10,6 +10,7 @@ path = "src/main.rs"
 
 [dependencies]
 atspi = { version = "0.30", default-features = false, features = ["connection", "proxies", "tokio"] }
+codexbar-core = { path = "../rust-core" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"

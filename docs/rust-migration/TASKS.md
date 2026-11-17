@@ -10,21 +10,19 @@ history. A checked box means **verified and merged**, not merely implemented.
 | --- | --- |
 | Goal | Fully native Rust GTK4/libadwaita application with verified packaging and legacy runtime removal. |
 | Current phase | BG passed and U01–U08 implementation merged. UG **NOT PASSED**. By explicit user instruction, BUILD110 makes the repository launcher/installer native by default; C01–CG remain unaccepted. |
-| Last observed merge | PR #112 merged normally at `cffed57d756b025b7bb0d29efb863408febd732d` (build 111). Exact head `bbd07d182d50b2a36d01783af2161a9da14ad278` passed all three checks in run `43953622135`; no reviews, comments or review threads were present. |
-| Active implementation | BUILD115/E218 adds required private-Weston page-state coverage and sanitized retained-error/navigation evidence on `t3/wayland-page-state-harness`. Provisional metadata only; BUILD112 CLI coverage is pending, BUILD113 tool cleanup is ready, and BUILD114 coverage validation is active on peer work. Root serially reconciles release metadata; do not merge unpublished peers here. |
+| Last observed merge | PR #113 merged normally at `5aec9f3d5dedf246457ae17a44229f0d76eef35f` (BUILD112). Exact head `443bb0240b66af011cbcb9b0fdb6ef540d3142e1` passed all three checks in run `43955646572`. |
+| Active implementation | BUILD115/E218 adds required private-Weston page-state coverage and sanitized retained-error/navigation evidence on `t3/wayland-page-state-harness`. BUILD115 metadata remains current after the normal merge of BUILD114 source commit `763d03245b9a63d9cf2e40a51984c37a003d8b4d`, which includes BUILD113 and retains E216/E217. PR #115 remains open: pre-integration run `44116527470` has `tray-dbus` and `python-free-runtime-proof` passed; `test` failed (96 passed, one failed in `cli::tests::cancellation_kills_and_reaps_child`). PR #114 remains open and unmerged; all three checks passed in run `44115397836`. |
 | Installer/runtime verification | E198 records the merged build-95 installed-prefix/Python-free runtime proof. E199 records prior local 13-case activation smoke evidence in a Python-free container; its first attempt lacked `file`, and the portable `od`/`ldd` check passed. These component results do not pass C02 or authorize cutover. |
 | UI acceptance | E195 records one Display action; E200 records seven guarded Settings actions and three tab transitions. Broader Wayland controls/navigation remain open. UG is **NOT PASSED**; Python remains the explicit parity/rollback path under the BUILD110 launcher-default exception. See `UG_GATE.md`. |
-| Next | Root reconciles the unmerged BUILD112–114 peer slices and release metadata, reviews this BUILD115 diff, then publishes it and observes exact-head CI. UG remains NOT PASSED; C gates remain unaccepted. |
+| Next | Root reviews this integrated BUILD115 branch, publishes it on the intended stacked base, and observes exact-head CI. UG remains NOT PASSED; C gates remain unaccepted. |
 
 ### BUILD115/E218 — required Wayland page-state coverage
 
-**Owner/base/status:** branch `t3/wayland-page-state-harness`, based on
-`origin/main` `5aec9f3` (BUILD112); this worktree contains the two page-state
-harness commits atop that base. BUILD115 is provisional because BUILD112 CLI
-coverage is pending, BUILD113 tool cleanup is ready, and BUILD114 coverage
-validation is active on peer work. Do not merge those unpublished peers here;
-root serially reconciles metadata. No push, PR, merge, or exact-head CI result
-is claimed.
+**Owner/base/status:** branch `t3/wayland-page-state-harness`, now normally merged with exact
+BUILD114 source commit `763d03245b9a63d9cf2e40a51984c37a003d8b4d`; BUILD114
+in turn preserves the published BUILD113 stack base. BUILD115 metadata remains
+current. PR #115 is open with checks in progress; PR #114 is open and not
+merged. No push or merge of this BUILD115 branch is claimed.
 
 **Workflow and evidence:** `.github/workflows/rust-core.yml` adds a required
 six-minute `page-state` private-Weston scenario and dedicated `if: always()`
@@ -65,6 +63,63 @@ and mode claims are not established here. Tooltip, pointer, KDE-specific
 behavior and other UG items remain open. UG stays **NOT PASSED**; do not mark
 UG PASS or accept C gates. Python retirement candidacy is independent of this
 UI result.
+
+### BUILD114/E217 — mapped Python assertion retirement
+
+**Owner/status/base:** BUILD114/E217 source commits `e7973fa` (mapped Python
+assertion retirement) and `cb0d2ba` (additional assertion precision) are
+preserved in the normal merge of exact source commit
+`763d03245b9a63d9cf2e40a51984c37a003d8b4d` into BUILD115 branch
+`t3/wayland-page-state-harness`. That source commit includes BUILD113's
+published stack base `3cd02d330b6bdb59e38670168becd62e21a915c1`. PR #115 is open on the stack. Its pre-integration run `44116527470` has
+`tray-dbus` and `python-free-runtime-proof` passed; `test` failed with 96 passed
+and `cli::tests::cancellation_kills_and_reaps_child` failing because its fixture
+did not write a complete child PID. PR #114 remains open and unmerged to main;
+all three checks passed in run `44115397836`. BUILD114 source retains its
+provisional build-114 claim; the integrated branch release metadata remains
+BUILD115.
+
+**Scope and counts:** `rust-backend/tests/legacy_assertion_map.md` maps removed
+methods to Rust tests. The starting two Python modules had 106 test methods
+(104 in `tests/test_app.py`, 2 in `tests/test_python_settings_facade.py`); 27
+were retired (26 app methods and 1 facade method), leaving 79 methods (78 and
+1). The selected assertion groups do not establish application-adapter
+equivalence. The permissive Python CLI reconfiguration contract remains because
+Python accepts a nonexistent configured executable while Rust applies stricter
+validation. The Python startup callback exception contract also remains; its
+missing-binary counterpart belongs to a separate runtime task. Python runtime,
+PyO3, and adapters remain present.
+
+**Observed checks:** inherited local validation reported 318 Python tests with
+22 skipped in default mode and 318 with 0 skipped in Rust-opt-in mode; 92 Rust
+core tests; 97 Rust backend unit tests and 4 integration tests; plus Rust format
+and Clippy checks. The initial backend run had a transient synthetic fixture
+spawn failure; its staging-and-rename correction and follow-up evidence are
+recorded in AUDIT's E214 follow-up. The BUILD115 reconciliation ran its focused page-state harness, metadata, YAML,
+diff, and added-link checks. It did not rerun the default/opt-in Python suites,
+Rust core/backend suites or Clippy; the inherited BUILD114 source evidence
+remains the evidence for those checks.
+
+No global UG change or workflow change was made. This does not establish
+adapter equivalence, Python/PyO3 removal readiness, global UG acceptance, or a
+migration-gate pass. No GUI, host bus, service, authentication, provider, or
+runtime smoke was run for this slice.
+
+**Next:** root reviews and publishes the integrated BUILD115 branch on the
+intended stack, then observes exact-head checks. PR #114 has not merged and UG
+remains **NOT PASSED**; C gates remain open.
+
+### BUILD113/E216 — legacy Python developer preview/smoke tools
+
+BUILD113/E216 removes eight obsolete Python developer preview and B13 smoke
+scripts (1,918 lines) while retaining the Python rollback runtime and active
+parity tests. Its changelog and audit record remain alongside BUILD114/E217.
+The tool-removal slice is published as the base branch
+`t3/legacy-python-tools-cleanup` at `3cd02d330b6bdb59e38670168becd62e21a915c1`,
+open PR #114, stacked on verified main `5aec9f3d5dedf246457ae17a44229f0d76eef35f`.
+PR #114 is not merged, and fresh exact-head CI is not claimed here. See AUDIT
+E216 for the retained tooling, caller scan, checks, and scope limits.
+
 
 ### BUILD112/E215 — Rust CLI service assertion coverage
 

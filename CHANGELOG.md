@@ -9,6 +9,29 @@ does not pass UG or establish full-window pixel parity.
 
 - See migration audit E218 for source/runtime provenance, checks and limits.
 
+## 0.82.0 (114) — 2026-11-16
+
+Retire 27 mapped Python assertion methods from the mixed app and settings
+facade test modules after adding Rust test coverage for their selected domain,
+service and persistence contracts. Keep Python-only reconfiguration and
+startup callback exception contracts, and keep the Python runtime and adapters
+as the transitional path. This does not establish adapter equivalence or pass
+a migration gate.
+
+- See migration audit E217 and `rust-backend/tests/legacy_assertion_map.md` for
+  assertion groups, verification scope and limits.
+
+## 0.82.0 (113) — 2026-11-16
+
+Retire eight legacy Python preview and B13 smoke scripts (1,918 lines). These
+were developer-only tools, not the Python rollback runtime or active parity
+tests. Document the retained native build and UI verification commands; these
+do not establish Python runtime coverage or migration-gate acceptance. UG
+remains **NOT PASSED**.
+
+- See migration audit E216 for the exact paths, caller checks and scope limits.
+
+
 ## 0.82.0 (112) — 2026-11-16
 
 Add assertion-level Rust service coverage for selected CodexBar CLI wrapper

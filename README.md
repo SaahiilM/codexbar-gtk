@@ -166,11 +166,12 @@ instruction, BUILD110 makes the repository launcher/installer native by
 default while UG remains **NOT PASSED** and C01–CG remain unaccepted. This
 launcher-default policy is an exception, not gate completion or host migration.
 BUILD111 moves tray D-Bus CI coverage to the native Rust implementation while
-keeping Python parity tests in the broader suite; see the explicit
-[gate ledger](docs/rust-migration/UG_GATE.md).
-BUILD115 adds required private-Weston page-state CI coverage for a retained
-Spend error and six visible routes. This is a narrow synthetic Wayland result;
-UG remains **NOT PASSED**.
+keeping Python parity tests in the broader suite. BUILD114 retires 27 mapped
+Python assertion methods whose contracts have Rust test coverage; retained
+Python-only compatibility contracts and the adapter runtime remain. BUILD115
+adds required private-Weston page-state CI coverage for a retained Spend error
+and six visible routes. These are narrow scoped changes; UG remains **NOT PASSED**.
+See the explicit [gate ledger](docs/rust-migration/UG_GATE.md).
 
 - [Architecture, source inventory and stage gates](docs/rust-migration/README.md)
 - [Task checklist and current model handoff](docs/rust-migration/TASKS.md)
@@ -359,7 +360,6 @@ Rust controller and uses existing PyO3 module integrations for other ports.
 ```sh
 ./run.sh                                  # run from the checkout
 python3 -m unittest discover -s tests -v  # the test suite
-./tools/preview.py /tmp/preview           # render UI widgets with local state
 ```
 
 ### GTK4 / libadwaita typelibs
@@ -385,11 +385,8 @@ PY
 
 For the explicit Python parity path, without root access run
 `./scripts/bootstrap-deps.sh`. It downloads and unpacks the typelibs/runtime
-libraries into the ignored local `.deps/` directory; `run-python.sh` and
-`tools/preview.py` add those paths automatically. Do not commit `.deps/`.
-The preview needs a working X11/Wayland display; use `xvfb-run -a` for a virtual
-X display if available. The `offscreen` GDK backend is not included in every GTK
-build. Use synthetic CLI data when capturing previews.
+libraries into the ignored local `.deps/` directory; `run-python.sh` adds those
+paths automatically. Do not commit `.deps/`.
 
 ### Native Rust GTK bootstrap
 

@@ -10,11 +10,11 @@ history. A checked box means **verified and merged**, not merely implemented.
 | --- | --- |
 | Goal | Fully native Rust GTK4/libadwaita application with verified packaging and legacy runtime removal. |
 | Current phase | BG passed and U01–U08 implementation merged. UG **NOT PASSED**. By explicit user instruction, BUILD110 makes the repository launcher/installer native by default; C01–CG remain unaccepted. |
-| Last observed merge | PR #112 merged normally at `cffed57d756b025b7bb0d29efb863408febd732d` (build 111). Exact head `bbd07d182d50b2a36d01783af2161a9da14ad278` passed all three checks in run `43953622135`; no reviews, comments or review threads were present. |
-| Active implementation | BUILD112/E215 adds native CLI service assertion coverage. Verified build-111 main was merged normally, preserving the native tray CI and synthetic login fixture correction. Local focused checks passed; fresh exact-head CI pending. Python adapter tests remain because the explicit legacy adapter is still used. |
+| Last observed merge | PR #113 merged at `5aec9f3d5dedf246457ae17a44229f0d76eef35f` (build 112). Exact head `443bb0240b66af011cbcb9b0fdb6ef540d3142e1` passed all three checks in run `43955646572`. |
+| Active implementation | BUILD113/E216 retires eight legacy-only developer preview tools (1,918 lines), preserving active runtime/parity tests. Verified build-112 main merged normally. Fresh exact-head CI pending. |
 | Installer/runtime verification | E198 records the merged build-95 installed-prefix/Python-free runtime proof. E199 records prior local 13-case activation smoke evidence in a Python-free container; its first attempt lacked `file`, and the portable `od`/`ldd` check passed. These component results do not pass C02 or authorize cutover. |
 | UI acceptance | E195 records one Display action; E200 records seven guarded Settings actions and three tab transitions. Broader Wayland controls/navigation remain open. UG is **NOT PASSED**; Python remains the explicit parity/rollback path under the BUILD110 launcher-default exception. See `UG_GATE.md`. |
-| Next | Publish BUILD112 and observe exact-head CI before normal merge. BUILD113 legacy developer-tool retirement is queued separately. Rust repository default; UG NOT PASSED and C gates unaccepted. |
+| Next | Publish and merge BUILD113 after exact-head checks, then integrate prepared builds 114 and 115 and the native runtime retirement candidate. Rust is default; UG and C gates remain unaccepted. |
 
 ### BUILD112/E215 — Rust CLI service assertion coverage
 
@@ -122,6 +122,31 @@ required CI.
 **Next:** root reviews the local diff and focused checks, commits/publishes the
 slice, then observes exact-head CI. Keep UG and all C gates unaccepted until
 their recorded requirements are actually met.
+
+### BUILD113/E216 — retire legacy Python developer preview/smoke tools
+
+**Owner/status:** branch `t3/legacy-python-tools-cleanup`; provisional BUILD113
+because BUILD111/E214 tray and BUILD112/E215 CLI assertion slices are pending
+root reconciliation. Local implementation and scoped checks are recorded in
+AUDIT E216. Root integrates this local commit after those serial peer merges and
+updates this handoff only with observed merge/CI evidence. No Python runtime,
+rollback entrypoint, active parity test, or PyO3 integration is removed. This
+does not pass UG or any cutover gate and makes no claim of native coverage for
+the Python runtime.
+
+**Scope:** remove exactly eight developer-only scripts under `tools/` (the
+three `gtk_smoke_b13*.py` files plus `preview.py`, `preview_b09_synthetic.py`,
+`preview_b10_controller.py`, `preview_currency.py`, and
+`preview_notifications.py`). Their 1,918 source lines have no current callers.
+`tools/README.md` documents the retained native build, private X11 and private
+Wayland verification commands and their limits. The root README's obsolete
+preview command and setup text are removed; its surrounding BUILD110 installer
+and Python rollback guidance is retained.
+
+**Next:** root reconciles after E214/E215, updates the provisional build number
+if serial integration requires it, and records actual publication and exact-head
+CI status. Python rollback and active Python parity tests remain in place.
+
 
 PR #103 correction: run `42918673780` on `7e16a47` passed tray and the full
 Python-free/activated command-target proof. The Rust-opt-in suite failed on a

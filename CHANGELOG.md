@@ -1,3 +1,9 @@
+## 0.82.0 (118) — 2026-11-17
+
+Replace Python-based Cargo artifact resolution and service/runtime proof helpers with a locked Rust CI tool. Add strict helper formatting, tests and Clippy to CI. Keep the four remaining Python harness modules running until their UI automation ports are complete. This workflow/tooling change does not establish new application runtime behavior or pass UG/C gates.
+
+- See migration audit E221 for implementation, actual helper tests, runtime proof scope and limits.
+
 ## 0.82.0 (117) — 2026-11-17
 
 Delete the retired Python reference archive (58 Python files, 16,911 lines)

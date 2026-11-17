@@ -8145,3 +8145,96 @@ update-check actions), KDE input/placement/keyboard parity, and repeatable
 local panel focus/SNI evidence; the exact row-by-row status remains in
 [`UG_GATE.md`](UG_GATE.md). C01–CG remain unaccepted. Root reviews and publishes
 this focused BUILD117 cleanup; no BUILD118 is allocated by this slice.
+
+### E221 — BUILD118 Rust CI helper and Python resolver migration
+
+**Owner/base/status:** local branch `t3/rust-ci-no-python`, based on fetched
+`origin/main` `93695ac062818a21f7f38ef67765c0c6fc55774e` (PR #118; prior
+exact head `f796b968670e7bbcc28081ba110414f13c405a19`, run `44130179179`, all
+three required checks passed, no reviews/comments/threads). This local BUILD118
+candidate is unpushed and unmerged. No result for its future PR exact head is
+claimed. BUILD118 metadata is `0.82.0 (118)`.
+
+**Implementation:** added the locked `rust-ci-tools` crate, its compiled
+`codexbar-ci-tool` integration tests and the shell wrapper
+`scripts/native/no-python/cargo-artifact`. The three CI Cargo artifact lookups
+now call that wrapper instead of the deleted Python resolver. The
+Python-free-runtime job builds the helper on Ubuntu 24.04 before resolver use,
+then exports its path for the wrapper. This keeps the helper ABI aligned with
+the pinned Ubuntu 24.04 Docker proof image; it is not a general portable-binary
+claim. Rust helper formatting, locked tests, and strict all-target/all-feature
+Clippy are now CI steps, and the push path filter includes `rust-ci-tools/**`
+and the resolver wrapper. Existing Python-free runtime proof, SVG decode,
+settings/history validation, activation command-target proof, retained X11 and
+private Wayland smokes, and artifact upload steps are preserved. All four
+remaining Python harness modules continue to run through
+`scripts/test-native-harness-units.sh`; they remain automation dependencies
+until the corresponding UI automation ports land. No UI files or other Rust
+crates changed in this slice.
+
+**Observed local checks:**
+
+- `cargo fmt --manifest-path rust-ci-tools/Cargo.toml -- --check` — passed.
+- `cargo test --manifest-path rust-ci-tools/Cargo.toml --locked` — 8 actual
+  process-level integration tests passed. They exercised exact Cargo artifact
+  selection, malformed/missing/duplicate artifact rejection, quoted desktop
+  and service target parsing (including paths with spaces), wrong-hash,
+  install-failure and absent-runtime rejection, required-action failure,
+  bounded child cleanup/reaping, and synthetic settings/history validation.
+- `cargo clippy --manifest-path rust-ci-tools/Cargo.toml --all-targets
+  --all-features -- -D warnings` — passed.
+- `bash -n` on the wrapper, service target adapter, Docker container runner,
+  no-Python smoke and service smoke — passed. `git diff --check` passed.
+- Workflow YAML parsing and structural assertions passed: exactly three
+  resolver wrapper calls, Rust helper path filter, and format/test/Clippy CI
+  commands are present; no deleted Python resolver invocation remains in the
+  workflow. The version metadata regression test on root build 118 passed 1/1.
+- `scripts/test-native-harness-units.sh` — all four remaining top-level Python
+  harness modules passed. No deleted Python test module was restored or called.
+
+**Docker proof on the BUILD118 candidate:** the first local
+`smoke-native-no-python.sh` invocation used relative artifact paths and failed
+before Docker could mount/start the container; that attempt is not counted as
+runtime evidence. The rerun with absolute paths passed in
+`/tmp/codexbar-build118-no-python-evidence-2` using image
+`sha256:ff4f45f1f807ee64baa9129c49cd9182e29d5b267337d6bbd8b8dfdd6a96a3ff`.
+The locally built BUILD118 debug artifact hash was
+`a4cff635ab1f7008cc0cc0cc94d8a0d6e3a8a28e92f9c3d91d2896bebc7b461b`; release
+hash was `ff968abf9405c3a2bf77525bdf755b5cf7a0947c86fe890fc9068f9c51373cf6`.
+The Rust helper source digest recorded by the runner was
+`f6ebfc44f1c4a4e585e13c91e83c5a0cbfd722400efcb7c427ff6d1725a1f98b`.
+Docker observed same-hash debug install/runtime, release install/runtime, and
+debug rollback; app D-Bus owner/PID/path/hash, refresh and clean quit; no
+Python/libpython/PyO3/Rust-core linkage; the installed SVG loader and an actual
+host-built SVG decode/dimension test; and exact synthetic settings plus
+semantically valid seeded history. `result.txt` says PASS for this local
+installed-prefix prototype. The container used `--network none`, Xvfb and
+private D-Bus. It does not claim C02 acceptance.
+
+The separately rerun activation proof passed in
+`/tmp/codexbar-build118-service-evidence`: **build 99 → build 118 → build 99**.
+Build-99 source is `41d2fcf982aef52cd86a64cb769176b494abb63c`; its release
+artifact hash was `2d89ca304cd014bc4e94338185c2ee967678cd5b3125beb5ea0aad337d1c0520`.
+The BUILD118 candidate app was built from base commit
+`93695ac062818a21f7f38ef67765c0c6fc55774e`, with local source-tree digest
+`ed2468bd05694b8357a1c2f08a095b36dee67606b9b78f2afb48a5a67d4cda45`, local
+diff digest `111b9e08d2bf5122ee1ab5663b1d69fe2bf0e5a96f6ba605e509797b8af4c5c9`,
+and release artifact hash `ff968abf9405c3a2bf77525bdf755b5cf7a0947c86fe890fc9068f9c51373cf6`.
+Both activation targets were parsed and launched with observed PID/executable/
+hash, refresh and clean quit; rollback restored the build-99 desktop target,
+retained a user-edited service file, restored synthetic activation backup, and
+preserved settings/history bytes. The private container had no systemd manager:
+this verifies command-target/installer behavior, not service-manager lifecycle.
+The exact source/artifact identities are in that evidence directory's
+`source-sha256.txt`.
+
+These Docker runs are new local BUILD118 runtime evidence because the app was
+rebuilt with version 118 and the changed Rust helper was exercised. They are
+not CI, merge, host GUI, live Wayland, KDE, real systemd, provider/network,
+authentication, UG, or C-gate results. The retained workflow UI jobs were not
+rerun locally in this helper slice; their prior merged evidence remains
+historical for the app revisions it tested. No private Weston or host GUI was
+used. A remaining Python harness dependency is the four active unit modules;
+continue migrating those only with their UI automation ports. Precise next step:
+root reviews this scoped candidate, publishes it, and observes exact-head CI;
+keep UG **NOT PASSED** and C01–CG unaccepted.

@@ -1,21 +1,24 @@
 # Native Rust migration
 
-## Current status — BUILD117 source cleanup
+## Current status — BUILD118 Rust CI helper migration
 
 BUILD116 retired the active Python application runtime, PyO3 bridge, and Python
-launch/install/build paths. BUILD117 removes the 58-file / 16,911-line Python
-reference archive (its recorded source snapshot was `52b8b11`). Synthetic JSON
-fixtures remain in `tests/fixtures/`; active Python scripts and top-level tests
-remain as native application automation. The concise source and coverage note
-is [`tests/reference/README.md`](../../tests/reference/README.md).
+launch/install/build paths. BUILD117 removed the retired Python source archive.
+BUILD118 replaces Python artifact/service/runtime proof resolvers with the
+`rust-ci-tools` binary and shell wrapper. The four remaining active Python
+harness modules continue to run until their UI automation ports are complete.
+The tool is built on Ubuntu 24.04, matching the pinned Docker proof image ABI;
+this is not a general portable-binary claim. Synthetic fixtures remain in
+`tests/fixtures/`. See E221 for checks, runtime proof provenance and limits.
 
 PR #117 merged at `677135c4bcffcdf56c5bd5c913c11ee294e229fc`; exact head
 `f45c01a9139a891e54495b4b62e6f7ee89a95c2a` passed all three required checks
 (run `44125566585`), with no reviews, comments, or review threads. The verified
 X11/Wayland, installer and Python-free runtime evidence belongs to PR #117 and
 BUILD116; deleting the archive does not establish new runtime behavior or pass
-UG, C01, C02, C03, or CG. See current handoff and E220 for this source-cleanup
-slice. Remaining migration history below is preserved as historical evidence.
+UG, C01, C02, C03, or CG. See current handoff and E221. Prior runtime evidence belongs to earlier commits
+and is not new BUILD118 runtime evidence. Remaining migration history below is
+preserved as historical evidence.
 
 **Approved destination:** a Rust GTK4/libadwaita application with no Python
 runtime, PyO3 bridge, or PyGObject dependency in the shipped application.

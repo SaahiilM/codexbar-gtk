@@ -13,8 +13,8 @@ if ((${#modules[@]} == 0)); then
   exit 1
 fi
 
-# Discover every active top-level unit module. Python application/parity tests
-# live below tests/reference/python/ and are intentionally outside this search.
+# Discover every active top-level unit module. Historical application/parity
+# tests were removed from this tree; retained modules are automation harnesses.
 for module in "${modules[@]}"; do
   pattern="${module##*/}"
   python3 -m unittest discover -s tests -p "$pattern" -v

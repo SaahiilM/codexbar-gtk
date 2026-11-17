@@ -8092,3 +8092,56 @@ PR115 predecessor and its coverage peer. No runtime proof here establishes
 UG, C01–CG, activation/service/autostart, or full archive deletion. Root reviews
 this clean BUILD116 tree, then publishes the retirement PR and observes its
 exact-head CI. No push, PR allocation, or watch was performed by this work.
+
+### E220 — 2026-11-17: final retired-Python source cleanup
+
+**Owner/base/status:** local branch `t3/delete-python-reference-archive`,
+based on the normal fast-forward to verified `origin/main`
+`677135c4bcffcdf56c5bd5c913c11ee294e229fc` (PR #117). BUILD117/E220 is a
+source/docs cleanup candidate for root review; no cleanup PR, push, merge, or
+new CI result is claimed. Current version metadata is `0.82.0 (117)`.
+
+**Observed prior integration:** PR #117 merged at
+`677135c4bcffcdf56c5bd5c913c11ee294e229fc`; its exact head
+`f45c01a9139a891e54495b4b62e6f7ee89a95c2a` passed `test`, `tray-dbus`, and
+`python-free-runtime-proof` in Actions run `44125566585`. The PR had no reviews,
+comments, or review threads. Its X11/Wayland, installer and Python-free runtime
+evidence verifies the BUILD116 native application state, not new UI behavior or
+UG/C-gate acceptance in this source-cleanup slice.
+
+**Source cleanup and provenance:** deleted the retired 58-file Python source
+and parity archive (16,911 lines) from its last recorded tree at `52b8b11`
+(`tests/reference/python/legacy/codexbar_gtk/` and
+`tests/reference/python/legacy/test_*.py`; before retirement, source paths were
+`codexbar_gtk/` and `tests/`). Deleted four one-off manual Python debug tools,
+349 lines, from root-reviewed peer change `1d368dcc402b26d9e2206d3adc450716f0e1ac63`;
+its parent is this branch base. The peer change was cherry-picked as
+`7b00677` with its author, authored date and subject preserved. Total deletion
+is 62 Python files / 17,260 lines. The concise
+[`tests/reference/README.md`](../../tests/reference/README.md) retains source
+history/recovery provenance, behavior policy decisions and native coverage
+pointers; `tools/README.md` retains native commands and recovery instructions.
+Synthetic JSON fixtures remain in `tests/fixtures/`. All seven active top-level
+Python test modules and active scripts remain test automation for the native
+application; none is an application runtime.
+
+**Checks on this candidate:**
+
+- `cargo test --manifest-path rust-gtk/Cargo.toml --locked version_metadata_tracks_the_root_version_file` — 1 passed; confirms VERSION build 117 and README display.
+- `./scripts/test-native-harness-units.sh` — 121 passed across 7 active modules, no failures or skips, including page-state harness coverage.
+- Base-tree accounting asserted 58 archived Python files / 16,911 lines plus 4 debug tools / 349 lines, totaling 62 / 17,260. The deleted debug tools have no CI/script/test callers; active source/test roots have no imports or callers for the deleted Python application/PyO3 runtime. No current launcher, docs, or harness comment points at the removed archive. Synthetic fixtures are unchanged.
+- `git diff --check` — passed.
+
+No Rust behavior, native runtime, installer, UI or test behavior changed, so the
+full Rust core/backend suite, installer/runtime proofs and X11/Wayland smokes
+were not rerun. The merged PR #117 evidence above remains the runtime evidence
+for the unchanged native app. No host desktop, bus, service, provider HTTP or
+authentication was used.
+
+**Remaining gate state and next step:** UG remains **NOT PASSED**; deleting the
+archive is not UI acceptance. Open evidence still includes the Wayland action
+matrix (including remaining Settings combos and pages, test-notification and
+update-check actions), KDE input/placement/keyboard parity, and repeatable
+local panel focus/SNI evidence; the exact row-by-row status remains in
+[`UG_GATE.md`](UG_GATE.md). C01–CG remain unaccepted. Root reviews and publishes
+this focused BUILD117 cleanup; no BUILD118 is allocated by this slice.

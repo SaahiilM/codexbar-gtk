@@ -3,8 +3,9 @@
 `rust-core` contains shared domain types, deterministic policies, formatting,
 history, and provider data used by the native Rust GTK application. The crate
 does not depend on Python or PyO3. Historical Python adapters and parity tests
-are retained under `tests/reference/python/` and are not shipped or executed by
-the native application.
+are available from Git history and are not shipped or executed by the native
+application. See [`tests/reference/README.md`](../tests/reference/README.md) for
+the last retained source commit and native coverage pointers.
 
 ## Local checks
 

@@ -1,3 +1,15 @@
+## 0.82.0 (117) — 2026-11-17
+
+Delete the retired Python reference archive (58 Python files, 16,911 lines)
+and four manual Python desktop debug tools (349 lines): 62 files / 17,260
+Python lines total. The active Python application runtime was already removed
+in BUILD116. Keep synthetic JSON fixtures and active Python test/automation
+harnesses, which exercise the native application. This source cleanup does not
+pass UG or C01–CG.
+
+- See migration audit E220 for source provenance, retained coverage pointers,
+  checks and limits.
+
 ## 0.82.0 (116) — 2026-11-17
 
 Retire the active Python application runtime, PyO3 bridge, and Python

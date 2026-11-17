@@ -1,12 +1,35 @@
 # Native GTK verification tools
 
 The legacy Python preview and B13 smoke helpers in this directory have been
-retired. They were developer previews and synthetic UI smoke tools, not the
-Python rollback runtime or its active parity tests. Their source remains
-recoverable from Git history. The retained Python runtime and parity suite are
-still separate from the native UI checks below; these commands do not establish
-Python runtime coverage or claim native/Python test equivalence. UG remains
-**NOT PASSED** until its documented gate is completed.
+retired. The manual Python desktop-debug utilities `activate_window.py`,
+`focus_window.py`, `send_key.py`, and `sni_probe.py` are retired as well. They
+were one-off developer tools and have no current automation callers. Their
+source remains recoverable from Git history (see below).
+
+The native application runtime is Rust. Some active test and automation
+harnesses still use Python; those scripts remain in `scripts/` and are not
+application runtime dependencies. Native UI checks below do not establish
+Python application runtime coverage or claim native/Python test equivalence.
+UG remains **NOT PASSED** until its documented gate is completed.
+
+## Retained native commands
+
+Build and launch the native app with:
+
+```sh
+./scripts/build-native.sh
+./run.sh
+```
+
+The focused native UI checks are listed below. Other retained checks include
+the private-session tray protocol test, active Python harness unit suite, and
+the no-Python runtime proof:
+
+```sh
+./scripts/test-native-tray-dbus.sh
+./scripts/test-native-harness-units.sh
+./scripts/smoke-native-no-python.sh --artifact rust-gtk/target/native/codexbar-gtk-native
+```
 
 ## Build
 
@@ -59,3 +82,18 @@ python3 scripts/test-native-wayland-isolated.py \
 Other supported scenarios are `advanced` and `settings-residual`. The
 `settings-combo-diagnostic` mode records an unsupported historical mapping and
 exits nonzero; it is diagnostic output, not a passing UI smoke.
+
+## Recovering a retired utility
+
+Find its deletion commit, then inspect or restore its last version from the
+parent commit:
+
+```sh
+git log --all --diff-filter=D --format='%H %s' -- tools/activate_window.py
+git show <deletion-commit>^:tools/activate_window.py
+git restore --source=<deletion-commit>^ -- tools/activate_window.py
+```
+
+Replace the path with `tools/focus_window.py`, `tools/send_key.py`, or
+`tools/sni_probe.py` as needed. Review restored manual utilities before using
+them; restoration does not make them supported automation interfaces.

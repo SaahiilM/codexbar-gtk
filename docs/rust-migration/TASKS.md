@@ -10,20 +10,21 @@ history. A checked box means **verified and merged**, not merely implemented.
 | --- | --- |
 | Goal | Fully native Rust GTK4/libadwaita application with verified packaging and legacy runtime removal. |
 | Current phase | Active Python application/PyO3 runtime retirement is the BUILD116/E219 candidate. UG remains **NOT PASSED** and C01–CG remain unaccepted; this candidate does not claim cutover-gate acceptance. |
-| Last observed merge | PR #114 merged normally at `73c2b6f4f61b61642051c10d29e6ac48e266db91` (BUILD113). Its exact head `3cd02d330b6bdb59e38670168becd62e21a915c1` passed all three checks in run `44115397836`. PR #113 was previously merged at `5aec9f3d5dedf246457ae17a44229f0d76eef35f`. |
-| Active implementation | BUILD116/E219 normally merges latest published `origin/t3/wayland-page-state-harness` at `c755179a4feb863be6458f4b3fd7b0bc1a4d692e` and retires the active Python runtime while retaining the transitional archive. Eight support-retired tools remain deleted. No PR is allocated or published. |
-| Dependency follow-up | Root published PR115 cancellation-fixture diagnostic fix `b6f24702fff991127d3e026ab02bcdd18221f451` and propagated it normally into PR116 head `c755179a4feb863be6458f4b3fd7b0bc1a4d692e`. It waits for the PID file or test task completion and emits typed early-failure diagnostics. The original failure was not reproduced or attributed. No new CI pass is claimed; fresh checks on PR115/116 are required. |
+| Last observed merge | PR #116 (BUILD115) merged normally at `271b7d4db2be4bc4ba348195eb30b0b8f53c572f`, now `origin/main`. PR #115 (BUILD114) merged at `04849da679756ad2aa5d8047e163994169144b35`. Both exact heads passed all three required checks; see E219. |
+| Active implementation | Local BUILD116/E219 candidate on `t3/retire-python-runtime` includes normal merges of PR116 head `c755179a4feb863be6458f4b3fd7b0bc1a4d692e` and verified `origin/main` `271b7d4db2be4bc4ba348195eb30b0b8f53c572f`. It retires the active Python runtime and retains a 58-file / 16,911-line transitional archive. No PR is allocated or published. |
+| Dependency follow-up | Root published PR115 cancellation-fixture diagnostic fix `b6f24702fff991127d3e026ab02bcdd18221f451`; PR115 and PR116 then merged normally. Runs `44119037409` and `44119123748` passed all three required jobs on exact heads. The original failure was not reproduced or attributed. No pending PR115/116 dependency remains. |
 | Installer/runtime verification | E219 records this branch's private Python-free installed-runtime and default installer/launch lifecycle evidence. Prior E198/E199 proofs remain component evidence; they do not pass C02 or authorize cutover. |
 | UI acceptance | E218 retains the narrow page-state evidence; broader Wayland controls/navigation remain open. UG is **NOT PASSED**. See `UG_GATE.md`. |
-| Next | Root reviews this unpushed integration and observes fresh checks on updated PR115/116 before publication/merge decisions. Do not claim integration CI success from peer runs. UG remains NOT PASSED; C gates remain unaccepted. |
+| Next | Root reviews the local BUILD116 candidate and publishes the runtime-retirement PR. No CI result exists for this unpushed candidate. UG remains NOT PASSED; C gates remain unaccepted. |
 
 ### BUILD116/E219 — active Python runtime retirement integration
 
-**Owner/base/status:** local branch `t3/retire-python-runtime`, normally merged with
-latest published `origin/t3/wayland-page-state-harness` at
-`c755179a4feb863be6458f4b3fd7b0bc1a4d692e`. This includes root's normal
-propagation of PR115 correction `b6f24702fff991127d3e026ab02bcdd18221f451`.
-It is an unpushed BUILD116 review candidate. No PR allocation, push, exact-head
+**Owner/base/status:** local branch `t3/retire-python-runtime`, with normal merge
+commits for published PR116 head `c755179a4feb863be6458f4b3fd7b0bc1a4d692e`
+and verified `origin/main` `271b7d4db2be4bc4ba348195eb30b0b8f53c572f`.
+The merged stack includes root's PR115 correction
+`b6f24702fff991127d3e026ab02bcdd18221f451`. It is an unpushed BUILD116
+review candidate. No PR allocation, push, exact-head
 CI, merge, or gate pass is claimed. Root owns publication.
 
 **Scope:** retire the active Python application package, PyO3 crate, and Python
@@ -45,16 +46,18 @@ harness discovery, and private installed-runtime/default launch proofs. UI
 smoke scope, actual binary source/build SHA, skips, and unrun checks are stated
 there.
 
-**Dependency/next:** root published PR115's early-task-failure diagnostics and
-normal merge-propagated them into PR116. The supplied correction did not
-reproduce or attribute the original failure. Do not edit that test concurrently.
-Fresh checks for PR115 and PR116 are still required; root owns the next remote
-publication. The default Wayland matrix, Advanced/residual Settings, X11
-Settings, native tray/core/backend/GTK/fmt/Clippy, all positive ignored GTK
-checks, default launch/install, and Python-free installed-runtime lifecycle are
-explicit verification targets for this candidate.
+**Dependency/next:** PR115 merged normally at
+`04849da679756ad2aa5d8047e163994169144b35`; its exact corrected head
+`b6f24702fff991127d3e026ab02bcdd18221f451` passed all three jobs in run
+`44119037409`. PR116 merged at `271b7d4db2be4bc4ba348195eb30b0b8f53c572f`;
+its exact head `c755179a4feb863be6458f4b3fd7b0bc1a4d692e` passed all three jobs
+in run `44119123748`. The original cancellation fixture failure was not
+reproduced or attributed. Root reviews this local candidate, then publishes its
+runtime-retirement PR. No CI pass is claimed for BUILD116.
 
 ### BUILD115/E218 — required Wayland page-state coverage
+
+Historical status and checks below reflect the source entry time; PR closeout is recorded in E219.
 
 **Owner/base/status:** branch `t3/wayland-page-state-harness`, now normally merged with exact
 BUILD114 source commit `763d03245b9a63d9cf2e40a51984c37a003d8b4d`; BUILD114

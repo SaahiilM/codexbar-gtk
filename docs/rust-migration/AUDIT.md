@@ -7986,3 +7986,109 @@ replacement CI run was performed. No exact-head CI success is claimed.
 **Next:** root reviews these worktree changes, updates PR #115 while retaining
 PR #114 as its unmerged base, and observes the replacement exact-head result.
 UG remains **NOT PASSED** and C gates remain unaccepted.
+
+
+### E219 — BUILD116 active Python runtime retirement integration
+
+**Owner/base/status:** local branch `t3/retire-python-runtime`. The normal merge
+of published PR116 source `c755179a4feb863be6458f4b3fd7b0bc1a4d692e` is commit
+`e77b4584e92de6e08fbf3aa8fbaad6aea07782b3`. The normal merge of verified
+`origin/main` `271b7d4db2be4bc4ba348195eb30b0b8f53c572f` is local commit
+`52b8b11bb922ed39ec8c74496138bc129b552f8a`; its tree is
+`a87f149a798eb330b4ce152d920f94addae224ff`, identical to the prior merge
+commit's tree. The branch is clean and unpushed. It carries BUILD116 metadata;
+no runtime-retirement PR, exact-head CI result, or gate pass is claimed. The
+user explicitly authorized removal of the active Python runtime while keeping
+UG and C01–CG unaccepted.
+
+**Peer closeout observed:** PR #115 (BUILD114) merged normally at
+`04849da679756ad2aa5d8047e163994169144b35`; its exact head was
+`b6f24702fff991127d3e026ab02bcdd18221f451`. Run `44119037409` passed
+`tray-dbus`, `test`, and `python-free-runtime-proof`. PR #116 (BUILD115) merged
+normally at `271b7d4db2be4bc4ba348195eb30b0b8f53c572f`, now main; its exact
+head was `c755179a4feb863be6458f4b3fd7b0bc1a4d692e`. Run `44119123748` passed
+all three required jobs. Its `test` job completed the default private-Wayland
+matrix, Advanced and residual Settings, page-state navigation/retained Spend
+error, X11 display checks and Settings smoke, native installer smoke, and
+launcher checks. The page-state Wayland step succeeded. Both PR records had no
+reviews, comments, or review threads. These are results for the merged peer
+heads, not for the local BUILD116 candidate.
+
+Root's PR115 correction is test-only: the cancellation fixture now waits for
+its PID file or the test task's completion and reports sanitized typed early
+failure diagnostics. It changes no production retry/timeout behavior. The
+supplied original failure was not reproduced or attributed. The corrected
+`cli::tests::cancellation_kills_and_reaps_child` passed in the local integrated
+backend run; that does not attribute the earlier event.
+
+**Retirement disposition:** active `codexbar_gtk/`, `rust-python/`,
+`run-python.sh`, `scripts/install-python.sh`, `scripts/build-rust-core.sh`, and
+Python dependency-bootstrap paths are removed from the current runtime and
+installer setup. `VERSION` is the sole project build source and the native GTK
+metadata check reads it directly. The archived `version.py` is historical and
+was not updated. Default repository launch/install paths remain native. The
+archive retains 58 Python files / 16,911 lines under
+`tests/reference/python/`; it is transitional review material, not a package,
+CI test root, runtime fallback, rollback mechanism, or completed cleanup. The
+eight support-retired preview/GTK smoke files remain absent, including from the
+archive. The per-file crosswalk preserves named native coverage and explicitly
+states legacy-wrapper-only/retired assertions and remaining gaps. Active test
+discovery is restricted to every top-level `tests/test_*.py` harness module;
+no active test imports the archived application.
+
+**Local checks on integrated tree (version 0.82.0 build 116):**
+
+- `cargo test --manifest-path rust-core/Cargo.toml --locked` — 92 passed.
+- `cargo test --manifest-path rust-backend/Cargo.toml --locked` — 99 unit
+  tests and 4 integration tests passed, including the cancellation test and
+  the early task-failure diagnostic test.
+- `dbus-run-session -- cargo test --manifest-path rust-gtk/Cargo.toml --locked`
+  — 41 passed, 5 ignored (3 display-required unit tests, the ignored
+  `a11y_assets` test and the negative SVG-loader precondition); no failures.
+  A first invocation without `dbus-run-session` failed only the private-bus
+  tray assertion; the exact private-session command passed.
+- `scripts/test-native-tray-dbus.sh` — 5 passed on a private D-Bus session.
+- All 4 positive ignored GTK checks passed in the Python-free Xvfb runtime
+  container: provider artwork decode fallback, accessibility/artwork fallback,
+  rendered warning/quota content, and the empty-dashboard Settings action. The
+  last action check was rerun in a fresh container after a grouped Xvfb startup
+  stalled; it passed. The negative missing-SVG-loader check was correctly left
+  unrun because its precondition was unmet (the loader is present).
+- `scripts/test-native-harness-units.sh` — 121 passed across 7 modules, no
+  failures or skips; this discovers all active top-level harness files and
+  excludes `tests/reference/python/`.
+- `cargo fmt` checks for core/backend/GTK and strict all-target Clippy for all
+  three crates passed.
+- Debug and release binaries built with `scripts/build-native.sh`, one Cargo
+  job and fresh target `/tmp/codexbar-build116-target`. Build source commit was
+  `52b8b11bb922ed39ec8c74496138bc129b552f8`; root `VERSION` was `0.82.0 (116)`.
+  Debug SHA-256:
+  `939486be4715aa413a0ff55cf9152737a9589c0b291b566c945098710af63b0b`;
+  release SHA-256:
+  `93c7d4fcc323a5c0588fd1cbb0a76d8211454daf4a0c659a06230f74e22f8406`.
+- `scripts/test-run-native.sh` passed native launcher selection, argv forwarding,
+  build fallback, and fail-closed errors. The default `scripts/install.sh`
+  wrapper installed the release artifact under a temporary HOME/prefix; SHA and
+  manifest matched, then uninstall removed it cleanly.
+- `scripts/smoke-native-no-python.sh --require-docker` passed with the current
+  debug/release artifacts and installer source. In a network-disabled
+  `codexbar-no-python:smoke` container it verified debug install, release
+  install, debug rollback; D-Bus name/PID/executable/hash; CLI refresh; Settings
+  and About windows; successful quit; and settings/history preservation. The
+  app PID mapped no libpython, PyO3, or Rust-core shared library; Python and
+  libpython were absent. This is local installed-runtime component evidence,
+  not C02 acceptance.
+- `git diff --check` passed. No host GUI, host session bus, host service,
+  authentication, or provider HTTP was used. Host Xvfb and private Weston were
+  unavailable; the merged PR116 CI run above supplies X11 Settings and the
+  default/Advanced/residual/page-state Wayland evidence. The GTK positive
+  display tests were exercised in the isolated Xvfb container; the negative SVG
+  test remained skipped because the required missing-loader precondition was not
+  met.
+
+**Limits/next:** no full Python application suite was run after its runtime and
+test package were archived; the two-mode Python results belong to the completed
+PR115 predecessor and its coverage peer. No runtime proof here establishes
+UG, C01–CG, activation/service/autostart, or full archive deletion. Root reviews
+this clean BUILD116 tree, then publishes the retirement PR and observes its
+exact-head CI. No push, PR allocation, or watch was performed by this work.

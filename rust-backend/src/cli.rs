@@ -235,14 +235,19 @@ impl CliService {
         }
 
         let mut child = command.spawn().map_err(|error| {
-            CliError::new(
+            let cli_error = CliError::new(
                 if error.kind() == std::io::ErrorKind::NotFound {
                     CliErrorKind::NotFound
                 } else {
                     CliErrorKind::Spawn
                 },
                 operation,
-            )
+            );
+            #[cfg(test)]
+            {
+                tests::record_test_spawn_error(&self.executable, error.raw_os_error());
+            }
+            cli_error
         })?;
         let process_group_id = child.id();
         let stdout = child.stdout.take().expect("stdout was piped");
@@ -710,6 +715,26 @@ mod tests {
     };
     use tokio::sync::watch;
 
+    static TEST_SPAWN_ERRORS: std::sync::Mutex<Vec<(PathBuf, Option<i32>)>> =
+        std::sync::Mutex::new(Vec::new());
+
+    pub(super) fn record_test_spawn_error(path: &Path, errno: Option<i32>) {
+        TEST_SPAWN_ERRORS
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .push((path.to_path_buf(), errno));
+    }
+
+    fn take_test_spawn_error(path: &Path) -> Option<i32> {
+        let mut errors = TEST_SPAWN_ERRORS
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        errors
+            .iter()
+            .position(|(candidate, _)| candidate == path)
+            .and_then(|index| errors.remove(index).1)
+    }
+
     static NEXT_ID: AtomicU64 = AtomicU64::new(0);
     static PROCESS_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
@@ -727,9 +752,11 @@ mod tests {
             ));
             fs::create_dir_all(&dir).unwrap();
             let executable = dir.join("fake-cli");
+            let staged = dir.join("fake-cli.tmp");
             let script = script.replace("{DIR}", dir.to_string_lossy().as_ref());
-            fs::write(&executable, format!("#!/bin/sh\n{script}\n")).unwrap();
-            fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
+            fs::write(&staged, format!("#!/bin/sh\n{script}\n")).unwrap();
+            fs::set_permissions(&staged, fs::Permissions::from_mode(0o700)).unwrap();
+            fs::rename(staged, &executable).unwrap();
             Self { dir, executable }
         }
     }
@@ -756,6 +783,54 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
         None
+    }
+
+    enum FixturePidWaitError {
+        TaskCompleted(Result<CliResult, CliError>, Option<i32>),
+        Deadline,
+    }
+
+    async fn wait_for_fixture_pid_or_task(
+        path: &Path,
+        executable: &Path,
+        task: &mut JoinHandle<Result<CliResult, CliError>>,
+    ) -> Result<i32, FixturePidWaitError> {
+        for _ in 0..300 {
+            if let Ok(contents) = fs::read_to_string(path) {
+                if let Ok(pid) = contents.trim().parse() {
+                    return Ok(pid);
+                }
+            }
+            tokio::select! {
+                result = &mut *task => {
+                    let result = result.unwrap_or_else(|_| Err(CliError::new(CliErrorKind::Io, "fixture_task_join")));
+                    return Err(FixturePidWaitError::TaskCompleted(
+                        result,
+                        take_test_spawn_error(executable),
+                    ));
+                }
+                _ = tokio::time::sleep(Duration::from_millis(10)) => {}
+            }
+        }
+        task.abort();
+        let _ = task.await;
+        Err(FixturePidWaitError::Deadline)
+    }
+
+    fn fixture_pid_wait_message(error: FixturePidWaitError) -> String {
+        match error {
+            FixturePidWaitError::TaskCompleted(Err(error), errno) => format!(
+                "fixture task completed before PID: kind={:?} operation={} errno={:?}",
+                error.kind, error.operation, errno
+            ),
+            FixturePidWaitError::TaskCompleted(Ok(result), _) => format!(
+                "fixture task completed before PID: returncode={}",
+                result.returncode
+            ),
+            FixturePidWaitError::Deadline => {
+                "fixture task did not write a complete child PID before deadline".to_owned()
+            }
+        }
     }
 
     struct ProcessGroupCleanup(Option<u32>);
@@ -884,16 +959,49 @@ mod tests {
         let service = CliService::new(&fixture.executable, None);
         let (sender, receiver) = watch::channel(false);
         let cancellation = Cancellation { receiver };
-        let task = tokio::spawn(async move {
+        let mut task = tokio::spawn(async move {
             service
                 .run(&[], Duration::from_secs(10), Some(cancellation))
                 .await
         });
-        let pid = wait_for_fixture_pid(&fixture.dir.join("child.pid")).await;
+        let pid = wait_for_fixture_pid_or_task(
+            &fixture.dir.join("child.pid"),
+            &fixture.executable,
+            &mut task,
+        )
+        .await
+        .unwrap_or_else(|error| panic!("{}", fixture_pid_wait_message(error)));
+        let _cleanup = ProcessGroupCleanup(Some(pid as u32));
         sender.send_replace(true);
         let error = task.await.unwrap().unwrap_err();
         assert_eq!(error.kind, CliErrorKind::Cancelled);
         assert!(!Path::new(&format!("/proc/{pid}")).exists());
+    }
+
+    #[tokio::test]
+    async fn fixture_pid_wait_reports_early_spawn_failure_and_errno() {
+        let _guard = PROCESS_TEST_LOCK.lock().await;
+        let missing = std::env::temp_dir()
+            .join(format!("codexbar-missing-cli-{}", std::process::id()))
+            .join("fake-cli");
+        let missing_pid_file = missing
+            .parent()
+            .expect("missing executable has a parent")
+            .join("child.pid");
+        let service = CliService::new(missing.clone(), None);
+        let mut task =
+            tokio::spawn(async move { service.run(&[], Duration::from_secs(2), None).await });
+        let error = wait_for_fixture_pid_or_task(&missing_pid_file, &missing, &mut task)
+            .await
+            .expect_err("missing executable must complete before writing a PID");
+        match error {
+            FixturePidWaitError::TaskCompleted(Err(error), errno) => {
+                assert_eq!(error.kind, CliErrorKind::NotFound);
+                assert_eq!(error.operation, "cli_command");
+                assert_eq!(errno, Some(libc::ENOENT));
+            }
+            other => panic!("{}", fixture_pid_wait_message(other)),
+        }
     }
 
     #[tokio::test]

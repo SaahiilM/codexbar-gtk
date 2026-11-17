@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.82.0 (114) — 2026-11-16
+
+Retire 27 mapped Python assertion methods from the mixed app and settings
+facade test modules after adding Rust test coverage for their selected domain,
+service and persistence contracts. Keep Python-only reconfiguration and
+startup callback exception contracts, and keep the Python runtime and adapters
+as the transitional path. This does not establish adapter equivalence or pass
+a migration gate.
+
+- See migration audit E217 and `rust-backend/tests/legacy_assertion_map.md` for
+  assertion groups, verification scope and limits.
+
 ## 0.82.0 (113) — 2026-11-16
 
 Retire eight legacy Python preview and B13 smoke scripts (1,918 lines). These

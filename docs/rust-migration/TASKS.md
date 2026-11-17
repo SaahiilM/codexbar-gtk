@@ -10,11 +10,96 @@ history. A checked box means **verified and merged**, not merely implemented.
 | --- | --- |
 | Goal | Fully native Rust GTK4/libadwaita application with verified packaging and legacy runtime removal. |
 | Current phase | BG passed and U01–U08 implementation merged. UG **NOT PASSED**. By explicit user instruction, BUILD110 makes the repository launcher/installer native by default; C01–CG remain unaccepted. |
-| Last observed merge | PR #113 merged at `5aec9f3d5dedf246457ae17a44229f0d76eef35f` (build 112). Exact head `443bb0240b66af011cbcb9b0fdb6ef540d3142e1` passed all three checks in run `43955646572`. |
-| Active implementation | BUILD113/E216 retires eight legacy-only developer preview tools (1,918 lines), preserving active runtime/parity tests. Verified build-112 main merged normally. Fresh exact-head CI pending. |
+| Last observed merge | PR #113 merged normally at `5aec9f3d5dedf246457ae17a44229f0d76eef35f` (BUILD112). Exact head `443bb0240b66af011cbcb9b0fdb6ef540d3142e1` passed all three checks in run `43955646572`. |
+| Active implementation | Provisional BUILD114/E217 on `t3/rust-backend-legacy-tests`, normally merged with published BUILD113/E216 stack base `origin/t3/legacy-python-tools-cleanup` at `3cd02d330b6bdb59e38670168becd62e21a915c1`. The base is PR #114 and is not merged. PR #115 is open on this branch; its supplied exact-head test job failed as detailed in the E217 cancellation-fixture follow-up below. |
 | Installer/runtime verification | E198 records the merged build-95 installed-prefix/Python-free runtime proof. E199 records prior local 13-case activation smoke evidence in a Python-free container; its first attempt lacked `file`, and the portable `od`/`ldd` check passed. These component results do not pass C02 or authorize cutover. |
 | UI acceptance | E195 records one Display action; E200 records seven guarded Settings actions and three tab transitions. Broader Wayland controls/navigation remain open. UG is **NOT PASSED**; Python remains the explicit parity/rollback path under the BUILD110 launcher-default exception. See `UG_GATE.md`. |
-| Next | Publish and merge BUILD113 after exact-head checks, then integrate prepared builds 114 and 115 and the native runtime retirement candidate. Rust is default; UG and C gates remain unaccepted. |
+| Next | Root reviews and publishes BUILD114 as a stack on `t3/legacy-python-tools-cleanup`; after PR #114 merges, retarget the BUILD114 PR to main and observe its exact-head checks. No BUILD114 PR, merge, or CI result is claimed here. UG remains NOT PASSED and C gates unaccepted. |
+
+### BUILD114/E217 — mapped Python assertion retirement
+
+**Owner/status/base:** provisional BUILD114/E217 on branch
+`t3/rust-backend-legacy-tests`. Its source history is `e7973fa` (mapped
+Python assertion retirement) followed by `cb0d2ba` (additional assertion
+precision). A normal merge preserves both histories with the published BUILD113
+stack base `origin/t3/legacy-python-tools-cleanup` at
+`3cd02d330b6bdb59e38670168becd62e21a915c1`. That base is the head of open PR
+#114 and is not merged to main. BUILD114 retains version 114; root may publish
+this as a stacked PR targeting `t3/legacy-python-tools-cleanup`, then retarget
+it to main after PR #114 merges. No BUILD114 PR, merge, or exact-head CI result
+is claimed.
+
+**Scope and counts:** `rust-backend/tests/legacy_assertion_map.md` maps removed
+methods to Rust tests. The starting two Python modules had 106 test methods
+(104 in `tests/test_app.py`, 2 in `tests/test_python_settings_facade.py`); 27
+were retired (26 app methods and 1 facade method), leaving 79 methods (78 and
+1). The selected assertion groups do not establish application-adapter
+equivalence. The permissive Python CLI reconfiguration contract remains because
+Python accepts a nonexistent configured executable while Rust applies stricter
+validation. The Python startup callback exception contract also remains; its
+missing-binary counterpart belongs to a separate runtime task. Python runtime,
+PyO3, and adapters remain present.
+
+**Observed checks:** inherited local validation reported 318 Python tests with
+22 skipped in default mode and 318 with 0 skipped in Rust-opt-in mode; 92 Rust
+core tests; 97 Rust backend unit tests and 4 integration tests; plus Rust format
+and Clippy checks. The initial backend run had a transient synthetic fixture
+spawn failure; its staging-and-rename correction and follow-up evidence are
+recorded in AUDIT's E214 follow-up. The metadata-only merge reconciliation will
+run focused metadata, formatting, diff, and link checks; it will not rerun these
+suites because implementation/test coverage sources are unchanged.
+
+No global UG change or workflow change was made. This does not establish
+adapter equivalence, Python/PyO3 removal readiness, global UG acceptance, or a
+migration-gate pass. No GUI, host bus, service, authentication, provider, or
+runtime smoke was run for this slice.
+
+**Next:** root reviews and publishes the complete branch as a stack on
+`t3/legacy-python-tools-cleanup`. PR #114 must merge before the BUILD114 PR is
+retargeted to main. Observe exact-head checks after publication; no result is
+claimed here. UG remains **NOT PASSED** and C gates remain open.
+
+#### BUILD114/E217 follow-up — PR #115 cancellation fixture diagnosis
+
+The supplied PR #115 run `44116527470`, test job `134155986179`, used head
+`763d03245b9a63d9cf2e40a51984c37a003d8b4d`. The headless backend unit job
+reported 96 passed and one failed in 4.64 seconds:
+`cli::tests::cancellation_kills_and_reaps_child` panicked because its fixture
+PID file was not complete. The native tray job passed. The supplied log
+`/tmp/codexbar-pr115-test.log` contains no early task result or spawn errno, so
+the original event's precise cause remains unconfirmed; it does not establish
+`ETXTBSY`, a missing executable, or an I/O failure.
+
+On this same BUILD114 branch, `rust-backend/src/cli.rs` now makes that test's
+PID wait race file publication against completion of the actual operation
+task. An early result reports only the safe `CliErrorKind`, static operation,
+and test-only numeric spawn errno; it does not print paths or process output.
+The deadline path aborts and joins the task, and a process-group cleanup guard
+covers failures after the PID is observed. A focused regression verifies that
+a synthetic missing executable completes before PID publication and is
+reported as `NotFound`/`ENOENT`; this validates the diagnostic path and is not
+evidence that this caused the supplied CI failure.
+
+Local evidence: cancellation test 50/50 passes; early-failure/errno regression
+50/50 passes; locked backend suite passes 98 unit tests and 4 integration
+tests with four test threads; backend format check, strict all-target/all-
+features Clippy, and `git diff --check` pass. The original failure did not
+recur, so no cause is inferred. Production behavior is unchanged because errno
+capture is test-only. No push, PR update, exact-head rerun, UI/bus/auth/provider
+HTTP run, or CI success claim is made. See AUDIT E218. Root reviews and
+publishes the fix as a continuation of PR #115, retaining PR #114 as its
+unmerged base.
+
+### BUILD113/E216 — legacy Python developer preview/smoke tools
+
+BUILD113/E216 removes eight obsolete Python developer preview and B13 smoke
+scripts (1,918 lines) while retaining the Python rollback runtime and active
+parity tests. Its changelog and audit record remain alongside BUILD114/E217.
+The tool-removal slice is published as the base branch
+`t3/legacy-python-tools-cleanup` at `3cd02d330b6bdb59e38670168becd62e21a915c1`,
+open PR #114, stacked on verified main `5aec9f3d5dedf246457ae17a44229f0d76eef35f`.
+PR #114 is not merged, and fresh exact-head CI is not claimed here. See AUDIT
+E216 for the retained tooling, caller scan, checks, and scope limits.
 
 ### BUILD112/E215 — Rust CLI service assertion coverage
 
@@ -122,31 +207,6 @@ required CI.
 **Next:** root reviews the local diff and focused checks, commits/publishes the
 slice, then observes exact-head CI. Keep UG and all C gates unaccepted until
 their recorded requirements are actually met.
-
-### BUILD113/E216 — retire legacy Python developer preview/smoke tools
-
-**Owner/status:** branch `t3/legacy-python-tools-cleanup`; provisional BUILD113
-because BUILD111/E214 tray and BUILD112/E215 CLI assertion slices are pending
-root reconciliation. Local implementation and scoped checks are recorded in
-AUDIT E216. Root integrates this local commit after those serial peer merges and
-updates this handoff only with observed merge/CI evidence. No Python runtime,
-rollback entrypoint, active parity test, or PyO3 integration is removed. This
-does not pass UG or any cutover gate and makes no claim of native coverage for
-the Python runtime.
-
-**Scope:** remove exactly eight developer-only scripts under `tools/` (the
-three `gtk_smoke_b13*.py` files plus `preview.py`, `preview_b09_synthetic.py`,
-`preview_b10_controller.py`, `preview_currency.py`, and
-`preview_notifications.py`). Their 1,918 source lines have no current callers.
-`tools/README.md` documents the retained native build, private X11 and private
-Wayland verification commands and their limits. The root README's obsolete
-preview command and setup text are removed; its surrounding BUILD110 installer
-and Python rollback guidance is retained.
-
-**Next:** root reconciles after E214/E215, updates the provisional build number
-if serial integration requires it, and records actual publication and exact-head
-CI status. Python rollback and active Python parity tests remain in place.
-
 
 PR #103 correction: run `42918673780` on `7e16a47` passed tray and the full
 Python-free/activated command-target proof. The Rust-opt-in suite failed on a

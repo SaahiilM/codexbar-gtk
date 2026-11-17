@@ -11,24 +11,25 @@ cargo clippy --locked --manifest-path rust-smoke-fixtures/Cargo.toml --all-targe
 ```
 
 Commands cover Settings JSON reads and validation, portable preference fixture
-generation, synthetic random secret values, a private-bus Notifications mock,
-and a loopback `VERSION` server. The GTK and Settings smoke scripts build the
-release helper in their outer prepare stage and pass its absolute path through
-`CODEXBAR_SMOKE_FIXTURES` before `dbus-run-session` starts. The Settings
-chooser remains on the prior Python automation until the peer-owned
-`codexbar-ui-test-tool chooser MODE PID TITLE [PATH]` contract is integrated.
+generation, complete-map assertions for import overlays, empty imports and
+reset defaults, synthetic random secret values, a private-bus Notifications
+mock, and a loopback `VERSION` server. The GTK and Settings smoke scripts build
+the release helper in their outer prepare stage and pass its absolute path
+through `CODEXBAR_SMOKE_FIXTURES` before `dbus-run-session` starts. The X11
+Settings chooser routes to its private HOME through GTK's visible location
+control, checks the complete JSON fixture list, and selects the exact sorted
+file row with guarded keyboard navigation. It does not use Python or the
+peer-owned GTK UI tool.
 
 ## Handoff
 
-- Remaining Python references in the owned smoke scripts are only the Settings
-  chooser fallback at `scripts/smoke-native-settings.sh:686`; it runs the
-  peer-owned `scripts/select-native-file-chooser.py`. The Settings entrypoint
-  prefers `CODEXBAR_UI_TEST_TOOL`, then
-  `rust-ui-test-tools/target/debug/codexbar-ui-test-tool`.
-- Helper unit/HTTP lifecycle tests and a manual private-bus notification call
-  pass. The X11 GTK routing smoke was attempted with Python absent from PATH,
-  but the app did not map its initial window and logged `A connection to the
-  bus can't be made`; the Settings GUI smoke therefore remains unverified.
-- Next: integrate and run the peer chooser tool in the full no-Python Settings
-  smoke, then repeat private X11 routing once the isolated startup issue is
-  resolved. Root workflow/release/task handoffs remain deferred.
+- The Settings entrypoint uses private X11 keyboard automation without the
+  Python chooser probe or the peer-owned GTK UI tool. The separate historical
+  `scripts/select-native-file-chooser.py` file remains untouched and is not
+  called by this smoke.
+- Two fresh-HOME full Settings smokes passed with Python absent from PATH and
+  non-loopback IPv4/IPv6 socket operations blocked. GTK selected the exact
+  valid and empty fixture rows; complete-map import/empty/reset assertions,
+  provider and Hooks toggles, and the existing Settings actions passed.
+- The local `CARGO_TARGET_DIR` override keeps smoke builds separate from other
+  checkouts. No workflow, release metadata, or UI runtime source was changed.

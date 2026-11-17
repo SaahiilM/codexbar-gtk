@@ -5,6 +5,7 @@ edition = "2021"
 description = "Native synthetic fixtures and helpers for CodexBar GTK smoke tests"
 
 [dependencies]
+codexbar-core = { path = "../rust-core" }
 serde_json = "1"
 zbus = { version = "5", features = ["tokio"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "io-util", "time"] }

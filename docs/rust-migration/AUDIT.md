@@ -8145,3 +8145,76 @@ update-check actions), KDE input/placement/keyboard parity, and repeatable
 local panel focus/SNI evidence; the exact row-by-row status remains in
 [`UG_GATE.md`](UG_GATE.md). C01–CG remain unaccepted. Root reviews and publishes
 this focused BUILD117 cleanup; no BUILD118 is allocated by this slice.
+
+### E221 — 2026-11-17: private X11 Settings smoke chooser and map assertions
+
+**Owner/base/status:** local branch `t3/rust-smoke-test-tools`, starting at
+`459452d2dec30403bbec2883cd0627eaef07bbd7`. This scoped smoke-tooling change
+is locally committed for root review only. No push, PR, CI claim, release
+metadata change, workflow change, UI runtime edit, or gate acceptance is made.
+
+**Chooser behavior:** `scripts/smoke-native-settings.sh` no longer depends on
+the absent peer `rust-ui-test-tools` checkout or the AT-SPI chooser selector.
+After verifying the visible chooser XID belongs to the running app PID and is
+focused, it uses GTK's normal Ctrl+L location control to open the synthetic
+HOME folder. It verifies the complete sorted set of visible top-level JSON
+files, focuses the file list, and chooses the exact fixture row using `Home`
+and the expected number of `Down` keypresses. The exact valid fixture row was
+visually highlighted with an enabled Import button; the empty fixture row was
+visually highlighted separately. The selected files were proven by exact
+post-import behavior: the valid map matched the entire baseline map with only
+the three intended imported keys changed and the unknown key absent; empty
+imports matched a byte-independent complete JSON map snapshot; reset matched
+the Rust `default_values()` map. GTK closed each chooser through the normal
+Return response. No `item.visit` action or direct chooser file setter is used.
+The historical `scripts/select-native-file-chooser.py` is untouched and is not
+invoked by this smoke.
+
+**Assertions and race diagnosis:** `codexbar-smoke-fixtures` now provides
+complete JSON-map equality, complete import-overlay, and complete default-map
+assertions. The X11 script snapshots the baseline before valid import, checks
+the entire resulting map, proves each empty import preserves the entire map,
+proves reset cancel preserves the imported map, and proves confirmed reset
+matches all current Rust defaults. A failed exploratory full run recorded
+`config disable --provider codex` and fixture state `false`, but no subsequent
+enable action; the CLI marker preceded GTK draining its asynchronous Settings
+response. A 350 ms response-settle interval before the next guarded click fixed
+the provider toggle. The same timing issue then appeared on the Hooks toggle;
+the matching bounded settle was added there. Both later full runs recorded
+provider disable/enable and Hooks disable/enable successfully.
+
+**Local checks and full smokes:**
+
+- `bash -n scripts/smoke-native-settings.sh scripts/build-rust-smoke-fixtures.sh`
+  and ShellCheck — passed.
+- `cargo fmt --manifest-path rust-smoke-fixtures/Cargo.toml -- --check` —
+  passed after formatting the new helper code.
+- `CARGO_TARGET_DIR=/tmp/codexbar-settings-smoke-target cargo build --offline
+  --locked --release --manifest-path rust-smoke-fixtures/Cargo.toml` — passed.
+- Two complete runs of `scripts/smoke-native-settings.sh` passed using separate
+  temporary HOME/runtime roots, each with private Xvfb and private D-Bus. Both
+  ran with a PATH containing no Python executable. An `LD_PRELOAD` socket guard
+  refused non-loopback IPv4/IPv6 bind/connect/sendto/sendmsg operations while
+  allowing the smoke's private loopback `VERSION` fixture; no public provider
+  HTTP, credentials, authentication, host desktop, host bus, host input, or
+  real configuration was used. Logs are
+  `/tmp/codexbar-settings-full-smoke-1.log` and
+  `/tmp/codexbar-settings-full-smoke-2.log`; selected-row captures from the
+  first passing run are `/tmp/codexbar-full1-import-selected.png` and
+  `/tmp/codexbar-full1-empty-selected.png`.
+- A kernel network namespace could not be created (`unshare -n` returned
+  `Operation not permitted`), so external socket use was denied by the
+  process-level loopback guard instead; the only permitted TCP endpoint was
+  the private update fixture on 127.0.0.1.
+- The implementation and smokes use `/tmp/codexbar-settings-smoke-target`,
+  separate from the app's and other checkouts' Cargo targets. Xvfb and xdotool
+  packages were extracted under `/tmp` because they were absent from the host;
+  no system package installation or host desktop interaction occurred.
+- `git diff --check` — passed.
+
+**Limits and next step:** These are local X11 Settings-smoke results, not KDE
+Wayland physical-input parity, UI gate acceptance, exact-head CI, or migration
+completion. The app-owned location field accepts the private HOME path, and
+the visible file list confirms the exact fixture selection before GTK accepts
+it. Root reviews the local commit; UG remains **NOT PASSED** and C01–CG remain
+unaccepted.

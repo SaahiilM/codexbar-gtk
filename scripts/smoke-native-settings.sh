@@ -4,7 +4,6 @@ set -euo pipefail
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 binary=${1:-"$repo_root/rust-gtk/target/debug/codexbar-gtk-native"}
 fixtures=${CODEXBAR_SMOKE_FIXTURES:-"$repo_root/rust-smoke-fixtures/target/release/codexbar-smoke-fixtures"}
-ui_test_tool=${CODEXBAR_UI_TEST_TOOL:-"$repo_root/rust-ui-test-tools/target/debug/codexbar-ui-test-tool"}
 
 for tool in xvfb-run dbus-run-session timeout xdotool gapplication gdbus xwd ffmpeg grep xfwm4 xprop xwininfo; do
     command -v "$tool" >/dev/null || { echo "missing smoke dependency: $tool" >&2; exit 2; }
@@ -337,9 +336,9 @@ export NATIVE_SETTINGS_CLAUDEPLATFORM_COOKIE_RECEIVED="$claudeplatform_cookie_fi
 export CODEXBAR_NATIVE_SETTINGS_CLAUDEPLATFORM_STATUS_REPORT="$claudeplatform_status_file"
 export NATIVE_SETTINGS_NOTIFICATION_LOG="$scratch/notifications"
 export CODEXBAR_NATIVE_SETTINGS_ICON_REPORT=1
-# GTK_A11Y must be set before application launch so the live native chooser's
-# editable location field and response action can be verified through AT-SPI.
-export GTK_A11Y=atspi GTK_USE_PORTAL=0 GDK_BACKEND=x11 GSK_RENDERER=cairo
+# Keep the chooser smoke independent of AT-SPI and Python helpers. Interaction
+# below is through the visible app-owned X11 chooser and guarded XTest keys.
+export GTK_A11Y=none GTK_USE_PORTAL=0 GDK_BACKEND=x11 GSK_RENDERER=cairo
 printf '%s\n' 'true' > "$NATIVE_SETTINGS_HOOKS_ENABLED"
 
 "$fixtures" mock-notifications "$NATIVE_SETTINGS_NOTIFICATION_LOG" >"$scratch/notifications.log" 2>&1 &
@@ -755,69 +754,83 @@ select_chooser_path() {
         }
         local target_name=${path##*/}
         capture_native_size "$chooser" "${NATIVE_SETTINGS_IMPORT_CHOOSER_SCREENSHOT:-}"
-        if [[ "${NATIVE_SETTINGS_CHOOSER_SELECT_ALWAYS:-0}" == "1" ]]; then
-            if [[ "${NATIVE_SETTINGS_CHOOSER_DIAGNOSTICS:-0}" == "1" ]]; then
-                chooser_tool read "$app_pid" "$title" "$path" || \
-                    echo "native Import chooser focused-field diagnostic did not find a unique editable entry" >&2
-            fi
-            if ! chooser_tool select "$app_pid" "$title" "$path"; then
-                if xwininfo -id "$chooser" 2>/dev/null | grep -Fq 'Map State: IsViewable'; then
-                    capture_native_size "$chooser" "${NATIVE_SETTINGS_IMPORT_AFTER_SCREENSHOT:-}"
-                    echo "native Import chooser remained viewable after exact Recent/Home selection failed" >&2
-                    xwininfo -id "$chooser" >&2 || true
-                else
-                    echo "native Import chooser disappeared before failure diagnostics could capture it" >&2
-                fi
-                local app_process_state=missing app_process_alive=false
-                if app_process_state=$(awk '{print $3}' "/proc/$app_pid/stat" 2>/dev/null) \
-                    && [[ "$app_process_state" != Z* ]]; then
-                    app_process_alive=true
-                fi
-                printf 'native Import failure process proof: pid=%s state=%s alive=%s\n' \
-                    "$app_pid" "$app_process_state" "$app_process_alive" >&2
-                echo "native Import accept was not invoked because select did not verify the exact selected row" >&2
-                cat "$scratch/app.log" >&2
+        # Route the live GTK chooser to the verified private HOME directory,
+        # then select the target from its visible file list. The separate
+        # directory and row-navigation steps avoid GTK treating a pasted full
+        # filename as a directory. Every key sequence is sent only after
+        # rechecking the visible dialog title, owner PID, map state and focus.
+        assert_import_chooser_focused() {
+            local current_title owner_pid map_state focused
+            chooser=$(wait_for_window "^${title}$")
+            current_title=$(window_title "$chooser")
+            owner_pid=$(xprop -id "$chooser" _NET_WM_PID 2>/dev/null \
+                | sed -n 's/.* = \([0-9][0-9]*\)$/\1/p')
+            map_state=$(xwininfo -id "$chooser" 2>/dev/null \
+                | sed -n 's/^  Map State: //p')
+            [[ "$current_title" == "$title" && "$owner_pid" == "$app_pid" \
+                && "$map_state" == "IsViewable" ]] || {
+                echo "refusing chooser keyboard input without exact visible app-owned dialog (title=$current_title pid=$owner_pid map=$map_state)" >&2
                 exit 1
-            fi
-        else
-            # Prefer GTK's focused location entry. If this chooser does not
-            # expose one, select the exact file from Recent or Home.
-            xdotool key --clearmodifiers ctrl+l
-            read_chooser_entry() {
-                local deadline=$((SECONDS + 5)) output=""
-                while (( SECONDS < deadline )); do
-                    if output=$(chooser_tool read "$app_pid" "$title" "$path" 2>&1); then
-                        printf '%s\n' "$output"
-                        return 0
-                    fi
-                    if [[ "$output" != *"expected one visible focused editable entry, found 0"* ]]; then
-                        printf '%s\n' "$output" >&2
-                        return 2
-                    fi
-                    sleep 0.05
-                done
-                return 1
             }
-            if read_chooser_entry >/dev/null; then
-                xdotool key --clearmodifiers ctrl+a
-                read_chooser_entry >/dev/null || {
-                    echo "native chooser location entry stopped being uniquely visible and focused after Ctrl+A" >&2
-                    exit 1
-                }
-                chooser_tool set "$app_pid" "$title" "$path"
-            else
-                chooser_read_status=$?
-                [[ "$chooser_read_status" == 1 ]] || exit "$chooser_read_status"
-                echo "native chooser exposed no unique focused location entry; selecting the exact file through Recent/Home" >&2
-                chooser_tool select "$app_pid" "$title" "$path"
-            fi
+            xdotool windowfocus --sync "$chooser"
+            focused=$(normalize_window_id "$(xdotool getwindowfocus 2>/dev/null || true)")
+            [[ "$focused" == "$(normalize_window_id "$chooser")" ]] || {
+                echo "refusing chooser keyboard input because app-owned dialog did not retain focus" >&2
+                exit 1
+            }
+        }
+        assert_import_chooser_focused
+        xdotool key --clearmodifiers ctrl+l
+        xdotool type --clearmodifiers --delay 2 "$HOME/"
+        assert_import_chooser_focused
+        xdotool key --clearmodifiers Return
+        sleep 0.35
+        assert_import_chooser_focused
+        # The chooser now shows the private HOME folder. Assert its complete
+        # visible JSON file set, focus the file list with a guarded click, then
+        # select the exact sorted basename using only keyboard navigation.
+        local -a visible_json_files=()
+        mapfile -t visible_json_files < <(find "$HOME" -maxdepth 1 -type f -name '*.json' -printf '%f\n' | sort)
+        local -a expected_json_files=(empty-preferences-import.json preferences-import.json)
+        if [[ -f "$HOME/preferences-export.json" ]]; then
+            expected_json_files=(empty-preferences-import.json preferences-export.json preferences-import.json)
         fi
+        [[ "${visible_json_files[*]}" == "${expected_json_files[*]}" ]] || {
+            printf 'refusing keyboard chooser selection; visible HOME JSON files were: %s\n' \
+                "${visible_json_files[*]}" >&2
+            exit 1
+        }
+        local target_index=-1 row_index=0 visible_name
+        for visible_name in "${visible_json_files[@]}"; do
+            [[ "$visible_name" == "$target_name" ]] && target_index=$row_index
+            row_index=$((row_index + 1))
+        done
+        [[ "$target_index" -ge 0 ]] || {
+            echo "exact synthetic fixture basename is not in the verified chooser folder" >&2
+            exit 1
+        }
+        assert_import_chooser_focused
+        xdotool mousemove --window "$chooser" 280 95 click 1
+        assert_import_chooser_focused
+        xdotool key --clearmodifiers Home
+        for ((row_index = 0; row_index < target_index; row_index++)); do
+            xdotool key --clearmodifiers Down
+        done
+        sleep 0.25
+        assert_import_chooser_focused
         if [[ "$target_name" == "preferences-import.json" ]]; then
             capture_native_size "$chooser" "${NATIVE_SETTINGS_IMPORT_SELECTED_SCREENSHOT:-}"
         else
             capture_native_size "$chooser" "${NATIVE_SETTINGS_EMPTY_IMPORT_SELECTED_SCREENSHOT:-}"
         fi
-        chooser_tool accept "$app_pid" "$title" "$path"
+        printf 'native chooser selected exact sorted fixture row: folder=%s filename=%s row=%s\n' \
+            "$HOME" "$target_name" "$target_index"
+        xdotool key --clearmodifiers Return
+        if [[ "$target_name" == "preferences-import.json" ]]; then
+            echo "native chooser selected the valid synthetic fixture by exact basename"
+        else
+            echo "native chooser selected the empty synthetic fixture by exact basename"
+        fi
         if [[ -n "${NATIVE_SETTINGS_CHOOSER_AFTER_SCREENSHOT:-}" ]]; then
             capture_root_debug "$NATIVE_SETTINGS_CHOOSER_AFTER_SCREENSHOT"
         fi
@@ -840,15 +853,6 @@ select_chooser_path() {
         fi
     fi
     sleep 0.2
-}
-
-chooser_tool() {
-    if [[ ! -x "$ui_test_tool" ]]; then
-        echo "native chooser automation helper is missing or not executable: $ui_test_tool" >&2
-        echo "Build with cargo build --locked --manifest-path rust-ui-test-tools/Cargo.toml --bin codexbar-ui-test-tool, then set CODEXBAR_UI_TEST_TOOL to its absolute binary path." >&2
-        return 2
-    fi
-    "$ui_test_tool" chooser "$@"
 }
 
 wait_for_nonempty_preference() {
@@ -987,6 +991,8 @@ if [[ "$chooser_only_mode" != "0" ]]; then
         exit 0
     fi
 
+    chooser_import_baseline="$scratch/chooser-import-baseline.json"
+    cp -- "$preferences_file" "$chooser_import_baseline"
     select_chooser_path "Import preferences" "$import_file" 790 388
     wait_for_preference refreshFrequency 2m
     wait_for_preference preferredCurrencyCode EUR
@@ -995,7 +1001,7 @@ if [[ "$chooser_only_mode" != "0" ]]; then
         echo "chooser-only Preferences import changed the isolated autostart entry" >&2
         exit 1
     }
-    "$fixtures" validate-import "$preferences_file"
+    "$fixtures" assert-import-overlay "$chooser_import_baseline" "$preferences_file"
     for log_file in "$preferences_file" "${export_file:-$HOME/preferences-export.json}" "$NATIVE_SETTINGS_CALLS" "$scratch/app.log"; do
         if grep -Fq -- "$api_key_sentinel" "$log_file" || grep -Fq -- "$login_code_sentinel" "$log_file"; then
             echo "synthetic credential or login code escaped into chooser-only saved or logged preferences" >&2
@@ -1114,12 +1120,17 @@ wait_for_calls 'config disable --provider codex'
     echo "native provider switch did not disable the synthetic Codex provider" >&2
     exit 1
 }
+# The CLI log and provider-state fixture are updated before GTK drains the
+# SettingsActor response and finishes the switch transition. Let that visible
+# action settle before sending the second guarded click.
+sleep 0.35
 click_window_at "$settings_window" 500 234 "fixed-coordinate control"
 wait_for_calls 'config enable --provider codex'
 [[ "$(cat "$provider_enabled_file")" == "true" ]] || {
     echo "native provider switch did not re-enable the synthetic Codex provider" >&2
     exit 1
 }
+sleep 0.35
 click_window_at "$settings_window" 500 289 "fixed-coordinate control"
 sleep 0.2
 xdotool key End Return
@@ -1303,6 +1314,7 @@ wait_for_calls 'hooks disable'
     echo "native Hooks switch did not persist disabled state through the synthetic CLI" >&2
     exit 1
 }
+sleep 0.35
 capture "$settings_window" "${NATIVE_SETTINGS_HOOKS_ACTIONS_SCREENSHOT:-}"
 click_window_at "$settings_window" 500 160 "fixed-coordinate control"
 wait_for_calls 'hooks enable'
@@ -1310,6 +1322,7 @@ wait_for_calls 'hooks enable'
     echo "native Hooks switch did not persist enabled state through the synthetic CLI" >&2
     exit 1
 }
+sleep 0.35
 click_window_at "$settings_window" 758 800 "fixed-coordinate control"
 sleep 0.3
 capture "$settings_window" "${NATIVE_SETTINGS_PLUGINS_SCREENSHOT:-}"
@@ -1349,6 +1362,8 @@ capture "$settings_window" "${NATIVE_SETTINGS_ADVANCED_EXPORT_SCREENSHOT:-}"
 
 # Import overlays known keys onto the latest map, preserves the unrelated
 # Display preference, ignores the unknown key, and leaves autostart untouched.
+full_import_baseline="$scratch/full-import-baseline.json"
+cp -- "$preferences_file" "$full_import_baseline"
 select_chooser_path "Import preferences" "$import_file" 790 388
 wait_for_preference refreshFrequency 2m
 wait_for_preference preferredCurrencyCode EUR
@@ -1357,7 +1372,9 @@ wait_for_preference launchAtLogin False
     echo "native Preferences import changed the autostart desktop entry" >&2
     exit 1
 }
-"$fixtures" validate-import "$preferences_file"
+"$fixtures" assert-import-overlay "$full_import_baseline" "$preferences_file"
+full_import_result="$scratch/full-import-result.json"
+cp -- "$preferences_file" "$full_import_result"
 for log_file in "$preferences_file" "$export_file" "$NATIVE_SETTINGS_CALLS" "$scratch/app.log"; do
     if grep -Fq -- "$api_key_sentinel" "$log_file" || grep -Fq -- "$login_code_sentinel" "$log_file"; then
         echo "synthetic credential or login code escaped into saved or logged preferences" >&2
@@ -1371,6 +1388,8 @@ printf '%s\n' 'empty' > "$hooks_mode_file"
 printf '%s\n' 'empty' > "$plugins_mode_file"
 rm -f "$hooks_served_file" "$plugin_loaded_file"
 plugins_before=$(cat "$plugins_request_count_file")
+empty_import_baseline="$scratch/empty-import-baseline.json"
+cp -- "$preferences_file" "$empty_import_baseline"
 select_chooser_path "Import preferences" "$empty_import_file" 790 388
 wait_for_plugins_loaded "$plugins_before"
 hook_mode_deadline=$((SECONDS + 8))
@@ -1379,6 +1398,7 @@ while [[ "$(cat "$hooks_served_file" 2>/dev/null || true)" != "empty" ]] && (( S
     echo "Settings reload did not query the empty synthetic Hooks rules" >&2
     exit 1
 }
+"$fixtures" assert-json-equal "$empty_import_baseline" "$preferences_file"
 click_window_at "$settings_window" 660 800 "fixed-coordinate control"
 sleep 0.4
 capture "$settings_window" "${NATIVE_SETTINGS_HOOKS_EMPTY_RULES_SCREENSHOT:-}"
@@ -1390,10 +1410,13 @@ capture "$settings_window" "${NATIVE_SETTINGS_PLUGINS_EMPTY_SCREENSHOT:-}"
 printf '%s\n' 'error' > "$plugins_mode_file"
 rm -f "$plugin_loaded_file"
 plugins_before=$(cat "$plugins_request_count_file")
+error_import_baseline="$scratch/error-import-baseline.json"
+cp -- "$preferences_file" "$error_import_baseline"
 click_window_at "$settings_window" 856 800 "fixed-coordinate control"
 sleep 0.25
 select_chooser_path "Import preferences" "$empty_import_file" 790 388
 wait_for_plugins_loaded "$plugins_before"
+"$fixtures" assert-json-equal "$error_import_baseline" "$preferences_file"
 sleep 0.35
 click_window_at "$settings_window" 758 800 "fixed-coordinate control"
 sleep 0.3
@@ -1410,6 +1433,7 @@ xdotool key Escape
 reset_cancel_deadline=$((SECONDS + 5))
 while xdotool getwindowname "$reset_cancel_window" >/dev/null 2>&1 && (( SECONDS < reset_cancel_deadline )); do sleep 0.05; done
 wait_for_preference refreshFrequency 2m
+"$fixtures" assert-json-equal "$full_import_result" "$preferences_file"
 [[ -s "$autostart_file" ]] || {
     echo "cancelling Preferences reset changed the autostart desktop entry" >&2
     exit 1
@@ -1421,6 +1445,7 @@ xdotool key Return
 wait_for_preference refreshFrequency adaptive
 wait_for_preference preferredCurrencyCode auto
 wait_for_preference launchAtLogin False
+"$fixtures" assert-default-map "$preferences_file"
 [[ -s "$autostart_file" ]] || {
     echo "native Preferences reset changed the autostart desktop entry" >&2
     exit 1

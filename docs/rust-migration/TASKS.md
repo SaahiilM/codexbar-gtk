@@ -15,6 +15,27 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Previous slice integration | Cherry-picked root-reviewed peer commit `1d368dcc402b26d9e2206d3adc450716f0e1ac63` as local commit `7b00677`; its tools-only scope does not overlap the archive removal. |
 | Next | Root reviews and publishes this focused cleanup PR. Do not mark UG or any C gate passed because source archives were removed. |
 
+### Local BUILD117 Settings smoke follow-up
+
+**Branch/base/status:** implementation branch `t3/rust-smoke-test-tools`,
+starting at `459452d2dec30403bbec2883cd0627eaef07bbd7`. The private X11
+Settings smoke repair is implemented and locally verified in two fresh-HOME
+full runs. The local commit is for root review only; no push, PR, release
+metadata, workflow change, UI runtime change, or gate acceptance is part of
+this slice.
+
+**Scope and evidence:** `scripts/smoke-native-settings.sh` now uses the live
+app-owned GTK chooser's location control to enter the private HOME folder,
+checks the exact visible JSON fixture set, and selects the target row with
+guarded keyboard input. `rust-smoke-fixtures` checks the complete import
+overlay, empty-import no-op, canceled-reset map, and Rust default map. The two
+full smokes ran with Python absent from `PATH`, private Xvfb and D-Bus, and a
+loopback-only socket guard for the local update fixture. Exact commands and
+limits are recorded in audit E221.
+
+**Next:** root reviews this local commit. The merged-history checkpoint above
+remains BUILD117/E220; UG and C gates remain open.
+
 ### BUILD117/E220 — retired Python source and debug-tool cleanup
 
 **Owner/base/status:** local branch `t3/delete-python-reference-archive`, based

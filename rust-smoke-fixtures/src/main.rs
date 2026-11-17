@@ -1,3 +1,4 @@
+use codexbar_core::preferences::default_values;
 use serde_json::{json, Value};
 use std::{
     env, fs,
@@ -97,6 +98,58 @@ fn validate_import(args: &[String]) -> Result<(), String> {
     }
     let prefs = read_json(&args[1])?;
     validate_import_value(&prefs)
+}
+
+fn assert_json_equal(args: &[String]) -> Result<(), String> {
+    if args.len() != 3 {
+        return Err("assert-json-equal EXPECTED ACTUAL".into());
+    }
+    let expected = read_json(&args[1])?;
+    let actual = read_json(&args[2])?;
+    if expected != actual {
+        return Err(format!(
+            "complete JSON maps differ: expected {} got {}",
+            expected, actual
+        ));
+    }
+    Ok(())
+}
+
+fn assert_import_overlay(args: &[String]) -> Result<(), String> {
+    if args.len() != 3 {
+        return Err("assert-import-overlay BASELINE ACTUAL".into());
+    }
+    let mut expected = read_json(&args[1])?;
+    let prefs = expected
+        .as_object_mut()
+        .ok_or("baseline preference map must be a JSON object")?;
+    prefs.insert("preferredCurrencyCode".into(), json!("EUR"));
+    prefs.insert("refreshFrequency".into(), json!("2m"));
+    prefs.insert("launchAtLogin".into(), json!(false));
+    prefs.remove("futureSyntheticPreference");
+    let actual = read_json(&args[2])?;
+    if expected != actual {
+        return Err(format!(
+            "complete imported preference map differs: expected {} got {}",
+            expected, actual
+        ));
+    }
+    Ok(())
+}
+
+fn assert_default_map(args: &[String]) -> Result<(), String> {
+    if args.len() != 2 {
+        return Err("assert-default-map ACTUAL".into());
+    }
+    let expected = Value::Object(default_values());
+    let actual = read_json(&args[1])?;
+    if expected != actual {
+        return Err(format!(
+            "complete reset preference map differs from Rust defaults: expected {} got {}",
+            expected, actual
+        ));
+    }
+    Ok(())
 }
 
 fn validate_import_value(prefs: &Value) -> Result<(), String> {
@@ -247,6 +300,9 @@ async fn main() {
         "settings-fixtures" => fixture_settings(rest),
         "validate-export" => validate_export(rest),
         "validate-import" => validate_import(rest),
+        "assert-json-equal" => assert_json_equal(rest),
+        "assert-import-overlay" => assert_import_overlay(rest),
+        "assert-default-map" => assert_default_map(rest),
         "random-token" => random_token(),
         "update-server" => update_server(rest).await,
         "mock-notifications" => notification_service(rest).await,

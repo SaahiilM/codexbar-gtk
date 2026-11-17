@@ -2676,4 +2676,30 @@ mod tests {
         assert_eq!(provider.details[0].chart.as_ref().unwrap().points.len(), 1);
         assert_eq!(provider.pace["primary"].expected_used_percent, Some(30.0));
     }
+
+    #[test]
+    fn reset_credit_payload_keeps_available_entries_and_drops_used_entries() {
+        let payload = json!({
+            "provider": "codex",
+            "usage": {
+                "primary": {"usedPercent": 10},
+                "codexResetCredits": {
+                    "availableCount": 2,
+                    "credits": [
+                        {"status": "available", "title": "Fixture one", "expires_at": "2026-10-26T12:00:00Z"},
+                        {"status": "used", "title": "Fixture used", "expires_at": "2026-10-24T12:00:00Z"},
+                        {"status": "available", "title": "Fixture two", "expires_at": null}
+                    ]
+                }
+            }
+        });
+        let provider = provider_usage_from_value(&payload).unwrap().unwrap();
+
+        assert_eq!(provider.reset_credits_available, 2);
+        assert_eq!(provider.reset_credits.len(), 2);
+        assert_eq!(provider.reset_credits[0]["title"], "Fixture one");
+        assert!(provider.reset_credits[0]["expires_at"].is_string());
+        assert_eq!(provider.reset_credits[1]["title"], "Fixture two");
+        assert!(provider.reset_credits[1]["expires_at"].is_null());
+    }
 }

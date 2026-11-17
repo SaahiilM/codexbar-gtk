@@ -154,7 +154,11 @@ instruction, BUILD110 makes the repository launcher/installer native by
 default while UG remains **NOT PASSED** and C01–CG remain unaccepted. This
 launcher-default policy is an exception, not gate completion or host migration.
 BUILD111 moves tray D-Bus CI coverage to the native Rust implementation while
-keeping Python parity tests in the broader suite; see the explicit
+keeping native automation in the broader suite. BUILD113 retires eight legacy
+preview tools, BUILD114 retires 27 mapped Python assertions, and BUILD115 adds
+private-Weston page-state coverage. This BUILD116 candidate removes the active
+Python runtime while retaining a transitional reference archive. These scoped
+changes do not pass UG or C gates; see the explicit
 [gate ledger](docs/rust-migration/UG_GATE.md).
 
 - [Architecture, source inventory and stage gates](docs/rust-migration/README.md)
@@ -292,7 +296,7 @@ The GTK front-end uses the version pair in the root `VERSION` file:
   this client is feature-compatible with (`0.82.0`).
 * `CURRENT_PROJECT_VERSION` is the build number of the Linux front-end.
 * Native Rust metadata turns the pair into the macOS-style
-  `"0.82.0 (112)"` string shown under Settings → About, in the tray menu and by
+  `"0.82.0 (116)"` string shown under Settings → About, in the tray menu and by
   `./run.sh --about`.
 
 Increment `CURRENT_PROJECT_VERSION` for each merge-approved PR; the native test

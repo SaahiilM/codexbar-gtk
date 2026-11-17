@@ -1,26 +1,27 @@
 # Native Rust migration
 
-## Local retirement candidate status
+## BUILD116/E219 active Python runtime retirement candidate
 
-The `t3/retire-python-runtime` working-tree candidate removes the active Python
-application package, PyO3 crate and Python launcher/install/build setup. It
-archives the former implementation and tests under `tests/reference/python/`;
-the eight support-retired preview/GTK smoke tools stay deleted. Archived
-assertions are not run by CI and are not all claimed as covered. See the
-archive's per-file crosswalk and explicit remaining gaps. This remains a
-transitional review archive, not completed Python cleanup. The current native
-GTK metadata test reads root `VERSION` directly. The native installer preserves
-pre-existing legacy files and keeps its ownership-manifest upgrade/rollback
-protections.
+The `t3/retire-python-runtime` integration removes the active Python application
+package, PyO3 crate, and Python launcher/install/build paths. It merges the
+latest published PR116 page-state branch and preserves the eight
+support-retired tools as deletions. Former application and parity sources remain
+in `tests/reference/python/` as a transitional review archive; archived
+assertions are not CI tests, and the archive is not a package, runtime fallback,
+or supported rollback path. It currently contains 58 Python files / 16,911
+Python lines. The archive-wide map records residual assertion gaps. The native
+metadata test reads root `VERSION` directly; historical `version.py` stays
+unchanged.
 
-This candidate is for root review only. It does not pass UG or C01–CG, allocate
-a project build number, or claim all former assertions have native replacements.
-The coverage peer's local commit `e7973fa` supplies a full method-level map for
-the old application and Python settings-facade tests, including 26 retirement
-candidates, but is not included here. It records unresolved permissive CLI-path,
-missing-binary, and startup callback contracts. Root requires both Python
-execution modes on the peer coverage branch before integration. Details and
-policy dispositions are in [`tests/reference/python/README.md`](../../tests/reference/python/README.md).
+The source change has BUILD116 metadata and is for root review. It does not pass
+UG or C01–CG, claim every archived assertion has a native replacement, or
+complete archive cleanup. The peer method map at
+`cb0d2ba6ba9812433fd16e0a6fdebfe3280a715e` records the Python default and
+Rust-opt-in suites passing, along with Rust core/backend, format and strict
+Clippy results; those are inherited peer results. The exact integrated branch
+checks, UI scope, installed binary source/build SHA, skips, and remaining PR115
+follow-up are recorded in the current handoff and E219. The archive's per-file
+crosswalk is in [`tests/reference/python/README.md`](../../tests/reference/python/README.md).
 The remainder of this guide records the migration plan and historical evidence.
 
 **Approved destination:** a Rust GTK4/libadwaita application with no Python

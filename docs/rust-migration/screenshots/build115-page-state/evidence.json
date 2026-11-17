@@ -1,0 +1,105 @@
+{
+  "status": "passed",
+  "scenario": "page-state",
+  "compositor": "rootless Weston headless Pixman",
+  "backend": "Wayland",
+  "gdk_display_type": "GdkWaylandDisplay",
+  "source_commit": "5cd710318cc88d50bb4db61cd46757a07751e919",
+  "binary_sha256": "8c3e3a2121e061f9ac4778316da58b4156487270dc520d730ae6ee35186b8d61",
+  "embedded_build": "0.82.0 (112)",
+  "embedded_build_verified_by": {
+    "source_version_file": "MARKETING_VERSION=0.82.0; CURRENT_PROJECT_VERSION=112 at source commit",
+    "source_python_version": "SHORT_VERSION=0.82.0; BUILD=112 at source commit",
+    "about_capture": "0.82.0 (112) visible in page-state-about.png"
+  },
+  "spend_seed_visible_total": "$12.50 \u00b7 partial",
+  "spend_retained_error": {
+    "status": "passed",
+    "refresh_control": "AT-SPI AccessibleAction.DoAction",
+    "completed_synthetic_fallback_attempts": 3,
+    "visible_error": "The usage refresh returned unreadable data. Existing rows remain available when present.",
+    "visible_retained_total": "$12.50 \u00b7 partial",
+    "same_pid": true,
+    "retained_nonempty_total": true
+  },
+  "visible_navigation_transitions": [
+    {
+      "from": "CodexBar GTK \u2014 Sessions",
+      "control": "Spend",
+      "to": "CodexBar GTK \u2014 Usage & Spend",
+      "same_pid": true
+    },
+    {
+      "from": "CodexBar GTK \u2014 Usage & Spend",
+      "control": "Sessions",
+      "to": "CodexBar GTK \u2014 Sessions",
+      "same_pid": true
+    },
+    {
+      "from": "CodexBar GTK \u2014 Sessions",
+      "control": "Dashboard",
+      "to": "CodexBar GTK \u2014 Dashboard",
+      "same_pid": true
+    },
+    {
+      "from": "CodexBar GTK \u2014 Dashboard",
+      "control": "Settings",
+      "to": "CodexBar Settings",
+      "same_pid": true
+    },
+    {
+      "from": "CodexBar Settings",
+      "control": "Return to dashboard",
+      "to": "CodexBar GTK \u2014 Dashboard",
+      "same_pid": true
+    },
+    {
+      "from": "CodexBar GTK \u2014 Dashboard",
+      "control": "About",
+      "to": "About CodexBar GTK",
+      "same_pid": true
+    }
+  ],
+  "captures": [
+    {
+      "file": "page-state-spend-success.png",
+      "reviewed": true
+    },
+    {
+      "file": "page-state-spend-retained-error.png",
+      "reviewed": true
+    },
+    {
+      "file": "page-state-sessions.png",
+      "reviewed": true
+    },
+    {
+      "file": "page-state-dashboard.png",
+      "reviewed": true
+    },
+    {
+      "file": "page-state-settings.png",
+      "reviewed": true
+    },
+    {
+      "file": "page-state-dashboard-after-settings.png",
+      "reviewed": true
+    },
+    {
+      "file": "page-state-about.png",
+      "reviewed": true
+    }
+  ],
+  "capture_limits": [
+    "Selected 1280x900 captures show the relevant synthetic content; the Spend retained-error window is clipped at the right and bottom edges.",
+    "No claim of full-window pixel parity, physical input, KDE shell parity, or full UG acceptance.",
+    "AT-SPI accessible actions prove activation of named visible controls, not physical Wayland input."
+  ],
+  "cleanup": {
+    "app_exited": true,
+    "compositor_exited": true,
+    "private_runtime_removed": true,
+    "synthetic_home_removed": true,
+    "private_dbus_socket_removed": true
+  }
+}

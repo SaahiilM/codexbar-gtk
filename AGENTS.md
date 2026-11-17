@@ -19,7 +19,7 @@ Do not infer gate acceptance from a local retirement candidate or the existence
 of a Rust module. UG remains **NOT PASSED** and C01–CG remain unaccepted until
 their documented evidence and root review are complete. Historical Python
 implementation and parity tests live under `tests/reference/python/`; they are
-not shipped or installed.
+not shipped, installed, imported by active tests, or a runtime fallback.
 
 ## Continuation protocol
 
@@ -44,8 +44,8 @@ not shipped or installed.
   read it directly; there is no `codexbar_gtk/version.py`. For a merge-approved
   PR, increment `CURRENT_PROJECT_VERSION`, update `CHANGELOG.md` and README's
   displayed build. Marketing version follows supported upstream CodexBar;
-  Cargo package metadata is not a separate release. Root allocates release
-  metadata for the retirement candidate after coverage review.
+  Cargo package metadata is not a separate release. BUILD116 is the current
+  retirement-candidate allocation; do not update archived `version.py` metadata.
 - Rollback uses a previous verified Git tag/commit or preserved native build
   artifact with the data-preserving native installer. Never use a permanent
   Python runtime fallback. Existing unowned commands, desktop files and

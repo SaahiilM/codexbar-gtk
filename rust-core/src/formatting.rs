@@ -421,6 +421,52 @@ mod tests {
     }
 
     #[test]
+    fn reset_credit_rollup_and_absolute_style_match_python_contract() {
+        let now = now();
+        assert_eq!(format_reset_credits(&[], "countdown", now), None);
+
+        // Countdown presentation truncates sub-minute seconds, matching Python.
+        let rounded_down = format_reset_credits(
+            &[Some(now + Duration::minutes(270) + Duration::seconds(59))],
+            "countdown",
+            now,
+        )
+        .unwrap();
+        assert_eq!(rounded_down.0, "1 available");
+        assert_eq!(rounded_down.1, "4h 30m");
+
+        let countdown = format_reset_credits(
+            &[
+                Some(now + Duration::minutes(270)),
+                Some(now + Duration::days(7)),
+                None,
+            ],
+            "countdown",
+            now,
+        )
+        .unwrap();
+        assert_eq!(countdown.0, "3 available");
+        assert_eq!(countdown.1, "4h 30m · 7d 0h · No expiry");
+        assert_eq!(
+            countdown.2,
+            ["Expires 4h 30m", "Expires 7d 0h", "No expiry"]
+        );
+
+        let expirations = (1..=6)
+            .map(|hours| Some(now + Duration::hours(hours)))
+            .collect::<Vec<_>>();
+        let rolled_up = format_reset_credits(&expirations, "countdown", now).unwrap();
+        assert_eq!(rolled_up.0, "6 available");
+        assert!(rolled_up.1.ends_with("· +2"));
+        assert_eq!(rolled_up.1.split(" · ").count(), 5);
+        assert_eq!(rolled_up.2.len(), 6);
+
+        let absolute =
+            format_reset_credits(&[Some(now + Duration::minutes(270))], "absolute", now).unwrap();
+        assert_eq!(absolute.2, ["Expires 16:30"]);
+    }
+
+    #[test]
     fn calculates_workday_progress_and_reset_projection() {
         let reset = Utc.with_ymd_and_hms(2025, 1, 6, 12, 0, 0).unwrap();
         let progress = workday_progress_percent(Some(reset), now(), 5).unwrap();

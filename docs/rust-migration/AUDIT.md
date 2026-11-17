@@ -7688,78 +7688,301 @@ is claimed here.
 
 **Root integration reconciliation:** PR #112 merged normally at `cffed57d756b025b7bb0d29efb863408febd732d`; exact head `bbd07d182d50b2a36d01783af2161a9da14ad278` passed all three jobs in run `43953622135`. No reviews/comments/review threads were present. BUILD112 merged this verified base normally, retaining E214/E215 and both changelog entries. Conflicts affected release metadata and handoff only; native tray and login-fixture changes remain intact. Fresh BUILD112 CI is pending.
 
-### E216 — runtime-retirement review follow-up (partial, local)
+### E216 — 2026-11-16: retire legacy Python developer preview/smoke tools
 
-**Owner/base/status:** branch `t3/retire-python-runtime`, based on candidate
-HEAD `b295782a688bceebb78d98b1873ae2bd01ab15ff`; local follow-up only. No
-release build number was allocated, and no commit, push, PR, merge, exact-head
-CI or gate pass is claimed. The Python archive remains a transitional
-reference, not completed cleanup or rollback.
+**Owner/base/status:** branch `t3/legacy-python-tools-cleanup`, local slice based
+on `35dc266` (`origin/main` at `bc0dce9`). BUILD113 is provisional because
+BUILD111/E214 tray and BUILD112/E215 CLI assertion work is pending root's serial
+reconciliation. This entry records local evidence only; it claims no merge,
+publication, PR, or remote CI result. Root integrates after E214/E215 and then
+revises the handoff using observed merge/CI evidence.
 
-**Coverage disposition:** the per-file archived-test crosswalk is in
-`tests/reference/python/README.md`. It maps every archived test module to
-named Rust tests or marks adapter/PyO3-only assertions as
-legacy-wrapper-only/retired, with remaining gaps stated. The full method-level
-`test_app.py` / settings-facade map is referenced at validated peer commit
-`cb0d2ba6ba9812433fd16e0a6fdebfe3280a715e` on top of `e7973fa`; it was not
-cherry-picked. Root provided that this peer is clean and passed atomic PyO3
-extension build, default Python (318 tests, 22 expected skips), Rust-opt-in
-Python (318 tests, zero skips), core (92 tests), backend (97 unit + 4
-integration tests), formatting and strict Clippy. This clears only the
-two-mode prerequisite; it does not map every other archived file or pass UG,
-C01–CG, or authorize removal of the remaining archive. Native test counts are
-not claimed as a substitute for the old Python assertion inventory. Root's
-accepted strict rejection of a nonexistent configured CLI path supersedes the
-older peer-map policy note.
+**Purpose and boundaries:** remove obsolete Python developer-preview and B13
+smoke tooling while preserving the BUILD110 Python rollback/runtime path and
+active Python parity tests. This retires testing tools only; it does not claim
+native coverage for the Python runtime, parity-test equivalence, UG acceptance,
+or any migration cutover gate. No runtime, PyO3, provider, or Rust production
+code changed. No host GUI, D-Bus, service, provider HTTP, credentials, push, or
+PR operation was performed.
 
-**Changes:** removed the eight explicitly support-retired preview/GTK smoke
-files from `tests/reference/python/tools/`; Git history retains them and the
-archive README does not reintroduce them. Corrected the current migration guide
-validation commands and marked its pre-native source inventory as historical.
-The current candidate/readme records the existing four ignored positive GTK
-CI checks (including the three requested artwork/accessibility/rendered
-content checks) and keeps the missing-SVG-loader negative precondition
-separate. The harness unit runner now discovers all top-level
-`tests/test_*.py` modules, so new active harness tests are not silently omitted.
+**Exactly eight removed files (1,918 source lines):**
+`tools/gtk_smoke_b13_settings.py` (351),
+`tools/gtk_smoke_b13_spend_tray.py` (489),
+`tools/gtk_smoke_b13b2_actions.py` (280), `tools/preview.py` (165),
+`tools/preview_b09_synthetic.py` (220), `tools/preview_b10_controller.py`
+(201), `tools/preview_currency.py` (72), and
+`tools/preview_notifications.py` (140). Their purpose was local widget
+previews and synthetic B13 UI/action smokes. Their source remains available in
+Git history. `tools/README.md` describes retained native verification:
+`./scripts/build-native.sh`; private-X11
+`scripts/smoke-native-dashboard.sh`, `scripts/smoke-native-usage-pages.sh`,
+and `scripts/smoke-native-settings.sh`; and private-Wayland
+`python3 scripts/test-native-wayland-isolated.py --binary <binary> --scenario
+matrix` (also `advanced` and `settings-residual`). It documents synthetic data,
+private sessions, dependencies, and the limits of AT-SPI/GAction evidence.
 
-**Implementation and checks:** added
-`rust_backend::controller::tests::missing_cli_fails_first_refresh_immediately_with_typed_process_error`.
-It asserts missing-executable `CliErrorKind::NotFound` / `cli_usage`, the
-sanitized backend `Process/cli_usage` failure state, no fabricated snapshot,
-and failure within a 250 ms bound instead of waiting for the 500 ms polling
-tick. Also added GTK lifecycle unit test
-`immediate_display_readiness_does_not_sleep`, which requires one successful
-display check and panics if the ready path sleeps. The existing
-`starts_immediately_publishes_tray_and_typed_events_and_records_history`
-continues to cover successful immediate startup. The Rust `FnMut() -> bool`
-display callback is non-fallible, so Python callback-exception behavior stays
-legacy-wrapper-only; no panic catch was added.
+The root README no longer advertises `./tools/preview.py` or its Python GTK
+preview setup. Its native-default installation and explicit Python
+parity/rollback guidance remain. `run-python.sh`,
+`scripts/install-python.sh`, and the Python test tree remain present. A caller
+scan of 108 tracked application, test, script, and CI paths found no reference
+to any of the eight retired filenames. Historical changelog/audit records and
+the explicit E216 inventory are retained as history, not executable callers.
 
-- Focused controller suite with unique `/tmp/codexbar-retire-python-target`
-  and `CARGO_BUILD_JOBS=1`: 12 passed, 0 failed; filtered integration tests
-  not run.
-- Focused GTK lifecycle test with the same unique Cargo target and one build
-  job: 1 passed, 0 failed. No GTK display was needed by this pure helper test.
-- `scripts/test-native-harness-units.sh`: 118 passed across all seven
-  top-level harness modules, no skips.
-- The first harness attempt exposed that `scripts/smoke-native-service.sh`
-  hashed deleted tracked paths. It now hashes existing working-tree files;
-  `tests.test_native_service_proof.NativeServiceProofTests.test_smoke_always_builds_in_fresh_target_before_docker_probe`
-  and all three `test_native_service_proof` tests passed. Docker runtime proof
-  itself was not run.
-- Rust backend `cargo fmt --check`, shell syntax checks for both changed
-  scripts, and `git diff --check` passed.
-- No GTK/UI code changed; GTK display smoke, private Wayland, host desktop/bus,
-  host services, authentication and provider-network calls were not run.
+**Version/docs:** `VERSION`, `codexbar_gtk/version.py`, and the README displayed
+build now agree on provisional `0.82.0 (113)`; `CHANGELOG.md` adds the E216
+summary. `TASKS.md` records this branch and provisional ordering after E214 and
+E215 without changing gate status. Existing historical audit entries were not
+rewritten.
 
-**Remaining scope / next:** no active Python application runtime remains;
-Python is used by retained native automation harnesses and reference-only
-archived sources/tests. The retained archive is 58 Python files / 17,388
-Python lines, plus its README. Archive-wide test mapping still needs root
-review, and the full archived package is intentionally retained. UG remains NOT PASSED;
-C01–CG remain unaccepted. Root integrates this candidate only after its
-independent tray/CLI/tool/coverage sequence and remaining finite UG policy
-review. No global version allocation, cherrypick, publication, or watch was
-performed.
+**Local verification:** `python3 -m unittest tests.test_app.VersionMetadataTests`
+passed (1 test); `cargo metadata --locked --manifest-path rust-gtk/Cargo.toml
+--no-deps --format-version 1` passed (1 package); and
+`cargo test --manifest-path rust-gtk/Cargo.toml --locked --lib
+version_metadata_tracks_the_root_version_file` passed (1 test, 40 filtered).
+A direct static check confirmed `VERSION`, Python metadata, and README all say
+`0.82.0 (113)`. The caller scan above passed, and `git diff --check` passed.
 
-Root candidate checkpoint: reviewed native missing-CLI and immediate-readiness assertions. The asynchronous controller test uses a two-second failure bound to avoid a scheduler-sensitive 250ms CI deadline; it still requires the initial manual-mode refresh to start without an external trigger. Focused missing-CLI test passed (1). Source hashing skips deleted paths with an explicit conditional so an absent final path cannot fail the shell loop under pipefail. Candidate remains unallocated/unpublished and does not accept any migration gate.
+**Scope limits/next:** no full Python/Rust suite, build, native GUI/runtime
+smoke, or UI screenshot was run; production behavior is unchanged and this
+change only retires developer tools and updates documentation/version metadata.
+There is no need for a GUI smoke for this tooling/documentation slice. Root
+serially reconciles after E214/E215, adjusts the provisional build if needed,
+and records actual publication and exact-head CI evidence. UG remains
+**NOT PASSED**; Python rollback/runtime and active parity tests remain.
+
+Root E216 reconciliation: PR #113 merged at `5aec9f3d5dedf246457ae17a44229f0d76eef35f`; exact head `443bb0240b66af011cbcb9b0fdb6ef540d3142e1` passed all three checks in run `43955646572`. BUILD113 normally merged that main, retaining changelog and audit/task history. Fresh exact-head CI remains pending.
+
+### E217 — BUILD114 mapped Python assertion retirement
+
+**Claim/base/status:** provisional BUILD114 is on
+`t3/rust-backend-legacy-tests`, source commits `e7973fa` and `cb0d2ba`, based
+on BUILD112 main `cffed57d756b025b7bb0d29efb863408febd732d`. The supplied source
+history is preserved. BUILD113/PR #113 is pending and tool-113 is ready, so the
+build assignment must be reconciled by root after those items are verified.
+This records local evidence only: no PR, push, merge, or exact-head CI result is
+claimed.
+
+**Paths and retirement counts:** `rust-backend/tests/legacy_assertion_map.md`
+maps the retired methods from `tests/test_app.py` and
+`tests/test_python_settings_facade.py` to native Rust assertions. The two
+modules had 106 methods before the change (104 app and 2 settings-facade); 27
+were removed (26 app and 1 facade), leaving 79 (78 and 1). The map supports
+local Python test retirement for those assertion groups; it does not establish
+application-adapter equivalence. Python's permissive CLI reconfiguration
+contract remains because it accepts a nonexistent executable path while Rust
+uses stricter validation. The Python startup callback exception contract also
+remains because the native startup callback is non-fallible. Its missing-binary
+counterpart is assigned to a separate runtime task. The Python runtime, PyO3,
+and adapters remain present.
+
+The follow-up assertions in `rust-core/src/formatting.rs`,
+`rust-core/src/preferences.rs`, and `rust-backend/tests/settings_facade.rs`
+make the empty reset-credit result, countdown truncation (`270m59s` → `4h 30m`),
+and exact portable document top-level keys explicit. The original assertion
+mapping and source removals are in `e7973fa`; these precision additions are in
+`cb0d2ba`.
+
+**Observed checks:** `python3 -m unittest discover -s tests -v` passed 318
+tests with 22 skipped; `CODEXBAR_RUST_CORE=1 python3 -m unittest discover -s
+tests -v` passed 318 with 0 skipped. `cargo test --manifest-path
+rust-core/Cargo.toml --locked` passed 92 tests; `cargo test --manifest-path
+rust-backend/Cargo.toml --locked` passed 97 unit tests and 4 integration
+tests. Both `cargo fmt --manifest-path rust-core/Cargo.toml -- --check` and
+`cargo fmt --manifest-path rust-backend/Cargo.toml -- --check` passed, as did
+`cargo clippy --manifest-path rust-core/Cargo.toml --all-targets --all-features
+-- -D warnings` and the corresponding backend Clippy command. The first backend
+attempt encountered a transient synthetic-executable spawn failure while a
+fixture was being published. The fixture correction stages
+and chmods a temporary executable, then renames it after close; the failure
+and repeated local passes are documented in the E214 backend-fixture
+follow-up. No CI result is inferred from those local runs.
+
+No global UG change or workflow change was made. Existing CI runs the Rust core
+and backend integration coverage; the complete Python suite continues to run
+in both default and opt-in modes until the runtime candidate is addressed.
+This work did not run GUI, host bus, services, credentials/authentication,
+provider requests, or a production runtime smoke. It changes tests and release
+metadata only; production GUI behavior is unchanged.
+
+**Current checks for this documentation/metadata update:** `git diff --check`,
+focused root/Python version-pair consistency, and Markdown-link checks for the
+new handoff/changelog/map links passed. A broad historical AUDIT link scan still
+reports the known E211 link to the moved provider-artwork provenance file; no
+historical entry was rewritten. No broad test rerun was made because the update
+after the supplied source verification is documentation and version metadata
+only.
+
+**Next:** root reconciles BUILD114 after pending BUILD113/PR #113 and tool-113
+are verified, reviews the full branch diff, then decides the publication order
+and observes exact-head CI. UG remains **NOT PASSED** and C gates remain open.
+
+#### E217 stack reconciliation — BUILD114 over published BUILD113
+
+BUILD114/E217 now includes a normal merge of the published BUILD113 tooling
+branch `origin/t3/legacy-python-tools-cleanup` at full commit
+`3cd02d330b6bdb59e38670168becd62e21a915c1`. This preserves the supplied
+BUILD114 source history and the BUILD113 tooling history. The base branch is the
+head of open PR #114 and is not merged to main. Release metadata remains
+`0.82.0 (114)`; both BUILD113/E216 and BUILD114/E217 changelog and audit records
+are retained. Root may publish BUILD114 as a stack targeting
+`t3/legacy-python-tools-cleanup`, then retarget it to main after PR #114 merges.
+No BUILD114 push, PR, exact-head CI, or merge-to-main is claimed.
+
+**Focused reconciliation checks:** Rust core and backend `cargo fmt -- --check`,
+Cargo metadata for both crates, BUILD114 version/README/changelog consistency,
+`git diff --check`, and local Markdown link checks passed. The Python formatter
+check passed for `codexbar_gtk/version.py`. Checking the existing
+`tests/test_app.py` and `tests/test_python_settings_facade.py` reports formatter
+differences; those source files were not changed by the merge and were left
+untouched. The broad link scan's only missing local target is the previously
+recorded E211 pointer to the moved provider-icon provenance file; links in the
+new/current-facing BUILD113/BUILD114 material resolve. No unit or integration
+tests were rerun because the merge changes no production or test source. The
+previously recorded default Python result (318 tests, 22 skipped) and Rust-opt-in
+result (318 tests, 0 skipped) remain inherited evidence, not a fresh merge run.
+
+**Next:** root reviews the clean local merge, publishes BUILD114 with PR #114 as
+the base, and observes exact-head checks. After PR #114 merges, retarget the
+BUILD114 PR to main. UG remains **NOT PASSED** and C gates remain unaccepted.
+
+### E218 — BUILD115 private-Weston page-state coverage (2026-11-16)
+
+**Owner/base/status:** branch `t3/wayland-page-state-harness`, with page-state harness source commits
+`5f44654` and `5cd7103`, now normally merged with BUILD114 source commit
+`763d03245b9a63d9cf2e40a51984c37a003d8b4d`. BUILD114 preserves BUILD113
+(E216) and BUILD114 (E217) history; BUILD115 metadata remains current. PR #115
+is open with checks in progress; PR #114 is open and not merged. No push, PR,
+or merge of this BUILD115 branch is claimed.
+
+**Workflow:** `.github/workflows/rust-core.yml` adds the required six-minute
+`page-state` private-Weston scenario and an independent synthetic evidence
+artifact uploaded with `if: always()`. Existing jobs, the default Wayland
+matrix, Advanced/residual Settings scenarios, X11 smokes, and native/Python-free
+proof were preserved. Scenario implementation is the existing
+`scripts/test-native-wayland-isolated.py --scenario page-state`; this slice
+changes CI wiring and documentation, not runtime code.
+
+**Fresh runtime evidence:** the supplied completed isolated run reports
+`status=passed`, private rootless Weston/Pixman, private Wayland and D-Bus,
+synthetic HOME/runtime, and successful app/compositor/runtime/HOME/bus cleanup.
+The native binary source commit is
+`5cd710318cc88d50bb4db61cd46757a07751e919`; SHA-256 is
+`8c3e3a2121e061f9ac4778316da58b4156487270dc520d730ae6ee35186b8d61`. The
+captured About page shows `0.82.0 (112)`. At source commit `5cd7103`, both
+`VERSION` and `codexbar_gtk/version.py` say build 112. This verifies the
+runtime's embedded build from the source and visible app metadata; it is not
+BUILD115. The evidence retained in this commit is sanitized to relative image
+paths and omits transient private socket/bus addresses and AT-SPI identities.
+
+The run observed a synthetic successful Spend total of `$12.50 · partial`,
+then activated visible Refresh and waited for all three synthetic fallback CLI
+attempts to complete. From the same app PID and Spend window, it observed the
+unreadable-data error and the retained nonempty `$12.50 · partial` total. The
+retained-error screenshot also visibly contains `$1.25 · partial`, token and
+coverage cards. Six visible same-PID AT-SPI actions navigated Sessions→Spend,
+Spend→Sessions, Sessions→Dashboard, Dashboard→Settings, Settings→Dashboard
+through the visible Return to dashboard action, and Dashboard→About. The
+selected captures and relative `evidence.json` are in
+[`screenshots/build115-page-state/`](screenshots/build115-page-state/); I
+personally inspected all seven selected captures.
+
+**Local verification:**
+
+- `python3 -m unittest tests.test_native_wayland_isolated_harness -v` — 27
+  passed, including the page-state scenario contract, synthetic three-failure
+  fixture, capture checks and fail-closed action identity behavior.
+- `python3 -m py_compile scripts/test-native-wayland-isolated.py
+  tests/test_native_wayland_isolated_harness.py` — passed.
+- `python3 -m unittest
+  tests.test_app.VersionMetadataTests.test_display_string_matches_version_file
+  -v` — passed with BUILD115.
+- `CARGO_TARGET_DIR=/tmp/codexbar-build115-version-metadata cargo test
+  --manifest-path rust-gtk/Cargo.toml --locked --lib
+  version_metadata_tracks_the_root_version_file` — 1 passed.
+- Workflow YAML parsed; structural assertions verified the six-minute
+  `page-state` step, always-upload artifact, and preserved matrix, Advanced,
+  residual Settings, X11 and Python suite steps.
+- Current-facing local Markdown links passed. The broad scan still finds the
+  pre-existing historical E211 link to the moved
+  `codexbar_gtk/assets/provider_icons/UPSTREAM-PROVENANCE.md`; that
+  append-only record was not rewritten.
+- Sanitized evidence JSON assertions and all seven selected PNG decode and
+  verify at 1280×900; `git diff --check` passed.
+
+**Limits and exact next step:** the selected retained-error capture is clipped
+at the right and bottom edges, though the error and totals are visible; no
+full-window pixel-parity claim is made. AT-SPI activation is not physical
+Wayland input or KDE shell parity. No Spend range, heatmap-mode, tooltip,
+pointer, Settings, or KDE-specific behavior was retested. This fresh evidence
+supersedes E192 only for its retained-error claim; it does not establish the
+other E192 range/mode claims. UG stays **NOT PASSED**, and no C gate is accepted.
+Python retirement candidacy is independent. No new private-Weston runtime was
+run because this diff makes no application/runtime code changes. Root's next
+step is to reconcile BUILD112–114 peer changes, review this provisional BUILD115
+diff, then publish and observe exact-head CI. Do not claim CI success before
+that observation.
+
+
+#### E218 remote CI snapshot — 2026-11-17
+
+Before this local merge was published, PR #115's source head was checked in run
+`44116527470`: `tray-dbus` passed, `test` failed at “Run headless backend
+contract tests,” and `python-free-runtime-proof` remained in progress. The
+failed job log was not available while the run was active. PR #114 remained open;
+its `tray-dbus` and `python-free-runtime-proof` passed, while `test` remained in
+progress. These are statuses for the existing remote heads, not for local merge
+commit `774f3c23bf6ce254e0e45bfab348d7dfffbe10c2`; no exact-head CI result is
+claimed for that commit.
+
+
+#### E218 completed CI update — 2026-11-17
+
+Run `44116527470` completed on PR #115's pre-integration head `763d03245b9a63d9cf2e40a51984c37a003d8b4d`: `tray-dbus` and `python-free-runtime-proof` passed; `test` failed with 96 passed and one failed. The failing test was `cli::tests::cancellation_kills_and_reaps_child` in `rust-backend/src/cli.rs:748`, panicking because the fixture did not write a complete child PID. All later conditional test-job steps were skipped after the headless backend test failure, including native GTK bootstrap, provider-artwork and X11 checks, both Python suites, Clippy, native GUI/Wayland smokes, and packaging checks. This CI run does not validate integrated merge commit `30381ee9df0e1242a982cec4d750d14c723d35b9`; no repeat of the full suites or exact-head CI is claimed.
+
+PR #114 run `44115397836` completed with `tray-dbus`, `test`, and `python-free-runtime-proof` all passing; PR #114 remains open and unmerged at this observation.
+
+### E218 — BUILD114 PR #115 cancellation-fixture failure follow-up
+
+**Base/status:** continuation of provisional BUILD114/E217 on
+`t3/rust-backend-legacy-tests`, based on PR #114's open head
+`3cd02d330b6bdb59e38670168becd62e21a915c1`. PR #115 is open at supplied head
+`763d03245b9a63d9cf2e40a51984c37a003d8b4d`; the supplied exact-head run failed
+and the worktree changes below are not pushed. BUILD114 remains build 114
+within the existing PR; no release metadata changed.
+
+**Supplied failure and diagnosis limit:** run `44116527470`, test job
+`134155986179`, reported 96 passed and 1 failed in 4.64 seconds. The failure
+was `cli::tests::cancellation_kills_and_reaps_child` at `cli.rs:748`: the test
+did not observe a complete child PID file. The native tray job passed. The
+available `/tmp/codexbar-pr115-test.log` ends at the test assertion and does
+not preserve the operation task result, spawn error, or errno. Thus the exact
+original cause is not established; no `ETXTBSY`, `ENOENT`, or I/O cause is
+attributed to that CI failure.
+
+**Changes:** only `rust-backend/src/cli.rs` and this handoff/audit record
+changed. The cancellation test now waits concurrently for the PID file or
+completion of its actual `JoinHandle`. Early task completion retains the typed
+`CliErrorKind`, static operation ID, and test-only numeric raw spawn errno for
+diagnostics; no path, stderr, stdout, credentials, or process output is
+reported. On its deadline, the helper aborts and joins the task. Once a PID is
+observed, a test process-group cleanup guard protects panic/failure paths. This
+does not accept spawn failure as a passing cancellation result and does not add
+a production retry or timeout change. A focused synthetic missing-executable
+test covers early completion before PID publication and asserts
+`NotFound`/`ENOENT`; that fixture is diagnostic-path coverage, not a finding
+about the supplied CI event.
+
+**Local checks:** the focused cancellation test passed 50 consecutive runs;
+the early-failure/errno regression passed 50 consecutive runs. The locked
+backend suite passed 98 unit tests, `bg_gate_end_to_end` (1), `cli_service`
+(1), and `settings_facade` (2), with `--test-threads=4` and Cargo build jobs
+limited to one. `cargo fmt --manifest-path rust-backend/Cargo.toml --
+--check`, strict all-target/all-features backend Clippy, and `git diff --check`
+passed. The original failure did not recur, so local evidence does not identify
+its cause. No GUI, D-Bus, authentication, provider HTTP, push, PR update, or
+replacement CI run was performed. No exact-head CI success is claimed.
+
+**Next:** root reviews these worktree changes, updates PR #115 while retaining
+PR #114 as its unmerged base, and observes the replacement exact-head result.
+UG remains **NOT PASSED** and C gates remain unaccepted.

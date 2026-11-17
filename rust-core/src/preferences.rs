@@ -402,6 +402,20 @@ mod tests {
     }
 
     #[test]
+    fn defaults_and_persisted_boolean_round_trip_match_legacy_settings_contract() {
+        let temp = TempDir::new();
+        let path = temp.path().join("settings.json");
+        let store = PreferencesStore::new(&path);
+
+        assert_eq!(store.get("refreshFrequency"), Some(json!("adaptive")));
+        store.set("usageBarsShowUsed", json!(false), true).unwrap();
+        assert_eq!(
+            PreferencesStore::new(path).get("usageBarsShowUsed"),
+            Some(json!(false))
+        );
+    }
+
+    #[test]
     fn malformed_and_non_object_documents_keep_defaults() {
         let temp = TempDir::new();
         let path = temp.path().join("settings.json");
@@ -425,6 +439,15 @@ mod tests {
         assert!(store.refresh_is_manual());
         let document = store.export_document();
         assert_eq!(document["version"], json!(1));
+        assert_eq!(
+            document
+                .as_object()
+                .unwrap()
+                .keys()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            ["preferences", "version"]
+        );
         assert_eq!(document["preferences"]["unknown"], json!(true));
 
         store.reset().unwrap();

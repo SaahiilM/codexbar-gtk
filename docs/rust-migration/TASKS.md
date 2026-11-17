@@ -9,11 +9,35 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Field | Current checkpoint |
 | --- | --- |
 | Goal | Fully native Rust GTK4/libadwaita application with verified packaging and legacy runtime removal. |
-| Current phase | BUILD117 final source cleanup; UG remains **NOT PASSED**, and C01–CG remain unaccepted. |
-| Last observed merge | PR #117 merged at `677135c4bcffcdf56c5bd5c913c11ee294e229fc`; exact head `f45c01a9139a891e54495b4b62e6f7ee89a95c2a` passed all three required checks in run `44125566585`. |
-| Active implementation | Local BUILD117/E220 cleanup on `t3/delete-python-reference-archive`, based on verified `origin/main` `677135c4bcffcdf56c5bd5c913c11ee294e229fc`. Deletes the 58-file/16,911-line retired Python reference archive and four manual debug tools (349 lines), total 62 Python files / 17,260 lines. Active Python test and script harnesses remain. |
-| Previous slice integration | Cherry-picked root-reviewed peer commit `1d368dcc402b26d9e2206d3adc450716f0e1ac63` as local commit `7b00677`; its tools-only scope does not overlap the archive removal. |
-| Next | Root reviews and publishes this focused cleanup PR. Do not mark UG or any C gate passed because source archives were removed. |
+| Current phase | BUILD118 Rust CI helper migration; UG remains **NOT PASSED**, and C01–CG remain unaccepted. |
+| Last observed merge | PR #118 merged at `93695ac062818a21f7f38ef67765c0c6fc55774e`; exact head `f796b968670e7bbcc28081ba110414f13c405a19` passed all three required checks in run `44130179179`, with no reviews, comments, or review threads. |
+| Active implementation | BUILD118/E221 workflow and resolver migration on `t3/rust-ci-no-python`, based on `93695ac062818a21f7f38ef67765c0c6fc55774e`. Local changes are scoped and uncommitted for root review. |
+| Next | Root reviews and publishes this slice, then verifies exact-head CI. Continue retiring remaining Python automation only alongside native UI ports; do not infer UG/C gate acceptance. |
+
+### BUILD118/E221 — Python-free Rust CI helper wiring
+
+**Owner/base/status:** branch `t3/rust-ci-no-python`, based on the normal
+`origin/main` commit `93695ac062818a21f7f38ef67765c0c6fc55774e` (PR #118).
+BUILD118 metadata is reserved for root review. This local slice is not pushed;
+no PR or exact-head CI result is claimed.
+
+**Scope:** add `rust-ci-tools/` as a locked Rust helper crate, wire strict
+format/test/Clippy CI, and replace the three deleted Python Cargo-artifact
+resolver calls with `scripts/native/no-python/cargo-artifact`. CI builds the
+resolver on Ubuntu 24.04 before use, matching the pinned runtime Docker image
+ABI; the executable is not claimed to be portable across arbitrary hosts.
+Existing X11, private Wayland, Docker-installed runtime, SVG, settings/history,
+activation, cleanup and proof-artifact steps remain. Keep the four other active
+Python harness modules running until corresponding UI automation ports land.
+No UI files or other crates are included.
+
+**Prior evidence provenance:** PR #117 source head `f45c01a9139a891e54495b4b62e6f7ee89a95c2a` passed all three required checks in run `44125566585`. Its BUILD116 runtime evidence remains historical. E221 separately records the rerun BUILD118 Docker-installed runtime, SVG/data validation, and build-99 → build-118 → build-99 activation command-target proof with exact artifact/source hashes. Those are local candidate results, not merged CI or gate acceptance.
+
+**Checks, runtime scope and limits:** exact BUILD118 results are appended in
+AUDIT E221. The helper’s actual process-level integration tests cover Cargo
+artifact resolution, strict command-target parsing, wrong-hash/install-failure/
+runtime-absence rejection, required-action failure, child cleanup, and data
+validation. No UG or C gate is accepted by CI helper coverage.
 
 ### BUILD117/E220 — retired Python source and debug-tool cleanup
 

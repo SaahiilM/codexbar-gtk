@@ -23,6 +23,7 @@ export PATH="/work/home/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr
 export DISPLAY=:99
 export GDK_BACKEND=x11
 export DBUS_SESSION_BUS_ADDRESS="unix:abstract=/tmp/dbus/bus"
+export CODEXBAR_CI_TOOL=/work/ci-tool
 APP_EXEC=/app/codexbar-gtk-native
 APP_EXPECTED_SHA="$1"
 Xvfb :99 -screen 0 1280x800x24 >/tmp/xvfb.log 2>&1 &
@@ -240,8 +241,9 @@ if kill -0 "$APP_PID" 2>/dev/null; then
 else
   wait "$APP_PID" 2>/dev/null; echo "EVIDENCE:app-exit=$?"
 fi
-echo "EVIDENCE:container-done=1"
 cat /tmp/app.err 2>/dev/null | head -50 || true
+"$CODEXBAR_CI_TOOL" validate-data /work/home/.config/codexbar-gtk/settings.json /work/home/.config/codexbar-gtk/history.jsonl /work/expected-settings.json || exit 1
+echo "EVIDENCE:container-done=1"
 INNER
 VOLUMES=(--volume "$ARTIFACT:/app/codexbar-gtk-native:ro")
 if [ -n "$DEBUG_ARTIFACT" ]; then

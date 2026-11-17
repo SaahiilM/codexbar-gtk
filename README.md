@@ -159,8 +159,10 @@ BUILD111 moves tray D-Bus CI coverage to the native Rust implementation while
 keeping native automation in the broader suite. BUILD113 retires eight legacy
 preview tools, BUILD114 retires 27 mapped Python assertions, and BUILD115 adds
 private-Weston page-state coverage. BUILD116 removed the active Python runtime;
-BUILD117 removes its retired source archive after native coverage review. These
-scoped changes do not pass UG or C gates; see the explicit
+BUILD117 removed its retired source archive after native coverage review.
+BUILD118 replaces the retired Python CI resolvers with a Rust helper while
+preserving the remaining automation harnesses. These scoped changes do not pass
+UG or C gates; see the explicit
 [gate ledger](docs/rust-migration/UG_GATE.md).
 
 - [Architecture, source inventory and stage gates](docs/rust-migration/README.md)
@@ -299,7 +301,7 @@ The GTK front-end uses the version pair in the root `VERSION` file:
   this client is feature-compatible with (`0.82.0`).
 * `CURRENT_PROJECT_VERSION` is the build number of the Linux front-end.
 * Native Rust metadata turns the pair into the macOS-style
-  `"0.82.0 (117)"` string shown under Settings → About, in the tray menu and by
+  `"0.82.0 (118)"` string shown under Settings → About, in the tray menu and by
   `./run.sh --about`.
 
 Increment `CURRENT_PROJECT_VERSION` for each merge-approved PR; the native test

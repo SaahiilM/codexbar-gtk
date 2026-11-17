@@ -8,6 +8,7 @@ on:
       - "rust-core/**"
       - "rust-backend/**"
       - "rust-gtk/**"
+      - "rust-ci-tools/**"
       - "assets/provider_icons/**"
       - "scripts/smoke-native-gtk.sh"
       - "scripts/smoke-native-dashboard.sh"
@@ -25,6 +26,7 @@ on:
       - "scripts/install-native.sh"
       - "scripts/smoke-native-install.sh"
       - "scripts/native/**"
+      - "scripts/native/no-python/cargo-artifact"
       - "rust-gtk/tests/python_free_linkage.rs"
       - "rust-gtk/tests/svg_loader_negative.rs"
       - "scripts/native/render_activation.sh"
@@ -55,6 +57,12 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+      - name: Check CI helper formatting
+        run: cargo fmt --manifest-path rust-ci-tools/Cargo.toml -- --check
+      - name: Test CI helper behavior
+        run: cargo test --manifest-path rust-ci-tools/Cargo.toml --locked
+      - name: Lint CI helper strictly
+        run: cargo clippy --manifest-path rust-ci-tools/Cargo.toml --all-targets --all-features -- -D warnings
       - name: Install native GTK build and smoke dependencies
         run: |
           sudo apt-get update
@@ -175,6 +183,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - name: Build CI resolver for the Ubuntu 24.04 runtime ABI
+        run: |
+          cargo build --manifest-path rust-ci-tools/Cargo.toml --locked --release --bin codexbar-ci-tool
+          printf 'CODEXBAR_CI_TOOL=%s/rust-ci-tools/target/release/codexbar-ci-tool\n' "$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
       - name: Install native build dependencies
         run: |
           sudo apt-get update
@@ -183,14 +195,14 @@ jobs:
         run: |
           cargo build --manifest-path rust-gtk/Cargo.toml --locked --bin codexbar-gtk-native --message-format=json-render-diagnostics > "$RUNNER_TEMP/native-debug.json"
           cargo build --manifest-path rust-gtk/Cargo.toml --locked --release --bin codexbar-gtk-native --message-format=json-render-diagnostics > "$RUNNER_TEMP/native-release.json"
-          native_debug="$(python3 scripts/native/no-python/cargo-artifact.py --json "$RUNNER_TEMP/native-debug.json" --target codexbar-gtk-native)"
+          native_debug="$(scripts/native/no-python/cargo-artifact --json "$RUNNER_TEMP/native-debug.json" --target codexbar-gtk-native)"
           printf 'NATIVE_DEBUG=%s\n' "$native_debug" >> "$GITHUB_ENV"
-          native_release="$(python3 scripts/native/no-python/cargo-artifact.py --json "$RUNNER_TEMP/native-release.json" --target codexbar-gtk-native)"
+          native_release="$(scripts/native/no-python/cargo-artifact --json "$RUNNER_TEMP/native-release.json" --target codexbar-gtk-native)"
           printf 'NATIVE_RELEASE=%s\n' "$native_release" >> "$GITHUB_ENV"
       - name: Build SVG accessibility test executable without running host GUI
         run: |
           cargo test --manifest-path rust-gtk/Cargo.toml --locked --test a11y_assets --no-run --message-format=json-render-diagnostics > "$RUNNER_TEMP/a11y-assets.json"
-          svg_test_binary="$(python3 scripts/native/no-python/cargo-artifact.py --json "$RUNNER_TEMP/a11y-assets.json" --target a11y_assets)"
+          svg_test_binary="$(scripts/native/no-python/cargo-artifact --json "$RUNNER_TEMP/a11y-assets.json" --target a11y_assets)"
           printf 'SVG_TEST_BINARY=%s\n' "$svg_test_binary" >> "$GITHUB_ENV"
       - name: Run installed-prefix and Python-free runtime proof in Docker
         run: |

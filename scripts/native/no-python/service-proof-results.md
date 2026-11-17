@@ -1,5 +1,10 @@
 # Private installer/service-target proof — 2026-11-10
 
+This is a historical BUILD102 result record. The Python resolver and unittest
+commands below describe that observed run; BUILD118 replaces those helpers with
+`rust-ci-tools` and records fresh local proof in migration audit E221. This
+append-only evidence is retained as originally observed.
+
 The original 99→100 observation below is retained as historical evidence. The
 current hardened 99→102 run is appended under E205; it supersedes the original
 artifact identities for the current script behavior without rewriting what was

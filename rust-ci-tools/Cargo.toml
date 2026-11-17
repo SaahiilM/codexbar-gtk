@@ -1,0 +1,13 @@
+[package]
+name = "codexbar-ci-tools"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "codexbar-ci-tool"
+path = "src/main.rs"
+
+[dependencies]
+libc = "0.2"
+serde_json = "1"
+tempfile = "3"

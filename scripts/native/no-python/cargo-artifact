@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd -P)
+TARGET_DIR=${CODEXBAR_CI_TOOLS_TARGET:-$ROOT/rust-ci-tools/target}
+if [[ -n "${CODEXBAR_CI_TOOL:-}" ]]; then
+  exec "$CODEXBAR_CI_TOOL" cargo-artifact "$@"
+fi
+cargo build --locked --offline --manifest-path "$ROOT/rust-ci-tools/Cargo.toml" --target-dir "$TARGET_DIR" --bin codexbar-ci-tool >&2
+exec "$TARGET_DIR/debug/codexbar-ci-tool" cargo-artifact "$@"

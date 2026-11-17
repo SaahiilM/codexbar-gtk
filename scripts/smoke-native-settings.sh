@@ -3,14 +3,18 @@ set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 binary=${1:-"$repo_root/rust-gtk/target/debug/codexbar-gtk-native"}
+fixtures=${CODEXBAR_SMOKE_FIXTURES:-"$repo_root/rust-smoke-fixtures/target/release/codexbar-smoke-fixtures"}
+ui_test_tool=${CODEXBAR_UI_TEST_TOOL:-"$repo_root/rust-ui-test-tools/target/debug/codexbar-ui-test-tool"}
 
-for tool in xvfb-run dbus-run-session xdotool gapplication gdbus xwd ffmpeg python3 grep xfwm4 xprop xwininfo; do
+for tool in xvfb-run dbus-run-session xdotool gapplication gdbus xwd ffmpeg grep xfwm4 xprop xwininfo; do
     command -v "$tool" >/dev/null || { echo "missing smoke dependency: $tool" >&2; exit 2; }
 done
 
 if [[ "${CODEXBAR_NATIVE_SETTINGS_INNER:-}" != "1" ]]; then
+    fixtures=$("$repo_root/scripts/build-rust-smoke-fixtures.sh")
     run_runtime=$(mktemp -d)
     chmod 700 "$run_runtime"
+    mkdir -m 700 "$run_runtime/home"
     cleanup_run_runtime() {
         if command -v findmnt >/dev/null 2>&1; then
             while IFS= read -r mounted_path; do
@@ -25,7 +29,8 @@ if [[ "${CODEXBAR_NATIVE_SETTINGS_INNER:-}" != "1" ]]; then
     }
     trap cleanup_run_runtime EXIT
     run_status=0
-    xvfb-run -a env XDG_RUNTIME_DIR="$run_runtime" GTK_USE_PORTAL=0 \
+    xvfb-run -a env HOME="$run_runtime/home" XDG_RUNTIME_DIR="$run_runtime" GTK_USE_PORTAL=0 \
+        CODEXBAR_SMOKE_FIXTURES="$fixtures" \
         dbus-run-session -- env CODEXBAR_NATIVE_SETTINGS_INNER=1 \
         XDG_RUNTIME_DIR="$run_runtime" GTK_USE_PORTAL=0 "$0" "$binary" || run_status=$?
     cleanup_run_runtime
@@ -34,6 +39,7 @@ if [[ "${CODEXBAR_NATIVE_SETTINGS_INNER:-}" != "1" ]]; then
 fi
 
 [[ -x "$binary" ]] || { echo "native GTK binary not found: $binary" >&2; exit 2; }
+[[ -x "$fixtures" ]] || { echo "native smoke fixture helper not found: $fixtures" >&2; exit 2; }
 
 scratch=$(mktemp -d)
 chmod 700 "$scratch"
@@ -74,11 +80,6 @@ wait_for_file() {
     [[ -e "$path" ]] || { cat "$scratch/app.log" >&2; echo "timed out waiting for $description" >&2; exit 1; }
 }
 
-python3 -c 'import dbus, gi; gi.require_version("Atspi", "2.0"); from gi.repository import Atspi' >/dev/null 2>&1 || {
-    echo "native Settings smoke needs python3-dbus, python3-gi, and AT-SPI introspection" >&2
-    exit 2
-}
-
 runtime_root=${XDG_RUNTIME_DIR:-"$scratch/runtime"}
 mkdir -p "$scratch/home" "$runtime_root"
 chmod 700 "$runtime_root"
@@ -105,8 +106,8 @@ printf '%s\n' 'populated' > "$hooks_mode_file"
 printf '%s\n' 'true' > "$provider_enabled_file"
 printf '%s\n' 'auto' > "$provider_source_file"
 printf '%s\n' '0' > "$plugins_request_count_file"
-api_key_sentinel="synthetic-$(python3 -c 'import secrets; print(secrets.token_hex(12))')"
-login_code_sentinel="fixture-$(python3 -c 'import secrets; print(secrets.token_hex(12))')"
+api_key_sentinel="synthetic-$("$fixtures" random-token)"
+login_code_sentinel="fixture-$("$fixtures" random-token)"
 printf '%s' "$api_key_sentinel" > "$api_key_file"
 printf '%s' "$login_code_sentinel" > "$login_code_file"
 cat > "$scratch/fake-codexbar" <<'CLI'
@@ -216,92 +217,6 @@ esac
 CLI
 chmod 700 "$scratch/fake-codexbar"
 
-cat > "$scratch/notifications.py" <<'PY'
-import sys
-
-import dbus
-import dbus.service
-import gi
-
-gi.require_version("GLib", "2.0")
-from dbus.mainloop.glib import DBusGMainLoop
-from gi.repository import GLib
-
-DBusGMainLoop(set_as_default=True)
-bus = dbus.SessionBus()
-name = dbus.service.BusName("org.freedesktop.Notifications", bus=bus)
-
-
-class Notifications(dbus.service.Object):
-    def __init__(self):
-        super().__init__(bus, "/org/freedesktop/Notifications")
-
-    @dbus.service.method("org.freedesktop.Notifications", in_signature="", out_signature="as")
-    def GetCapabilities(self):
-        return ["body"]
-
-    @dbus.service.method("org.freedesktop.Notifications", in_signature="", out_signature="ssss")
-    def GetServerInformation(self):
-        return ["Synthetic", "CodexBar GTK fixture", "1.0", "1.2"]
-
-    @dbus.service.method(
-        "org.freedesktop.Notifications",
-        in_signature="susssasa{sv}i",
-        out_signature="u",
-    )
-    def Notify(self, app_name, replaces_id, app_icon, summary, body, actions, hints, expire_timeout):
-        with open(sys.argv[1], "a", encoding="utf-8") as output:
-            output.write(f"{app_name}\t{summary}\t{body}\n")
-        return dbus.UInt32(1)
-
-    @dbus.service.method("org.freedesktop.Notifications", in_signature="u", out_signature="")
-    def CloseNotification(self, notification_id):
-        return None
-
-
-Notifications()
-GLib.MainLoop().run()
-PY
-
-cat > "$scratch/update_server.py" <<'PY'
-import http.server
-import sys
-
-
-class QuietHandler(http.server.BaseHTTPRequestHandler):
-    def do_GET(self):
-        version = {}
-        with open(sys.argv[3], encoding="utf-8") as version_file:
-            for line in version_file:
-                key, separator, value = line.strip().partition("=")
-                if separator:
-                    version[key] = value
-        latest_build = int(version["CURRENT_PROJECT_VERSION"]) + 1
-        body = (
-            f"MARKETING_VERSION={version['MARKETING_VERSION']}\n"
-            f"CURRENT_PROJECT_VERSION={latest_build}\n"
-        ).encode("ascii")
-        if self.path != "/VERSION":
-            self.send_error(404)
-            return
-        with open(sys.argv[2], "a", encoding="ascii") as requests:
-            requests.write("VERSION\n")
-        self.send_response(200)
-        self.send_header("Content-Type", "text/plain; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
-
-    def log_message(self, format, *args):
-        return
-
-
-server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), QuietHandler)
-with open(sys.argv[1], "w", encoding="ascii") as port_file:
-    port_file.write(str(server.server_port))
-server.serve_forever()
-PY
-
 export HOME="$scratch/home"
 export XDG_RUNTIME_DIR="$runtime_root"
 export XDG_CONFIG_HOME="$scratch/home/.config"
@@ -336,7 +251,7 @@ export CODEXBAR_NATIVE_SETTINGS_ICON_REPORT=1
 export GTK_A11Y=atspi GTK_USE_PORTAL=0 GDK_BACKEND=x11 GSK_RENDERER=cairo
 printf '%s\n' 'true' > "$NATIVE_SETTINGS_HOOKS_ENABLED"
 
-python3 "$scratch/notifications.py" "$NATIVE_SETTINGS_NOTIFICATION_LOG" >"$scratch/notifications.log" 2>&1 &
+"$fixtures" mock-notifications "$NATIVE_SETTINGS_NOTIFICATION_LOG" >"$scratch/notifications.log" 2>&1 &
 notification_pid=$!
 notification_deadline=$((SECONDS + 8))
 while ! gdbus call --session --dest org.freedesktop.DBus --object-path /org/freedesktop/DBus \
@@ -350,7 +265,7 @@ gdbus call --session --dest org.freedesktop.Notifications \
     exit 1
 }
 
-python3 "$scratch/update_server.py" "$scratch/update-port" "$update_request_file" "$repo_root/VERSION" >"$scratch/update-server.log" 2>&1 &
+"$fixtures" update-server "$scratch/update-port" "$update_request_file" "$repo_root/VERSION" >"$scratch/update-server.log" 2>&1 &
 update_server_pid=$!
 wait_for_file "$scratch/update-port" "loopback update fixture server port"
 update_port=$(cat "$scratch/update-port")
@@ -419,8 +334,7 @@ wait_for_calls() {
 wait_for_preference() {
     local key=$1 expected=$2 deadline=$((SECONDS + 8)) value=""
     while (( SECONDS < deadline )); do
-        value=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get(sys.argv[2]))' \
-            "$preferences_file" "$key" 2>/dev/null || true)
+        value=$("$fixtures" json-get "$preferences_file" "$key" 2>/dev/null || true)
         if [[ "$value" == "$expected" ]]; then
             # The serialized store updates before the GTK actor's response has
             # necessarily reached the owning widget. Let that response settle
@@ -438,8 +352,7 @@ wait_for_preference() {
 wait_for_array_preference() {
     local key=$1 index=$2 expected=$3 deadline=$((SECONDS + 8)) value=""
     while (( SECONDS < deadline )); do
-        value=$(python3 -c 'import json,sys; values=json.load(open(sys.argv[1])).get(sys.argv[2], []); print(values[int(sys.argv[3])] if len(values) > int(sys.argv[3]) else "")' \
-            "$preferences_file" "$key" "$index" 2>/dev/null || true)
+        value=$("$fixtures" json-get "$preferences_file" "$key" "$index" 2>/dev/null || true)
         if [[ "$value" == "$expected" ]]; then
             sleep 0.2
             return 0
@@ -724,10 +637,10 @@ select_chooser_path() {
         # through AT-SPI on the verified app-owned chooser, then require the
         # actual visible Import response action to accept the exact fixture.
         xdotool key --clearmodifiers ctrl+l
-        python3 "$repo_root/scripts/select-native-file-chooser.py" read "$app_pid" "$title" "$path"
+        chooser_tool read "$app_pid" "$title" "$path"
         xdotool key --clearmodifiers ctrl+a
-        python3 "$repo_root/scripts/select-native-file-chooser.py" read "$app_pid" "$title" "$path"
-        python3 "$repo_root/scripts/select-native-file-chooser.py" set "$app_pid" "$title" "$path"
+        chooser_tool read "$app_pid" "$title" "$path"
+        chooser_tool set "$app_pid" "$title" "$path"
         if [[ "$target_name" == "preferences-import.json" ]]; then
             capture_native_size "$chooser" "${NATIVE_SETTINGS_IMPORT_SELECTED_SCREENSHOT:-}"
         else
@@ -740,7 +653,7 @@ select_chooser_path() {
             capture_root_debug "$NATIVE_SETTINGS_CHOOSER_AFTER_SCREENSHOT"
         fi
         if xwininfo -id "$chooser" 2>/dev/null | grep -Fq 'Map State: IsViewable'; then
-            python3 "$repo_root/scripts/select-native-file-chooser.py" accept "$app_pid" "$title" "$path"
+            chooser_tool accept "$app_pid" "$title" "$path"
         fi
         local close_deadline=$((SECONDS + 5))
         while xwininfo -id "$chooser" 2>/dev/null | grep -Fq 'Map State: IsViewable' \
@@ -763,11 +676,21 @@ select_chooser_path() {
     sleep 0.2
 }
 
+chooser_tool() {
+    if [[ -n "${CODEXBAR_UI_TEST_TOOL:-}" || -x "$ui_test_tool" ]]; then
+        "$ui_test_tool" chooser "$@"
+    else
+        # Temporary peer-contract fallback. `scripts/select-native-file-chooser.py`
+        # remains peer-owned; remove this branch after the helper is integrated
+        # and the full no-Python Settings interaction run passes.
+        python3 "$repo_root/scripts/select-native-file-chooser.py" "$@"
+    fi
+}
+
 wait_for_nonempty_preference() {
     local key=$1 deadline=$((SECONDS + 8)) value=""
     while (( SECONDS < deadline )); do
-        value=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get(sys.argv[2], ""))' \
-            "$preferences_file" "$key" 2>/dev/null || true)
+        value=$("$fixtures" json-get "$preferences_file" "$key" 2>/dev/null || true)
         if [[ -n "$value" && "$value" != "None" ]]; then
             sleep 0.2
             return 0
@@ -1138,26 +1061,7 @@ capture "$settings_window" "${NATIVE_SETTINGS_CLI_PATH_ACTIONS_SCREENSHOT:-}"
 export_file="$HOME/preferences-export.json"
 import_file="$HOME/preferences-import.json"
 empty_import_file="$HOME/empty-preferences-import.json"
-python3 - "$import_file" "$empty_import_file" <<'PY'
-import json
-import sys
-
-with open(sys.argv[1], "w", encoding="utf-8") as output:
-    json.dump(
-        {
-            "version": 1,
-            "preferences": {
-                "preferredCurrencyCode": "EUR",
-                "refreshFrequency": "2m",
-                "launchAtLogin": False,
-                "futureSyntheticPreference": "ignored",
-            },
-        },
-        output,
-    )
-with open(sys.argv[2], "w", encoding="utf-8") as output:
-    json.dump({"version": 1, "preferences": {}}, output)
-PY
+"$fixtures" settings-fixtures "$import_file" "$empty_import_file"
 
 # Keep a synthetic autostart entry present across Import and Reset. Both flows
 # must update persisted preferences without touching this OS integration file.
@@ -1172,17 +1076,7 @@ sleep 0.25
 # Export through the native Save chooser and verify the resulting portable JSON.
 select_chooser_path "Export preferences" "$export_file" 790 333
 wait_for_file "$export_file" "selected preferences export"
-python3 - "$export_file" "$api_key_sentinel" <<'PY'
-import json
-import sys
-
-with open(sys.argv[1], encoding="utf-8") as source:
-    document = json.load(source)
-assert document["version"] == 1
-assert document["preferences"]["refreshFrequency"] == "5m"
-assert document["preferences"]["preferredCurrencyCode"] == "USD"
-assert sys.argv[2] not in json.dumps(document)
-PY
+"$fixtures" validate-export "$export_file" "$api_key_sentinel"
 capture "$settings_window" "${NATIVE_SETTINGS_ADVANCED_EXPORT_SCREENSHOT:-}"
 
 # Import overlays known keys onto the latest map, preserves the unrelated
@@ -1195,15 +1089,7 @@ wait_for_preference launchAtLogin False
     echo "native Preferences import changed the autostart desktop entry" >&2
     exit 1
 }
-python3 - "$preferences_file" <<'PY'
-import json
-import sys
-
-with open(sys.argv[1], encoding="utf-8") as source:
-    settings = json.load(source)
-assert settings["usageBarsShowUsed"] is False
-assert "futureSyntheticPreference" not in settings
-PY
+"$fixtures" validate-import "$preferences_file"
 for log_file in "$preferences_file" "$export_file" "$NATIVE_SETTINGS_CALLS" "$scratch/app.log"; do
     if grep -Fq -- "$api_key_sentinel" "$log_file" || grep -Fq -- "$login_code_sentinel" "$log_file"; then
         echo "synthetic credential or login code escaped into saved or logged preferences" >&2

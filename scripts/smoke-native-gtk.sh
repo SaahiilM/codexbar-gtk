@@ -3,12 +3,21 @@ set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 binary=${1:-"$repo_root/rust-gtk/target/debug/codexbar-gtk-native"}
+fixtures=${CODEXBAR_SMOKE_FIXTURES:-"$repo_root/rust-smoke-fixtures/target/release/codexbar-smoke-fixtures"}
 
 if [[ "${CODEXBAR_NATIVE_SMOKE_INNER:-}" != "1" ]]; then
-    exec xvfb-run -a dbus-run-session -- env CODEXBAR_NATIVE_SMOKE_INNER=1 "$0" "$binary"
+    fixtures=$("$repo_root/scripts/build-rust-smoke-fixtures.sh")
+    session_home=$(mktemp -d)
+    mkdir -m 700 "$session_home/runtime"
+    status=0
+    xvfb-run -a env HOME="$session_home" XDG_RUNTIME_DIR="$session_home/runtime" \
+        CODEXBAR_SMOKE_FIXTURES="$fixtures" dbus-run-session -- env \
+        CODEXBAR_NATIVE_SMOKE_INNER=1 "$0" "$binary" || status=$?
+    rm -rf "$session_home"
+    exit "$status"
 fi
 
-for tool in xdotool gapplication gdbus timeout xwininfo xprop python3; do
+for tool in xdotool gapplication gdbus timeout xwininfo xprop; do
     command -v "$tool" >/dev/null || { echo "missing smoke dependency: $tool" >&2; exit 2; }
 done
 if [[ -n "${NATIVE_GTK_TRAY_PANEL_SCREENSHOT:-}${NATIVE_GTK_TRAY_DASHBOARD_SCREENSHOT:-}" ]]; then
@@ -38,8 +47,9 @@ cleanup() {
 }
 trap cleanup EXIT
 
-mkdir -p "$scratch/home" "$scratch/runtime"
-chmod 700 "$scratch/runtime"
+runtime_root=${XDG_RUNTIME_DIR:-"$scratch/runtime"}
+mkdir -p "$scratch/home" "$runtime_root"
+chmod 700 "$runtime_root"
 cat > "$scratch/fake-codexbar" <<'CLI'
 #!/bin/sh
 printf '%s\n' "$1" >> "$NATIVE_CLI_LOG"
@@ -70,7 +80,7 @@ CLI
 chmod 700 "$scratch/fake-codexbar"
 
 export HOME="$scratch/home"
-export XDG_RUNTIME_DIR="$scratch/runtime"
+export XDG_RUNTIME_DIR="$runtime_root"
 export XDG_CONFIG_HOME="$scratch/home/.config"
 export XDG_DATA_HOME="$scratch/home/.local/share"
 export XDG_CACHE_HOME="$scratch/home/.cache"
@@ -97,64 +107,7 @@ export GTK_USE_PORTAL=0
 export GDK_BACKEND=x11
 export GSK_RENDERER=cairo
 
-# Capture Gio's native notification delivery over this isolated session bus.
-python_bin=$(command -v python3)
-if ! "$python_bin" -c 'import dbus, gi' >/dev/null 2>&1; then
-    python_bin=/usr/bin/python3
-fi
-"$python_bin" -c 'import dbus, gi' >/dev/null 2>&1 || {
-    echo "private-bus notification smoke needs python3-dbus and python3-gi" >&2
-    exit 2
-}
-cat > "$scratch/notifications.py" <<'PY'
-import sys
-
-import dbus
-import dbus.service
-import gi
-
-gi.require_version("GLib", "2.0")
-from dbus.mainloop.glib import DBusGMainLoop
-from gi.repository import GLib
-
-DBusGMainLoop(set_as_default=True)
-bus = dbus.SessionBus()
-name = dbus.service.BusName("org.freedesktop.Notifications", bus=bus)
-
-
-class Notifications(dbus.service.Object):
-    def __init__(self):
-        super().__init__(bus, "/org/freedesktop/Notifications")
-        self.next_id = 1
-
-    @dbus.service.method("org.freedesktop.Notifications", in_signature="", out_signature="as")
-    def GetCapabilities(self):
-        return ["body"]
-
-    @dbus.service.method("org.freedesktop.Notifications", in_signature="", out_signature="ssss")
-    def GetServerInformation(self):
-        return ["Synthetic", "CodexBar GTK fixture", "1.0", "1.2"]
-
-    @dbus.service.method(
-        "org.freedesktop.Notifications",
-        in_signature="susssasa{sv}i",
-        out_signature="u",
-    )
-    def Notify(self, app_name, replaces_id, app_icon, summary, body, actions, hints, expire_timeout):
-        with open(sys.argv[1], "a", encoding="utf-8") as output:
-            output.write(f"{app_name}\t{summary}\t{body}\n")
-        self.next_id += 1
-        return dbus.UInt32(self.next_id)
-
-    @dbus.service.method("org.freedesktop.Notifications", in_signature="u", out_signature="")
-    def CloseNotification(self, notification_id):
-        return None
-
-
-Notifications()
-GLib.MainLoop().run()
-PY
-"$python_bin" "$scratch/notifications.py" "$NATIVE_NOTIFICATION_LOG" >"$scratch/notifications.log" 2>&1 &
+"$fixtures" mock-notifications "$NATIVE_NOTIFICATION_LOG" >"$scratch/notifications.log" 2>&1 &
 notification_pid=$!
 deadline=$((SECONDS + 8))
 while ! gdbus call --session --dest org.freedesktop.DBus --object-path /org/freedesktop/DBus \

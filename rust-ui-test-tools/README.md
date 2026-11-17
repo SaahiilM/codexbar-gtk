@@ -6,14 +6,22 @@ interpreter. Build it with `cargo build --manifest-path
 rust-ui-test-tools/Cargo.toml --locked`.
 
 The chooser path uses the Rust AT-SPI2/zbus proxies and supports `read`, `set`,
-`accept`, `select`, and `save`. It scopes the accessible tree to the exact app
-PID, bounds traversal, checks visible/sensitive/focused state and screen bounds,
-requires exact filename cells and unique tree identities, and confirms the
-actual Import/Save response. `isolated-wayland --scenario
-settings-combo-diagnostic` preserves the static unsupported result and exit 3.
-The chooser's former Recent/Home-place fallback has not yet been ported; when
-the exact synthetic file row is absent from the exposed chooser tree, `select`
-fails closed instead of navigating a different place.
+`accept`, `select`, and `save`, each with `PID TITLE PATH`. It scopes the
+accessible tree to one app-owned PID, requires one exact visible titled dialog,
+bounds traversal and child enumeration, checks sensitive/focused state and
+screen bounds, and requires exact filename cells and unique tree identities.
+`select` tries the chooser's Recent then Home places, refreshes the tree after
+selection, and succeeds only after the exact filename row is uniquely selected.
+It invokes `item.visit` only on a unique visible, sensitive same-PID `panel`
+inside the exact dialog. A generic action node is rejected: in the tested GTK
+chooser that action aborts the app inside GTK's file-info code. If GTK exposes
+no safe action and no exact row, `select` fails closed. `accept` invokes the
+unique visible Import action only for that selected row or the exact editable
+path. `save` checks the unique visible editable filename field against the
+requested basename before invoking the app-owned Save action and confirming a
+nonempty file; if GTK does not expose that field through AT-SPI, it fails before
+invoking Save. `isolated-wayland --scenario settings-combo-diagnostic`
+preserves the static unsupported result and exit 3.
 
 `isolated-wayland --scenario matrix-core` is a deliberately bounded live Rust
 scenario. It launches the supplied native binary under private D-Bus and

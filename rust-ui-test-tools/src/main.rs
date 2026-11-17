@@ -25,12 +25,84 @@ const MAX_NODES: usize = 10_000;
 const MAX_CHILDREN: usize = 4_096;
 const MAX_DEPTH: usize = 40;
 const WINDOW_ROLES: &[&str] = &["frame", "window", "application"];
+const CHOOSER_FALLBACK_PLACES: &[&str] = &["Recent", "Open your personal folder"];
+
+fn next_chooser_fallback_place(
+    attempted: &std::collections::HashSet<&str>,
+) -> Option<&'static str> {
+    CHOOSER_FALLBACK_PLACES
+        .iter()
+        .copied()
+        .find(|place| !attempted.contains(place))
+}
 
 fn is_within_tree(identity: &str, root: &str) -> bool {
     identity == root
         || identity
             .strip_prefix(root)
             .is_some_and(|suffix| suffix.starts_with('/'))
+}
+
+struct ChooserDialogSample<'a> {
+    pid: u32,
+    role: &'a str,
+    title: &'a str,
+    showing: bool,
+    visible: bool,
+    sensitive: bool,
+    geometry: [i32; 2],
+}
+
+struct ChooserActionSample<'a> {
+    pid: u32,
+    within_dialog: bool,
+    role: &'a str,
+    showing: bool,
+    visible: bool,
+    sensitive: bool,
+    action_names: &'a [String],
+}
+
+fn chooser_visit_action_index(
+    sample: &ChooserActionSample<'_>,
+    expected_pid: u32,
+) -> Option<usize> {
+    if sample.pid != expected_pid
+        || !sample.within_dialog
+        || sample.role != "panel"
+        || !sample.showing
+        || !sample.visible
+        || !sample.sensitive
+    {
+        return None;
+    }
+    let matches: Vec<_> = sample
+        .action_names
+        .iter()
+        .enumerate()
+        .filter(|(_, name)| name.as_str() == "item.visit")
+        .map(|(index, _)| index)
+        .collect();
+    if matches.len() == 1 {
+        Some(matches[0])
+    } else {
+        None
+    }
+}
+
+fn chooser_dialog_guard(
+    sample: &ChooserDialogSample<'_>,
+    expected_pid: u32,
+    expected_title: &str,
+) -> bool {
+    sample.pid == expected_pid
+        && sample.role == "dialog"
+        && sample.title == expected_title
+        && sample.showing
+        && sample.visible
+        && sample.sensitive
+        && sample.geometry[0] > 0
+        && sample.geometry[1] > 0
 }
 
 fn atspi_target_guard(
@@ -142,7 +214,7 @@ async fn dispatch(args: Vec<String>) -> Result<u8, String> {
 }
 
 fn usage() -> String {
-    "usage: codexbar-ui-test-tool chooser MODE PID TITLE [PATH] | isolated-wayland --binary PATH [--scenario NAME] [--artifact-dir DIR] | settings-wayland --binary PATH ... | spend-wayland --binary PATH ... | update-check-wayland --binary PATH ...".into()
+    "usage: codexbar-ui-test-tool chooser MODE PID TITLE PATH | isolated-wayland --binary PATH [--scenario NAME] [--artifact-dir DIR] | settings-wayland --binary PATH ... | spend-wayland --binary PATH ... | update-check-wayland --binary PATH ...".into()
 }
 
 fn unavailable_runner(name: &str, args: &[String]) -> Result<u8, String> {
@@ -1075,15 +1147,12 @@ fn set_private_file(_path: &Path) -> Result<(), String> {
 }
 
 async fn chooser(args: &[String]) -> Result<u8, String> {
-    if args.len() < 3 || args.len() > 4 {
+    if args.len() != 4 {
         return Err(usage());
     }
     let mode = args[0].as_str();
     if !matches!(mode, "read" | "set" | "accept" | "select" | "save") {
         return Err(format!("unknown chooser mode {mode:?}"));
-    }
-    if mode != "read" && args.len() != 4 {
-        return Err("chooser mode requires PATH".into());
     }
     let pid: u32 = args[1]
         .parse()
@@ -1137,6 +1206,98 @@ async fn object_pid(
         .map_err(|e| e.to_string())
 }
 
+async fn collect_accessible_nodes(
+    conn: &AccessibilityConnection,
+    root: Node,
+) -> Result<Vec<Node>, String> {
+    let mut queue = vec![root];
+    let mut nodes = Vec::new();
+    while let Some(node) = queue.pop() {
+        if nodes.len() >= MAX_NODES || node.depth > MAX_DEPTH {
+            continue;
+        }
+        let access = proxy(conn, node.object.clone()).await?;
+        let count = access
+            .child_count()
+            .await
+            .unwrap_or(0)
+            .clamp(0, MAX_CHILDREN as i32);
+        for index in 0..count {
+            if nodes.len() + queue.len() >= MAX_NODES {
+                break;
+            }
+            if let Ok(child) = access.get_child_at_index(index).await {
+                queue.push(Node {
+                    object: child,
+                    identity: format!("{}/{}", node.identity, index),
+                    depth: node.depth + 1,
+                });
+            }
+        }
+        nodes.push(node);
+    }
+    Ok(nodes)
+}
+
+async fn exact_visible_dialog(
+    conn: &AccessibilityConnection,
+    nodes: &[Node],
+    pid: u32,
+    title: &str,
+) -> Result<Node, String> {
+    let mut dialogs = Vec::new();
+    let mut exact_titles = 0;
+    for node in nodes {
+        if object_pid(conn, &node.object).await.ok() != Some(pid) {
+            continue;
+        }
+        let access = proxy(conn, node.object.clone()).await?;
+        let role = access.get_role_name().await.unwrap_or_default();
+        let name = access.name().await.unwrap_or_default();
+        if role == "dialog" && name == title {
+            exact_titles += 1;
+        } else {
+            continue;
+        }
+        let states = state(conn, &node.object).await?;
+        let component = ComponentProxy::builder(conn.connection())
+            .destination(node.object.name_as_str().unwrap_or(""))
+            .map_err(|e| e.to_string())?
+            .path(node.object.path_as_str())
+            .map_err(|e| e.to_string())?
+            .build()
+            .await
+            .map_err(|e| e.to_string())?;
+        let (_, _, width, height) = component
+            .get_extents(CoordType::Screen)
+            .await
+            .map_err(|e| e.to_string())?;
+        if chooser_dialog_guard(
+            &ChooserDialogSample {
+                pid,
+                role: &role,
+                title: &name,
+                showing: states.contains(State::Showing),
+                visible: states.contains(State::Visible),
+                sensitive: states.contains(State::Sensitive),
+                geometry: [width, height],
+            },
+            pid,
+            title,
+        ) {
+            dialogs.push(node.clone());
+        }
+    }
+    if exact_titles != 1 || dialogs.len() != 1 {
+        return Err(format!(
+            "expected one exact visible chooser {title:?} for app PID {pid}; exact titles={}, visible matches={}",
+            exact_titles,
+            dialogs.len(),
+        ));
+    }
+    Ok(dialogs.remove(0))
+}
+
 async fn chooser_inner(
     mode: &str,
     pid: u32,
@@ -1151,69 +1312,53 @@ async fn chooser_inner(
         .await
         .map_err(|e| e.to_string())?;
     let apps = registry.get_children().await.map_err(|e| e.to_string())?;
-    let mut app = None;
+    let mut apps_for_pid = Vec::new();
     for object in apps.into_iter().take(100) {
         if object_pid(&conn, &object).await.ok() == Some(pid) {
-            app = Some(object);
-            break;
+            apps_for_pid.push(object);
         }
     }
-    let app = app.ok_or_else(|| format!("AT-SPI has no application root for PID {pid}"))?;
-    let mut queue = vec![Node {
+    if apps_for_pid.len() != 1 {
+        return Err(format!(
+            "expected one AT-SPI application root for PID {pid}; found {}",
+            apps_for_pid.len()
+        ));
+    }
+    let app = apps_for_pid.remove(0);
+    let root = Node {
         object: app,
         identity: format!("{pid}:app"),
         depth: 0,
-    }];
-    let mut nodes = Vec::new();
-    while let Some(node) = queue.pop() {
-        if nodes.len() >= MAX_NODES || node.depth > MAX_DEPTH {
-            continue;
-        }
-        let access = proxy(&conn, node.object.clone()).await?;
-        let count = access
-            .child_count()
-            .await
-            .unwrap_or(0)
-            .clamp(0, MAX_CHILDREN as i32);
-        for index in 0..count {
-            if let Ok(child) = access.get_child_at_index(index).await {
-                queue.push(Node {
-                    object: child,
-                    identity: format!("{}/{}", node.identity, index),
-                    depth: node.depth + 1,
-                });
-            }
-        }
-        nodes.push(node);
-    }
-    let mut dialogs = Vec::new();
-    for node in &nodes {
-        let access = proxy(&conn, node.object.clone()).await?;
-        if access.get_role_name().await.as_deref() == Ok("dialog")
-            && access.name().await.as_deref() == Ok(title)
-        {
-            dialogs.push(node.clone());
-        }
-    }
-    if dialogs.len() != 1 {
-        return Err(format!(
-            "expected one exact chooser {title:?} for app PID {pid}; found {}",
-            dialogs.len()
-        ));
-    }
-    let dialog = dialogs.remove(0);
+    };
+    let nodes = collect_accessible_nodes(&conn, root.clone()).await?;
+    let _dialog = exact_visible_dialog(&conn, &nodes, pid, title).await?;
     match mode {
         "read" => {
-            let entry = focused_entry(&conn, &nodes, &dialog, pid).await?;
-            let text = read_entry(&conn, &entry).await?;
+            let fresh_nodes = collect_accessible_nodes(&conn, root.clone()).await?;
+            let fresh_dialog = exact_visible_dialog(&conn, &fresh_nodes, pid, title).await?;
+            let expected_name = path
+                .and_then(|path| Path::new(path).file_name())
+                .and_then(|name| name.to_str());
+            print_chooser_field_diagnostics(&conn, &fresh_nodes, &fresh_dialog, pid, expected_name)
+                .await?;
+            let text =
+                wait_focused_entry_text(&conn, root.clone(), pid, title, Duration::from_secs(5))
+                    .await?;
             println!("ACTUAL_CHOOSER_ENTRY pid={pid} role='text' focused=True text={text:?}");
         }
         "set" => {
             let wanted = path.ok_or("set mode requires PATH")?;
             let deadline = Instant::now() + Duration::from_secs(5);
             let entry = loop {
-                if let Ok(entry) = focused_entry(&conn, &nodes, &dialog, pid).await {
-                    break entry;
+                let refreshed = collect_accessible_nodes(&conn, root.clone()).await?;
+                if let Ok(refreshed_dialog) =
+                    exact_visible_dialog(&conn, &refreshed, pid, title).await
+                {
+                    if let Ok(entry) =
+                        focused_entry(&conn, &refreshed, &refreshed_dialog, pid).await
+                    {
+                        break entry;
+                    }
                 }
                 if Instant::now() >= deadline {
                     return Err("actual chooser has no unique focused EditableText; Ctrl+L must expose the location entry first".into());
@@ -1262,27 +1407,73 @@ async fn chooser_inner(
                 .file_name()
                 .and_then(|p| p.to_str())
                 .ok_or("PATH has no UTF-8 filename")?;
-            let rows = exact_rows(&conn, &nodes, &dialog, pid, basename, true).await?;
-            let exact_path = match focused_entry(&conn, &nodes, &dialog, pid).await {
-                Ok(entry) => read_entry(&conn, &entry).await.ok().as_deref() == Some(wanted),
-                Err(_) => false,
-            };
-            if rows.len() != 1 && !exact_path {
-                return Err(format!("refusing chooser accept: exact synthetic row or editable path required (selected rows: {}, exact_path={exact_path})", rows.len()));
+            let deadline = Instant::now() + Duration::from_secs(5);
+            loop {
+                let refreshed = collect_accessible_nodes(&conn, root.clone()).await?;
+                let refreshed_dialog = exact_visible_dialog(&conn, &refreshed, pid, title).await?;
+                let rows =
+                    exact_rows(&conn, &refreshed, &refreshed_dialog, pid, basename, true).await?;
+                let exact_path = match focused_entry(&conn, &refreshed, &refreshed_dialog, pid)
+                    .await
+                {
+                    Ok(entry) => read_entry(&conn, &entry).await.ok().as_deref() == Some(wanted),
+                    Err(_) => false,
+                };
+                if rows.len() == 1 || exact_path {
+                    invoke_named_action(&conn, &refreshed, &refreshed_dialog, pid, "Import")
+                        .await?;
+                    break;
+                }
+                if Instant::now() >= deadline {
+                    return Err(format!("refusing chooser accept: exact synthetic row or editable path required (selected rows: {}, exact_path={exact_path})", rows.len()));
+                }
+                sleep(Duration::from_millis(50)).await;
             }
-            invoke_named_action(&conn, &nodes, &dialog, pid, "Import").await?;
         }
         "save" => {
             let wanted = path.ok_or("save mode requires PATH")?;
-            invoke_named_action(&conn, &nodes, &dialog, pid, "Save").await?;
+            if !Path::new(wanted).is_absolute() {
+                return Err("chooser target path must be absolute".into());
+            }
+            let basename = Path::new(wanted)
+                .file_name()
+                .and_then(|name| name.to_str())
+                .ok_or("PATH has no UTF-8 filename")?;
+            let deadline = Instant::now() + Duration::from_secs(8);
+            loop {
+                let refreshed = collect_accessible_nodes(&conn, root.clone()).await?;
+                let refreshed_dialog = exact_visible_dialog(&conn, &refreshed, pid, title).await?;
+                if let Ok(field) = exact_visible_filename_field(
+                    &conn,
+                    &refreshed,
+                    &refreshed_dialog,
+                    pid,
+                    basename,
+                )
+                .await
+                {
+                    println!(
+                        "ACTUAL_CHOOSER_DEFAULT_FILENAME pid={pid} basename={basename:?} identity={}",
+                        field.identity
+                    );
+                    invoke_named_action(&conn, &refreshed, &refreshed_dialog, pid, "Save").await?;
+                    break;
+                }
+                if Instant::now() >= deadline {
+                    return Err(format!(
+                        "chooser did not expose exact app-owned Save filename {basename:?}"
+                    ));
+                }
+                sleep(Duration::from_millis(50)).await;
+            }
             wait_nonempty_file(wanted, Duration::from_secs(5)).await?;
         }
         "select" => {
             return select_file(
                 &conn,
-                &nodes,
-                &dialog,
+                root,
                 pid,
+                title,
                 path.ok_or("select mode requires PATH")?,
             )
             .await
@@ -1371,6 +1562,164 @@ async fn read_entry(conn: &AccessibilityConnection, node: &Node) -> Result<Strin
         .map_err(|e| e.to_string())?
         .clamp(0, 1_000_000);
     text.get_text(0, count).await.map_err(|e| e.to_string())
+}
+
+async fn wait_focused_entry_text(
+    conn: &AccessibilityConnection,
+    root: Node,
+    pid: u32,
+    title: &str,
+    duration: Duration,
+) -> Result<String, String> {
+    let deadline = Instant::now() + duration;
+    loop {
+        let nodes = collect_accessible_nodes(conn, root.clone()).await?;
+        if let Ok(dialog) = exact_visible_dialog(conn, &nodes, pid, title).await {
+            if let Ok(entry) = focused_entry(conn, &nodes, &dialog, pid).await {
+                return read_entry(conn, &entry).await;
+            }
+        }
+        if Instant::now() >= deadline {
+            return Err(format!(
+                "actual chooser has no unique visible, focused editable entry for app PID {pid}"
+            ));
+        }
+        sleep(Duration::from_millis(50)).await;
+    }
+}
+
+async fn print_chooser_field_diagnostics(
+    conn: &AccessibilityConnection,
+    nodes: &[Node],
+    dialog: &Node,
+    pid: u32,
+    expected_name: Option<&str>,
+) -> Result<(), String> {
+    let mut scoped_nodes = 0usize;
+    let mut field_candidates = 0usize;
+    for node in nodes
+        .iter()
+        .filter(|node| is_within_tree(&node.identity, &dialog.identity))
+    {
+        if object_pid(conn, &node.object).await.ok() != Some(pid) {
+            continue;
+        }
+        scoped_nodes += 1;
+        let access = proxy(conn, node.object.clone()).await?;
+        let role = access.get_role_name().await.unwrap_or_default();
+        let name = access.name().await.unwrap_or_default();
+        if !matches!(role.as_str(), "text" | "entry")
+            && expected_name.is_none_or(|expected| name != expected)
+        {
+            continue;
+        }
+        field_candidates += 1;
+        let states = state(conn, &node.object).await?;
+        let interfaces = access.get_interfaces().await.unwrap_or_default();
+        let has_text = interfaces.contains(Interface::Text);
+        let has_editable_text = interfaces.contains(Interface::EditableText);
+        let has_component = interfaces.contains(Interface::Component);
+        let text = if has_text {
+            read_entry(conn, node).await.ok()
+        } else {
+            None
+        };
+        let component = ComponentProxy::builder(conn.connection())
+            .destination(node.object.name_as_str().unwrap_or(""))
+            .ok()
+            .and_then(|builder| builder.path(node.object.path_as_str()).ok());
+        let component = if let Some(builder) = component {
+            builder.build().await.ok()
+        } else {
+            None
+        };
+        let nonzero_bounds = if let Some(component) = component {
+            component
+                .get_extents(CoordType::Screen)
+                .await
+                .is_ok_and(|(_, _, width, height)| width > 0 && height > 0)
+        } else {
+            false
+        };
+        eprintln!(
+            "ACTUAL_CHOOSER_EDITABLE_FIELD pid={pid} identity={} role={role:?} name={name:?} focused={} showing={} visible={} sensitive={} text_interface={has_text} editable_text_interface={has_editable_text} component_interface={has_component} nonzero_bounds={nonzero_bounds} text={text:?}",
+            node.identity,
+            states.contains(State::Focused),
+            states.contains(State::Showing),
+            states.contains(State::Visible),
+            states.contains(State::Sensitive),
+        );
+    }
+    eprintln!(
+        "ACTUAL_CHOOSER_FIELD_SCAN pid={pid} tree_nodes={} same_pid_nodes={scoped_nodes} field_candidates={field_candidates} expected_basename={expected_name:?}",
+        nodes.len(),
+    );
+    Ok(())
+}
+
+async fn exact_visible_filename_field(
+    conn: &AccessibilityConnection,
+    nodes: &[Node],
+    dialog: &Node,
+    pid: u32,
+    basename: &str,
+) -> Result<Node, String> {
+    let mut matches = Vec::new();
+    for node in nodes
+        .iter()
+        .filter(|node| is_within_tree(&node.identity, &dialog.identity))
+    {
+        if object_pid(conn, &node.object).await.ok() != Some(pid) {
+            continue;
+        }
+        let access = proxy(conn, node.object.clone()).await?;
+        if !matches!(
+            access.get_role_name().await.as_deref(),
+            Ok("text" | "entry")
+        ) {
+            continue;
+        }
+        let states = state(conn, &node.object).await?;
+        if !states.contains(State::Showing)
+            || !states.contains(State::Visible)
+            || !states.contains(State::Sensitive)
+            || !access
+                .get_interfaces()
+                .await
+                .map(|interfaces| {
+                    interfaces.contains(Interface::EditableText)
+                        && interfaces.contains(Interface::Text)
+                })
+                .unwrap_or(false)
+        {
+            continue;
+        }
+        let component = ComponentProxy::builder(conn.connection())
+            .destination(node.object.name_as_str().unwrap_or(""))
+            .map_err(|e| e.to_string())?
+            .path(node.object.path_as_str())
+            .map_err(|e| e.to_string())?
+            .build()
+            .await;
+        let Ok(component) = component else {
+            continue;
+        };
+        let extents = component.get_extents(CoordType::Screen).await;
+        let Ok((_, _, width, height)) = extents else {
+            continue;
+        };
+        if width > 0 && height > 0 && read_entry(conn, node).await.ok().as_deref() == Some(basename)
+        {
+            matches.push(node.clone());
+        }
+    }
+    if matches.len() != 1 {
+        return Err(format!(
+            "expected one visible app-owned editable chooser field with exact default filename {basename:?}; found {}",
+            matches.len()
+        ));
+    }
+    Ok(matches.remove(0))
 }
 
 async fn invoke_named_action(
@@ -1511,11 +1860,247 @@ async fn exact_rows(
     Ok(found)
 }
 
+async fn visit_place(
+    conn: &AccessibilityConnection,
+    root: &Node,
+    pid: u32,
+    title: &str,
+    place_name: &str,
+) -> Result<bool, String> {
+    let nodes = collect_accessible_nodes(conn, root.clone()).await?;
+    let dialog = exact_visible_dialog(conn, &nodes, pid, title).await?;
+    let mut places = Vec::new();
+    for node in nodes
+        .iter()
+        .filter(|node| is_within_tree(&node.identity, &dialog.identity))
+    {
+        if object_pid(conn, &node.object).await.ok() != Some(pid) {
+            continue;
+        }
+        let access = proxy(conn, node.object.clone()).await?;
+        let states = state(conn, &node.object).await?;
+        if access.get_role_name().await.as_deref() == Ok("list item")
+            && access.name().await.as_deref() == Ok(place_name)
+            && states.contains(State::Showing)
+            && states.contains(State::Visible)
+            && states.contains(State::Sensitive)
+        {
+            places.push(node.clone());
+        }
+    }
+    if places.len() != 1 {
+        eprintln!(
+            "ACTUAL_CHOOSER_PLACE_MATCH pid={pid} name={place_name:?} exact_visible_matches={}",
+            places.len()
+        );
+        return Ok(false);
+    }
+    let place = places.remove(0);
+    let mut parent_identity = place.identity.clone();
+    let mut selected = false;
+    while let Some(index) = parent_identity.rfind('/') {
+        parent_identity.truncate(index);
+        let Some(parent) = nodes.iter().find(|node| node.identity == parent_identity) else {
+            continue;
+        };
+        if object_pid(conn, &parent.object).await.ok() != Some(pid) {
+            continue;
+        }
+        if !proxy(conn, parent.object.clone())
+            .await?
+            .get_interfaces()
+            .await
+            .map(|interfaces| interfaces.contains(Interface::Selection))
+            .unwrap_or(false)
+        {
+            continue;
+        }
+        let selection = SelectionProxy::builder(conn.connection())
+            .destination(parent.object.name_as_str().unwrap_or(""))
+            .map_err(|e| e.to_string())?
+            .path(parent.object.path_as_str())
+            .map_err(|e| e.to_string())?
+            .build()
+            .await
+            .map_err(|e| e.to_string())?;
+        let index = proxy(conn, place.object.clone())
+            .await?
+            .get_index_in_parent()
+            .await
+            .map_err(|e| e.to_string())?;
+        selected = index >= 0
+            && selection
+                .select_child(index)
+                .await
+                .map_err(|e| e.to_string())?;
+        eprintln!(
+            "ACTUAL_CHOOSER_PLACE_SELECTION pid={pid} name={place_name:?} identity={} parent_identity={parent_identity:?} child_index={index} result={selected}",
+            place.identity
+        );
+        break;
+    }
+    if !selected {
+        return Ok(false);
+    }
+
+    // Selection can replace GTK's file-info rows. Let that update settle and
+    // reacquire the exact selected place before inspecting any chooser action.
+    // Only the parity panel action is eligible; generic item.visit actions can
+    // reach GTK's file-info code with an invalid row and abort the app.
+    sleep(Duration::from_millis(50)).await;
+    let mut place_action_succeeded = false;
+    let refreshed_nodes = collect_accessible_nodes(conn, root.clone()).await?;
+    let refreshed_dialog = exact_visible_dialog(conn, &refreshed_nodes, pid, title).await?;
+    let mut refreshed_places = Vec::new();
+    for node in refreshed_nodes
+        .iter()
+        .filter(|node| node.identity == place.identity)
+        .filter(|node| is_within_tree(&node.identity, &refreshed_dialog.identity))
+    {
+        if object_pid(conn, &node.object).await.ok() != Some(pid) {
+            continue;
+        }
+        let access = proxy(conn, node.object.clone()).await?;
+        let states = state(conn, &node.object).await?;
+        if access.get_role_name().await.as_deref() == Ok("list item")
+            && access.name().await.as_deref() == Ok(place_name)
+            && states.contains(State::Showing)
+            && states.contains(State::Visible)
+            && states.contains(State::Sensitive)
+            && states.contains(State::Selected)
+        {
+            refreshed_places.push(node.clone());
+        }
+    }
+    eprintln!(
+        "ACTUAL_CHOOSER_PLACE_REFRESH pid={pid} name={place_name:?} tree_nodes={} exact_identity={} fresh_matches={}",
+        refreshed_nodes.len(),
+        place.identity,
+        refreshed_places.len(),
+    );
+    if refreshed_places.len() != 1 {
+        return Ok(selected);
+    }
+    let refreshed_place = refreshed_places.remove(0);
+
+    if object_pid(conn, &refreshed_place.object).await.ok() == Some(pid) {
+        let place_action = ActionProxy::builder(conn.connection())
+            .destination(refreshed_place.object.name_as_str().unwrap_or(""))
+            .map_err(|e| e.to_string())?
+            .path(refreshed_place.object.path_as_str())
+            .map_err(|e| e.to_string())?
+            .build()
+            .await;
+        if let Ok(place_action) = place_action {
+            let actions = place_action.get_actions().await.unwrap_or_default();
+            eprintln!(
+                "ACTUAL_CHOOSER_PLACE_ROW_ACTIONS pid={pid} name={place_name:?} identity={} names={:?}",
+                refreshed_place.identity,
+                actions.iter().map(|action| action.name.as_str()).collect::<Vec<_>>(),
+            );
+            if actions.len() == 1 {
+                place_action_succeeded =
+                    place_action.do_action(0).await.map_err(|e| e.to_string())?;
+                eprintln!(
+                    "ACTUAL_CHOOSER_PLACE_ROW_ACTION pid={pid} name={place_name:?} identity={} result={place_action_succeeded}",
+                    refreshed_place.identity
+                );
+            }
+        }
+    }
+
+    let mut action_groups = Vec::new();
+    let mut action_node_count = 0usize;
+    let mut visit_action_node_count = 0usize;
+    for node in refreshed_nodes
+        .iter()
+        .filter(|node| is_within_tree(&node.identity, &refreshed_dialog.identity))
+    {
+        if object_pid(conn, &node.object).await.ok() != Some(pid) {
+            continue;
+        }
+        let access = proxy(conn, node.object.clone()).await?;
+        let states = state(conn, &node.object).await?;
+        if !states.contains(State::Showing)
+            || !states.contains(State::Visible)
+            || !states.contains(State::Sensitive)
+        {
+            continue;
+        }
+        let actions = ActionProxy::builder(conn.connection())
+            .destination(node.object.name_as_str().unwrap_or(""))
+            .map_err(|e| e.to_string())?
+            .path(node.object.path_as_str())
+            .map_err(|e| e.to_string())?
+            .build()
+            .await;
+        let Ok(actions) = actions else { continue };
+        let names = actions.get_actions().await.unwrap_or_default();
+        if !names.is_empty() {
+            action_node_count += 1;
+        }
+        let role = access.get_role_name().await.unwrap_or_default();
+        let action_names: Vec<_> = names.iter().map(|action| action.name.clone()).collect();
+        let visit_index = chooser_visit_action_index(
+            &ChooserActionSample {
+                pid,
+                within_dialog: true,
+                role: &role,
+                showing: states.contains(State::Showing),
+                visible: states.contains(State::Visible),
+                sensitive: states.contains(State::Sensitive),
+                action_names: &action_names,
+            },
+            pid,
+        );
+        if visit_index.is_some() {
+            visit_action_node_count += 1;
+            let name = access.name().await.unwrap_or_default();
+            eprintln!(
+                "ACTUAL_CHOOSER_PLACE_ACTION_CANDIDATE pid={pid} identity={} role={role:?} name={name:?} showing={} visible={} sensitive={} action_names={:?}",
+                node.identity,
+                states.contains(State::Showing),
+                states.contains(State::Visible),
+                states.contains(State::Sensitive),
+                action_names,
+            );
+        }
+        if let Some(index) = visit_index {
+            action_groups.push((node.clone(), index));
+        }
+    }
+    eprintln!(
+        "ACTUAL_CHOOSER_PLACE_ACTION_SCAN pid={pid} place={place_name:?} same_pid_visible_action_nodes={action_node_count} item_visit_nodes={visit_action_node_count} unique_item_visit_groups={}",
+        action_groups.len()
+    );
+    if action_groups.len() != 1 {
+        return Ok(selected || place_action_succeeded);
+    }
+    let (group, index) = action_groups.remove(0);
+    let action = ActionProxy::builder(conn.connection())
+        .destination(group.object.name_as_str().unwrap_or(""))
+        .map_err(|e| e.to_string())?
+        .path(group.object.path_as_str())
+        .map_err(|e| e.to_string())?
+        .build()
+        .await
+        .map_err(|e| e.to_string())?;
+    let invoked = action
+        .do_action(index as i32)
+        .await
+        .map_err(|e| e.to_string())?;
+    println!(
+        "ACTUAL_CHOOSER_PLACE_VISIT pid={pid} name={place_name:?} identity={} result={invoked}",
+        refreshed_place.identity
+    );
+    Ok(invoked || selected || place_action_succeeded)
+}
+
 async fn select_file(
     conn: &AccessibilityConnection,
-    nodes: &[Node],
-    dialog: &Node,
+    root: Node,
     pid: u32,
+    title: &str,
     path: &str,
 ) -> Result<(), String> {
     let basename = Path::new(path)
@@ -1523,8 +2108,11 @@ async fn select_file(
         .and_then(|p| p.to_str())
         .ok_or("PATH has no UTF-8 filename")?;
     let deadline = Instant::now() + Duration::from_secs(8);
+    let mut attempted_places = std::collections::HashSet::new();
     loop {
-        let rows = exact_rows(conn, nodes, dialog, pid, basename, false).await?;
+        let nodes = collect_accessible_nodes(conn, root.clone()).await?;
+        let dialog = exact_visible_dialog(conn, &nodes, pid, title).await?;
+        let rows = exact_rows(conn, &nodes, &dialog, pid, basename, false).await?;
         if rows.len() == 1 {
             let row = &rows[0];
             let mut parent_identity = row.identity.clone();
@@ -1569,8 +2157,31 @@ async fn select_file(
                         {
                             return Err("AT-SPI Selection rejected exact filename row".into());
                         }
-                        println!("ACTUAL_CHOOSER_SELECTED_ROW pid={pid} role='table row' filename={basename:?} identity={}", row.identity);
-                        return Ok(());
+                        let verify_deadline = Instant::now() + Duration::from_secs(2);
+                        loop {
+                            let refreshed = collect_accessible_nodes(conn, root.clone()).await?;
+                            let refreshed_dialog =
+                                exact_visible_dialog(conn, &refreshed, pid, title).await?;
+                            let selected = exact_rows(
+                                conn,
+                                &refreshed,
+                                &refreshed_dialog,
+                                pid,
+                                basename,
+                                true,
+                            )
+                            .await?;
+                            if selected.len() == 1 {
+                                println!("ACTUAL_CHOOSER_SELECTED_ROW pid={pid} role='table row' filename={basename:?} identity={}", selected[0].identity);
+                                return Ok(());
+                            }
+                            if Instant::now() >= verify_deadline {
+                                return Err(format!(
+                                    "exact selected filename row did not become uniquely visible after Selection action: {basename:?}"
+                                ));
+                            }
+                            sleep(Duration::from_millis(50)).await;
+                        }
                     }
                 }
             }
@@ -1581,6 +2192,15 @@ async fn select_file(
                 "ambiguous exact visible filename rows: {}",
                 rows.len()
             ));
+        }
+        if rows.is_empty() {
+            while let Some(place_name) = next_chooser_fallback_place(&attempted_places) {
+                attempted_places.insert(place_name);
+                if visit_place(conn, &root, pid, title, place_name).await? {
+                    println!("ACTUAL_CHOOSER_PLACE_FALLBACK pid={pid} name={place_name:?}");
+                    break;
+                }
+            }
         }
         if Instant::now() >= deadline {
             return Err(format!(
@@ -1616,9 +2236,180 @@ async fn wait_nonempty_file(path: &str, duration: Duration) -> Result<(), String
 #[cfg(test)]
 mod tests {
     use super::{
-        atspi_target_guard, cleanup_confirmed, expected_toggled_map, is_within_tree,
-        record_window_candidate, WINDOW_ROLES,
+        atspi_target_guard, chooser_dialog_guard, chooser_visit_action_index, cleanup_confirmed,
+        expected_toggled_map, is_within_tree, next_chooser_fallback_place, record_window_candidate,
+        ChooserActionSample, ChooserDialogSample, WINDOW_ROLES,
     };
+
+    #[test]
+    fn chooser_missing_row_fallback_checks_recent_then_home_once_each() {
+        let mut attempted = std::collections::HashSet::new();
+        assert_eq!(next_chooser_fallback_place(&attempted), Some("Recent"));
+        attempted.insert("Recent");
+        assert_eq!(
+            next_chooser_fallback_place(&attempted),
+            Some("Open your personal folder")
+        );
+        attempted.insert("Open your personal folder");
+        assert_eq!(next_chooser_fallback_place(&attempted), None);
+    }
+
+    #[test]
+    fn chooser_visit_action_requires_one_visible_app_owned_dialog_action() {
+        let action_names = vec!["activate".to_owned(), "item.visit".to_owned()];
+        let sample = |pid, within_dialog, role, showing, visible, sensitive| ChooserActionSample {
+            pid,
+            within_dialog,
+            role,
+            showing,
+            visible,
+            sensitive,
+            action_names: &action_names,
+        };
+        assert_eq!(
+            chooser_visit_action_index(&sample(41, true, "panel", true, true, true), 41),
+            Some(1)
+        );
+        assert_eq!(
+            chooser_visit_action_index(&sample(42, true, "panel", true, true, true), 41),
+            None
+        );
+        assert_eq!(
+            chooser_visit_action_index(&sample(41, false, "panel", true, true, true), 41),
+            None
+        );
+        assert_eq!(
+            chooser_visit_action_index(&sample(41, true, "unknown", true, true, true), 41),
+            None
+        );
+        assert_eq!(
+            chooser_visit_action_index(&sample(41, true, "panel", false, true, true), 41),
+            None
+        );
+        assert_eq!(
+            chooser_visit_action_index(&sample(41, true, "panel", true, false, true), 41),
+            None
+        );
+        assert_eq!(
+            chooser_visit_action_index(&sample(41, true, "panel", true, true, false), 41),
+            None
+        );
+        let duplicate_actions = vec!["item.visit".to_owned(), "item.visit".to_owned()];
+        assert_eq!(
+            chooser_visit_action_index(
+                &ChooserActionSample {
+                    pid: 41,
+                    within_dialog: true,
+                    role: "panel",
+                    showing: true,
+                    visible: true,
+                    sensitive: true,
+                    action_names: &duplicate_actions,
+                },
+                41,
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn chooser_dialog_requires_exact_owner_title_visible_state_and_bounds() {
+        let exact = |pid, role, title, showing, visible, sensitive, width, height| {
+            chooser_dialog_guard(
+                &ChooserDialogSample {
+                    pid,
+                    role,
+                    title,
+                    showing,
+                    visible,
+                    sensitive,
+                    geometry: [width, height],
+                },
+                41,
+                "Import preferences",
+            )
+        };
+        assert!(exact(
+            41,
+            "dialog",
+            "Import preferences",
+            true,
+            true,
+            true,
+            800,
+            600
+        ));
+        assert!(!exact(
+            42,
+            "dialog",
+            "Import preferences",
+            true,
+            true,
+            true,
+            800,
+            600
+        ));
+        assert!(!exact(
+            41,
+            "dialog",
+            "Export preferences",
+            true,
+            true,
+            true,
+            800,
+            600
+        ));
+        assert!(!exact(
+            41,
+            "window",
+            "Import preferences",
+            true,
+            true,
+            true,
+            800,
+            600
+        ));
+        assert!(!exact(
+            41,
+            "dialog",
+            "Import preferences",
+            false,
+            true,
+            true,
+            800,
+            600
+        ));
+        assert!(!exact(
+            41,
+            "dialog",
+            "Import preferences",
+            true,
+            false,
+            true,
+            800,
+            600
+        ));
+        assert!(!exact(
+            41,
+            "dialog",
+            "Import preferences",
+            true,
+            true,
+            false,
+            800,
+            600
+        ));
+        assert!(!exact(
+            41,
+            "dialog",
+            "Import preferences",
+            true,
+            true,
+            true,
+            0,
+            600
+        ));
+    }
 
     #[test]
     fn atspi_tree_identity_uses_path_boundaries() {

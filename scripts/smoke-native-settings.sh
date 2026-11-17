@@ -6,9 +6,14 @@ binary=${1:-"$repo_root/rust-gtk/target/debug/codexbar-gtk-native"}
 fixtures=${CODEXBAR_SMOKE_FIXTURES:-"$repo_root/rust-smoke-fixtures/target/release/codexbar-smoke-fixtures"}
 ui_test_tool=${CODEXBAR_UI_TEST_TOOL:-"$repo_root/rust-ui-test-tools/target/debug/codexbar-ui-test-tool"}
 
-for tool in xvfb-run dbus-run-session xdotool gapplication gdbus xwd ffmpeg grep xfwm4 xprop xwininfo; do
+for tool in xvfb-run dbus-run-session timeout xdotool gapplication gdbus xwd ffmpeg grep xfwm4 xprop xwininfo; do
     command -v "$tool" >/dev/null || { echo "missing smoke dependency: $tool" >&2; exit 2; }
 done
+
+xdotool_binary=$(command -v xdotool)
+xdotool() {
+    timeout --signal=TERM --kill-after=1s 10s "$xdotool_binary" "$@"
+}
 
 if [[ "${CODEXBAR_NATIVE_SETTINGS_INNER:-}" != "1" ]]; then
     fixtures=$("$repo_root/scripts/build-rust-smoke-fixtures.sh")
@@ -19,9 +24,9 @@ if [[ "${CODEXBAR_NATIVE_SETTINGS_INNER:-}" != "1" ]]; then
         if command -v findmnt >/dev/null 2>&1; then
             while IFS= read -r mounted_path; do
                 if command -v fusermount3 >/dev/null 2>&1; then
-                    fusermount3 -u "$mounted_path" >/dev/null 2>&1 || true
+                    timeout 5s fusermount3 -u "$mounted_path" >/dev/null 2>&1 || true
                 elif command -v fusermount >/dev/null 2>&1; then
-                    fusermount -u "$mounted_path" >/dev/null 2>&1 || true
+                    timeout 5s fusermount -u "$mounted_path" >/dev/null 2>&1 || true
                 fi
             done < <(findmnt -rn -o TARGET | awk -v prefix="${run_runtime%/}/" 'index($0, prefix) == 1 { print length($0), $0 }' | sort -rn | cut -d' ' -f2-)
         fi
@@ -29,7 +34,12 @@ if [[ "${CODEXBAR_NATIVE_SETTINGS_INNER:-}" != "1" ]]; then
     }
     trap cleanup_run_runtime EXIT
     run_status=0
-    xvfb-run -a env HOME="$run_runtime/home" XDG_RUNTIME_DIR="$run_runtime" GTK_USE_PORTAL=0 \
+    printf 'Settings private bus bootstrap: time=%s HOME=%q runtime=%q (paths exported before dbus-run-session)\n' \
+        "$(date +%s.%N)" "$run_runtime/home" "$run_runtime" >&2
+    timeout --signal=TERM --kill-after=5s 240s xvfb-run -a env HOME="$run_runtime/home" XDG_RUNTIME_DIR="$run_runtime" \
+        XDG_CONFIG_HOME="$run_runtime/home/.config" XDG_DATA_HOME="$run_runtime/home/.local/share" \
+        XDG_CACHE_HOME="$run_runtime/home/.cache" GTK_USE_PORTAL=0 \
+        CODEXBAR_SMOKE_PRIVATE_HOME="$run_runtime/home" CODEXBAR_SMOKE_PRIVATE_RUNTIME="$run_runtime" \
         CODEXBAR_SMOKE_FIXTURES="$fixtures" \
         dbus-run-session -- env CODEXBAR_NATIVE_SETTINGS_INNER=1 \
         XDG_RUNTIME_DIR="$run_runtime" GTK_USE_PORTAL=0 "$0" "$binary" || run_status=$?
@@ -40,30 +50,44 @@ fi
 
 [[ -x "$binary" ]] || { echo "native GTK binary not found: $binary" >&2; exit 2; }
 [[ -x "$fixtures" ]] || { echo "native smoke fixture helper not found: $fixtures" >&2; exit 2; }
+if [[ "${CODEXBAR_NATIVE_SETTINGS_INNER:-}" == "1" ]] && \
+    [[ "${HOME:-}" != "${CODEXBAR_SMOKE_PRIVATE_HOME:-}" || \
+       "${XDG_RUNTIME_DIR:-}" != "${CODEXBAR_SMOKE_PRIVATE_RUNTIME:-}" ]]; then
+    echo "Settings inner smoke requires HOME and XDG_RUNTIME_DIR to match the private paths exported before D-Bus activation" >&2
+    exit 2
+fi
 
 scratch=$(mktemp -d)
 chmod 700 "$scratch"
 notification_pid=
 update_server_pid=
 window_manager_pid=
+stop_owned_process() {
+    local pid=$1 deadline state
+    [[ -n "$pid" ]] || return 0
+    if kill -0 "$pid" 2>/dev/null; then
+        kill -TERM "$pid" 2>/dev/null || true
+        deadline=$((SECONDS + 5))
+        while (( SECONDS < deadline )); do
+            state=$(awk '{print $3}' "/proc/$pid/stat" 2>/dev/null || true)
+            [[ -z "$state" || "$state" == Z* ]] && break
+            sleep 0.05
+        done
+        state=$(awk '{print $3}' "/proc/$pid/stat" 2>/dev/null || true)
+        if [[ -n "$state" && "$state" != Z* ]]; then
+            kill -KILL "$pid" 2>/dev/null || true
+        fi
+    fi
+    wait "$pid" 2>/dev/null || true
+}
 cleanup() {
     if [[ -n "${app_pid:-}" ]] && kill -0 "$app_pid" 2>/dev/null; then
         gapplication action com.steipete.CodexBarGTK quit >/dev/null 2>&1 || true
-        kill "$app_pid" 2>/dev/null || true
-        wait "$app_pid" 2>/dev/null || true
+        stop_owned_process "$app_pid"
     fi
-    if [[ -n "${notification_pid:-}" ]] && kill -0 "$notification_pid" 2>/dev/null; then
-        kill "$notification_pid" 2>/dev/null || true
-        wait "$notification_pid" 2>/dev/null || true
-    fi
-    if [[ -n "${update_server_pid:-}" ]] && kill -0 "$update_server_pid" 2>/dev/null; then
-        kill "$update_server_pid" 2>/dev/null || true
-        wait "$update_server_pid" 2>/dev/null || true
-    fi
-    if [[ -n "${window_manager_pid:-}" ]] && kill -0 "$window_manager_pid" 2>/dev/null; then
-        kill "$window_manager_pid" 2>/dev/null || true
-        wait "$window_manager_pid" 2>/dev/null || true
-    fi
+    stop_owned_process "$notification_pid"
+    stop_owned_process "$update_server_pid"
+    stop_owned_process "$window_manager_pid"
     if [[ "${NATIVE_SETTINGS_KEEP_TMP:-0}" == "1" ]]; then
         echo "synthetic settings smoke files kept at $scratch" >&2
     else
@@ -80,8 +104,75 @@ wait_for_file() {
     [[ -e "$path" ]] || { cat "$scratch/app.log" >&2; echo "timed out waiting for $description" >&2; exit 1; }
 }
 
+assert_private_bus_ready() {
+    local address=${DBUS_SESSION_BUS_ADDRESS:-} address_fingerprint
+    [[ "$address" == unix:* ]] || {
+        echo "Settings smoke did not inherit a private Unix D-Bus session address" >&2
+        exit 1
+    }
+    if ! gdbus call --session --dest org.freedesktop.DBus --object-path /org/freedesktop/DBus \
+        --method org.freedesktop.DBus.ListNames --timeout 3 >/dev/null 2>&1; then
+        echo "private Settings session bus did not answer ListNames before app launch" >&2
+        exit 1
+    fi
+    address_fingerprint=$(printf '%s' "$address" | sha256sum | cut -c1-16)
+    printf 'private Settings bus live: time=%s HOME=%q runtime=%q transport=%s address_fingerprint=%s\n' \
+        "$(date +%s.%N)" "$HOME" "$XDG_RUNTIME_DIR" "${address%%:*}" "$address_fingerprint"
+}
+
+wait_for_app_bus_owner() {
+    local deadline=$((SECONDS + 8)) launched_at app_home app_runtime app_bus_address app_bus_transport owner_pid
+    local bus_address_fingerprint app_address_fingerprint
+    launched_at=$(date +%s.%N)
+    bus_address_fingerprint=$(printf '%s' "${DBUS_SESSION_BUS_ADDRESS:-}" | sha256sum | cut -c1-16)
+    printf 'native Settings app launch: time=%s HOME=%q runtime=%q bus_transport=%q\n' \
+        "$launched_at" "$HOME" "$XDG_RUNTIME_DIR" "${DBUS_SESSION_BUS_ADDRESS%%:*}"
+    assert_private_bus_ready
+    while (( SECONDS < deadline )); do
+        if gdbus call --session --dest org.freedesktop.DBus --object-path /org/freedesktop/DBus \
+            --method org.freedesktop.DBus.NameHasOwner com.steipete.CodexBarGTK --timeout 2 2>/dev/null \
+            | grep -q '(true,)'; then
+            owner_pid=$(gdbus call --session --dest org.freedesktop.DBus --object-path /org/freedesktop/DBus \
+                --method org.freedesktop.DBus.GetConnectionUnixProcessID com.steipete.CodexBarGTK --timeout 2 \
+                | sed -n 's/^(uint32 \([0-9][0-9]*\),)$/\1/p')
+            [[ "$owner_pid" == "$app_pid" ]] || {
+                echo "native Settings app D-Bus owner PID mismatch (owner=$owner_pid launched=$app_pid)" >&2
+                exit 1
+            }
+            app_home=$(tr '\0' '\n' <"/proc/$app_pid/environ" | sed -n 's/^HOME=//p' | head -n 1)
+            app_runtime=$(tr '\0' '\n' <"/proc/$app_pid/environ" | sed -n 's/^XDG_RUNTIME_DIR=//p' | head -n 1)
+            app_bus_address=$(tr '\0' '\n' <"/proc/$app_pid/environ" | sed -n 's/^DBUS_SESSION_BUS_ADDRESS=//p' | head -n 1)
+            app_bus_transport=${app_bus_address%%:*}
+            app_address_fingerprint=$(printf '%s' "$app_bus_address" | sha256sum | cut -c1-16)
+            printf 'native Settings app bus context: HOME=%q runtime=%q bus_transport=%q private_address_fingerprint=%s\n' \
+                "$app_home" "$app_runtime" "$app_bus_transport" "$app_address_fingerprint"
+            [[ "$app_home" == "$HOME" ]] || {
+                echo "native Settings app HOME differs from the isolated smoke HOME" >&2
+                exit 1
+            }
+            [[ "$app_runtime" == "$XDG_RUNTIME_DIR" ]] || {
+                echo "native Settings app XDG_RUNTIME_DIR differs from the isolated smoke runtime" >&2
+                exit 1
+            }
+            [[ "$app_bus_address" == "$DBUS_SESSION_BUS_ADDRESS" && \
+               "$app_address_fingerprint" == "$bus_address_fingerprint" ]] || {
+                echo "native Settings app D-Bus address differs from the live private session bus" >&2
+                exit 1
+            }
+            printf 'native Settings app D-Bus owner live: time=%s pid=%s\n' "$(date +%s.%N)" "$owner_pid"
+            return 0
+        fi
+        kill -0 "$app_pid" 2>/dev/null || break
+        sleep 0.05
+    done
+    cat "$scratch/app.log" >&2
+    echo "private session bus stayed live but native Settings app never acquired its application name" >&2
+    exit 1
+}
+
 runtime_root=${XDG_RUNTIME_DIR:-"$scratch/runtime"}
-mkdir -p "$scratch/home" "$runtime_root"
+home_root=${HOME:-"$scratch/home"}
+mkdir -p "$home_root" "$runtime_root"
 chmod 700 "$runtime_root"
 plugins_mode_file="$scratch/plugins-mode"
 hooks_mode_file="$scratch/hooks-mode"
@@ -217,11 +308,11 @@ esac
 CLI
 chmod 700 "$scratch/fake-codexbar"
 
-export HOME="$scratch/home"
+export HOME="$home_root"
 export XDG_RUNTIME_DIR="$runtime_root"
-export XDG_CONFIG_HOME="$scratch/home/.config"
-export XDG_DATA_HOME="$scratch/home/.local/share"
-export XDG_CACHE_HOME="$scratch/home/.cache"
+export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$home_root/.config}"
+export XDG_DATA_HOME="${XDG_DATA_HOME:-$home_root/.local/share}"
+export XDG_CACHE_HOME="${XDG_CACHE_HOME:-$home_root/.cache}"
 preferences_file="$XDG_CONFIG_HOME/codexbar-gtk/settings.json"
 autostart_file="$XDG_CONFIG_HOME/autostart/codexbar-gtk.desktop"
 export CODEXBAR_CLI="$scratch/fake-codexbar"
@@ -418,6 +509,37 @@ window_size() {
     '
 }
 
+move_pointer_to_window_point() {
+    local window=$1 x=$2 y=$3 description=$4 geometry origin_x origin_y target_x target_y
+    local pointer_state pointer_x pointer_y deadline=$((SECONDS + 5))
+    geometry=$(xwininfo -id "$window" 2>/dev/null) || {
+        echo "native pointer target has no readable geometry: $description" >&2
+        return 1
+    }
+    origin_x=$(sed -n 's/^[[:space:]]*Absolute upper-left X:[[:space:]]*//p' <<<"$geometry")
+    origin_y=$(sed -n 's/^[[:space:]]*Absolute upper-left Y:[[:space:]]*//p' <<<"$geometry")
+    [[ "$origin_x" =~ ^-?[0-9]+$ && "$origin_y" =~ ^-?[0-9]+$ ]] || {
+        echo "native pointer target has no absolute origin: $description" >&2
+        return 1
+    }
+    target_x=$((origin_x + x))
+    target_y=$((origin_y + y))
+    xdotool mousemove --window "$window" "$x" "$y"
+    while (( SECONDS < deadline )); do
+        pointer_state=$(xdotool getmouselocation --shell 2>/dev/null || true)
+        pointer_x=$(sed -n 's/^X=//p' <<<"$pointer_state")
+        pointer_y=$(sed -n 's/^Y=//p' <<<"$pointer_state")
+        if [[ "$pointer_x" == "$target_x" && "$pointer_y" == "$target_y" ]]; then
+            assert_pointer_within_window_tree "$window" "$description"
+            return 0
+        fi
+        sleep 0.05
+    done
+    printf 'native pointer did not reach exact point for %s (expected=%s,%s observed=%s,%s)\n' \
+        "$description" "$target_x" "$target_y" "${pointer_x:-unavailable}" "${pointer_y:-unavailable}" >&2
+    return 1
+}
+
 normalize_window_id() {
     local window_id=$1
     if [[ "$window_id" =~ ^0[xX][[:xdigit:]]+$ ]]; then
@@ -490,11 +612,10 @@ click_window_at() {
             "$description" "$x" "$y" "$window" "${focus:-unavailable}" >&2
         return 1
     }
-    xdotool mousemove --sync --window "$window" "$x" "$y"
+    move_pointer_to_window_point "$window" "$x" "$y" "$description"
     # Let GTK process the motion/focus events before sending a short XTest
     # click; this keeps repeated toggles from racing the preceding response.
     sleep 0.05
-    assert_pointer_within_window_tree "$window" "$description"
     xdotool mousedown --clearmodifiers 1
     sleep 0.05
     xdotool mouseup 1
@@ -518,8 +639,7 @@ scroll_window_at() {
             "$description" "$x" "$y" "$width" "$height" >&2
         return 1
     }
-    xdotool mousemove --sync --window "$window" "$x" "$y"
-    assert_pointer_within_window_tree "$window" "$description"
+    move_pointer_to_window_point "$window" "$x" "$y" "$description"
     xdotool click --repeat "$repeat" --delay 35 "$button"
 }
 
@@ -610,8 +730,10 @@ select_chooser_path() {
             echo "synthetic export target must match the visible chooser's default filename and home folder" >&2
             exit 1
         }
-        # The visible Save chooser starts in the isolated HOME and already has
-        # preferences-export.json selected in its Name field.
+        # The private X11 smoke has already verified the exact app-owned
+        # dialog and the default HOME target basename; send the native Save
+        # response directly because this GTK build does not expose its Name
+        # field as an AT-SPI editable node.
         chooser=$(wait_for_window "^${title}$")
         xdotool key Return
         sleep 0.25
@@ -633,27 +755,71 @@ select_chooser_path() {
         }
         local target_name=${path##*/}
         capture_native_size "$chooser" "${NATIVE_SETTINGS_IMPORT_CHOOSER_SCREENSHOT:-}"
-        # Ctrl+L exposes GTK's real location entry. Read and set that entry
-        # through AT-SPI on the verified app-owned chooser, then require the
-        # actual visible Import response action to accept the exact fixture.
-        xdotool key --clearmodifiers ctrl+l
-        chooser_tool read "$app_pid" "$title" "$path"
-        xdotool key --clearmodifiers ctrl+a
-        chooser_tool read "$app_pid" "$title" "$path"
-        chooser_tool set "$app_pid" "$title" "$path"
+        if [[ "${NATIVE_SETTINGS_CHOOSER_SELECT_ALWAYS:-0}" == "1" ]]; then
+            if [[ "${NATIVE_SETTINGS_CHOOSER_DIAGNOSTICS:-0}" == "1" ]]; then
+                chooser_tool read "$app_pid" "$title" "$path" || \
+                    echo "native Import chooser focused-field diagnostic did not find a unique editable entry" >&2
+            fi
+            if ! chooser_tool select "$app_pid" "$title" "$path"; then
+                if xwininfo -id "$chooser" 2>/dev/null | grep -Fq 'Map State: IsViewable'; then
+                    capture_native_size "$chooser" "${NATIVE_SETTINGS_IMPORT_AFTER_SCREENSHOT:-}"
+                    echo "native Import chooser remained viewable after exact Recent/Home selection failed" >&2
+                    xwininfo -id "$chooser" >&2 || true
+                else
+                    echo "native Import chooser disappeared before failure diagnostics could capture it" >&2
+                fi
+                local app_process_state=missing app_process_alive=false
+                if app_process_state=$(awk '{print $3}' "/proc/$app_pid/stat" 2>/dev/null) \
+                    && [[ "$app_process_state" != Z* ]]; then
+                    app_process_alive=true
+                fi
+                printf 'native Import failure process proof: pid=%s state=%s alive=%s\n' \
+                    "$app_pid" "$app_process_state" "$app_process_alive" >&2
+                echo "native Import accept was not invoked because select did not verify the exact selected row" >&2
+                cat "$scratch/app.log" >&2
+                exit 1
+            fi
+        else
+            # Prefer GTK's focused location entry. If this chooser does not
+            # expose one, select the exact file from Recent or Home.
+            xdotool key --clearmodifiers ctrl+l
+            read_chooser_entry() {
+                local deadline=$((SECONDS + 5)) output=""
+                while (( SECONDS < deadline )); do
+                    if output=$(chooser_tool read "$app_pid" "$title" "$path" 2>&1); then
+                        printf '%s\n' "$output"
+                        return 0
+                    fi
+                    if [[ "$output" != *"expected one visible focused editable entry, found 0"* ]]; then
+                        printf '%s\n' "$output" >&2
+                        return 2
+                    fi
+                    sleep 0.05
+                done
+                return 1
+            }
+            if read_chooser_entry >/dev/null; then
+                xdotool key --clearmodifiers ctrl+a
+                read_chooser_entry >/dev/null || {
+                    echo "native chooser location entry stopped being uniquely visible and focused after Ctrl+A" >&2
+                    exit 1
+                }
+                chooser_tool set "$app_pid" "$title" "$path"
+            else
+                chooser_read_status=$?
+                [[ "$chooser_read_status" == 1 ]] || exit "$chooser_read_status"
+                echo "native chooser exposed no unique focused location entry; selecting the exact file through Recent/Home" >&2
+                chooser_tool select "$app_pid" "$title" "$path"
+            fi
+        fi
         if [[ "$target_name" == "preferences-import.json" ]]; then
             capture_native_size "$chooser" "${NATIVE_SETTINGS_IMPORT_SELECTED_SCREENSHOT:-}"
         else
             capture_native_size "$chooser" "${NATIVE_SETTINGS_EMPTY_IMPORT_SELECTED_SCREENSHOT:-}"
         fi
-        # Return gives GTK's location entry its normal key event. If it leaves
-        # the chooser open, use the exact visible Import action through AT-SPI.
-        xdotool key Return
+        chooser_tool accept "$app_pid" "$title" "$path"
         if [[ -n "${NATIVE_SETTINGS_CHOOSER_AFTER_SCREENSHOT:-}" ]]; then
             capture_root_debug "$NATIVE_SETTINGS_CHOOSER_AFTER_SCREENSHOT"
-        fi
-        if xwininfo -id "$chooser" 2>/dev/null | grep -Fq 'Map State: IsViewable'; then
-            chooser_tool accept "$app_pid" "$title" "$path"
         fi
         local close_deadline=$((SECONDS + 5))
         while xwininfo -id "$chooser" 2>/dev/null | grep -Fq 'Map State: IsViewable' \
@@ -677,14 +843,12 @@ select_chooser_path() {
 }
 
 chooser_tool() {
-    if [[ -n "${CODEXBAR_UI_TEST_TOOL:-}" || -x "$ui_test_tool" ]]; then
-        "$ui_test_tool" chooser "$@"
-    else
-        # Temporary peer-contract fallback. `scripts/select-native-file-chooser.py`
-        # remains peer-owned; remove this branch after the helper is integrated
-        # and the full no-Python Settings interaction run passes.
-        python3 "$repo_root/scripts/select-native-file-chooser.py" "$@"
+    if [[ ! -x "$ui_test_tool" ]]; then
+        echo "native chooser automation helper is missing or not executable: $ui_test_tool" >&2
+        echo "Build with cargo build --locked --manifest-path rust-ui-test-tools/Cargo.toml --bin codexbar-ui-test-tool, then set CODEXBAR_UI_TEST_TOOL to its absolute binary path." >&2
+        return 2
     fi
+    "$ui_test_tool" chooser "$@"
 }
 
 wait_for_nonempty_preference() {
@@ -734,9 +898,11 @@ capture_root_debug() {
 }
 
 # Let the private WM own the root before GTK maps any app windows.
+assert_private_bus_ready
 start_test_window_manager
 (cd "$HOME" && exec "$binary" --settings) >"$scratch/app.log" 2>&1 &
 app_pid=$!
+wait_for_app_bus_owner
 
 settings_window=$(wait_for_window 'CodexBar Settings')
 wait_for_calls 'config providers'
@@ -757,6 +923,108 @@ capture "$settings_window" "${NATIVE_SETTINGS_PLUGINS_SCREENSHOT:-}"
 click_window_at "$settings_window" 68 800 "fixed-coordinate control"
 sleep 0.3
 capture "$settings_window" "${NATIVE_SETTINGS_GENERAL_SCREENSHOT:-}"
+
+chooser_only_mode=${NATIVE_SETTINGS_CHOOSER_ONLY:-0}
+if [[ "$chooser_only_mode" != "0" ]]; then
+    [[ "$chooser_only_mode" == "1" || "$chooser_only_mode" == "all" || \
+       "$chooser_only_mode" == "import" || "$chooser_only_mode" == "export" ]] || {
+        echo "NATIVE_SETTINGS_CHOOSER_ONLY must be 0, 1, all, import, or export" >&2
+        exit 2
+    }
+    # A focused dialog pass lets the native helper exercise the app-owned
+    # Export and Import chooser without traversing unrelated provider/auth UI.
+    click_window_at "$settings_window" 500 260 "refresh-frequency control"
+    sleep 0.2
+    xdotool key Home Down Down Down Return
+    wait_for_preference refreshFrequency 5m
+    click_window_at "$settings_window" 500 605 "preferred-currency control"
+    sleep 0.2
+    xdotool key Down Return
+    wait_for_preference preferredCurrencyCode USD
+    click_window_at "$settings_window" 500 432 "launch-at-login control"
+    wait_for_preference launchAtLogin True
+    wait_for_file "$autostart_file" "autostart entry before chooser-only import" 8
+    expected_executable=$(readlink -f "$binary")
+    grep -Fx -- "Exec=\"$expected_executable\"" "$autostart_file" >/dev/null || {
+        echo "chooser-only launch-at-login switch wrote an unexpected executable entry" >&2
+        exit 1
+    }
+
+    export_file="$HOME/preferences-export.json"
+    import_file="$HOME/preferences-import.json"
+    empty_import_file="$HOME/empty-preferences-import.json"
+    "$fixtures" settings-fixtures "$import_file" "$empty_import_file"
+    click_window_at "$settings_window" 856 800 "Advanced settings tab"
+    sleep 0.3
+
+    if [[ "$chooser_only_mode" != "import" ]]; then
+        select_chooser_path "Export preferences" "$export_file" 790 333
+        wait_for_file "$export_file" "chooser-only preferences export"
+        "$fixtures" validate-export "$export_file" "$api_key_sentinel"
+    fi
+
+    if [[ "$chooser_only_mode" == "export" ]]; then
+        gapplication action com.steipete.CodexBarGTK quit
+        wait "$app_pid"
+        app_pid=
+        app_bus_owner=$(gdbus call --session --dest org.freedesktop.DBus \
+            --object-path /org/freedesktop/DBus \
+            --method org.freedesktop.DBus.NameHasOwner com.steipete.CodexBarGTK)
+        [[ "$app_bus_owner" == "(false,)" ]] || {
+            echo "chooser-only Settings app kept its D-Bus name after export shutdown" >&2
+            exit 1
+        }
+        stop_owned_process "$notification_pid"
+        notification_pid=
+        notification_bus_owner=$(gdbus call --session --dest org.freedesktop.DBus \
+            --object-path /org/freedesktop/DBus \
+            --method org.freedesktop.DBus.NameHasOwner org.freedesktop.Notifications)
+        [[ "$notification_bus_owner" == "(false,)" ]] || {
+            echo "chooser-only synthetic notification service kept its D-Bus name after export shutdown" >&2
+            exit 1
+        }
+        printf 'native Settings app-owned Export save chooser smoke passed\n'
+        exit 0
+    fi
+
+    select_chooser_path "Import preferences" "$import_file" 790 388
+    wait_for_preference refreshFrequency 2m
+    wait_for_preference preferredCurrencyCode EUR
+    wait_for_preference launchAtLogin False
+    [[ -s "$autostart_file" ]] || {
+        echo "chooser-only Preferences import changed the isolated autostart entry" >&2
+        exit 1
+    }
+    "$fixtures" validate-import "$preferences_file"
+    for log_file in "$preferences_file" "${export_file:-$HOME/preferences-export.json}" "$NATIVE_SETTINGS_CALLS" "$scratch/app.log"; do
+        if grep -Fq -- "$api_key_sentinel" "$log_file" || grep -Fq -- "$login_code_sentinel" "$log_file"; then
+            echo "synthetic credential or login code escaped into chooser-only saved or logged preferences" >&2
+            exit 1
+        fi
+    done
+
+    gapplication action com.steipete.CodexBarGTK quit
+    wait "$app_pid"
+    app_pid=
+    app_bus_owner=$(gdbus call --session --dest org.freedesktop.DBus \
+        --object-path /org/freedesktop/DBus \
+        --method org.freedesktop.DBus.NameHasOwner com.steipete.CodexBarGTK)
+    [[ "$app_bus_owner" == "(false,)" ]] || {
+        echo "chooser-only Settings app kept its D-Bus name after shutdown" >&2
+        exit 1
+    }
+    stop_owned_process "$notification_pid"
+    notification_pid=
+    notification_bus_owner=$(gdbus call --session --dest org.freedesktop.DBus \
+        --object-path /org/freedesktop/DBus \
+        --method org.freedesktop.DBus.NameHasOwner org.freedesktop.Notifications)
+    [[ "$notification_bus_owner" == "(false,)" ]] || {
+        echo "chooser-only synthetic notification service kept its D-Bus name after shutdown" >&2
+        exit 1
+    }
+    printf 'native Settings app-owned Export save and Import selection/accept chooser smoke passed\n'
+    exit 0
+fi
 
 # Exercise the remaining General controls using visible GTK controls and wait
 # for the serialized preference write before the next pointer action.

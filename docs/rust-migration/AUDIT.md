@@ -7846,6 +7846,102 @@ result (318 tests, 0 skipped) remain inherited evidence, not a fresh merge run.
 the base, and observes exact-head checks. After PR #114 merges, retarget the
 BUILD114 PR to main. UG remains **NOT PASSED** and C gates remain unaccepted.
 
+### E218 — BUILD115 private-Weston page-state coverage (2026-11-16)
+
+**Owner/base/status:** branch `t3/wayland-page-state-harness`, with page-state harness source commits
+`5f44654` and `5cd7103`, now normally merged with BUILD114 source commit
+`763d03245b9a63d9cf2e40a51984c37a003d8b4d`. BUILD114 preserves BUILD113
+(E216) and BUILD114 (E217) history; BUILD115 metadata remains current. PR #115
+is open with checks in progress; PR #114 is open and not merged. No push, PR,
+or merge of this BUILD115 branch is claimed.
+
+**Workflow:** `.github/workflows/rust-core.yml` adds the required six-minute
+`page-state` private-Weston scenario and an independent synthetic evidence
+artifact uploaded with `if: always()`. Existing jobs, the default Wayland
+matrix, Advanced/residual Settings scenarios, X11 smokes, and native/Python-free
+proof were preserved. Scenario implementation is the existing
+`scripts/test-native-wayland-isolated.py --scenario page-state`; this slice
+changes CI wiring and documentation, not runtime code.
+
+**Fresh runtime evidence:** the supplied completed isolated run reports
+`status=passed`, private rootless Weston/Pixman, private Wayland and D-Bus,
+synthetic HOME/runtime, and successful app/compositor/runtime/HOME/bus cleanup.
+The native binary source commit is
+`5cd710318cc88d50bb4db61cd46757a07751e919`; SHA-256 is
+`8c3e3a2121e061f9ac4778316da58b4156487270dc520d730ae6ee35186b8d61`. The
+captured About page shows `0.82.0 (112)`. At source commit `5cd7103`, both
+`VERSION` and `codexbar_gtk/version.py` say build 112. This verifies the
+runtime's embedded build from the source and visible app metadata; it is not
+BUILD115. The evidence retained in this commit is sanitized to relative image
+paths and omits transient private socket/bus addresses and AT-SPI identities.
+
+The run observed a synthetic successful Spend total of `$12.50 · partial`,
+then activated visible Refresh and waited for all three synthetic fallback CLI
+attempts to complete. From the same app PID and Spend window, it observed the
+unreadable-data error and the retained nonempty `$12.50 · partial` total. The
+retained-error screenshot also visibly contains `$1.25 · partial`, token and
+coverage cards. Six visible same-PID AT-SPI actions navigated Sessions→Spend,
+Spend→Sessions, Sessions→Dashboard, Dashboard→Settings, Settings→Dashboard
+through the visible Return to dashboard action, and Dashboard→About. The
+selected captures and relative `evidence.json` are in
+[`screenshots/build115-page-state/`](screenshots/build115-page-state/); I
+personally inspected all seven selected captures.
+
+**Local verification:**
+
+- `python3 -m unittest tests.test_native_wayland_isolated_harness -v` — 27
+  passed, including the page-state scenario contract, synthetic three-failure
+  fixture, capture checks and fail-closed action identity behavior.
+- `python3 -m py_compile scripts/test-native-wayland-isolated.py
+  tests/test_native_wayland_isolated_harness.py` — passed.
+- `python3 -m unittest
+  tests.test_app.VersionMetadataTests.test_display_string_matches_version_file
+  -v` — passed with BUILD115.
+- `CARGO_TARGET_DIR=/tmp/codexbar-build115-version-metadata cargo test
+  --manifest-path rust-gtk/Cargo.toml --locked --lib
+  version_metadata_tracks_the_root_version_file` — 1 passed.
+- Workflow YAML parsed; structural assertions verified the six-minute
+  `page-state` step, always-upload artifact, and preserved matrix, Advanced,
+  residual Settings, X11 and Python suite steps.
+- Current-facing local Markdown links passed. The broad scan still finds the
+  pre-existing historical E211 link to the moved
+  `codexbar_gtk/assets/provider_icons/UPSTREAM-PROVENANCE.md`; that
+  append-only record was not rewritten.
+- Sanitized evidence JSON assertions and all seven selected PNG decode and
+  verify at 1280×900; `git diff --check` passed.
+
+**Limits and exact next step:** the selected retained-error capture is clipped
+at the right and bottom edges, though the error and totals are visible; no
+full-window pixel-parity claim is made. AT-SPI activation is not physical
+Wayland input or KDE shell parity. No Spend range, heatmap-mode, tooltip,
+pointer, Settings, or KDE-specific behavior was retested. This fresh evidence
+supersedes E192 only for its retained-error claim; it does not establish the
+other E192 range/mode claims. UG stays **NOT PASSED**, and no C gate is accepted.
+Python retirement candidacy is independent. No new private-Weston runtime was
+run because this diff makes no application/runtime code changes. Root's next
+step is to reconcile BUILD112–114 peer changes, review this provisional BUILD115
+diff, then publish and observe exact-head CI. Do not claim CI success before
+that observation.
+
+
+#### E218 remote CI snapshot — 2026-11-17
+
+Before this local merge was published, PR #115's source head was checked in run
+`44116527470`: `tray-dbus` passed, `test` failed at “Run headless backend
+contract tests,” and `python-free-runtime-proof` remained in progress. The
+failed job log was not available while the run was active. PR #114 remained open;
+its `tray-dbus` and `python-free-runtime-proof` passed, while `test` remained in
+progress. These are statuses for the existing remote heads, not for local merge
+commit `774f3c23bf6ce254e0e45bfab348d7dfffbe10c2`; no exact-head CI result is
+claimed for that commit.
+
+
+#### E218 completed CI update — 2026-11-17
+
+Run `44116527470` completed on PR #115's pre-integration head `763d03245b9a63d9cf2e40a51984c37a003d8b4d`: `tray-dbus` and `python-free-runtime-proof` passed; `test` failed with 96 passed and one failed. The failing test was `cli::tests::cancellation_kills_and_reaps_child` in `rust-backend/src/cli.rs:748`, panicking because the fixture did not write a complete child PID. All later conditional test-job steps were skipped after the headless backend test failure, including native GTK bootstrap, provider-artwork and X11 checks, both Python suites, Clippy, native GUI/Wayland smokes, and packaging checks. This CI run does not validate integrated merge commit `30381ee9df0e1242a982cec4d750d14c723d35b9`; no repeat of the full suites or exact-head CI is claimed.
+
+PR #114 run `44115397836` completed with `tray-dbus`, `test`, and `python-free-runtime-proof` all passing; PR #114 remains open and unmerged at this observation.
+
 ### E218 — BUILD114 PR #115 cancellation-fixture failure follow-up
 
 **Base/status:** continuation of provisional BUILD114/E217 on

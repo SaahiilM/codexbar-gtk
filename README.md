@@ -168,8 +168,10 @@ launcher-default policy is an exception, not gate completion or host migration.
 BUILD111 moves tray D-Bus CI coverage to the native Rust implementation while
 keeping Python parity tests in the broader suite. BUILD114 retires 27 mapped
 Python assertion methods whose contracts have Rust test coverage; retained
-Python-only compatibility contracts and the adapter runtime remain. See the
-explicit [gate ledger](docs/rust-migration/UG_GATE.md).
+Python-only compatibility contracts and the adapter runtime remain. BUILD115
+adds required private-Weston page-state CI coverage for a retained Spend error
+and six visible routes. These are narrow scoped changes; UG remains **NOT PASSED**.
+See the explicit [gate ledger](docs/rust-migration/UG_GATE.md).
 
 - [Architecture, source inventory and stage gates](docs/rust-migration/README.md)
 - [Task checklist and current model handoff](docs/rust-migration/TASKS.md)
@@ -338,7 +340,7 @@ The GTK front-end uses the same version pair as the macOS bundle:
   this client is feature-compatible with (`0.82.0`).
 * `CURRENT_PROJECT_VERSION` is the build number of the Linux front-end.
 * `codexbar_gtk/version.py` turns the pair into the macOS-style
-  `"0.82.0 (114)"` string shown under Settings → About, in the tray menu and by
+  `"0.82.0 (115)"` string shown under Settings → About, in the tray menu and by
   `./run.sh --about`.
 
 Increment `CURRENT_PROJECT_VERSION` for each merged PR and keep it in sync with

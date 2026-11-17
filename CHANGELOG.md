@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.82.0 (115) — 2026-11-16
+
+Add required six-minute private-Weston CI coverage for visible native page
+navigation and a Spend refresh error that retains its nonempty partial total.
+Retain sanitized synthetic evidence and selected captures. This narrow result
+does not pass UG or establish full-window pixel parity.
+
+- See migration audit E218 for source/runtime provenance, checks and limits.
+
 ## 0.82.0 (114) — 2026-11-16
 
 Retire 27 mapped Python assertion methods from the mixed app and settings
@@ -21,6 +30,7 @@ do not establish Python runtime coverage or migration-gate acceptance. UG
 remains **NOT PASSED**.
 
 - See migration audit E216 for the exact paths, caller checks and scope limits.
+
 
 ## 0.82.0 (112) — 2026-11-16
 

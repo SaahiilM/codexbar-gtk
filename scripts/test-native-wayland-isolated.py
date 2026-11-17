@@ -406,7 +406,25 @@ printf '%s\n' "$*" >> "$NATIVE_CLI_LOG"
 case "${1:-}" in
   --version) printf 'CodexBar synthetic fixture 0.82.0\n' ;;
   usage) printf '%s\n' '[{"provider":"codex","source":"synthetic","usage":{"updatedAt":"2026-11-01T12:00:00Z","primary":{"usedPercent":42,"resetsAt":"2026-11-01T18:00:00Z","windowMinutes":300}}}]' ;;
-  cost) printf '%s\n' '[{"provider":"codex","currencyCode":"USD","totalCost":12.5,"totalTokens":1200,"sessionCostUSD":1.25,"sessionTokens":100,"last30DaysCostUSD":12.5,"last30DaysTokens":1200,"coverage":{"priced":3,"unpriced":1},"provenance":"synthetic_history","daily":[{"date":"2026-11-09","totalCost":3.25,"totalTokens":800},{"date":"2026-11-08","totalCost":0,"totalTokens":0}],"projects":[],"models":[]}]' ;;
+  cost)
+    mode=success
+    if [ -n "${NATIVE_COST_MODE_FILE:-}" ] && [ -f "$NATIVE_COST_MODE_FILE" ]; then
+      mode=$(cat "$NATIVE_COST_MODE_FILE")
+    fi
+    case "$mode" in
+      success) if [ -n "${NATIVE_COST_MODE_FILE:-}" ]; then printf '%s\n' 'cost-fixture-success-done' >> "$NATIVE_CLI_LOG"; fi; printf '%s\n' '[{"provider":"codex","currencyCode":"USD","totalCost":12.5,"totalTokens":1200,"sessionCostUSD":1.25,"sessionTokens":100,"last30DaysCostUSD":12.5,"last30DaysTokens":1200,"coverage":{"priced":3,"unpriced":1},"provenance":"synthetic_history","daily":[{"date":"2026-11-09","totalCost":3.25,"totalTokens":800},{"date":"2026-11-08","totalCost":0,"totalTokens":0}],"projects":[],"models":[]}]' ;;
+      error)
+        printf '%s\n' "cost-fixture-error-$*" >> "$NATIVE_CLI_LOG"
+        count=0
+        if [ -f "$NATIVE_COST_ERROR_COUNT_FILE" ]; then count=$(cat "$NATIVE_COST_ERROR_COUNT_FILE"); fi
+        count=$((count + 1))
+        printf '%s\n' "$count" > "$NATIVE_COST_ERROR_COUNT_FILE"
+        if [ "$count" -eq 3 ]; then printf '%s\n' 'cost-fixture-error-done' >> "$NATIVE_CLI_LOG"; fi
+        printf 'synthetic cost scan failure\n' >&2
+        exit 7
+        ;;
+      *) printf 'unsupported synthetic cost mode\n' >&2; exit 8 ;;
+    esac ;;
   sessions)
     mode=success
     if [ -n "${NATIVE_SESSIONS_MODE_FILE:-}" ] && [ -f "$NATIVE_SESSIONS_MODE_FILE" ]; then
@@ -541,7 +559,8 @@ def wait_visible_control(python: str, pid: int, name: str,
 
 def wait_visible_action(python: str, pid: int, name: str,
                         roles: tuple[str, ...], timeout: float = 8.0,
-                        context: str | None = None) -> dict:
+                        context: str | None = None,
+                        path_fragment: str | None = None) -> dict:
     """Find one visible, same-process actionable node by exact accessible name."""
     last = []
     def locate():
@@ -551,7 +570,8 @@ def wait_visible_action(python: str, pid: int, name: str,
                    and row.get("role") in roles and row.get("showing")
                    and row.get("visible") and "sensitive" in row.get("states", [])
                    and row.get("action_count", 0) > 0
-                   and (context is None or f":{context}/" in row.get("path", ""))]
+                   and (context is None or f":{context}/" in row.get("path", ""))
+                   and (path_fragment is None or path_fragment in row.get("path", ""))]
         last[:] = matches
         unique = {row["identity"]: row for row in matches}
         if len(unique) > 1:
@@ -576,10 +596,11 @@ def chooser_helper(python: str, mode: str, pid: int, title: str, path: pathlib.P
 
 
 def wait_visible_text(python: str, pid: int, text: str, timeout: float = 12.0,
-                      context: str | None = None) -> dict:
+                      context: str | None = None, exact: bool = False) -> dict:
     def visible_unique_node():
         rows = [row for row in atspi_probe(python, "snapshot", pid, text).get("matches", [])
-                if text in row.get("name", "") and row.get("pid") == pid
+                if ((row.get("name") == text) if exact else (text in row.get("name", "")))
+                and row.get("pid") == pid
                 and row.get("showing") and row.get("visible")
                 and (context is None or f":{context}/" in row.get("path", ""))]
         identities = {row["identity"]: row for row in rows}
@@ -1076,8 +1097,11 @@ def inside_run(args) -> dict:
                              "quotaBurndownEnabled": True, "menuBarIconStyle": "meter",
                              "unifiedIconSource": "highest", "switcherRowsOption": "progress",
                              "costUsageEnabled": True, "costUsageBucketTimeZone": ""}
-                            if args.scenario == "settings-residual" else
-                           {SETTING_KEY: False, "showTray": False}))
+                           if args.scenario == "settings-residual" else
+                           ({**rust_default_preferences(), "preferredCurrencyCode": "USD",
+                             "costUsageEnabled": True, "showTray": False}
+                            if args.scenario == "page-state" else
+                            {SETTING_KEY: False, "showTray": False})))
         if args.scenario == "matrix":
             seeded_settings.update({key: False for key in (
                 "sessionQuotaNotificationsEnabled", "quotaWarningNotificationsEnabled",
@@ -1091,6 +1115,10 @@ def inside_run(args) -> dict:
             autostart.chmod(0o600)
         sessions_mode_file = home / "sessions-mode"
         sessions_mode_file.write_text("success\n", encoding="utf-8")
+        cost_mode_file = home / "cost-mode"
+        cost_mode_file.write_text("success\n", encoding="utf-8")
+        cost_error_count_file = home / "cost-error-count"
+        cost_error_count_file.write_text("0\n", encoding="utf-8")
         hooks_state_file = home / "hooks-enabled"
         hooks_state_file.write_text("true\n", encoding="utf-8")
         imported_fixture = home / "synthetic-preferences-import.json"
@@ -1111,6 +1139,8 @@ def inside_run(args) -> dict:
         env = sanitized_environment(os.environ, home, runtime, "wayland-private", cli,
                                     private_bus_address, artifact_dir / "chooser-diagnostics")
         env["NATIVE_SESSIONS_MODE_FILE"] = str(sessions_mode_file)
+        env["NATIVE_COST_MODE_FILE"] = str(cost_mode_file)
+        env["NATIVE_COST_ERROR_COUNT_FILE"] = str(cost_error_count_file)
         env.update({
             "LD_LIBRARY_PATH": str(libdir) + (":" + env["LD_LIBRARY_PATH"] if env.get("LD_LIBRARY_PATH") else ""),
             "WESTON_DATA_DIR": str(weston.parent.parent / "share/weston"),
@@ -1195,7 +1225,8 @@ def inside_run(args) -> dict:
             app_log = artifact_dir / "native-app.log"
             app_log.touch(mode=0o600)
             app_log.chmod(0o600)
-            app = subprocess.Popen([str(binary)], env=env,
+            app_args = [str(binary), "--page", "sessions"] if args.scenario == "page-state" else [str(binary)]
+            app = subprocess.Popen(app_args, env=env,
                                    cwd=home if args.scenario == "advanced" else None,
                                    stdout=app_log.open("w"),
                                    stderr=subprocess.STDOUT)
@@ -1211,6 +1242,10 @@ def inside_run(args) -> dict:
             elif args.scenario == "settings-residual":
                 run_residual_settings(python, app.pid, prefs, evidence,
                                       screenshooter, env, scratch, artifact_dir)
+            elif args.scenario == "page-state":
+                run_page_state(python, app.pid, evidence, screenshooter, env,
+                               scratch, artifact_dir, cost_mode_file,
+                               cost_error_count_file, home / "cli-calls.log")
             else:
                 gaction("dashboard")
                 gaction("dashboard")
@@ -1573,11 +1608,132 @@ def inside_run(args) -> dict:
     return evidence
 
 
+def run_page_state(python: str, pid: int, evidence: dict,
+                   screenshooter: pathlib.Path, env: dict[str, str],
+                   scratch: pathlib.Path, artifact_dir: pathlib.Path,
+                   cost_mode_file: pathlib.Path,
+                   cost_error_count_file: pathlib.Path, call_log: pathlib.Path) -> None:
+    """Exercise visible page routes and a retained-nonempty Spend scan failure."""
+    evidence["scenario"] = "page-state"
+    def capture(key: str, filename: str) -> None:
+        output = artifact_dir / filename
+        capture_screen(screenshooter, env, scratch / f"capture-{key}", output)
+        evidence["screenshots"][key] = str(output)
+
+    def route(control_name: str, source_title: str, target_title: str,
+              screenshot_key: str, screenshot_name: str) -> str:
+        control = wait_visible_action(
+            python, pid, control_name,
+            ("button", "push button", "toggle button", "page tab", "tab"),
+            context=source_title)
+        action = activate_accessible(python, pid, control_name, control["identity"])
+        target = wait_until(f"visible {target_title} after {control_name} action",
+                            lambda: atspi_probe(python, "title", pid, target_title).get("match"))
+        evidence["actions"].append({
+            "kind": "AT-SPI visible navigation",
+            "from": source_title,
+            "control": control_name,
+            "to": target_title,
+            "observed_window": target,
+            "identity": action["identity"],
+            "same_pid": action["pid"] == pid,
+        })
+        capture(screenshot_key, screenshot_name)
+        return target
+
+    sessions_title = wait_until("Sessions startup route", lambda: atspi_probe(
+        python, "title", pid, "CodexBar GTK — Sessions").get("match"))
+    evidence["startup_route"] = {"route": "--page sessions", "window": sessions_title,
+                                 "counts_as_visible_navigation": False}
+    cost_done = wait_until("initial synthetic cost scan completion", lambda:
+        "cost-fixture-success-done" in call_log.read_text(encoding="utf-8").splitlines())
+    if not cost_done:
+        raise RuntimeError("initial synthetic cost scan did not complete")
+
+    route("Spend", "CodexBar GTK — Sessions", "CodexBar GTK — Usage & Spend",
+          "spend_success", "page-state-spend-success.png")
+    total = wait_visible_text(python, pid, "$12.50 · partial",
+                              context="CodexBar GTK — Usage & Spend", exact=True)
+    if total["pid"] != pid:
+        raise RuntimeError(f"successful Spend total was not exposed by the native app PID: {total!r}")
+    evidence["spend_seed"] = {"visible_total": total["name"], "pid": total["pid"],
+                              "synthetic_cost_scan_completed": True}
+
+    cost_mode_file.write_text("error\n", encoding="utf-8")
+    cost_error_count_file.write_text("0\n", encoding="utf-8")
+    refresh = wait_visible_action(python, pid, "Refresh", ("button", "push button"),
+                                 context="CodexBar GTK — Usage & Spend",
+                                 path_fragment="CodexBar GTK — Usage & Spend/panel[0]:")
+    refresh_action = activate_accessible(python, pid, "Refresh", refresh["identity"])
+    completed = wait_until("all three synthetic cost failure attempts completed", lambda:
+        "cost-fixture-error-done" in call_log.read_text(encoding="utf-8").splitlines())
+    if not completed:
+        raise RuntimeError("synthetic cost failure fallback attempts did not complete")
+    error_text = None
+    error_observation_failure = None
+    try:
+        error_text = wait_visible_text(
+            python, pid, "The usage refresh returned unreadable data.",
+            context="CodexBar GTK — Usage & Spend")
+    except RuntimeError as failure:
+        error_observation_failure = str(failure)
+    retained_total = wait_visible_text(
+        python, pid, "$12.50 · partial",
+        context="CodexBar GTK — Usage & Spend", exact=True)
+    if retained_total["pid"] != pid:
+        raise RuntimeError("retained Spend total was not visible from the native app PID")
+    if error_text and error_text["pid"] != pid:
+        raise RuntimeError("Spend error was not visible from the native app PID")
+    spend_window_marker = "frame[0]:CodexBar GTK — Usage & Spend"
+    if error_text and (spend_window_marker not in error_text["path"]
+                       or spend_window_marker not in retained_total["path"]):
+        raise RuntimeError("retained Spend error and total did not come from the same visible Spend window")
+    calls = call_log.read_text(encoding="utf-8").splitlines()
+    failures = [line for line in calls if line.startswith("cost-fixture-error-cost")]
+    if len(failures) != 3:
+        raise RuntimeError(f"Spend failure expected three completed CLI attempts, observed {failures!r}")
+    evidence["spend_retained_error"] = {
+        "status": "passed" if error_text else "failed",
+        "refresh_control": "AT-SPI AccessibleAction.DoAction",
+        "refresh_identity": refresh_action["identity"],
+        "fixture_completion_marker": "cost-fixture-error-done",
+        "completed_cli_attempts": failures,
+        "visible_error": error_text["name"] if error_text else None,
+        "error_observation_failure": error_observation_failure,
+        "visible_retained_total": retained_total["name"],
+        "same_pid": bool(error_text and error_text["pid"] == retained_total["pid"]),
+        "retained_nonempty_total": True,
+    }
+    if not error_text:
+        evidence["status"] = "failed"
+        evidence.setdefault("blockers", []).append(
+            "Spend retained its nonempty total after the completed failing scan, but no accessible error text appeared.")
+    capture("spend_error_observed", "page-state-spend-error-observed.png")
+    capture("spend_retained_error", "page-state-spend-retained-error.png")
+
+    route("Sessions", "CodexBar GTK — Usage & Spend", "CodexBar GTK — Sessions",
+          "sessions", "page-state-sessions.png")
+    route("Dashboard", "CodexBar GTK — Sessions", "CodexBar GTK — Dashboard",
+          "dashboard", "page-state-dashboard.png")
+    route("Settings", "CodexBar GTK — Dashboard", "CodexBar Settings",
+          "settings", "page-state-settings.png")
+    route("Return to dashboard", "CodexBar Settings", "CodexBar GTK — Dashboard",
+          "dashboard_after_settings", "page-state-dashboard-after-settings.png")
+    route("About", "CodexBar GTK — Dashboard", "About CodexBar GTK",
+          "about", "page-state-about.png")
+    evidence["navigation_limits"] = [
+        "The harness starts on Sessions so all six page-navigation transitions in the app's existing controls are exercised visibly.",
+        "Accessible GTK actions prove named control activation, not physical input or KDE shell parity.",
+    ]
+    if error_text:
+        evidence["status"] = "passed"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--binary", required=True, help="built codexbar-gtk-native executable")
     parser.add_argument("--scenario", choices=("matrix", "advanced", "settings-residual",
-                                                "settings-combo-diagnostic"), default="matrix",
+                                                "page-state", "settings-combo-diagnostic"), default="matrix",
                         help="isolated acceptance slice (default: existing matrix)")
     parser.add_argument("--artifact-dir", default=None,
                         help="directory for synthetic screenshots/evidence (default: /tmp temp directory)")
@@ -1668,7 +1824,7 @@ def main() -> int:
         print(f"isolated native Wayland smoke failed: {exc}", file=sys.stderr)
         return 1
     print(json.dumps(evidence, indent=2))
-    return 0
+    return 0 if evidence.get("status", "passed") == "passed" else 1
 
 
 if __name__ == "__main__":

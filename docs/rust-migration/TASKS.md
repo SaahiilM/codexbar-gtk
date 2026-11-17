@@ -11,23 +11,73 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Goal | Fully native Rust GTK4/libadwaita application with verified packaging and legacy runtime removal. |
 | Current phase | BG passed and U01–U08 implementation merged. UG **NOT PASSED**. By explicit user instruction, BUILD110 makes the repository launcher/installer native by default; C01–CG remain unaccepted. |
 | Last observed merge | PR #113 merged normally at `5aec9f3d5dedf246457ae17a44229f0d76eef35f` (BUILD112). Exact head `443bb0240b66af011cbcb9b0fdb6ef540d3142e1` passed all three checks in run `43955646572`. |
-| Active implementation | Provisional BUILD114/E217 on `t3/rust-backend-legacy-tests`, normally merged with published BUILD113/E216 stack base `origin/t3/legacy-python-tools-cleanup` at `3cd02d330b6bdb59e38670168becd62e21a915c1`. The base is PR #114 and is not merged. PR #115 is open on this branch; its supplied exact-head test job failed as detailed in the E217 cancellation-fixture follow-up below. |
+| Active implementation | BUILD115/E218 adds required private-Weston page-state coverage and sanitized retained-error/navigation evidence on `t3/wayland-page-state-harness`. BUILD115 metadata remains current after the normal merge of BUILD114 source commit `763d03245b9a63d9cf2e40a51984c37a003d8b4d`, which includes BUILD113 and retains E216/E217. PR #115 remains open: pre-integration run `44116527470` has `tray-dbus` and `python-free-runtime-proof` passed; `test` failed (96 passed, one failed in `cli::tests::cancellation_kills_and_reaps_child`). PR #114 remains open and unmerged; all three checks passed in run `44115397836`. |
 | Installer/runtime verification | E198 records the merged build-95 installed-prefix/Python-free runtime proof. E199 records prior local 13-case activation smoke evidence in a Python-free container; its first attempt lacked `file`, and the portable `od`/`ldd` check passed. These component results do not pass C02 or authorize cutover. |
 | UI acceptance | E195 records one Display action; E200 records seven guarded Settings actions and three tab transitions. Broader Wayland controls/navigation remain open. UG is **NOT PASSED**; Python remains the explicit parity/rollback path under the BUILD110 launcher-default exception. See `UG_GATE.md`. |
-| Next | Root reviews and publishes BUILD114 as a stack on `t3/legacy-python-tools-cleanup`; after PR #114 merges, retarget the BUILD114 PR to main and observe its exact-head checks. No BUILD114 PR, merge, or CI result is claimed here. UG remains NOT PASSED and C gates unaccepted. |
+| Next | Root reviews this integrated BUILD115 branch, publishes it on the intended stacked base, and observes exact-head CI. UG remains NOT PASSED; C gates remain unaccepted. |
+
+### BUILD115/E218 — required Wayland page-state coverage
+
+**Owner/base/status:** branch `t3/wayland-page-state-harness`, now normally merged with exact
+BUILD114 source commit `763d03245b9a63d9cf2e40a51984c37a003d8b4d`; BUILD114
+in turn preserves the published BUILD113 stack base. BUILD115 metadata remains
+current. PR #115 is open with checks in progress; PR #114 is open and not
+merged. No push or merge of this BUILD115 branch is claimed.
+
+**Workflow and evidence:** `.github/workflows/rust-core.yml` adds a required
+six-minute `page-state` private-Weston scenario and dedicated `if: always()`
+synthetic evidence artifact. The existing default Wayland matrix, Advanced and
+residual Settings scenarios, X11 smokes, native/Python-free proof, and all
+other jobs remain in place. The runner invokes the existing isolated
+`scripts/test-native-wayland-isolated.py --scenario page-state`; it uses a
+private Weston compositor, private D-Bus, and temporary HOME/runtime.
+
+The run used native binary source commit
+`5cd710318cc88d50bb4db61cd46757a07751e919`, SHA-256
+`8c3e3a2121e061f9ac4778316da58b4156487270dc520d730ae6ee35186b8d61`. Its
+About capture visibly shows `0.82.0 (112)`; source `VERSION` and
+`codexbar_gtk/version.py` at that commit both contain build 112. BUILD115 is
+release bookkeeping for this pending slice, not a label inferred for the
+captured binary. Sanitized relative evidence and personally inspected selected
+synthetic captures are in
+[`screenshots/build115-page-state/`](screenshots/build115-page-state/).
+
+**Observed behavior:** the synthetic successful scan displayed `$12.50 ·
+partial`. After a visible Refresh action, all three synthetic fallback CLI
+attempts completed; the same app PID exposed the unreadable-data error and
+retained the nonempty `$12.50 · partial` total. The retained-error capture also
+shows `$1.25 · partial`, token, and coverage cards. Six visible same-PID
+AT-SPI actions navigated Sessions→Spend, Spend→Sessions, Sessions→Dashboard,
+Dashboard→Settings, Settings→Dashboard via the visible “Return to dashboard”
+action, and Dashboard→About. App, compositor, synthetic HOME, private runtime
+and D-Bus cleanup all passed.
+
+**Local checks and limits:** exact checks/results are appended in audit E218.
+The selected 1280×900 retained-error screenshot is clipped at the right and
+bottom edges, although the relevant error and totals are visible; do not claim
+full-window pixel parity. AT-SPI actions are not physical input or KDE shell
+parity. This slice does not re-test covered Spend ranges, heatmap modes, or
+Settings. The prior E192 retained-error claim remains retracted and is
+superseded only by this narrow fresh retained-error proof; other E192 range
+and mode claims are not established here. Tooltip, pointer, KDE-specific
+behavior and other UG items remain open. UG stays **NOT PASSED**; do not mark
+UG PASS or accept C gates. Python retirement candidacy is independent of this
+UI result.
 
 ### BUILD114/E217 — mapped Python assertion retirement
 
-**Owner/status/base:** provisional BUILD114/E217 on branch
-`t3/rust-backend-legacy-tests`. Its source history is `e7973fa` (mapped
-Python assertion retirement) followed by `cb0d2ba` (additional assertion
-precision). A normal merge preserves both histories with the published BUILD113
-stack base `origin/t3/legacy-python-tools-cleanup` at
-`3cd02d330b6bdb59e38670168becd62e21a915c1`. That base is the head of open PR
-#114 and is not merged to main. BUILD114 retains version 114; root may publish
-this as a stacked PR targeting `t3/legacy-python-tools-cleanup`, then retarget
-it to main after PR #114 merges. No BUILD114 PR, merge, or exact-head CI result
-is claimed.
+**Owner/status/base:** BUILD114/E217 source commits `e7973fa` (mapped Python
+assertion retirement) and `cb0d2ba` (additional assertion precision) are
+preserved in the normal merge of exact source commit
+`763d03245b9a63d9cf2e40a51984c37a003d8b4d` into BUILD115 branch
+`t3/wayland-page-state-harness`. That source commit includes BUILD113's
+published stack base `3cd02d330b6bdb59e38670168becd62e21a915c1`. PR #115 is open on the stack. Its pre-integration run `44116527470` has
+`tray-dbus` and `python-free-runtime-proof` passed; `test` failed with 96 passed
+and `cli::tests::cancellation_kills_and_reaps_child` failing because its fixture
+did not write a complete child PID. PR #114 remains open and unmerged to main;
+all three checks passed in run `44115397836`. BUILD114 source retains its
+provisional build-114 claim; the integrated branch release metadata remains
+BUILD115.
 
 **Scope and counts:** `rust-backend/tests/legacy_assertion_map.md` maps removed
 methods to Rust tests. The starting two Python modules had 106 test methods
@@ -45,50 +95,19 @@ PyO3, and adapters remain present.
 core tests; 97 Rust backend unit tests and 4 integration tests; plus Rust format
 and Clippy checks. The initial backend run had a transient synthetic fixture
 spawn failure; its staging-and-rename correction and follow-up evidence are
-recorded in AUDIT's E214 follow-up. The metadata-only merge reconciliation will
-run focused metadata, formatting, diff, and link checks; it will not rerun these
-suites because implementation/test coverage sources are unchanged.
+recorded in AUDIT's E214 follow-up. The BUILD115 reconciliation ran its focused page-state harness, metadata, YAML,
+diff, and added-link checks. It did not rerun the default/opt-in Python suites,
+Rust core/backend suites or Clippy; the inherited BUILD114 source evidence
+remains the evidence for those checks.
 
 No global UG change or workflow change was made. This does not establish
 adapter equivalence, Python/PyO3 removal readiness, global UG acceptance, or a
 migration-gate pass. No GUI, host bus, service, authentication, provider, or
 runtime smoke was run for this slice.
 
-**Next:** root reviews and publishes the complete branch as a stack on
-`t3/legacy-python-tools-cleanup`. PR #114 must merge before the BUILD114 PR is
-retargeted to main. Observe exact-head checks after publication; no result is
-claimed here. UG remains **NOT PASSED** and C gates remain open.
-
-#### BUILD114/E217 follow-up — PR #115 cancellation fixture diagnosis
-
-The supplied PR #115 run `44116527470`, test job `134155986179`, used head
-`763d03245b9a63d9cf2e40a51984c37a003d8b4d`. The headless backend unit job
-reported 96 passed and one failed in 4.64 seconds:
-`cli::tests::cancellation_kills_and_reaps_child` panicked because its fixture
-PID file was not complete. The native tray job passed. The supplied log
-`/tmp/codexbar-pr115-test.log` contains no early task result or spawn errno, so
-the original event's precise cause remains unconfirmed; it does not establish
-`ETXTBSY`, a missing executable, or an I/O failure.
-
-On this same BUILD114 branch, `rust-backend/src/cli.rs` now makes that test's
-PID wait race file publication against completion of the actual operation
-task. An early result reports only the safe `CliErrorKind`, static operation,
-and test-only numeric spawn errno; it does not print paths or process output.
-The deadline path aborts and joins the task, and a process-group cleanup guard
-covers failures after the PID is observed. A focused regression verifies that
-a synthetic missing executable completes before PID publication and is
-reported as `NotFound`/`ENOENT`; this validates the diagnostic path and is not
-evidence that this caused the supplied CI failure.
-
-Local evidence: cancellation test 50/50 passes; early-failure/errno regression
-50/50 passes; locked backend suite passes 98 unit tests and 4 integration
-tests with four test threads; backend format check, strict all-target/all-
-features Clippy, and `git diff --check` pass. The original failure did not
-recur, so no cause is inferred. Production behavior is unchanged because errno
-capture is test-only. No push, PR update, exact-head rerun, UI/bus/auth/provider
-HTTP run, or CI success claim is made. See AUDIT E218. Root reviews and
-publishes the fix as a continuation of PR #115, retaining PR #114 as its
-unmerged base.
+**Next:** root reviews and publishes the integrated BUILD115 branch on the
+intended stack, then observes exact-head checks. PR #114 has not merged and UG
+remains **NOT PASSED**; C gates remain open.
 
 ### BUILD113/E216 — legacy Python developer preview/smoke tools
 
@@ -100,6 +119,7 @@ The tool-removal slice is published as the base branch
 open PR #114, stacked on verified main `5aec9f3d5dedf246457ae17a44229f0d76eef35f`.
 PR #114 is not merged, and fresh exact-head CI is not claimed here. See AUDIT
 E216 for the retained tooling, caller scan, checks, and scope limits.
+
 
 ### BUILD112/E215 — Rust CLI service assertion coverage
 
@@ -1615,3 +1635,7 @@ step is unchanged. No full suite, exact-head CI, PR/push, UG PASS, Python
 removal/default flip, or migration-gate completion is claimed. Root reviews
 and publishes this commit, then observes exact-head CI. UG remains **NOT
 PASSED**, Python remains the default, and C gates remain open.
+
+### Page-state dependency follow-up
+
+Merged PR #115 head `b6f24702fff991127d3e026ab02bcdd18221f451` normally. It adds safe early-completion diagnostics for the cancellation fixture; the original CI failure was not reproduced, and no root cause or replacement CI pass is claimed. Fifty focused repetitions each and backend 98 unit plus 4 integration tests passed locally on that dependency. This page-state head still needs exact-head CI.

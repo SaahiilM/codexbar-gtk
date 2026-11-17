@@ -8310,3 +8310,14 @@ completion. The app-owned location field accepts the private HOME path, and
 the visible file list confirms the exact fixture selection before GTK accepts
 it. Root reviews the local commit; UG remains **NOT PASSED** and C01–CG remain
 unaccepted.
+
+Root reconciled this slice onto BUILD118 main at `ff107d0` and allocated
+BUILD119 in VERSION, README and CHANGELOG. The test workflow adds the
+fixture crate's locked build, tests, formatting and strict Clippy while
+retaining all existing Wayland scenarios. After reconciliation, fixture tests
+passed (5 unit, 1 process lifecycle), strict Clippy and formatting passed,
+and workflow YAML, shell syntax, focused ShellCheck and diff checks passed.
+The broader ShellCheck scan reported existing SC2016 and SC2015 findings in
+the GTK routing and panel scripts. Both earlier full Settings logs reached
+the success marker before D-Bus teardown diagnostics. Those runs predate the
+BUILD119 metadata and workflow update. Fresh CI is pending.

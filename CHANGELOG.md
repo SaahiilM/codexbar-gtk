@@ -1,3 +1,7 @@
+## 0.82.0 (119) — 2026-11-17
+
+Move X11 smoke fixtures to Rust and exercise Settings import through the visible GTK file chooser. Check complete preference maps after import and reset. Retain the existing Python Wayland checks. See migration audit E222.
+
 ## 0.82.0 (118) — 2026-11-17
 
 Replace Python-based Cargo artifact resolution and service/runtime proof helpers with a locked Rust CI tool. Add strict helper formatting, tests and Clippy to CI. Keep the four remaining Python harness modules running until their UI automation ports are complete. This workflow/tooling change does not establish new application runtime behavior or pass UG/C gates.

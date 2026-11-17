@@ -1635,3 +1635,7 @@ step is unchanged. No full suite, exact-head CI, PR/push, UG PASS, Python
 removal/default flip, or migration-gate completion is claimed. Root reviews
 and publishes this commit, then observes exact-head CI. UG remains **NOT
 PASSED**, Python remains the default, and C gates remain open.
+
+### Page-state dependency follow-up
+
+Merged PR #115 head `b6f24702fff991127d3e026ab02bcdd18221f451` normally. It adds safe early-completion diagnostics for the cancellation fixture; the original CI failure was not reproduced, and no root cause or replacement CI pass is claimed. Fifty focused repetitions each and backend 98 unit plus 4 integration tests passed locally on that dependency. This page-state head still needs exact-head CI.

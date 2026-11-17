@@ -7845,3 +7845,48 @@ result (318 tests, 0 skipped) remain inherited evidence, not a fresh merge run.
 **Next:** root reviews the clean local merge, publishes BUILD114 with PR #114 as
 the base, and observes exact-head checks. After PR #114 merges, retarget the
 BUILD114 PR to main. UG remains **NOT PASSED** and C gates remain unaccepted.
+
+### E218 — BUILD114 PR #115 cancellation-fixture failure follow-up
+
+**Base/status:** continuation of provisional BUILD114/E217 on
+`t3/rust-backend-legacy-tests`, based on PR #114's open head
+`3cd02d330b6bdb59e38670168becd62e21a915c1`. PR #115 is open at supplied head
+`763d03245b9a63d9cf2e40a51984c37a003d8b4d`; the supplied exact-head run failed
+and the worktree changes below are not pushed. BUILD114 remains build 114
+within the existing PR; no release metadata changed.
+
+**Supplied failure and diagnosis limit:** run `44116527470`, test job
+`134155986179`, reported 96 passed and 1 failed in 4.64 seconds. The failure
+was `cli::tests::cancellation_kills_and_reaps_child` at `cli.rs:748`: the test
+did not observe a complete child PID file. The native tray job passed. The
+available `/tmp/codexbar-pr115-test.log` ends at the test assertion and does
+not preserve the operation task result, spawn error, or errno. Thus the exact
+original cause is not established; no `ETXTBSY`, `ENOENT`, or I/O cause is
+attributed to that CI failure.
+
+**Changes:** only `rust-backend/src/cli.rs` and this handoff/audit record
+changed. The cancellation test now waits concurrently for the PID file or
+completion of its actual `JoinHandle`. Early task completion retains the typed
+`CliErrorKind`, static operation ID, and test-only numeric raw spawn errno for
+diagnostics; no path, stderr, stdout, credentials, or process output is
+reported. On its deadline, the helper aborts and joins the task. Once a PID is
+observed, a test process-group cleanup guard protects panic/failure paths. This
+does not accept spawn failure as a passing cancellation result and does not add
+a production retry or timeout change. A focused synthetic missing-executable
+test covers early completion before PID publication and asserts
+`NotFound`/`ENOENT`; that fixture is diagnostic-path coverage, not a finding
+about the supplied CI event.
+
+**Local checks:** the focused cancellation test passed 50 consecutive runs;
+the early-failure/errno regression passed 50 consecutive runs. The locked
+backend suite passed 98 unit tests, `bg_gate_end_to_end` (1), `cli_service`
+(1), and `settings_facade` (2), with `--test-threads=4` and Cargo build jobs
+limited to one. `cargo fmt --manifest-path rust-backend/Cargo.toml --
+--check`, strict all-target/all-features backend Clippy, and `git diff --check`
+passed. The original failure did not recur, so local evidence does not identify
+its cause. No GUI, D-Bus, authentication, provider HTTP, push, PR update, or
+replacement CI run was performed. No exact-head CI success is claimed.
+
+**Next:** root reviews these worktree changes, updates PR #115 while retaining
+PR #114 as its unmerged base, and observes the replacement exact-head result.
+UG remains **NOT PASSED** and C gates remain unaccepted.

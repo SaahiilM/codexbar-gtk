@@ -11,7 +11,7 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Goal | Fully native Rust GTK4/libadwaita application with verified packaging and legacy runtime removal. |
 | Current phase | BG passed and U01–U08 implementation merged. UG **NOT PASSED**. By explicit user instruction, BUILD110 makes the repository launcher/installer native by default; C01–CG remain unaccepted. |
 | Last observed merge | PR #113 merged normally at `5aec9f3d5dedf246457ae17a44229f0d76eef35f` (BUILD112). Exact head `443bb0240b66af011cbcb9b0fdb6ef540d3142e1` passed all three checks in run `43955646572`. |
-| Active implementation | Provisional BUILD114/E217 on `t3/rust-backend-legacy-tests`, normally merged with published BUILD113/E216 stack base `origin/t3/legacy-python-tools-cleanup` at `3cd02d330b6bdb59e38670168becd62e21a915c1`. The base is PR #114 and is not merged; BUILD114 retains build 114 and is prepared for a stacked PR targeting that branch. |
+| Active implementation | Provisional BUILD114/E217 on `t3/rust-backend-legacy-tests`, normally merged with published BUILD113/E216 stack base `origin/t3/legacy-python-tools-cleanup` at `3cd02d330b6bdb59e38670168becd62e21a915c1`. The base is PR #114 and is not merged. PR #115 is open on this branch; its supplied exact-head test job failed as detailed in the E217 cancellation-fixture follow-up below. |
 | Installer/runtime verification | E198 records the merged build-95 installed-prefix/Python-free runtime proof. E199 records prior local 13-case activation smoke evidence in a Python-free container; its first attempt lacked `file`, and the portable `od`/`ldd` check passed. These component results do not pass C02 or authorize cutover. |
 | UI acceptance | E195 records one Display action; E200 records seven guarded Settings actions and three tab transitions. Broader Wayland controls/navigation remain open. UG is **NOT PASSED**; Python remains the explicit parity/rollback path under the BUILD110 launcher-default exception. See `UG_GATE.md`. |
 | Next | Root reviews and publishes BUILD114 as a stack on `t3/legacy-python-tools-cleanup`; after PR #114 merges, retarget the BUILD114 PR to main and observe its exact-head checks. No BUILD114 PR, merge, or CI result is claimed here. UG remains NOT PASSED and C gates unaccepted. |
@@ -58,6 +58,37 @@ runtime smoke was run for this slice.
 `t3/legacy-python-tools-cleanup`. PR #114 must merge before the BUILD114 PR is
 retargeted to main. Observe exact-head checks after publication; no result is
 claimed here. UG remains **NOT PASSED** and C gates remain open.
+
+#### BUILD114/E217 follow-up — PR #115 cancellation fixture diagnosis
+
+The supplied PR #115 run `44116527470`, test job `134155986179`, used head
+`763d03245b9a63d9cf2e40a51984c37a003d8b4d`. The headless backend unit job
+reported 96 passed and one failed in 4.64 seconds:
+`cli::tests::cancellation_kills_and_reaps_child` panicked because its fixture
+PID file was not complete. The native tray job passed. The supplied log
+`/tmp/codexbar-pr115-test.log` contains no early task result or spawn errno, so
+the original event's precise cause remains unconfirmed; it does not establish
+`ETXTBSY`, a missing executable, or an I/O failure.
+
+On this same BUILD114 branch, `rust-backend/src/cli.rs` now makes that test's
+PID wait race file publication against completion of the actual operation
+task. An early result reports only the safe `CliErrorKind`, static operation,
+and test-only numeric spawn errno; it does not print paths or process output.
+The deadline path aborts and joins the task, and a process-group cleanup guard
+covers failures after the PID is observed. A focused regression verifies that
+a synthetic missing executable completes before PID publication and is
+reported as `NotFound`/`ENOENT`; this validates the diagnostic path and is not
+evidence that this caused the supplied CI failure.
+
+Local evidence: cancellation test 50/50 passes; early-failure/errno regression
+50/50 passes; locked backend suite passes 98 unit tests and 4 integration
+tests with four test threads; backend format check, strict all-target/all-
+features Clippy, and `git diff --check` pass. The original failure did not
+recur, so no cause is inferred. Production behavior is unchanged because errno
+capture is test-only. No push, PR update, exact-head rerun, UI/bus/auth/provider
+HTTP run, or CI success claim is made. See AUDIT E218. Root reviews and
+publishes the fix as a continuation of PR #115, retaining PR #114 as its
+unmerged base.
 
 ### BUILD113/E216 — legacy Python developer preview/smoke tools
 

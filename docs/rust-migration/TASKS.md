@@ -9,10 +9,10 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Field | Current checkpoint |
 | --- | --- |
 | Goal | Fully native Rust GTK4/libadwaita application with verified packaging and legacy runtime removal. |
-| Current phase | BUILD118 Rust CI helper migration; UG remains **NOT PASSED**, and C01–CG remain unaccepted. |
-| Last observed merge | PR #118 merged at `93695ac062818a21f7f38ef67765c0c6fc55774e`; exact head `f796b968670e7bbcc28081ba110414f13c405a19` passed all three required checks in run `44130179179`, with no reviews, comments, or review threads. |
-| Active implementation | BUILD118/E221 workflow and resolver migration on `t3/rust-ci-no-python`, based on `93695ac062818a21f7f38ef67765c0c6fc55774e`. Local changes are scoped and uncommitted for root review. |
-| Next | Root reviews and publishes this slice, then verifies exact-head CI. Continue retiring remaining Python automation only alongside native UI ports; do not infer UG/C gate acceptance. |
+| Current phase | BUILD119 X11 smoke fixture migration. UG remains **NOT PASSED** and C01–CG remain unaccepted. |
+| Last observed merge | PR #119 merged at `ff107d0f2761be8ec403358e12a43d4045fcb97a`; head `d60cd8772ce2c137c713cf5dace0ce72357b68ba` passed all three checks in run 44156297105. |
+| Active implementation | BUILD119/E222 on `t3/rust-smoke-test-tools`. Rust X11 fixtures and two private Settings smoke passes. |
+| Next | Verify CI for BUILD119 and continue the native Wayland runner ports before retiring Python harness coverage. |
 
 ### BUILD118/E221 — Python-free Rust CI helper wiring
 
@@ -38,6 +38,24 @@ AUDIT E221. The helper’s actual process-level integration tests cover Cargo
 artifact resolution, strict command-target parsing, wrong-hash/install-failure/
 runtime-absence rejection, required-action failure, child cleanup, and data
 validation. No UG or C gate is accepted by CI helper coverage.
+
+### BUILD119/E222 — Rust X11 smoke fixtures
+
+**Owner/base/status:** `t3/rust-smoke-test-tools`, reconciled with
+BUILD118 main at `ff107d0`. BUILD119 adds the Rust smoke fixture build,
+formatting, tests, and Clippy to the existing CI test job. The two local
+Settings smoke passes preceded the release metadata and workflow update.
+
+**Scope and evidence:** `scripts/smoke-native-settings.sh` now uses the live
+app-owned GTK chooser's location control to enter the private HOME folder,
+checks the exact visible JSON fixture set, and selects the target row with
+guarded keyboard input. `rust-smoke-fixtures` checks the complete import
+overlay, empty-import no-op, canceled-reset map, and Rust default map. The two
+full smokes ran with Python absent from `PATH`, private Xvfb and D-Bus, and a
+loopback-only socket guard for the local update fixture. Exact commands and
+limits are recorded in audit E222.
+
+**Next:** verify the BUILD119 PR checks and continue the Rust Wayland ports.
 
 ### BUILD117/E220 — retired Python source and debug-tool cleanup
 

@@ -5,7 +5,13 @@ repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 binary=${1:-"$repo_root/rust-gtk/target/debug/codexbar-gtk-native"}
 
 if [[ "${NATIVE_PANEL_SMOKE_INNER:-}" != "1" ]]; then
-    exec xvfb-run -a dbus-run-session -- env NATIVE_PANEL_SMOKE_INNER=1 "$0" "$binary"
+    session_home=$(mktemp -d)
+    mkdir -m 700 "$session_home/runtime"
+    status=0
+    xvfb-run -a env HOME="$session_home" XDG_RUNTIME_DIR="$session_home/runtime" \
+        dbus-run-session -- env NATIVE_PANEL_SMOKE_INNER=1 "$0" "$binary" || status=$?
+    rm -rf "$session_home"
+    exit "$status"
 fi
 
 for tool in xdotool gapplication gdbus xwininfo xprop xwd ffmpeg; do
@@ -30,8 +36,9 @@ cleanup() {
 }
 trap cleanup EXIT
 
-mkdir -p "$scratch/home/.config" "$scratch/runtime"
-chmod 700 "$scratch/runtime"
+runtime_root=${XDG_RUNTIME_DIR:-"$scratch/runtime"}
+mkdir -p "$scratch/home/.config" "$runtime_root"
+chmod 700 "$runtime_root"
 cat > "$scratch/fake-codexbar" <<'CLI'
 #!/bin/sh
 printf '%s\n' "$1" >> "$NATIVE_CLI_LOG"
@@ -47,7 +54,7 @@ CLI
 chmod 700 "$scratch/fake-codexbar"
 
 export HOME="$scratch/home"
-export XDG_RUNTIME_DIR="$scratch/runtime"
+export XDG_RUNTIME_DIR="$runtime_root"
 export XDG_CONFIG_HOME="$scratch/home/.config"
 export XDG_DATA_HOME="$scratch/home/.local/share"
 export XDG_CACHE_HOME="$scratch/home/.cache"

@@ -3,33 +3,72 @@ set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 binary=${1:-"$repo_root/rust-gtk/target/debug/codexbar-gtk-native"}
+fixtures=${CODEXBAR_SMOKE_FIXTURES:-"$repo_root/rust-smoke-fixtures/target/release/codexbar-smoke-fixtures"}
 
 if [[ "${CODEXBAR_NATIVE_SMOKE_INNER:-}" != "1" ]]; then
-    exec xvfb-run -a dbus-run-session -- env CODEXBAR_NATIVE_SMOKE_INNER=1 "$0" "$binary"
+    fixtures=$("$repo_root/scripts/build-rust-smoke-fixtures.sh")
+    session_home=$(mktemp -d)
+    mkdir -m 700 "$session_home/runtime"
+    status=0
+    printf 'GTK private bus bootstrap: time=%s HOME=%q runtime=%q (paths exported before dbus-run-session)\n' \
+        "$(date +%s.%N)" "$session_home" "$session_home/runtime" >&2
+    xvfb-run -a env HOME="$session_home" XDG_RUNTIME_DIR="$session_home/runtime" \
+        XDG_CONFIG_HOME="$session_home/.config" XDG_DATA_HOME="$session_home/.local/share" \
+        XDG_CACHE_HOME="$session_home/.cache" \
+        CODEXBAR_SMOKE_PRIVATE_HOME="$session_home" CODEXBAR_SMOKE_PRIVATE_RUNTIME="$session_home/runtime" \
+        CODEXBAR_SMOKE_FIXTURES="$fixtures" dbus-run-session -- env \
+        CODEXBAR_NATIVE_SMOKE_INNER=1 "$0" "$binary" || status=$?
+    rm -rf "$session_home"
+    exit "$status"
 fi
 
-for tool in xdotool gapplication gdbus timeout xwininfo xprop python3; do
+for tool in xdotool gapplication gdbus timeout xwininfo xprop; do
     command -v "$tool" >/dev/null || { echo "missing smoke dependency: $tool" >&2; exit 2; }
 done
+
+xdotool_binary=$(command -v xdotool)
+xdotool() {
+    timeout --signal=TERM --kill-after=1s 10s "$xdotool_binary" "$@"
+}
 if [[ -n "${NATIVE_GTK_TRAY_PANEL_SCREENSHOT:-}${NATIVE_GTK_TRAY_DASHBOARD_SCREENSHOT:-}" ]]; then
     for tool in xwd ffmpeg; do
         command -v "$tool" >/dev/null || { echo "missing screenshot dependency: $tool" >&2; exit 2; }
     done
 fi
 [[ -x "$binary" ]] || { echo "native GTK binary not found: $binary" >&2; exit 2; }
+if [[ "${CODEXBAR_NATIVE_SMOKE_INNER:-}" == "1" ]] && \
+    [[ "${HOME:-}" != "${CODEXBAR_SMOKE_PRIVATE_HOME:-}" || \
+       "${XDG_RUNTIME_DIR:-}" != "${CODEXBAR_SMOKE_PRIVATE_RUNTIME:-}" ]]; then
+    echo "GTK inner smoke requires HOME and XDG_RUNTIME_DIR to match the private paths exported before D-Bus activation" >&2
+    exit 2
+fi
 
 scratch=$(mktemp -d)
 chmod 700 "$scratch"
+stop_owned_process() {
+    local pid=$1 deadline state
+    [[ -n "$pid" ]] || return 0
+    if kill -0 "$pid" 2>/dev/null; then
+        kill -TERM "$pid" 2>/dev/null || true
+        deadline=$((SECONDS + 5))
+        while (( SECONDS < deadline )); do
+            state=$(awk '{print $3}' "/proc/$pid/stat" 2>/dev/null || true)
+            [[ -z "$state" || "$state" == Z* ]] && break
+            sleep 0.05
+        done
+        state=$(awk '{print $3}' "/proc/$pid/stat" 2>/dev/null || true)
+        if [[ -n "$state" && "$state" != Z* ]]; then
+            kill -KILL "$pid" 2>/dev/null || true
+        fi
+    fi
+    wait "$pid" 2>/dev/null || true
+}
 cleanup() {
     if [[ -n "${app_pid:-}" ]] && kill -0 "$app_pid" 2>/dev/null; then
         gapplication action com.steipete.CodexBarGTK quit >/dev/null 2>&1 || true
-        kill "$app_pid" 2>/dev/null || true
-        wait "$app_pid" 2>/dev/null || true
+        stop_owned_process "$app_pid"
     fi
-    if [[ -n "${notification_pid:-}" ]] && kill -0 "$notification_pid" 2>/dev/null; then
-        kill "$notification_pid" 2>/dev/null || true
-        wait "$notification_pid" 2>/dev/null || true
-    fi
+    stop_owned_process "${notification_pid:-}"
     if [[ "${NATIVE_GTK_KEEP_TMP:-0}" == "1" ]]; then
         echo "synthetic native GTK smoke files kept at $scratch" >&2
     else
@@ -38,8 +77,10 @@ cleanup() {
 }
 trap cleanup EXIT
 
-mkdir -p "$scratch/home" "$scratch/runtime"
-chmod 700 "$scratch/runtime"
+runtime_root=${XDG_RUNTIME_DIR:-"$scratch/runtime"}
+home_root=${HOME:-"$scratch/home"}
+mkdir -p "$home_root" "$runtime_root"
+chmod 700 "$runtime_root"
 cat > "$scratch/fake-codexbar" <<'CLI'
 #!/bin/sh
 printf '%s\n' "$1" >> "$NATIVE_CLI_LOG"
@@ -69,11 +110,11 @@ esac
 CLI
 chmod 700 "$scratch/fake-codexbar"
 
-export HOME="$scratch/home"
-export XDG_RUNTIME_DIR="$scratch/runtime"
-export XDG_CONFIG_HOME="$scratch/home/.config"
-export XDG_DATA_HOME="$scratch/home/.local/share"
-export XDG_CACHE_HOME="$scratch/home/.cache"
+export HOME="$home_root"
+export XDG_RUNTIME_DIR="$runtime_root"
+export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$home_root/.config}"
+export XDG_DATA_HOME="${XDG_DATA_HOME:-$home_root/.local/share}"
+export XDG_CACHE_HOME="${XDG_CACHE_HOME:-$home_root/.cache}"
 export CODEXBAR_CLI="$scratch/fake-codexbar"
 export NATIVE_CLI_LOG="$scratch/cli-calls"
 export NATIVE_NOTIFICATION_LOG="$scratch/notifications"
@@ -97,64 +138,7 @@ export GTK_USE_PORTAL=0
 export GDK_BACKEND=x11
 export GSK_RENDERER=cairo
 
-# Capture Gio's native notification delivery over this isolated session bus.
-python_bin=$(command -v python3)
-if ! "$python_bin" -c 'import dbus, gi' >/dev/null 2>&1; then
-    python_bin=/usr/bin/python3
-fi
-"$python_bin" -c 'import dbus, gi' >/dev/null 2>&1 || {
-    echo "private-bus notification smoke needs python3-dbus and python3-gi" >&2
-    exit 2
-}
-cat > "$scratch/notifications.py" <<'PY'
-import sys
-
-import dbus
-import dbus.service
-import gi
-
-gi.require_version("GLib", "2.0")
-from dbus.mainloop.glib import DBusGMainLoop
-from gi.repository import GLib
-
-DBusGMainLoop(set_as_default=True)
-bus = dbus.SessionBus()
-name = dbus.service.BusName("org.freedesktop.Notifications", bus=bus)
-
-
-class Notifications(dbus.service.Object):
-    def __init__(self):
-        super().__init__(bus, "/org/freedesktop/Notifications")
-        self.next_id = 1
-
-    @dbus.service.method("org.freedesktop.Notifications", in_signature="", out_signature="as")
-    def GetCapabilities(self):
-        return ["body"]
-
-    @dbus.service.method("org.freedesktop.Notifications", in_signature="", out_signature="ssss")
-    def GetServerInformation(self):
-        return ["Synthetic", "CodexBar GTK fixture", "1.0", "1.2"]
-
-    @dbus.service.method(
-        "org.freedesktop.Notifications",
-        in_signature="susssasa{sv}i",
-        out_signature="u",
-    )
-    def Notify(self, app_name, replaces_id, app_icon, summary, body, actions, hints, expire_timeout):
-        with open(sys.argv[1], "a", encoding="utf-8") as output:
-            output.write(f"{app_name}\t{summary}\t{body}\n")
-        self.next_id += 1
-        return dbus.UInt32(self.next_id)
-
-    @dbus.service.method("org.freedesktop.Notifications", in_signature="u", out_signature="")
-    def CloseNotification(self, notification_id):
-        return None
-
-
-Notifications()
-GLib.MainLoop().run()
-PY
-"$python_bin" "$scratch/notifications.py" "$NATIVE_NOTIFICATION_LOG" >"$scratch/notifications.log" 2>&1 &
+"$fixtures" mock-notifications "$NATIVE_NOTIFICATION_LOG" >"$scratch/notifications.log" 2>&1 &
 notification_pid=$!
 deadline=$((SECONDS + 8))
 while ! gdbus call --session --dest org.freedesktop.DBus --object-path /org/freedesktop/DBus \
@@ -169,23 +153,45 @@ gdbus call --session --dest org.freedesktop.Notifications \
     exit 1
 }
 
+app_window_ids() {
+    local pattern=$1 candidate title owner map_state
+    while IFS= read -r candidate; do
+        [[ -n "$candidate" ]] || continue
+        title=$(xprop -id "$candidate" _NET_WM_NAME WM_NAME 2>/dev/null \
+            | sed -n 's/^[^=]*= "\(.*\)"$/\1/p' | head -n 1)
+        [[ "$title" =~ $pattern ]] || continue
+        owner=$(xprop -id "$candidate" _NET_WM_PID 2>/dev/null \
+            | sed -n 's/.* = \([0-9][0-9]*\)$/\1/p')
+        [[ "$owner" == "$app_pid" ]] || continue
+        map_state=$(xwininfo -id "$candidate" 2>/dev/null \
+            | sed -n 's/^  Map State: //p')
+        [[ "$map_state" == IsViewable ]] || continue
+        printf '%s\n' "$candidate"
+    done < <(xwininfo -root -tree 2>/dev/null | awk '$1 ~ /^0x[[:xdigit:]]+$/ { print $1 }')
+}
+
+has_app_window() {
+    [[ -n "$(app_window_ids "$1")" ]]
+}
+
 window_title() {
-    local pattern=$1
-    local deadline=$((SECONDS + 12))
+    local pattern=$1 deadline=$((SECONDS + 12)) window title
     while (( SECONDS < deadline )); do
-        local window
-        window=$(xdotool search --onlyvisible --name "$pattern" 2>/dev/null | head -n 1 || true)
+        window=$(app_window_ids "$pattern" | head -n 1 || true)
         if [[ -n "$window" ]]; then
-            xdotool getwindowname "$window"
-            return 0
+            title=$(xprop -id "$window" _NET_WM_NAME WM_NAME 2>/dev/null \
+                | sed -n 's/^[^=]*= "\(.*\)"$/\1/p' | head -n 1)
+            [[ -n "$title" ]] && { printf '%s\n' "$title"; return 0; }
         fi
         sleep 0.1
     done
     echo "timed out waiting for native window matching: $pattern" >&2
     echo "visible X11 windows:" >&2
     while IFS= read -r window; do
-        printf '  %s: %s\n' "$window" "$(xdotool getwindowname "$window" 2>/dev/null || true)" >&2
-    done < <(xdotool search --onlyvisible --name '.*' 2>/dev/null || true)
+        title=$(xprop -id "$window" _NET_WM_NAME WM_NAME 2>/dev/null \
+            | sed -n 's/^[^=]*= "\(.*\)"$/\1/p' | head -n 1)
+        printf '  %s: %s\n' "$window" "$title" >&2
+    done < <(xwininfo -root -tree 2>/dev/null | awk '$1 ~ /^0x[[:xdigit:]]+$/ { print $1 }')
     if [[ -f "$scratch/primary.log" ]]; then
         echo "primary native app log:" >&2
         cat "$scratch/primary.log" >&2
@@ -200,6 +206,22 @@ assert_title_contains() {
         echo "expected window title containing '$expected', got '$actual'" >&2
         exit 1
     }
+}
+
+assert_private_bus_ready() {
+    local address=${DBUS_SESSION_BUS_ADDRESS:-} address_fingerprint
+    [[ "$address" == unix:* ]] || {
+        echo "GTK smoke did not inherit a private Unix D-Bus session address" >&2
+        exit 1
+    }
+    if ! gdbus call --session --dest org.freedesktop.DBus --object-path /org/freedesktop/DBus \
+        --method org.freedesktop.DBus.ListNames --timeout 3 >/dev/null 2>&1; then
+        echo "private GTK session bus did not answer ListNames before app launch" >&2
+        exit 1
+    fi
+    address_fingerprint=$(printf '%s' "$address" | sha256sum | cut -c1-16)
+    printf 'private GTK bus live before app launch: time=%s HOME=%q runtime=%q transport=unix address_fingerprint=%s\n' \
+        "$(date +%s.%N)" "$HOME" "$XDG_RUNTIME_DIR" "$address_fingerprint"
 }
 
 capture_window() {
@@ -225,6 +247,70 @@ wait_for_tray_name() {
     done
     cat "$scratch/primary.log" >&2
     echo "native StatusNotifierItem name was not acquired" >&2
+    exit 1
+}
+
+wait_for_app_bus_owner() {
+    local deadline=$((SECONDS + 8)) launched_at app_home app_runtime app_bus_address app_bus_transport owner_pid
+    local bus_address_fingerprint app_address_fingerprint
+    launched_at=$(date +%s.%N)
+    bus_address_fingerprint=$(printf '%s' "${DBUS_SESSION_BUS_ADDRESS:-}" | sha256sum | cut -c1-16)
+    printf 'native app launch: time=%s HOME=%q runtime=%q bus_transport=%q\n' \
+        "$launched_at" "$HOME" "$XDG_RUNTIME_DIR" "${DBUS_SESSION_BUS_ADDRESS%%:*}"
+    [[ "${DBUS_SESSION_BUS_ADDRESS:-}" == unix:* ]] || {
+        echo "native GTK smoke did not inherit a private Unix D-Bus session address" >&2
+        exit 1
+    }
+    if ! gdbus call --session --dest org.freedesktop.DBus --object-path /org/freedesktop/DBus \
+        --method org.freedesktop.DBus.ListNames --timeout 3 >/dev/null 2>&1; then
+        echo "private session bus did not answer ListNames after native app launch" >&2
+        exit 1
+    fi
+    while (( SECONDS < deadline )); do
+        if gdbus call --session --dest org.freedesktop.DBus --object-path /org/freedesktop/DBus \
+            --method org.freedesktop.DBus.NameHasOwner com.steipete.CodexBarGTK --timeout 3 2>/dev/null \
+            | grep -q '(true,)'; then
+            owner_pid=$(gdbus call --session --dest org.freedesktop.DBus --object-path /org/freedesktop/DBus \
+                --method org.freedesktop.DBus.GetConnectionUnixProcessID com.steipete.CodexBarGTK --timeout 3 \
+                | sed -n 's/^(uint32 \([0-9][0-9]*\),)$/\1/p')
+            [[ "$owner_pid" == "$app_pid" ]] || {
+                echo "native app D-Bus owner PID mismatch (owner=$owner_pid launched=$app_pid)" >&2
+                exit 1
+            }
+            app_home=$(tr '\0' '\n' <"/proc/$app_pid/environ" | sed -n 's/^HOME=//p' | head -n 1)
+            app_runtime=$(tr '\0' '\n' <"/proc/$app_pid/environ" | sed -n 's/^XDG_RUNTIME_DIR=//p' | head -n 1)
+            app_bus_address=$(tr '\0' '\n' <"/proc/$app_pid/environ" | sed -n 's/^DBUS_SESSION_BUS_ADDRESS=//p' | head -n 1)
+            app_bus_transport=${app_bus_address%%:*}
+            app_address_fingerprint=$(printf '%s' "$app_bus_address" | sha256sum | cut -c1-16)
+            printf 'native app bus context: HOME=%q runtime=%q bus_transport=%q private_address_fingerprint=%s\n' \
+                "$app_home" "$app_runtime" "$app_bus_transport" "$app_address_fingerprint"
+            [[ "$app_home" == "$HOME" ]] || {
+                echo "native app HOME differs from the isolated smoke HOME" >&2
+                exit 1
+            }
+            [[ "$app_runtime" == "$XDG_RUNTIME_DIR" ]] || {
+                echo "native app XDG_RUNTIME_DIR differs from the isolated smoke runtime" >&2
+                exit 1
+            }
+            [[ "$app_bus_transport" == unix ]] || {
+                echo "native app did not inherit a private Unix D-Bus session address" >&2
+                exit 1
+            }
+            [[ "$app_bus_address" == "$DBUS_SESSION_BUS_ADDRESS" && \
+               "$app_address_fingerprint" == "$bus_address_fingerprint" ]] || {
+                echo "native app D-Bus address differs from the live private session bus" >&2
+                exit 1
+            }
+            printf 'native app D-Bus owner live: time=%s pid=%s\n' "$(date +%s.%N)" "$owner_pid"
+            return 0
+        fi
+        if ! kill -0 "$app_pid" 2>/dev/null; then
+            break
+        fi
+        sleep 0.05
+    done
+    cat "$scratch/primary.log" >&2
+    echo "private session bus stayed live but the native app never acquired its application name" >&2
     exit 1
 }
 
@@ -264,8 +350,10 @@ assert_panel_bottom_right() {
 
 # The primary instance exercises an invalid --page value. The legacy stack
 # leaves Usage selected instead of failing the process.
+assert_private_bus_ready
 "$binary" --page not-a-page >"$scratch/primary.log" 2>&1 &
 app_pid=$!
+wait_for_app_bus_owner
 assert_title_contains '^CodexBar GTK' "Usage"
 wait_for_tray_name
 tray_introspection=$(gdbus introspect --session --dest org.kde.StatusNotifierItem-codexbar-gtk --object-path /StatusNotifierItem)
@@ -276,25 +364,25 @@ grep -q 'About CodexBar GTK' <<<"$menu_layout" || { echo "native dbusmenu About 
 gdbus call --session --dest org.kde.StatusNotifierItem-codexbar-gtk --object-path /StatusNotifierItem \
     --method org.kde.StatusNotifierItem.Activate 31 47 >/dev/null
 assert_title_contains 'CodexBar GTK.*Panel' "Panel"
-panel_window=$(xdotool search --onlyvisible --name 'CodexBar GTK.*Panel' | head -n 1)
+panel_window=$(app_window_ids 'CodexBar GTK.*Panel' | head -n 1)
 assert_panel_bottom_right "$panel_window"
 capture_window "$panel_window" "${NATIVE_GTK_TRAY_PANEL_SCREENSHOT:-}"
 xdotool windowfocus --sync "$panel_window"
-focused_window=$(xdotool getwindowfocus)
+focused_window=$(printf '0x%x' "$(xdotool getwindowfocus)")
 [[ "$focused_window" == "$panel_window" ]] || {
     echo "native panel did not receive focus before Escape: focused $focused_window, expected $panel_window" >&2
     exit 1
 }
 xdotool key Escape
 deadline=$((SECONDS + 5))
-while xdotool search --onlyvisible --name 'CodexBar GTK.*Panel' >/dev/null 2>&1 && (( SECONDS < deadline )); do sleep 0.05; done
-if xdotool search --onlyvisible --name 'CodexBar GTK.*Panel' >/dev/null 2>&1; then
+while has_app_window 'CodexBar GTK.*Panel' && (( SECONDS < deadline )); do sleep 0.05; done
+if has_app_window 'CodexBar GTK.*Panel'; then
     echo "SNI activation panel did not dismiss with Escape" >&2
     exit 1
 fi
 tray_menu_event 3
 assert_title_contains '^CodexBar GTK' "Dashboard"
-dashboard_window=$(xdotool search --onlyvisible --name '^CodexBar GTK' | head -n 1)
+dashboard_window=$(app_window_ids '^CodexBar GTK' | head -n 1)
 capture_window "$dashboard_window" "${NATIVE_GTK_TRAY_DASHBOARD_SCREENSHOT:-}"
 tray_menu_event 7
 assert_title_contains '^CodexBar Settings' "CodexBar Settings"
@@ -419,7 +507,7 @@ done
     echo "panel fixture did not enter its delayed first refresh" >&2
     exit 1
 }
-if xdotool search --onlyvisible --name 'CodexBar GTK.*Panel' >/dev/null 2>&1; then
+if has_app_window 'CodexBar GTK.*Panel'; then
     echo "panel appeared before the first refresh completed" >&2
     exit 1
 fi
@@ -433,7 +521,7 @@ while [[ ! -e "$NATIVE_USAGE_FINISHED" ]] && (( SECONDS < deadline )); do sleep 
     echo "synthetic CLI did not finish after release" >&2
     exit 1
 }
-if xdotool search --onlyvisible --name 'CodexBar GTK.*Panel' >/dev/null 2>&1; then
+if has_app_window 'CodexBar GTK.*Panel'; then
     echo "pending panel toggle did not cancel the open request" >&2
     exit 1
 fi
@@ -442,19 +530,19 @@ assert_title_contains 'CodexBar GTK.*Panel' "Panel"
 
 # The compact panel is a separate window. Escape, toggle, central page and
 # Settings/About actions all close it without changing their application APIs.
-panel_window=$(xdotool search --onlyvisible --name 'CodexBar GTK.*Panel' | head -n 1)
+panel_window=$(app_window_ids 'CodexBar GTK.*Panel' | head -n 1)
 [[ -n "$panel_window" ]] || { echo "native panel window was not visible" >&2; exit 1; }
 assert_panel_bottom_right "$panel_window"
 xdotool windowfocus --sync "$panel_window"
-focused_window=$(xdotool getwindowfocus)
+focused_window=$(printf '0x%x' "$(xdotool getwindowfocus)")
 [[ "$focused_window" == "$panel_window" ]] || {
     echo "native panel did not receive focus before Escape: focused $focused_window, expected $panel_window" >&2
     exit 1
 }
 xdotool key Escape
 deadline=$((SECONDS + 5))
-while xdotool search --onlyvisible --name 'CodexBar GTK.*Panel' >/dev/null 2>&1 && (( SECONDS < deadline )); do sleep 0.05; done
-if xdotool search --onlyvisible --name 'CodexBar GTK.*Panel' >/dev/null 2>&1; then
+while has_app_window 'CodexBar GTK.*Panel' && (( SECONDS < deadline )); do sleep 0.05; done
+if has_app_window 'CodexBar GTK.*Panel'; then
     echo "Escape did not dismiss the native panel" >&2
     exit 1
 fi
@@ -463,7 +551,7 @@ gapplication action com.steipete.CodexBarGTK panel
 assert_title_contains 'CodexBar GTK.*Panel' "Panel"
 gapplication action com.steipete.CodexBarGTK page "'sessions'"
 assert_title_contains '^CodexBar GTK' "Sessions"
-if xdotool search --onlyvisible --name 'CodexBar GTK.*Panel' >/dev/null 2>&1; then
+if has_app_window 'CodexBar GTK.*Panel'; then
     echo "page navigation left the native panel visible" >&2
     exit 1
 fi
@@ -472,7 +560,7 @@ gapplication action com.steipete.CodexBarGTK panel
 assert_title_contains 'CodexBar GTK.*Panel' "Panel"
 gapplication action com.steipete.CodexBarGTK settings
 assert_title_contains '^CodexBar Settings' "CodexBar Settings"
-if xdotool search --onlyvisible --name 'CodexBar GTK.*Panel' >/dev/null 2>&1; then
+if has_app_window 'CodexBar GTK.*Panel'; then
     echo "Settings navigation left the native panel visible" >&2
     exit 1
 fi
@@ -481,7 +569,7 @@ gapplication action com.steipete.CodexBarGTK panel
 assert_title_contains 'CodexBar GTK.*Panel' "Panel"
 gapplication action com.steipete.CodexBarGTK about
 assert_title_contains '^About CodexBar GTK' "About CodexBar GTK"
-if xdotool search --onlyvisible --name 'CodexBar GTK.*Panel' >/dev/null 2>&1; then
+if has_app_window 'CodexBar GTK.*Panel'; then
     echo "About navigation left the native panel visible" >&2
     exit 1
 fi

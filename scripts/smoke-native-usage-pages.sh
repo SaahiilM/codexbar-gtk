@@ -4,7 +4,13 @@ set -euo pipefail
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 binary=${1:-"$repo_root/rust-gtk/target/debug/codexbar-gtk-native"}
 if [[ "${CODEXBAR_NATIVE_USAGE_INNER:-}" != "1" ]]; then
-    exec xvfb-run -a dbus-run-session -- env CODEXBAR_NATIVE_USAGE_INNER=1 "$0" "$binary"
+    session_home=$(mktemp -d)
+    mkdir -m 700 "$session_home/runtime"
+    status=0
+    xvfb-run -a env HOME="$session_home" XDG_RUNTIME_DIR="$session_home/runtime" \
+        dbus-run-session -- env CODEXBAR_NATIVE_USAGE_INNER=1 "$0" "$binary" || status=$?
+    rm -rf "$session_home"
+    exit "$status"
 fi
 
 for tool in xdotool gapplication timeout; do
@@ -24,8 +30,9 @@ cleanup() {
 }
 trap cleanup EXIT
 
-mkdir -p "$native_usage_tmp/runtime" "$native_usage_tmp/config" "$native_usage_tmp/data" "$native_usage_tmp/cache"
-chmod 700 "$native_usage_tmp/runtime"
+runtime_root=${XDG_RUNTIME_DIR:-"$native_usage_tmp/runtime"}
+mkdir -p "$runtime_root" "$native_usage_tmp/config" "$native_usage_tmp/data" "$native_usage_tmp/cache"
+chmod 700 "$runtime_root"
 native_usage_today=$(date -u +%Y-%m-%d)
 native_usage_yesterday=$(date -u -d 'yesterday' +%Y-%m-%d)
 
@@ -77,7 +84,7 @@ esac
 CLI
 chmod 700 "$native_usage_tmp/fake-codexbar"
 
-export XDG_RUNTIME_DIR="$native_usage_tmp/runtime"
+export XDG_RUNTIME_DIR="$runtime_root"
 export XDG_CONFIG_HOME="$native_usage_tmp/config"
 export XDG_DATA_HOME="$native_usage_tmp/data"
 export XDG_CACHE_HOME="$native_usage_tmp/cache"

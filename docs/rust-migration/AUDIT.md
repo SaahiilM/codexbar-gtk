@@ -7529,6 +7529,165 @@ runtime were temporary and removed; no host app/service was started or changed.
 and observes exact-head CI. UG stays **NOT PASSED** and all C gates remain
 unaccepted until their requirements are separately met.
 
+### E214 — BUILD111 native tray D-Bus required-check coverage
+
+**Claim/base/status:** BUILD111/E214 is on branch
+`t3/native-tray-dbus-coverage`, based on verified `origin/main`
+`bc0dce990f77ac7c62ebf912640c48e35be99694` (PR #111, build 110). The earlier
+tray implementation commit `5a74611342e804cbfbd74ff76d32efcd6d6ccff9` was
+preserved through the normal merge. Implementation and local checks are
+complete; root review/publication is pending. No PR, merge, exact-head CI, or
+GitHub review result is claimed for BUILD111.
+
+**Workflow/source changes:** `.github/workflows/rust-core.yml` keeps the
+required job ID `tray-dbus` and now installs the stable Rust toolchain,
+`libgtk-4-dev`, `libadwaita-1-dev`, and `dbus-daemon`, then runs
+`scripts/test-native-tray-dbus.sh`. This is a private `dbus-run-session` around
+the locked Rust `rust-gtk` tray test target, with Cargo build jobs limited to
+one. The former `python3-dbus` and `python3-gi` package/install invocation is
+removed from this job. A push path-filter entry covers the script itself. The
+separate `test` job remains intact and continues discovering Python tests,
+including `tests/test_tray_signals.py`; the Python parity reference was not
+deleted. GTK4 and libadwaita are the native test's build dependencies; no
+librsvg development library is linked by this Rust test target.
+
+**Assertion mapping:**
+
+| Existing assertion | Native Rust coverage |
+| --- | --- |
+| Python `test_refresh_notifies_host_of_new_tooltip_and_icon`: `NewToolTip` and `NewIcon` | `private_bus_exports_protocol_dispatches_actions_recovers_and_releases` observes both signals and their empty-tuple signatures. |
+| `PropertiesChanged` interface/signature and tooltip title/body plus icon pixmap key | The same private-bus test parses `(sa{sv}as)`, checks the SNI interface, empty invalidation list, changed `ToolTip`/`IconPixmap` keys and exact title/body; `GetAll` checks tooltip values and pixmap dimensions/byte length. `pixmap_has_network_argb32_shape_and_known_color` checks a known ARGB32 pixel. |
+| Python `test_status_signal_contains_new_status`: `NewStatus` carries `Passive` | The Rust private-bus test decodes the string and asserts exact `Passive` payload (and signal signature). |
+| Python `test_menu_replacement_notifies_host_of_new_layout`: one `LayoutUpdated` with `(2, 0)` | The Rust private-bus test asserts exactly one event with revision 2 and parent 0, then reads revision and expanded menu layout/label back over D-Bus. |
+| Python tray test setup does not exercise watcher lifecycle | Native test checks watcher initial ownership/registration, object-path fallback, release/reacquire clearing and re-registration, idempotent double-stop, released SNI name, and no registration after stopped-tray restart. |
+| Python tray test does not cover complete SNI/dbusmenu method contract | Native test checks exclusive watcher ownership, `Introspect`, SNI property types, `Scroll`, menu `GetLayout`, `GetGroupProperties`, `GetProperty`, `AboutToShow`, `AboutToShowGroup`, `OnEvent`, `Event`, and `EventGroup`, plus SNI activation/context actions, menu actions and name release. Protocol XML declarations are checked separately. |
+| `scripts/smoke-native-panel-parity.sh` application/window semantics | Remains in the broader `test` job. It owns Activate visibility toggling, SecondaryActivate/ContextMenu opening and existing-window identity, preference-controlled refresh behavior, focus, and Escape closing. These are GTK/window assertions and are not claimed by this protocol-only job. |
+
+**Local checks:**
+
+- `./scripts/test-native-tray-dbus.sh` with temporary failing `python` and
+  `python3` executables prepended to `PATH` — passed 5 tray tests, 0 failed,
+  36 filtered; neither shadow executable was invoked.
+- Existing Python parity command
+  `python3 -m unittest discover -s tests -p test_tray_signals.py -v` — 3
+  passed. This is coverage retained in addition to the native CI replacement.
+- `cargo fmt --manifest-path rust-gtk/Cargo.toml -- --check` — passed.
+- `cargo clippy --manifest-path rust-gtk/Cargo.toml --all-targets -- -D
+  warnings` — passed.
+- `bash -n scripts/test-native-tray-dbus.sh`,
+  `python3 -m unittest
+  tests.test_app.VersionMetadataTests.test_display_string_matches_version_file
+  -v`, and `git diff --check` — passed.
+- `cargo tree --manifest-path rust-gtk/Cargo.toml --locked -e all --prefix
+  none | rg '(^| )pyo3($|[- ])'` — no PyO3 package found in the GTK crate's
+  dependency tree.
+- The existing `codexbar-no-python:smoke` Docker image has no Python or Cargo
+  toolchain. The host-built Rust tray test executable was run with
+  `dbus-run-session` inside that network-disabled container; all 5 tests passed.
+  Thus actual execution without Python in Docker is proven, but compilation of
+  the test target inside that image is not.
+
+**Scope and limits:** private D-Bus protocol test only; no application launch,
+display, host bus/session, provider HTTP, accounts, credentials, auth, UI/Wayland
+input, GTK window smoke, push, PR or exact-head CI. Python parity tests remain
+in the full test job. UG stays **NOT PASSED**, Python remains the explicit
+parity/rollback path beneath the native repository default, and C gates remain
+open. No implementation assertion was dropped; the full GTK panel semantics
+remain covered by their existing broader smoke rather than this tray-protocol
+check.
+
+**Next:** root reviews the clean BUILD111 diff, publishes it, and observes
+exact-head required checks. This entry records local results only.
+
+#### E214 CI failure follow-up — synthetic fixture `ETXTBSY`
+
+The supplied exact-head CI result for run `43952062156` used source head
+`470f028e6b66dc975d16442b66fa896b51320def`. Required job `tray-dbus` passed;
+test job `133596861831` failed
+`claudeplatform_login::tests::nonzero_malformed_and_trailing_json_fail_closed`
+with 96 passed and 1 failed. The first synthetic CLI spawn returned the
+sanitized `LoginError::Spawn`, so the expected `LoginError::InvalidResponse`
+assertion failed before a response was evaluated. Same-fixture transient spawn
+failures had been observed previously, but that history alone did not identify
+the cause.
+
+For diagnosis, temporary test-only output included only `std::io::ErrorKind`
+and numeric `raw_os_error`; it emitted no executable path, stdout, stderr, or
+input. A bounded parallel backend run reproduced Linux
+`ErrorKind::ExecutableFileBusy`, errno 26 (`ETXTBSY`) while spawning the
+`oversized_stdout_is_drained_bounded_and_rejected` synthetic fixture. Thus the
+current observed failure is a text-file-busy spawn; the CI log itself exposed
+only the sanitized `Spawn` category. The prior fixture already used a unique
+PID-plus-atomic directory, `fs::write` (closed before chmod), mode 0700, and
+`Drop` cleanup. The production runner's child cleanup applies after spawn;
+this failure precedes child creation, so no child cleanup path was entered.
+
+**Correction:** the test fixture now writes and chmods `fake-codexbar.tmp`,
+then renames it to `fake-codexbar` only after the staging write has closed.
+Temporary diagnostics were removed. No production retry, wait, or error
+contract change was made. The nonzero-exit, malformed JSON, trailing JSON, and
+oversized-output checks remain fail-closed.
+
+**Local verification after correction:** the focused
+`nonzero_malformed_and_trailing_json_fail_closed` test passed 30 consecutive
+runs. The full locked backend suite passed 10 consecutive runs, each with 97
+unit tests and 1 `bg_gate_end_to_end` integration test. Cargo build jobs were
+limited to one. `cargo fmt --manifest-path rust-backend/Cargo.toml -- --check`,
+`cargo clippy --manifest-path rust-backend/Cargo.toml --all-targets
+--all-features -- -D warnings`, and `git diff --check` passed. No exact-head
+replacement CI was run or observed; root owns the updated diff, publication,
+and CI observation. This follow-up adds no release metadata change and does
+not alter BUILD111's scope or gate claims.
+
+### E215 — BUILD112 Rust CLI service assertion coverage
+
+**Base/status:** local branch `t3/rust-parity-assertions`, based on merged main
+`bc0dce990f77ac7c62ebf912640c48e35be99694` (BUILD110), with source commit
+`831b2574a4b8550fa72dbbabf0ecdb59951030bc`. BUILD111/E214 tray work is
+concurrently reserved and unmerged, so BUILD112 is provisional. Root will
+reconcile release metadata after E214 before publishing. No PR/push/merge or
+exact-head CI result is claimed.
+
+**Paths and assertion mapping:** `rust-backend/tests/cli_service.rs` creates
+and removes a temporary synthetic shell executable, then calls the public
+`codexbar_backend::cli::CliService` API directly. No Python interpreter or
+Python wrapper participates in that Rust test. Against
+`tests/test_cli_service.py`, assertions cover `version()` output; `usage()`
+provider selection, all-accounts flag and timezone; `cost()`, `dashboard()`
+and `sessions()` JSON results; parsed `config_providers()` entries; `hooks()`
+and `plugins()` results; `set_api_key()` and `provider_action("set-source", …)`
+preservation of exact argv tokens including a value with spaces;
+`provider_action("enable", …)` success status; and `run()` timeout
+classification. This establishes equivalence for these selected public
+service contracts. Keep `tests/test_cli_service.py`: its Python adapter remains
+the transitional/rollback path and is not made redundant by the new test.
+
+**Checks:** prior verification ran
+`cargo test --manifest-path rust-backend/Cargo.toml --locked` (97 unit tests,
+2 integration tests). Its first full attempt hit a transient Claude Platform
+login fixture failure; the focused retry and full retry passed. This follow-up
+ran `cargo test --manifest-path rust-backend/Cargo.toml --locked --test
+cli_service` (1 passed),
+`python3 -m unittest tests.test_app.VersionMetadataTests.test_display_string_matches_version_file
+-v` (1 passed), and
+`cargo fmt --manifest-path rust-backend/Cargo.toml -- --check` (passed). The
+new/current-facing local Markdown link targets and BUILD112 metadata were
+checked by a focused script and passed; `git diff --check` passed. A broad
+AUDIT link scan also finds the historical E211 pointer to the old
+provider-artwork path; append-only history is retained. No full backend suite
+or Clippy rerun was done for this documentation-only follow-up. Existing
+workflow `.github/workflows/rust-core.yml` runs the backend's locked `cargo
+test` at line 82, so no workflow change is needed.
+
+**Limits:** production behavior is unchanged. This is source-level API/contract
+coverage; no GUI/native runtime path or UI smoke was run. Python adapter
+retirement, runtime deletion readiness, global UG acceptance, and migration
+gate completion remain unproven. Root should reconcile build metadata after
+E214 and then review/publish this focused slice; no push, PR, or remote status
+is claimed here.
+
+**Root integration reconciliation:** PR #112 merged normally at `cffed57d756b025b7bb0d29efb863408febd732d`; exact head `bbd07d182d50b2a36d01783af2161a9da14ad278` passed all three jobs in run `43953622135`. No reviews/comments/review threads were present. BUILD112 merged this verified base normally, retaining E214/E215 and both changelog entries. Conflicts affected release metadata and handoff only; native tray and login-fixture changes remain intact. Fresh BUILD112 CI is pending.
+
 ### E216 — 2026-11-16: retire legacy Python developer preview/smoke tools
 
 **Owner/base/status:** branch `t3/legacy-python-tools-cleanup`, local slice based
@@ -7591,3 +7750,5 @@ There is no need for a GUI smoke for this tooling/documentation slice. Root
 serially reconciles after E214/E215, adjusts the provisional build if needed,
 and records actual publication and exact-head CI evidence. UG remains
 **NOT PASSED**; Python rollback/runtime and active parity tests remain.
+
+Root E216 reconciliation: PR #113 merged at `5aec9f3d5dedf246457ae17a44229f0d76eef35f`; exact head `443bb0240b66af011cbcb9b0fdb6ef540d3142e1` passed all three checks in run `43955646572`. BUILD113 normally merged that main, retaining changelog and audit/task history. Fresh exact-head CI remains pending.

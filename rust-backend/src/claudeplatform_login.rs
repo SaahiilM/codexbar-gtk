@@ -313,11 +313,13 @@ mod tests {
             ));
             fs::create_dir_all(&dir).unwrap();
             let path = dir.join("fake-codexbar");
+            let staging_path = dir.join("fake-codexbar.tmp");
             let body = body.replace("@DIR@", &dir.display().to_string());
-            fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
-            let mut mode = fs::metadata(&path).unwrap().permissions();
+            fs::write(&staging_path, format!("#!/bin/sh\n{body}\n")).unwrap();
+            let mut mode = fs::metadata(&staging_path).unwrap().permissions();
             mode.set_mode(0o700);
-            fs::set_permissions(&path, mode).unwrap();
+            fs::set_permissions(&staging_path, mode).unwrap();
+            fs::rename(staging_path, &path).unwrap();
             Self(dir)
         }
         fn executable(&self) -> PathBuf {

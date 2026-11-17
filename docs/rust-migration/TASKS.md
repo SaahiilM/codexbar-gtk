@@ -10,35 +10,81 @@ history. A checked box means **verified and merged**, not merely implemented.
 | --- | --- |
 | Goal | Fully native Rust GTK4/libadwaita application with verified packaging and legacy runtime removal. |
 | Current phase | BG passed and U01–U08 implementation merged. UG **NOT PASSED**. By explicit user instruction, BUILD110 makes the repository launcher/installer native by default; C01–CG remain unaccepted. |
-| Last observed merge | User-supplied PR #110 merged normally at `ec356d7a77a3f19dc4dbd359bb8cbf27f5ae7e18` (build 109). Exact head `534097f01e7754367bf4b619c318e9015360a7ac` passed all three checks in run `43305059554`; no reviews, comments or review threads were present. |
-| Active implementation | Provisional BUILD113/E216, branch `t3/legacy-python-tools-cleanup`: retire eight Python developer-only preview/smoke scripts and document retained native verification tools. Local commit is ready for root integration after the BUILD111/E214 and CLI assertion BUILD112/E215 slices are reconciled. This does not remove Python runtime/parity coverage. |
+| Last observed merge | PR #113 merged at `5aec9f3d5dedf246457ae17a44229f0d76eef35f` (build 112). Exact head `443bb0240b66af011cbcb9b0fdb6ef540d3142e1` passed all three checks in run `43955646572`. |
+| Active implementation | BUILD113/E216 retires eight legacy-only developer preview tools (1,918 lines), preserving active runtime/parity tests. Verified build-112 main merged normally. Fresh exact-head CI pending. |
 | Installer/runtime verification | E198 records the merged build-95 installed-prefix/Python-free runtime proof. E199 records prior local 13-case activation smoke evidence in a Python-free container; its first attempt lacked `file`, and the portable `od`/`ldd` check passed. These component results do not pass C02 or authorize cutover. |
 | UI acceptance | E195 records one Display action; E200 records seven guarded Settings actions and three tab transitions. Broader Wayland controls/navigation remain open. UG is **NOT PASSED**; Python remains the explicit parity/rollback path under the BUILD110 launcher-default exception. See `UG_GATE.md`. |
-| Next | Root serially reconciles this local BUILD113/E216 commit after the pending BUILD111/E214 tray and BUILD112/E215 CLI assertion slices; then corrects the handoff with observed merge/CI evidence. UG remains **NOT PASSED**, the explicit Python rollback/runtime and active parity tests remain, and this tooling retirement provides no Python runtime/native coverage equivalence claim. |
+| Next | Publish and merge BUILD113 after exact-head checks, then integrate prepared builds 114 and 115 and the native runtime retirement candidate. Rust is default; UG and C gates remain unaccepted. |
 
-### BUILD113/E216 — retire legacy Python developer preview/smoke tools
+### BUILD112/E215 — Rust CLI service assertion coverage
 
-**Owner/status:** branch `t3/legacy-python-tools-cleanup`; provisional BUILD113
-because BUILD111/E214 tray and BUILD112/E215 CLI assertion slices are pending
-root reconciliation. Local implementation and scoped checks are recorded in
-AUDIT E216. Root integrates this local commit after those serial peer merges and
-updates this handoff only with observed merge/CI evidence. No Python runtime,
-rollback entrypoint, active parity test, or PyO3 integration is removed. This
-does not pass UG or any cutover gate and makes no claim of native coverage for
-the Python runtime.
+**Owner/status:** branch `t3/rust-parity-assertions`, based on merged main
+`bc0dce990f77ac7c62ebf912640c48e35be99694` (BUILD110). The source test is
+committed locally at `831b2574a4b8550fa72dbbabf0ecdb59951030bc`; this entry and
+BUILD112 metadata are provisional because BUILD111/E214 tray work is concurrently
+reserved and unmerged. Root will reconcile the version after E214 and publish
+only afterward. No PR, push, merge, or exact-head CI result is claimed.
 
-**Scope:** remove exactly eight developer-only scripts under `tools/` (the
-three `gtk_smoke_b13*.py` files plus `preview.py`, `preview_b09_synthetic.py`,
-`preview_b10_controller.py`, `preview_currency.py`, and
-`preview_notifications.py`). Their 1,918 source lines have no current callers.
-`tools/README.md` documents the retained native build, private X11 and private
-Wayland verification commands and their limits. The root README's obsolete
-preview command and setup text are removed; its surrounding BUILD110 installer
-and Python rollback guidance is retained.
+**Scope and mapping:** `rust-backend/tests/cli_service.rs` exercises the public
+`CliService` API with a temporary synthetic shell executable. It does not
+invoke Python or use an interpreter for the fixture. Assertions map to legacy
+`tests/test_cli_service.py` as follows: `version()` ↔ version assertion;
+`usage()` ↔ provider/all-accounts/TZ assertion; `cost()`, `dashboard()`, and
+`sessions()` ↔ corresponding JSON result assertions; `config_providers()`,
+`hooks()`, and `plugins()` ↔ parsed/result assertions; `set_api_key()` and
+`provider_action("set-source", …)` ↔ exact whitespace-containing argv-token
+preservation; `provider_action("enable", …)` ↔ successful status; and `run()`
+timeout ↔ timeout error classification. This is selected service-contract
+equivalence, not a claim that the Python adapter or its implementation tests
+are retired. Keep `tests/test_cli_service.py` while the wrapper remains the
+rollback path.
 
-**Next:** root reconciles after E214/E215, updates the provisional build number
-if serial integration requires it, and records actual publication and exact-head
-CI status. Python rollback and active Python parity tests remain in place.
+**Observed checks:** prior verification recorded 97 unit tests and 2
+integration tests passing with `cargo test --manifest-path
+rust-backend/Cargo.toml --locked`. Its first attempt hit a transient Claude
+Platform login fixture failure; focused and full retries passed. This
+follow-up's focused Rust integration test (1), version metadata regression (1),
+Rust format check, focused current-facing local-link/metadata check, and
+`git diff --check` all passed. No full suite or Clippy rerun was done for this
+documentation-only follow-up. A broad AUDIT link scan finds the historical
+E211 pointer to the old provider-artwork path; append-only history is retained.
+Native backend CI already runs the locked Rust integration tests; no workflow
+change is needed.
+
+**Limits/next:** production code is unchanged. No GTK/native application runtime
+or UI smoke was run or needed for this source-only contract test. The separate
+runtime/adapter retirement evidence remains outstanding; do not report the
+Python test file as dead or deletion-ready. No global UG pass, Python runtime
+deletion, migration-gate completion, push, PR, or publication is claimed. After
+E214's BUILD111 merge, root reconciles BUILD112 and reviews/publishes this
+focused slice.
+
+### BUILD111/E214 — native tray D-Bus required-check coverage
+
+**Claim/base/status:** BUILD111/E214 is claimed on branch
+`t3/native-tray-dbus-coverage`, based on the normal merge of verified
+`origin/main` `bc0dce990f77ac7c62ebf912640c48e35be99694` (PR #111, build 110).
+The implementation commit `5a74611342e804cbfbd74ff76d32efcd6d6ccff9` was
+preserved and merged normally into that base. Root review and publication are
+pending; no PR or CI result is claimed for this slice.
+
+**Implementation:** the required workflow job retains the `tray-dbus` job name
+and replaces the legacy Python invocation with
+`scripts/test-native-tray-dbus.sh`. It installs the stable Rust toolchain,
+`libgtk-4-dev`, `libadwaita-1-dev`, and `dbus-daemon`, with no Python D-Bus or
+GI dependency. The workflow path filter includes the new script. Existing
+`tests/test_tray_signals.py` remains in the broader Python suite and is not
+removed. Native payload coverage and assertion mapping are recorded in AUDIT
+E214; the temporary root handoff at `/tmp/native-tray-dbus-coverage.md` is
+supporting context only.
+
+**Gate state:** the change covers protocol behavior on a private D-Bus session;
+it does not claim GTK window interaction, pass UG, close C gates, or change the
+Python parity/rollback path. Root owns final review and publication.
+
+**CI follow-up:** see the appended E214 CI failure diagnosis and local rerun
+record in [AUDIT.md](AUDIT.md). The implementation scope remains unchanged;
+the root owner should review the fixture-only change before publication.
 
 ### BUILD110/E213 — native repository launcher default by explicit instruction
 
@@ -76,6 +122,31 @@ required CI.
 **Next:** root reviews the local diff and focused checks, commits/publishes the
 slice, then observes exact-head CI. Keep UG and all C gates unaccepted until
 their recorded requirements are actually met.
+
+### BUILD113/E216 — retire legacy Python developer preview/smoke tools
+
+**Owner/status:** branch `t3/legacy-python-tools-cleanup`; provisional BUILD113
+because BUILD111/E214 tray and BUILD112/E215 CLI assertion slices are pending
+root reconciliation. Local implementation and scoped checks are recorded in
+AUDIT E216. Root integrates this local commit after those serial peer merges and
+updates this handoff only with observed merge/CI evidence. No Python runtime,
+rollback entrypoint, active parity test, or PyO3 integration is removed. This
+does not pass UG or any cutover gate and makes no claim of native coverage for
+the Python runtime.
+
+**Scope:** remove exactly eight developer-only scripts under `tools/` (the
+three `gtk_smoke_b13*.py` files plus `preview.py`, `preview_b09_synthetic.py`,
+`preview_b10_controller.py`, `preview_currency.py`, and
+`preview_notifications.py`). Their 1,918 source lines have no current callers.
+`tools/README.md` documents the retained native build, private X11 and private
+Wayland verification commands and their limits. The root README's obsolete
+preview command and setup text are removed; its surrounding BUILD110 installer
+and Python rollback guidance is retained.
+
+**Next:** root reconciles after E214/E215, updates the provisional build number
+if serial integration requires it, and records actual publication and exact-head
+CI status. Python rollback and active Python parity tests remain in place.
+
 
 PR #103 correction: run `42918673780` on `7e16a47` passed tray and the full
 Python-free/activated command-target proof. The Rust-opt-in suite failed on a

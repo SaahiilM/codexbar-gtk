@@ -1275,7 +1275,7 @@ mod tests {
             Some("About CodexBar GTK")
         );
 
-        let observed = Rc::new(RefCell::new(Vec::<(String, String)>::new()));
+        let observed = Rc::new(RefCell::new(Vec::<(String, glib::Variant)>::new()));
         let observed_signals = observed.clone();
         let subscription = caller.signal_subscribe(
             Some(SNI_SERVICE),
@@ -1287,10 +1287,10 @@ mod tests {
             move |_, _, _, _, member, parameters| {
                 observed_signals
                     .borrow_mut()
-                    .push((member.to_owned(), parameters.type_().as_str().to_owned()));
+                    .push((member.to_owned(), parameters.clone()));
             },
         );
-        let observed_layout = Rc::new(RefCell::new(Vec::<String>::new()));
+        let observed_layout = Rc::new(RefCell::new(Vec::<glib::Variant>::new()));
         let layout_signals = observed_layout.clone();
         let layout_subscription = caller.signal_subscribe(
             Some(SNI_SERVICE),
@@ -1300,9 +1300,7 @@ mod tests {
             None,
             gio::DBusSignalFlags::NONE,
             move |_, _, _, _, _, parameters| {
-                layout_signals
-                    .borrow_mut()
-                    .push(parameters.type_().as_str().to_owned());
+                layout_signals.borrow_mut().push(parameters.clone());
             },
         );
         tray.update(TrayPresentation {
@@ -1320,24 +1318,47 @@ mod tests {
                 .any(|(name, _)| name == "NewStatus")
         });
         let signals = observed.borrow();
+        let properties_changed = signals
+            .iter()
+            .find(|(name, _)| name == "PropertiesChanged")
+            .expect("tray update emits PropertiesChanged");
+        assert_eq!(properties_changed.1.type_().as_str(), "(sa{sv}as)");
+        let (interface, changed, _invalidated) = properties_changed
+            .1
+            .get::<(String, BTreeMap<String, glib::Variant>, Vec<String>)>()
+            .expect("PropertiesChanged has the standard payload");
+        assert_eq!(interface, SNI_INTERFACE);
+        assert!(changed.contains_key("ToolTip"));
+        assert!(changed.contains_key("IconPixmap"));
+        let changed_tooltip = changed["ToolTip"]
+            .get::<(String, Vec<TrayPixmap>, String, String)>()
+            .expect("ToolTip property has the SNI tuple shape");
+        assert_eq!(changed_tooltip.0, "");
+        assert_eq!(changed_tooltip.2, "CodexBar GTK · Synthetic");
+        assert_eq!(changed_tooltip.3, "Synthetic provider: 42%");
         assert!(signals
             .iter()
-            .any(|(name, signature)| { name == "PropertiesChanged" && signature == "(sa{sv}as)" }));
+            .any(|(name, parameters)| name == "NewTitle" && parameters.type_().as_str() == "()"));
         assert!(signals
             .iter()
-            .any(|(name, signature)| name == "NewTitle" && signature == "()"));
+            .any(|(name, parameters)| name == "NewIcon" && parameters.type_().as_str() == "()"));
         assert!(signals
             .iter()
-            .any(|(name, signature)| name == "NewIcon" && signature == "()"));
-        assert!(signals
-            .iter()
-            .any(|(name, signature)| name == "NewToolTip" && signature == "()"));
-        assert!(signals
-            .iter()
-            .any(|(name, signature)| name == "NewStatus" && signature == "(s)"));
+            .any(|(name, parameters)| name == "NewToolTip" && parameters.type_().as_str() == "()"));
+        assert!(signals.iter().any(|(name, parameters)| {
+            name == "NewStatus"
+                && parameters.type_().as_str() == "(s)"
+                && parameters
+                    .get::<(String,)>()
+                    .is_some_and(|(status,)| status == "Passive")
+        }));
         drop(signals);
         wait_until(|| !observed_layout.borrow().is_empty());
-        assert_eq!(observed_layout.borrow().as_slice(), &["(ui)".to_owned()]);
+        let layout_updates = observed_layout.borrow();
+        assert_eq!(layout_updates.len(), 1);
+        assert_eq!(layout_updates[0].type_().as_str(), "(ui)");
+        assert_eq!(layout_updates[0].get::<(u32, i32)>(), Some((2, 0)));
+        drop(layout_updates);
         let switched_layout = call(
             &caller,
             Some(SNI_SERVICE),

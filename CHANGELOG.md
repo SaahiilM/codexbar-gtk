@@ -10,6 +10,26 @@ remains **NOT PASSED**.
 
 - See migration audit E216 for the exact paths, caller checks and scope limits.
 
+## 0.82.0 (112) — 2026-11-16
+
+Add assertion-level Rust service coverage for selected CodexBar CLI wrapper
+contracts using a synthetic executable. The Python wrapper remains in use for
+rollback, so `tests/test_cli_service.py` stays as adapter coverage. This scope
+does not establish Python retirement readiness, UI acceptance, or a migration
+gate pass.
+
+- See migration audit E215 for assertion mapping, checks and limits.
+
+## 0.82.0 (111) — 2026-11-16
+
+Run the required `tray-dbus` check against the native Rust tray implementation
+inside a private D-Bus session. The native job installs Rust and GTK build
+dependencies without Python D-Bus/GI packages; existing Python tray parity
+tests remain in the broader test job. UG remains **NOT PASSED**, and C gates
+remain open.
+
+- See migration audit E214 for assertion mapping, exact checks, and limits.
+
 ## 0.82.0 (110) — 2026-11-12
 
 Make the Rust GTK application the repository source-launcher and installer

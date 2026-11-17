@@ -1,5 +1,29 @@
 # Native Rust migration
 
+## BUILD116/E219 active Python runtime retirement candidate
+
+The `t3/retire-python-runtime` integration removes the active Python application
+package, PyO3 crate, and Python launcher/install/build paths. It merges the
+latest published PR116 page-state branch and preserves the eight
+support-retired tools as deletions. Former application and parity sources remain
+in `tests/reference/python/` as a transitional review archive; archived
+assertions are not CI tests, and the archive is not a package, runtime fallback,
+or supported rollback path. It currently contains 58 Python files / 16,911
+Python lines. The archive-wide map records residual assertion gaps. The native
+metadata test reads root `VERSION` directly; historical `version.py` stays
+unchanged.
+
+The source change has BUILD116 metadata and is for root review. It does not pass
+UG or C01–CG, claim every archived assertion has a native replacement, or
+complete archive cleanup. The peer method map at
+`cb0d2ba6ba9812433fd16e0a6fdebfe3280a715e` records the Python default and
+Rust-opt-in suites passing, along with Rust core/backend, format and strict
+Clippy results; those are inherited peer results. The exact integrated branch
+checks, UI scope, installed binary source/build SHA, skips, and remaining PR115
+follow-up are recorded in the current handoff and E219. The archive's per-file
+crosswalk is in [`tests/reference/python/README.md`](../../tests/reference/python/README.md).
+The remainder of this guide records the migration plan and historical evidence.
+
 **Approved destination:** a Rust GTK4/libadwaita application with no Python
 runtime, PyO3 bridge, or PyGObject dependency in the shipped application.
 **Sequence:** complete the backend first, then migrate the UI, then remove the
@@ -10,14 +34,19 @@ Start with the [current handoff and checklist](TASKS.md), then read the
 [decision and audit log](AUDIT.md). Root [`AGENTS.md`](../../AGENTS.md) instructs
 future coding agents to follow these documents.
 
-## Actual starting point
+## Historical migration baseline (pre-native runtime)
+
+The detailed timeline below records the repository before native cutover work;
+it is retained as historical evidence and does not describe the current
+launcher or shipped runtime. The current runtime and this retirement
+candidate's exact limits are summarized at the top of this document.
 
 **Current repository policy (BUILD110):** by explicit user instruction,
 `run.sh` and `scripts/install.sh` default to the native Rust GTK application
 even though UG remains **NOT PASSED** and C01–CG remain unaccepted. This is a
 launcher-default policy exception, not a gate pass. Existing host commands,
 desktop entries and services are not migrated by the repository change.
-See `TASKS.md` and the root README's Python rollback section.
+See `TASKS.md` and the root README's native rollback section.
 
 Code baseline: `46f44d0` (PR #17), GTK build `0.81.0 (16)`. The initial planning
 PR increments the build to `0.81.0 (17)` without changing runtime behavior.
@@ -174,7 +203,10 @@ Python GTK widgets                        Rust GTK4/libadwaita widgets
   needed for deterministic tests. Prove the backend works headlessly without
   an interpreter before starting native UI implementation.
 
-## Remaining source inventory
+## Historical pre-migration source inventory
+
+This inventory records what the migration plan inspected before backend/UI
+porting. It is not a list of files that remain active in the current checkout.
 
 | Area / evidence in current Python | Backend responsibility / target |
 | --- | --- |
@@ -311,36 +343,36 @@ remaining compatibility differences deliberately.
    merged evidence; use `active` or `verified, PR pending` until then. Never
    predict a merge in the committed audit entry; its PR link is authoritative.
 
-## Validation commands available today
+## Current native validation commands
 
+The removed Python launcher, installer, bootstrap, PyO3 build script and
+`rust-python/` crate are historical only; do not use them as current checks.
 From the repository root (source `~/.cargo/env` if Cargo is not on PATH):
 
 ```sh
 cargo fmt --manifest-path rust-core/Cargo.toml -- --check
-cargo fmt --manifest-path rust-python/Cargo.toml -- --check
+cargo fmt --manifest-path rust-backend/Cargo.toml -- --check
+cargo fmt --manifest-path rust-gtk/Cargo.toml -- --check
 cargo test --manifest-path rust-core/Cargo.toml --locked
+cargo test --manifest-path rust-backend/Cargo.toml --locked
+cargo test --manifest-path rust-gtk/Cargo.toml --locked
 cargo clippy --manifest-path rust-core/Cargo.toml --all-targets --all-features -- -D warnings
-cargo clippy --manifest-path rust-python/Cargo.toml --all-targets --all-features -- -D warnings
-./scripts/build-rust-core.sh
-python3 -m unittest discover -s tests -v
-CODEXBAR_RUST_CORE=1 python3 -m unittest discover -s tests -v
-python3 -m unittest discover -s tests -p test_tray_signals.py -v
+cargo clippy --manifest-path rust-backend/Cargo.toml --all-targets --all-features -- -D warnings
+cargo clippy --manifest-path rust-gtk/Cargo.toml --all-targets -- -D warnings
+./scripts/build-native.sh
+./scripts/test-native-tray-dbus.sh
+./scripts/test-native-harness-units.sh
+./scripts/smoke-native-gtk.sh
+./scripts/smoke-native-install.sh
+./scripts/smoke-native-no-python.sh --help
 git diff --check
 ```
 
-The tray suite requires `dbus-run-session`, dbus-python and PyGObject. CI runs a
-separate dependency-equipped job. Some other environments skip it; record that.
-The extension build helper must retain atomic replacement for running apps.
-The B00 service crate checks are:
-
-```sh
-cargo fmt --manifest-path rust-backend/Cargo.toml -- --check
-cargo test --manifest-path rust-backend/Cargo.toml --locked
-cargo clippy --manifest-path rust-backend/Cargo.toml --all-targets --all-features -- -D warnings
-```
-
-Add the corresponding format/test/Clippy commands for each new crate to CI;
-no workspace commands are assumed.
+Display smokes need their named X11 or private Wayland dependencies. The tray
+test needs a private D-Bus session. `smoke-native-no-python.sh --help` is only
+usage discovery; the required full runtime proof runs in the dedicated Docker
+CI job. Keep its native build jobs at one and do not invoke host GUI, bus,
+services, authentication or provider network calls for isolated verification.
 
 ## Stage gates
 
@@ -354,9 +386,11 @@ no workspace commands are assumed.
 - **UG — native UI complete:** all U01–U08 implementation PRs have merged, but
   the gate is **NOT PASSED** until full feature/action parity and the required
   Wayland/X11/private-D-Bus evidence matrix are accepted. Current evidence and
-  uncovered actions are itemized in [UG_GATE.md](UG_GATE.md). Preserve Python
-  as an explicit parity/rollback implementation. BUILD110's repository default
-  is a user-authorized exception while UG remains NOT PASSED.
+  uncovered actions are itemized in [UG_GATE.md](UG_GATE.md). The former Python
+  implementation is retained under `tests/reference/python/` for review; it is
+  not an active parity runtime or rollback path. Rollback uses a verified
+  native commit/artifact and the ownership-aware installer. BUILD110's
+  repository-default decision remains historical; it did not pass UG.
 - **CG — cutover complete:** native release/install works without Python,
   PyGObject or `_rust_core.so`; preferences/history survive the switch; native
   CI and packaging are proven. Remove bridge, fallback implementations, Python

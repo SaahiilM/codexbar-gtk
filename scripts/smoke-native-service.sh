@@ -44,7 +44,13 @@ if [[ -n "$PREVIOUS_SOURCE" ]]; then
   PREVIOUS_VERSION=$(sed -n 's/^CURRENT_PROJECT_VERSION=//p' "$PREVIOUS_SOURCE/VERSION")
 fi
 CURRENT_SOURCE_DIFF=$(git -C "$ROOT" diff HEAD --binary | sha256sum | awk '{print $1}')
-CURRENT_SOURCE_TREE=$(cd "$ROOT" && git ls-files -co --exclude-standard -z | xargs -0 -r sha256sum | sha256sum | awk '{print $1}')
+CURRENT_SOURCE_TREE=$(cd "$ROOT" && {
+  while IFS= read -r -d '' source_path; do
+    if [[ -f "$source_path" ]]; then
+      sha256sum -- "$source_path"
+    fi
+  done < <(git ls-files -co --exclude-standard -z)
+} | sha256sum | awk '{print $1}')
 CURRENT_ARTIFACT_SHA=$(sha256sum "$CURRENT_ARTIFACT" | awk '{print $1}')
 PREVIOUS_ARTIFACT_SHA=$(sha256sum "$PREVIOUS_ARTIFACT" | awk '{print $1}')
 PREVIOUS_BUILD=${PREVIOUS_VERSION:-unknown}

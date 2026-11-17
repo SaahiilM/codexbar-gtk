@@ -9,14 +9,55 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Field | Current checkpoint |
 | --- | --- |
 | Goal | Fully native Rust GTK4/libadwaita application with verified packaging and legacy runtime removal. |
-| Current phase | BG passed and U01–U08 implementation merged. UG **NOT PASSED**. By explicit user instruction, BUILD110 makes the repository launcher/installer native by default; C01–CG remain unaccepted. |
-| Last observed merge | PR #113 merged normally at `5aec9f3d5dedf246457ae17a44229f0d76eef35f` (BUILD112). Exact head `443bb0240b66af011cbcb9b0fdb6ef540d3142e1` passed all three checks in run `43955646572`. |
-| Active implementation | BUILD115/E218 adds required private-Weston page-state coverage and sanitized retained-error/navigation evidence on `t3/wayland-page-state-harness`. BUILD115 metadata remains current after the normal merge of BUILD114 source commit `763d03245b9a63d9cf2e40a51984c37a003d8b4d`, which includes BUILD113 and retains E216/E217. PR #115 remains open: pre-integration run `44116527470` has `tray-dbus` and `python-free-runtime-proof` passed; `test` failed (96 passed, one failed in `cli::tests::cancellation_kills_and_reaps_child`). PR #114 remains open and unmerged; all three checks passed in run `44115397836`. |
-| Installer/runtime verification | E198 records the merged build-95 installed-prefix/Python-free runtime proof. E199 records prior local 13-case activation smoke evidence in a Python-free container; its first attempt lacked `file`, and the portable `od`/`ldd` check passed. These component results do not pass C02 or authorize cutover. |
-| UI acceptance | E195 records one Display action; E200 records seven guarded Settings actions and three tab transitions. Broader Wayland controls/navigation remain open. UG is **NOT PASSED**; Python remains the explicit parity/rollback path under the BUILD110 launcher-default exception. See `UG_GATE.md`. |
-| Next | Root reviews this integrated BUILD115 branch, publishes it on the intended stacked base, and observes exact-head CI. UG remains NOT PASSED; C gates remain unaccepted. |
+| Current phase | Active Python application/PyO3 runtime retirement is the BUILD116/E219 candidate. UG remains **NOT PASSED** and C01–CG remain unaccepted; this candidate does not claim cutover-gate acceptance. |
+| Last observed merge | PR #116 (BUILD115) merged normally at `271b7d4db2be4bc4ba348195eb30b0b8f53c572f`, now `origin/main`. PR #115 (BUILD114) merged at `04849da679756ad2aa5d8047e163994169144b35`. Both exact heads passed all three required checks; see E219. |
+| Active implementation | Local BUILD116/E219 candidate on `t3/retire-python-runtime` includes normal merges of PR116 head `c755179a4feb863be6458f4b3fd7b0bc1a4d692e` and verified `origin/main` `271b7d4db2be4bc4ba348195eb30b0b8f53c572f`. It retires the active Python runtime and retains a 58-file / 16,911-line transitional archive. No PR is allocated or published. |
+| Dependency follow-up | Root published PR115 cancellation-fixture diagnostic fix `b6f24702fff991127d3e026ab02bcdd18221f451`; PR115 and PR116 then merged normally. Runs `44119037409` and `44119123748` passed all three required jobs on exact heads. The original failure was not reproduced or attributed. No pending PR115/116 dependency remains. |
+| Installer/runtime verification | E219 records this branch's private Python-free installed-runtime and default installer/launch lifecycle evidence. Prior E198/E199 proofs remain component evidence; they do not pass C02 or authorize cutover. |
+| UI acceptance | E218 retains the narrow page-state evidence; broader Wayland controls/navigation remain open. UG is **NOT PASSED**. See `UG_GATE.md`. |
+| Next | Root reviews the local BUILD116 candidate and publishes the runtime-retirement PR. No CI result exists for this unpushed candidate. UG remains NOT PASSED; C gates remain unaccepted. |
+
+### BUILD116/E219 — active Python runtime retirement integration
+
+**Owner/base/status:** local branch `t3/retire-python-runtime`, with normal merge
+commits for published PR116 head `c755179a4feb863be6458f4b3fd7b0bc1a4d692e`
+and verified `origin/main` `271b7d4db2be4bc4ba348195eb30b0b8f53c572f`.
+The merged stack includes root's PR115 correction
+`b6f24702fff991127d3e026ab02bcdd18221f451`. It is an unpushed BUILD116
+review candidate. No PR allocation, push, exact-head
+CI, merge, or gate pass is claimed. Root owns publication.
+
+**Scope:** retire the active Python application package, PyO3 crate, and Python
+launcher/install/build setup. Preserve the former application and test material
+as transitional references under `tests/reference/python/`; this is not full
+archive cleanup or a runtime rollback path. Keep the eight support-retired
+preview/GTK smoke tools deleted. Root `VERSION` is now the only project-version
+source; historical archived `version.py` is not updated. Default launch/install
+remain native, with the native installer's ownership-aware preservation and
+rollback protections intact. This is the explicitly authorized active-runtime
+removal, not UG or C01–CG acceptance.
+
+**Coverage and checks:** the archive README retains per-file assertion mapping
+and residual gaps. The peer method map at `cb0d2ba6ba9812433fd16e0a6fdebfe3280a715e`
+reported both Python modes, Rust core/backend suites, format and strict Clippy
+passing; that is inherited peer evidence. E219 records only checks actually run
+on this integrated branch, including native Rust checks, all active Python
+harness discovery, and private installed-runtime/default launch proofs. UI
+smoke scope, actual binary source/build SHA, skips, and unrun checks are stated
+there.
+
+**Dependency/next:** PR115 merged normally at
+`04849da679756ad2aa5d8047e163994169144b35`; its exact corrected head
+`b6f24702fff991127d3e026ab02bcdd18221f451` passed all three jobs in run
+`44119037409`. PR116 merged at `271b7d4db2be4bc4ba348195eb30b0b8f53c572f`;
+its exact head `c755179a4feb863be6458f4b3fd7b0bc1a4d692e` passed all three jobs
+in run `44119123748`. The original cancellation fixture failure was not
+reproduced or attributed. Root reviews this local candidate, then publishes its
+runtime-retirement PR. No CI pass is claimed for BUILD116.
 
 ### BUILD115/E218 — required Wayland page-state coverage
+
+Historical status and checks below reflect the source entry time; PR closeout is recorded in E219.
 
 **Owner/base/status:** branch `t3/wayland-page-state-harness`, now normally merged with exact
 BUILD114 source commit `763d03245b9a63d9cf2e40a51984c37a003d8b4d`; BUILD114

@@ -21,7 +21,7 @@ FAKE
 chmod +x "$TMP/fake-native"
 
 # Explicit binary override forwards every argument boundary, including spaces
-# and leading dashes, and does not inspect Python/GI/PyO3 environment settings.
+# and leading dashes without consulting runtime-selection environment flags.
 env -u PYTHONPATH -u PYTHONHOME -u GI_TYPELIB_PATH -u PYO3_PYTHON -u LD_LIBRARY_PATH \
   CODEXBAR_NATIVE_BINARY="$TMP/fake-native" \
   NATIVE_TEST_ARGV="$TMP/argv" \

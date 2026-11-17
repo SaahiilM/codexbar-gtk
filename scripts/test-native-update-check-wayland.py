@@ -265,7 +265,6 @@ def main():
                    CODEXBAR_CLI=str(fake), GTK_A11Y="none", GTK_USE_PORTAL="0",
                    GDK_BACKEND="wayland", GSK_RENDERER="cairo",
                    **{UPDATE_URL_ENV: server.url})
-        env.pop("CODEXBAR_RUST_CORE", None)
 
         app_log = (scratch / "app.log").open("wb")
         app = subprocess.Popen([str(args.binary), "--settings"], env=env,

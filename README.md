@@ -98,23 +98,19 @@ removes its owned native binary/manifest and restores backed-up desktop/service
 files when their installed contents have not been edited. Settings and history
 remain in `~/.config/codexbar-gtk/`.
 
-### Python parity and rollback
+### Rollback and existing installations
 
-The Python GTK implementation remains available as a parity/rollback path.
-Run it from the checkout with `./run-python.sh`; install it explicitly with
-`./scripts/install-python.sh` (this legacy installer enables its user service
-and autostart by default). If a native manifest exists in the same prefix, the
-legacy installer refuses to proceed. First remove the native installation,
-then install Python:
+This source tree ships the native Rust GTK application. To roll back a native
+upgrade, use the previous verified Git tag/commit or its preserved build
+artifact with `./scripts/install.sh`; the install manifest restores only files
+it still owns and preserves user edits. Settings and history remain in
+`~/.config/codexbar-gtk/`.
 
-```sh
-./scripts/install.sh --uninstall --prefix "$HOME/.local"
-./scripts/install-python.sh
-```
-
-If you only need to switch the repository launcher back for a checkout, run
-`./run-python.sh` directly. The default-launcher change does not update or stop
-any host-installed Python command or service.
+An older `codexbar-gtk` command, desktop entry, or service is left untouched by
+the native installer. It does not migrate, stop, enable, or remove that
+pre-existing installation. Review it separately after verifying the native
+app. Historical Python implementation and parity tests are retained under
+`tests/reference/python/` and are not an installable fallback.
 
 ## How it talks to CodexBar
 
@@ -138,40 +134,32 @@ cost refresh fails, the previous totals remain visible as a marked known
 subtotal until a successful refresh. The tray's update check fetches only the
 public client `VERSION` marker from GitHub; it does not install or download code.
 
-## Native Rust application and Python parity path
+## Native Rust application
 
-The repository launcher and installer now default to the native Rust GTK
-application. Python remains available as the transition parity path: its Rust
-core integrations remain behind an opt-in PyO3 extension. The live Rust paths
-currently cover provider metadata (canonical IDs, names and colors), Usage & Spend
-activity helpers, display formatting, monthly allowance daily targets, quota
-history storage and queries, sparkline geometry, and the first typed payload
-primitives from `data.py` (UTC timestamp parsing, numeric validation and
-`RateWindow`, `Pace`, `CostInfo`, detail chart, provider summary and session
-derived values, plus standard quota-window, extra rate-window, provider cost, detail chart,
-provider context (credits/status/error/plan), agent-session and spend payload
-normalization). GTK rendering and the rest of CLI/provider payload normalization
-remain in Python/the CodexBar CLI. The client targets upstream
-CodexBar 0.82.0 provider behavior; the current catalog contains 113 providers.
-The provisional upstream v0.84 catalog additions do not change the supported
-CodexBar version or claim complete v0.84 compatibility.
+The shipped application is implemented in Rust GTK4/libadwaita and calls the
+external `codexbar` CLI. Project version metadata comes only from [`VERSION`](VERSION);
+the native GTK test suite checks its parsed version against README's display.
+Historical Python code and parity assertions are retained under
+`tests/reference/python/` for review, not execution or rollback. Rollback uses a
+previous verified native build/commit with the ownership-aware native installer.
+UG remains **NOT PASSED**; this local retirement candidate does not claim UG or
+C01–CG acceptance.
 
-### Native Rust migration roadmap
+### Native Rust migration roadmap (historical handoff)
 
 The approved destination is a **fully native Rust GTK4/libadwaita app**, with the
-backend migrated **before** the UI. The PyO3 bridge and Python shell are
-temporary. Backend gate BG passed in PR #54. U01's native bootstrap merged in
+backend migrated **before** the UI. Backend gate BG passed in PR #54. U01's native bootstrap merged in
 PR #56, and all U01–U08 implementation PRs are now merged. By explicit user
 instruction, BUILD110 makes the repository launcher/installer native by
 default while UG remains **NOT PASSED** and C01–CG remain unaccepted. This
 launcher-default policy is an exception, not gate completion or host migration.
 BUILD111 moves tray D-Bus CI coverage to the native Rust implementation while
-keeping Python parity tests in the broader suite. BUILD114 retires 27 mapped
-Python assertion methods whose contracts have Rust test coverage; retained
-Python-only compatibility contracts and the adapter runtime remain. BUILD115
-adds required private-Weston page-state CI coverage for a retained Spend error
-and six visible routes. These are narrow scoped changes; UG remains **NOT PASSED**.
-See the explicit [gate ledger](docs/rust-migration/UG_GATE.md).
+keeping native automation in the broader suite. BUILD113 retires eight legacy
+preview tools, BUILD114 retires 27 mapped Python assertions, and BUILD115 adds
+private-Weston page-state coverage. This BUILD116 candidate removes the active
+Python runtime while retaining a transitional reference archive. These scoped
+changes do not pass UG or C gates; see the explicit
+[gate ledger](docs/rust-migration/UG_GATE.md).
 
 - [Architecture, source inventory and stage gates](docs/rust-migration/README.md)
 - [Task checklist and current model handoff](docs/rust-migration/TASKS.md)
@@ -190,10 +178,15 @@ screenshots are catalogued in the [UG evidence
 ledger](docs/rust-migration/UG_GATE.md); the login completion capture follows
 an assertion of the GTK success result. UG remains **NOT PASSED** because the
 Wayland action matrix and repeatable local panel focus/SNI evidence remain
-open. The Python launcher remains available for parity and rollback. See E086
-for the BG merge, B11 CI limitation and B15 compatibility bounds.
+open. The Python implementation is archived as a reference, not a runtime
+fallback. See E086 for the BG merge, B11 CI limitation and B15 bounds.
 
-Build 95 adds a required CI proof for the installed native prefix in a Python-free runtime image. It does not change the default launcher or pass a cutover gate.
+### Historical build notes (not current runtime status)
+
+The following notes record state at older builds; they do not describe the
+current shipped runtime or gate status. Build 95 added a required CI proof for
+the installed native prefix in a Python-free runtime image. It did not pass a
+cutover gate.
 
 Build 99 adds a Claude-only typed warning for the exact upstream model-breakdown
 details row and suppresses its raw diagnostic text. The change preserves quota
@@ -260,46 +253,9 @@ one motion was sent, but later cursor/focus checks remained inconclusive, so no
 Settings click or preference change is claimed (E143). UG remains **NOT
 PASSED** and Python remains the default.
 
-### Existing opt-in module integrations
-
-- [x] `providers.py` metadata — Rust-backed in opt-in mode.
-- [x] `activity.py` — spend series and heatmap calculations, Rust-backed in
-  opt-in mode.
-- [x] `format.py` — UTC-compatible display formatters, Rust-backed in opt-in
-  mode; naive and non-UTC datetimes retain the Python behavior.
-- [x] `pace.py` — monthly allowance calculations and daily-target formatting,
-  Rust-backed in opt-in mode; currency conversion remains in Python.
-- [x] `history.py` — JSON-lines persistence, retention, caching, and sorted
-  quota-history queries, Rust-backed in opt-in mode. Existing files work with
-  either backend; unsupported sample inputs retain the Python path.
-- [x] `charts.py` — time-spaced sparkline coordinates and fixed quota axes,
-  Rust-backed in opt-in mode; GTK/Cairo drawing remains in Python.
-- [x] `data.py` — timestamp/numeric primitives, standard quota-window, pace,
-  extra rate-window, provider cost, detail chart, provider context
-  (credits/status/error/plan), and agent-session payload normalization are
-  Rust-backed in opt-in mode (B01a–c/B02a–b2b2b/B03); spend normalization
-  (B04) and B13–B15 transitional backend work are complete. GTK widgets and
-  platform integration remain in Python until their native UI tasks are accepted.
-
-The six original Rust ports have opt-in runtime integrations, with additional
-`data.py` behavior routed through Rust in opt-in mode. This checklist
-is not the full backend/native migration checklist above. Python implementations
-remain available as parity references until the backend, native UI and cutover
-gates are passed; the application is not yet entirely Rust. BG has passed; the
-UI gate and cutover gate remain open.
-
-Build the extension and opt in for the app process with:
-
-```sh
-./scripts/build-rust-core.sh
-CODEXBAR_RUST_CORE=1 ./run.sh
-```
-
-Python remains the default when the environment flag is absent. Explicitly
-setting the flag fails fast if the extension is unavailable. See the
-[Rust-core migration notes](rust-core/README.md) for implementation and test
-details. The screenshots above were captured from the Rust-enabled UI with
-fixture CLI data.
+Rust domain and backend checks run directly with Cargo. The native application
+does not load an interpreter or extension. The screenshots above were captured
+with synthetic CLI data.
 
 ## Feature parity with the macOS app
 
@@ -334,44 +290,45 @@ the menu-bar layout editor, remote sessions over Tailscale/SSH and the
 
 ## Versioning
 
-The GTK front-end uses the same version pair as the macOS bundle:
+The GTK front-end uses the version pair in the root `VERSION` file:
 
 * `MARKETING_VERSION` in [`VERSION`](VERSION) is the upstream CodexBar release
   this client is feature-compatible with (`0.82.0`).
 * `CURRENT_PROJECT_VERSION` is the build number of the Linux front-end.
-* `codexbar_gtk/version.py` turns the pair into the macOS-style
-  `"0.82.0 (115)"` string shown under Settings → About, in the tray menu and by
+* Native Rust metadata turns the pair into the macOS-style
+  `"0.82.0 (116)"` string shown under Settings → About, in the tray menu and by
   `./run.sh --about`.
 
-Increment `CURRENT_PROJECT_VERSION` for each merged PR and keep it in sync with
-`BUILD` in `codexbar_gtk/version.py`; the test suite fails if the two drift.
+Increment `CURRENT_PROJECT_VERSION` for each merge-approved PR; the native test
+suite validates the version parsed directly from `VERSION`.
 `MARKETING_VERSION` only changes when the supported upstream CodexBar release
 changes. [`CHANGELOG.md`](CHANGELOG.md) records the changes in each build.
 
 ## Development
 
-The headless Rust service contract is being introduced in `rust-backend/`.
-It uses Tokio for async work, keeps GTK outside the backend crate, and publishes
-latest-value snapshots through a watch channel. This is migration scaffolding;
-the existing application still runs its Python backend by default, while the
-Rust opt-in routes refresh polling and typed notification events through the
-Rust controller and uses existing PyO3 module integrations for other ports.
+The headless Rust service contract is in `rust-backend/`. It uses Tokio for async
+work, keeps GTK outside the backend crate, and publishes latest-value snapshots
+through a watch channel.
 
 ```sh
-./run.sh                                  # run from the checkout
-python3 -m unittest discover -s tests -v  # the test suite
+./run.sh                                  # run the native app from the checkout
+./scripts/test-native-harness-units.sh    # retained native automation harnesses
+cargo test --manifest-path rust-core/Cargo.toml --locked
+cargo test --manifest-path rust-backend/Cargo.toml --locked
+cargo test --manifest-path rust-gtk/Cargo.toml --locked
 ```
 
-### GTK4 / libadwaita typelibs
+### Python UI automation dependencies
 
-On Ubuntu/KDE neon, install the system packages (no-root alternative below):
+The app does not need Python typelibs. Python UI harnesses that inspect GTK
+through AT-SPI use these packages on Ubuntu/KDE neon:
 
 ```sh
 sudo apt update
 sudo apt install python3-gi python3-cairo gir1.2-gtk-4.0 gir1.2-adw-1 libadwaita-1-0
 ```
 
-Verify the same Python interpreter used by the app can import both namespaces:
+Verify the test tooling interpreter can import both namespaces:
 
 ```sh
 python3 - <<'PY'
@@ -383,10 +340,9 @@ print("GTK", Gtk.get_major_version(), "ready; libadwaita ready")
 PY
 ```
 
-For the explicit Python parity path, without root access run
-`./scripts/bootstrap-deps.sh`. It downloads and unpacks the typelibs/runtime
-libraries into the ignored local `.deps/` directory; `run-python.sh` adds those
-paths automatically. Do not commit `.deps/`.
+Python scripts under `scripts/` provide isolated native UI automation and
+runtime-proof tooling. They are test harnesses; the application itself has no
+Python runtime dependency. Use synthetic CLI data when capturing previews.
 
 ### Native Rust GTK bootstrap
 
@@ -397,9 +353,7 @@ makes the repository launcher/installer native by default while UG remains
 **NOT PASSED**. This does not migrate a host installation or mark the gate
 complete.
 
-Native builds need GTK development metadata and headers, not Python typelibs.
-Install the Python typelibs only when working on the explicit legacy parity
-path described above:
+Native builds need GTK development metadata and headers:
 
 ```sh
 sudo apt install libgtk-4-dev libadwaita-1-dev
@@ -411,21 +365,10 @@ secondary-instance routing plus cancellation during an in-flight synthetic
 CLI request. A synthetic Wayland bootstrap capture is in
 [`docs/rust-migration/screenshots/u01-native-bootstrap-wayland.png`](docs/rust-migration/screenshots/u01-native-bootstrap-wayland.png).
 
-To exercise the Rust-backed paths, build the optional PyO3 extension and run
-the test suite with both implementations:
-
-```sh
-./scripts/build-rust-core.sh
-python3 -m unittest discover -s tests -v
-CODEXBAR_RUST_CORE=1 python3 -m unittest discover -s tests -v
-```
-
-The Rust backend is opt-in; without the flag, the app continues to use Python.
-
-The tests never touch a real provider account: the CLI is faked and the payloads
-are recorded fixtures. Tray signal tests use a private D-Bus session and require
-`dbus-run-session`, `dbus-python`, and PyGObject; they skip when those optional
-dependencies are absent. CI installs them and runs those tests separately.
+CI runs native core, backend, GTK, tray, X11, private Wayland, installation, and
+Python-free runtime checks. Its Python unit tests exercise only retained native
+automation harnesses; archived Python application parity tests are not
+discovered or run. Fixtures use synthetic CLI/account/history/login data.
 
 ## Licence
 

@@ -1716,7 +1716,6 @@ def main():
                    XDG_DATA_HOME=str(home / ".local/share"), XDG_CACHE_HOME=str(home / ".cache"),
                    CODEXBAR_CLI=str(fake), GTK_USE_PORTAL="0",
                    GDK_BACKEND="wayland", GSK_RENDERER="cairo")
-        env.pop("CODEXBAR_RUST_CORE", None)
         if is_provider_action or needs_hooks:
             env.update(FIXTURE_CLI_CALLS=str(cli_calls), FIXTURE_PROVIDER_ENABLED=str(provider_enabled),
                        FIXTURE_HOOKS_ENABLED=str(hooks_enabled))

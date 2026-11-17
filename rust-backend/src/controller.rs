@@ -1132,6 +1132,54 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn missing_cli_fails_first_refresh_immediately_with_typed_process_error() {
+        let paths = TestPaths::new("missing-cli-first-refresh");
+        let preferences = Arc::new(PreferencesStore::new(
+            paths.0.with_extension("settings.json"),
+        ));
+        preferences
+            .set("refreshFrequency", json!("manual"), false)
+            .unwrap();
+        let cli = CliService::new(paths.0.with_extension("missing-codexbar"), None);
+        let spawn_error = cli
+            .usage(None, None, true, Duration::from_secs(1), None)
+            .await
+            .unwrap_err();
+        assert_eq!(spawn_error.kind, CliErrorKind::NotFound);
+        assert_eq!(spawn_error.operation, "cli_usage");
+        let config = RefreshControllerConfig {
+            cli: Arc::new(cli),
+            preferences,
+            history: Arc::new(HistoryStore::new(paths.0.clone(), 30)),
+            usage_timeout: Duration::from_secs(1),
+            cost_timeout: Duration::from_secs(1),
+            sessions_timeout: Duration::from_secs(1),
+            version_timeout: Duration::from_secs(1),
+        };
+
+        let handle = RefreshControllerHandle::start(config);
+        let mut state = handle.state();
+        timeout(Duration::from_secs(2), async {
+            loop {
+                if state.borrow().status == crate::BackendStatus::Failed {
+                    break;
+                }
+                state.changed().await.unwrap();
+            }
+        })
+        .await
+        .expect("missing CLI should fail the initial refresh without a polling delay");
+        let current = state.borrow();
+        assert!(current.snapshot.is_none());
+        assert_eq!(
+            current.last_error,
+            Some(BackendError::new(BackendErrorKind::Process, "cli_usage"))
+        );
+        drop(current);
+        handle.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
     async fn cli_usage_refresh_publishes_safe_claude_warning_and_both_quotas() {
         let hostile = "SYNTHETIC-HOSTILE-NOTICE-DO-NOT-RENDER";
         let payload = json!({

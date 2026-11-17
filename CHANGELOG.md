@@ -1,3 +1,13 @@
+## 0.82.0 (116) — 2026-11-17
+
+Retire the active Python application runtime, PyO3 bridge, and Python
+launch/install/build paths after native runtime and installer verification.
+Keep archived Python sources and assertions as transitional review references;
+UG remains **NOT PASSED** and C01–CG remain unaccepted.
+
+- See migration audit E219 for integration scope, runtime proof, coverage
+  disposition, exact checks, and remaining dependency.
+
 # Changelog
 
 ## 0.82.0 (115) — 2026-11-16

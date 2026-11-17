@@ -421,7 +421,6 @@ def main():
                    NATIVE_SPEND_FAIL_COST=str(fail_cost),
                    NATIVE_SPEND_EMPTY_COST=str(empty_cost),
                    )
-        env.pop("CODEXBAR_RUST_CORE", None)
         bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
         spectacle_owned = bus.call_sync(
             "org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus",

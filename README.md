@@ -109,8 +109,9 @@ it still owns and preserves user edits. Settings and history remain in
 An older `codexbar-gtk` command, desktop entry, or service is left untouched by
 the native installer. It does not migrate, stop, enable, or remove that
 pre-existing installation. Review it separately after verifying the native
-app. Historical Python implementation and parity tests are retained under
-`tests/reference/python/` and are not an installable fallback.
+app. Historical Python implementation and parity tests were removed from the
+current tree after native runtime verification. Their source remains in Git
+history; see the [reference note](tests/reference/README.md).
 
 ## How it talks to CodexBar
 
@@ -139,11 +140,12 @@ public client `VERSION` marker from GitHub; it does not install or download code
 The shipped application is implemented in Rust GTK4/libadwaita and calls the
 external `codexbar` CLI. Project version metadata comes only from [`VERSION`](VERSION);
 the native GTK test suite checks its parsed version against README's display.
-Historical Python code and parity assertions are retained under
-`tests/reference/python/` for review, not execution or rollback. Rollback uses a
-previous verified native build/commit with the ownership-aware native installer.
-UG remains **NOT PASSED**; this local retirement candidate does not claim UG or
-C01–CG acceptance.
+Historical Python code and parity assertions have been removed from the current
+tree. The prior source snapshot remains in Git history, not as an execution or
+rollback path. Active Python harnesses under `tests/` and `scripts/` automate
+native application checks only. Rollback uses a previous verified native
+build/commit with the ownership-aware native installer. UG remains **NOT
+PASSED**; archive removal does not claim UG or C01–CG acceptance.
 
 ### Native Rust migration roadmap (historical handoff)
 
@@ -156,9 +158,9 @@ launcher-default policy is an exception, not gate completion or host migration.
 BUILD111 moves tray D-Bus CI coverage to the native Rust implementation while
 keeping native automation in the broader suite. BUILD113 retires eight legacy
 preview tools, BUILD114 retires 27 mapped Python assertions, and BUILD115 adds
-private-Weston page-state coverage. This BUILD116 candidate removes the active
-Python runtime while retaining a transitional reference archive. These scoped
-changes do not pass UG or C gates; see the explicit
+private-Weston page-state coverage. BUILD116 removed the active Python runtime;
+BUILD117 removes its retired source archive after native coverage review. These
+scoped changes do not pass UG or C gates; see the explicit
 [gate ledger](docs/rust-migration/UG_GATE.md).
 
 - [Architecture, source inventory and stage gates](docs/rust-migration/README.md)
@@ -178,8 +180,9 @@ screenshots are catalogued in the [UG evidence
 ledger](docs/rust-migration/UG_GATE.md); the login completion capture follows
 an assertion of the GTK success result. UG remains **NOT PASSED** because the
 Wayland action matrix and repeatable local panel focus/SNI evidence remain
-open. The Python implementation is archived as a reference, not a runtime
-fallback. See E086 for the BG merge, B11 CI limitation and B15 bounds.
+open. Historical Python source remains retrievable from Git; active Python
+modules are test automation, not application runtime. See E086 for the BG merge,
+B11 CI limitation and B15 bounds.
 
 ### Historical build notes (not current runtime status)
 
@@ -296,7 +299,7 @@ The GTK front-end uses the version pair in the root `VERSION` file:
   this client is feature-compatible with (`0.82.0`).
 * `CURRENT_PROJECT_VERSION` is the build number of the Linux front-end.
 * Native Rust metadata turns the pair into the macOS-style
-  `"0.82.0 (116)"` string shown under Settings → About, in the tray menu and by
+  `"0.82.0 (117)"` string shown under Settings → About, in the tray menu and by
   `./run.sh --about`.
 
 Increment `CURRENT_PROJECT_VERSION` for each merge-approved PR; the native test
@@ -367,8 +370,9 @@ CLI request. A synthetic Wayland bootstrap capture is in
 
 CI runs native core, backend, GTK, tray, X11, private Wayland, installation, and
 Python-free runtime checks. Its Python unit tests exercise only retained native
-automation harnesses; archived Python application parity tests are not
-discovered or run. Fixtures use synthetic CLI/account/history/login data.
+automation harnesses. Historical application parity sources are retrievable
+from Git history and are not discovered or run. Fixtures use synthetic
+CLI/account/history/login data.
 
 ## Licence
 

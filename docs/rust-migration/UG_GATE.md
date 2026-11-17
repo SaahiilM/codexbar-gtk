@@ -3,10 +3,13 @@
 **Status: NOT PASSED.** All U01–U08 implementation PRs have merged, but the
 required UI action and Wayland evidence is incomplete. By explicit user
 instruction, BUILD110 changes the repository launcher default to native while
-this gate remains unpassed. Python remains the explicit parity/rollback path.
-This policy exception does not complete UI acceptance or migrate an installed
-host. The ledger records observed evidence, limits and the exact remaining
-work; backend unit tests do not count as GTK interaction evidence.
+this gate remains unpassed. BUILD116 retired the active Python runtime, and
+BUILD117 removed its historical source archive. Active Python harnesses are
+test automation only; rollback uses a verified native commit/artifact and the
+ownership-aware installer. The launcher policy does not complete UI acceptance
+or migrate an installed host. The ledger records observed evidence, limits and
+the exact remaining work; backend unit tests do not count as GTK interaction
+evidence.
 
 ## Baseline and merge state
 
@@ -39,7 +42,7 @@ work; backend unit tests do not count as GTK interaction evidence.
 - Inherited migration limits remain visible: B11's zero-job Actions startup
   failures are failures, with the separate workflow-equivalent evidence recorded
   in E086; B15's accepted Rust opt-in edge-input bounds are recorded in E081/E083.
-  Python remains the default, so this gate does not erase those compatibility
+  Removing historical Python references does not erase those compatibility
   limits. Legacy history rows also retain the documented missing-knownness
   ambiguity from U02.
 

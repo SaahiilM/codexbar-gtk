@@ -1,28 +1,21 @@
 # Native Rust migration
 
-## BUILD116/E219 active Python runtime retirement candidate
+## Current status — BUILD117 source cleanup
 
-The `t3/retire-python-runtime` integration removes the active Python application
-package, PyO3 crate, and Python launcher/install/build paths. It merges the
-latest published PR116 page-state branch and preserves the eight
-support-retired tools as deletions. Former application and parity sources remain
-in `tests/reference/python/` as a transitional review archive; archived
-assertions are not CI tests, and the archive is not a package, runtime fallback,
-or supported rollback path. It currently contains 58 Python files / 16,911
-Python lines. The archive-wide map records residual assertion gaps. The native
-metadata test reads root `VERSION` directly; historical `version.py` stays
-unchanged.
+BUILD116 retired the active Python application runtime, PyO3 bridge, and Python
+launch/install/build paths. BUILD117 removes the 58-file / 16,911-line Python
+reference archive (its recorded source snapshot was `52b8b11`). Synthetic JSON
+fixtures remain in `tests/fixtures/`; active Python scripts and top-level tests
+remain as native application automation. The concise source and coverage note
+is [`tests/reference/README.md`](../../tests/reference/README.md).
 
-The source change has BUILD116 metadata and is for root review. It does not pass
-UG or C01–CG, claim every archived assertion has a native replacement, or
-complete archive cleanup. The peer method map at
-`cb0d2ba6ba9812433fd16e0a6fdebfe3280a715e` records the Python default and
-Rust-opt-in suites passing, along with Rust core/backend, format and strict
-Clippy results; those are inherited peer results. The exact integrated branch
-checks, UI scope, installed binary source/build SHA, skips, and remaining PR115
-follow-up are recorded in the current handoff and E219. The archive's per-file
-crosswalk is in [`tests/reference/python/README.md`](../../tests/reference/python/README.md).
-The remainder of this guide records the migration plan and historical evidence.
+PR #117 merged at `677135c4bcffcdf56c5bd5c913c11ee294e229fc`; exact head
+`f45c01a9139a891e54495b4b62e6f7ee89a95c2a` passed all three required checks
+(run `44125566585`), with no reviews, comments, or review threads. The verified
+X11/Wayland, installer and Python-free runtime evidence belongs to PR #117 and
+BUILD116; deleting the archive does not establish new runtime behavior or pass
+UG, C01, C02, C03, or CG. See current handoff and E220 for this source-cleanup
+slice. Remaining migration history below is preserved as historical evidence.
 
 **Approved destination:** a Rust GTK4/libadwaita application with no Python
 runtime, PyO3 bridge, or PyGObject dependency in the shipped application.
@@ -387,8 +380,9 @@ services, authentication or provider network calls for isolated verification.
   the gate is **NOT PASSED** until full feature/action parity and the required
   Wayland/X11/private-D-Bus evidence matrix are accepted. Current evidence and
   uncovered actions are itemized in [UG_GATE.md](UG_GATE.md). The former Python
-  implementation is retained under `tests/reference/python/` for review; it is
-  not an active parity runtime or rollback path. Rollback uses a verified
+  implementation was retained as a review archive at that historical
+  checkpoint; it was not an active parity runtime or rollback path. BUILD117
+  later removed that archive. Rollback uses a verified
   native commit/artifact and the ownership-aware installer. BUILD110's
   repository-default decision remains historical; it did not pass UG.
 - **CG — cutover complete:** native release/install works without Python,

@@ -18,8 +18,9 @@ Before migration work, read:
 Do not infer gate acceptance from a local retirement candidate or the existence
 of a Rust module. UG remains **NOT PASSED** and C01–CG remain unaccepted until
 their documented evidence and root review are complete. Historical Python
-implementation and parity tests live under `tests/reference/python/`; they are
-not shipped, installed, imported by active tests, or a runtime fallback.
+implementation and parity tests were removed from the current tree after
+native runtime verification. Their source commit and native coverage pointers
+are in [`tests/reference/README.md`](tests/reference/README.md).
 
 ## Continuation protocol
 
@@ -33,8 +34,8 @@ not shipped, installed, imported by active tests, or a runtime fallback.
   before observing it; use PR links plus live GitHub status when resuming.
 - Stop or switch tasks only with an explicit handoff. A partial implementation
   must stay marked partial; a failing test is a blocker, not completed work.
-- Retain Python files only as clearly marked references. Never restore them as
-  a runtime fallback. Keep active Python scripts under `scripts/` only when
+- Never restore historical Python files as a runtime fallback. Keep active
+  Python scripts under `scripts/` only when
   they automate or verify the native application; they are test tooling, not
   shipped runtime dependencies.
 
@@ -44,8 +45,8 @@ not shipped, installed, imported by active tests, or a runtime fallback.
   read it directly; there is no `codexbar_gtk/version.py`. For a merge-approved
   PR, increment `CURRENT_PROJECT_VERSION`, update `CHANGELOG.md` and README's
   displayed build. Marketing version follows supported upstream CodexBar;
-  Cargo package metadata is not a separate release. BUILD116 is the current
-  retirement-candidate allocation; do not update archived `version.py` metadata.
+  Cargo package metadata is not a separate release. Do not restore archived
+  Python version metadata.
 - Rollback uses a previous verified Git tag/commit or preserved native build
   artifact with the data-preserving native installer. Never use a permanent
   Python runtime fallback. Existing unowned commands, desktop files and
@@ -56,6 +57,6 @@ not shipped, installed, imported by active tests, or a runtime fallback.
 - Preserve settings/history compatibility and missing/partial-data semantics.
   Use temporary homes and private D-Bus sessions for isolated tests where useful.
 - Run the native core/backend/GTK, tray, X11, private Wayland, installer, and
-  Python-free runtime-proof checks in the migration guide. Archived Python
-  parity assertions do not count as native verification. Do not delete an
-  archived assertion until a corresponding native assertion is identified.
+  Python-free runtime-proof checks in the migration guide. Historical Python
+  parity assertions do not count as native verification. Before removing an
+  assertion, identify its native coverage or record the remaining gap.

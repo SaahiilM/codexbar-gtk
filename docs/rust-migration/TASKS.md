@@ -9,51 +9,42 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Field | Current checkpoint |
 | --- | --- |
 | Goal | Fully native Rust GTK4/libadwaita application with verified packaging and legacy runtime removal. |
-| Current phase | Active Python application/PyO3 runtime retirement is the BUILD116/E219 candidate. UG remains **NOT PASSED** and C01–CG remain unaccepted; this candidate does not claim cutover-gate acceptance. |
-| Last observed merge | PR #116 (BUILD115) merged normally at `271b7d4db2be4bc4ba348195eb30b0b8f53c572f`, now `origin/main`. PR #115 (BUILD114) merged at `04849da679756ad2aa5d8047e163994169144b35`. Both exact heads passed all three required checks; see E219. |
-| Active implementation | Local BUILD116/E219 candidate on `t3/retire-python-runtime` includes normal merges of PR116 head `c755179a4feb863be6458f4b3fd7b0bc1a4d692e` and verified `origin/main` `271b7d4db2be4bc4ba348195eb30b0b8f53c572f`. It retires the active Python runtime and retains a 58-file / 16,911-line transitional archive. No PR is allocated or published. |
-| Dependency follow-up | Root published PR115 cancellation-fixture diagnostic fix `b6f24702fff991127d3e026ab02bcdd18221f451`; PR115 and PR116 then merged normally. Runs `44119037409` and `44119123748` passed all three required jobs on exact heads. The original failure was not reproduced or attributed. No pending PR115/116 dependency remains. |
-| Installer/runtime verification | E219 records this branch's private Python-free installed-runtime and default installer/launch lifecycle evidence. Prior E198/E199 proofs remain component evidence; they do not pass C02 or authorize cutover. |
-| UI acceptance | E218 retains the narrow page-state evidence; broader Wayland controls/navigation remain open. UG is **NOT PASSED**. See `UG_GATE.md`. |
-| Next | Root reviews the local BUILD116 candidate and publishes the runtime-retirement PR. No CI result exists for this unpushed candidate. UG remains NOT PASSED; C gates remain unaccepted. |
+| Current phase | BUILD117 final source cleanup; UG remains **NOT PASSED**, and C01–CG remain unaccepted. |
+| Last observed merge | PR #117 merged at `677135c4bcffcdf56c5bd5c913c11ee294e229fc`; exact head `f45c01a9139a891e54495b4b62e6f7ee89a95c2a` passed all three required checks in run `44125566585`. |
+| Active implementation | Local BUILD117/E220 cleanup on `t3/delete-python-reference-archive`, based on verified `origin/main` `677135c4bcffcdf56c5bd5c913c11ee294e229fc`. Deletes the 58-file/16,911-line retired Python reference archive and four manual debug tools (349 lines), total 62 Python files / 17,260 lines. Active Python test and script harnesses remain. |
+| Previous slice integration | Cherry-picked root-reviewed peer commit `1d368dcc402b26d9e2206d3adc450716f0e1ac63` as local commit `7b00677`; its tools-only scope does not overlap the archive removal. |
+| Next | Root reviews and publishes this focused cleanup PR. Do not mark UG or any C gate passed because source archives were removed. |
 
-### BUILD116/E219 — active Python runtime retirement integration
+### BUILD117/E220 — retired Python source and debug-tool cleanup
 
-**Owner/base/status:** local branch `t3/retire-python-runtime`, with normal merge
-commits for published PR116 head `c755179a4feb863be6458f4b3fd7b0bc1a4d692e`
-and verified `origin/main` `271b7d4db2be4bc4ba348195eb30b0b8f53c572f`.
-The merged stack includes root's PR115 correction
-`b6f24702fff991127d3e026ab02bcdd18221f451`. It is an unpushed BUILD116
-review candidate. No PR allocation, push, exact-head
-CI, merge, or gate pass is claimed. Root owns publication.
+**Owner/base/status:** local branch `t3/delete-python-reference-archive`, based
+on verified `origin/main` `677135c4bcffcdf56c5bd5c913c11ee294e229fc`. Local
+BUILD117 metadata is reserved for root review. No push or cleanup PR exists.
 
-**Scope:** retire the active Python application package, PyO3 crate, and Python
-launcher/install/build setup. Preserve the former application and test material
-as transitional references under `tests/reference/python/`; this is not full
-archive cleanup or a runtime rollback path. Keep the eight support-retired
-preview/GTK smoke tools deleted. Root `VERSION` is now the only project-version
-source; historical archived `version.py` is not updated. Default launch/install
-remain native, with the native installer's ownership-aware preservation and
-rollback protections intact. This is the explicitly authorized active-runtime
-removal, not UG or C01–CG acceptance.
+**Scope:** remove the historical Python application/parity archive (58 Python
+files, 16,911 lines) after the BUILD116 runtime retirement, and remove four
+manual Python desktop debug tools (349 lines). Total deletion is 62 Python
+files / 17,260 lines. BUILD116 already removed the application runtime; this
+changelog does not present these deletions as new runtime retirement. Preserve
+synthetic JSON fixtures under `tests/fixtures/` and active native application
+automation under `tests/test_*.py` and `scripts/`. The source snapshot and
+selected native coverage links are summarized in
+[`tests/reference/README.md`](../../tests/reference/README.md). The separate
+`tools/README.md` retains native commands and Git-history recovery guidance.
 
-**Coverage and checks:** the archive README retains per-file assertion mapping
-and residual gaps. The peer method map at `cb0d2ba6ba9812433fd16e0a6fdebfe3280a715e`
-reported both Python modes, Rust core/backend suites, format and strict Clippy
-passing; that is inherited peer evidence. E219 records only checks actually run
-on this integrated branch, including native Rust checks, all active Python
-harness discovery, and private installed-runtime/default launch proofs. UI
-smoke scope, actual binary source/build SHA, skips, and unrun checks are stated
-there.
+**Observed upstream evidence:** PR #117 merged at
+`677135c4bcffcdf56c5bd5c913c11ee294e229fc`; exact head
+`f45c01a9139a891e54495b4b62e6f7ee89a95c2a` passed `test`, `tray-dbus`, and
+`python-free-runtime-proof` in run `44125566585`. There were no reviews,
+comments, or review threads. Its X11/Wayland, installer, and Python-free
+runtime evidence applies to the BUILD116 application state, not this source-only
+cleanup and not UG/C-gate acceptance.
 
-**Dependency/next:** PR115 merged normally at
-`04849da679756ad2aa5d8047e163994169144b35`; its exact corrected head
-`b6f24702fff991127d3e026ab02bcdd18221f451` passed all three jobs in run
-`44119037409`. PR116 merged at `271b7d4db2be4bc4ba348195eb30b0b8f53c572f`;
-its exact head `c755179a4feb863be6458f4b3fd7b0bc1a4d692e` passed all three jobs
-in run `44119123748`. The original cancellation fixture failure was not
-reproduced or attributed. Root reviews this local candidate, then publishes its
-runtime-retirement PR. No CI pass is claimed for BUILD116.
+**Checks recorded:** native metadata regression, all retained harness units,
+deletion accounting, source/caller/reference scans, fixture-preservation check,
+and `git diff --check` passed; exact results and limits are in E220. Full
+core/backend, UI, installer and runtime suites were not rerun because behavior
+did not change. Root reviews and publishes the cleanup PR.
 
 ### BUILD115/E218 — required Wayland page-state coverage
 

@@ -3,7 +3,7 @@
 #
 # The installed native package provides PREFIX/bin/codexbar-gtk-native and
 # does not need this script. Historical Python implementation and parity tests
-# are archived under tests/reference/python and are not shipped or installed.
+# remain in Git history and are not shipped or installed.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"

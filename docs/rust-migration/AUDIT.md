@@ -8321,3 +8321,212 @@ The broader ShellCheck scan reported existing SC2016 and SC2015 findings in
 the GTK routing and panel scripts. Both earlier full Settings logs reached
 the success marker before D-Bus teardown diagnostics. Those runs predate the
 BUILD119 metadata and workflow update. Fresh CI is pending.
+### E223 — BUILD117 Advanced private-Weston Rust harness (partial)
+
+**Owner/base/status:** local partial implementation on `t3/native-ui-test-tools`,
+requested clean base `1d53b1b544cebd158ed7de069e58870c7588ad3b`. This is a test-tool
+subtask; no version metadata, workflow, push, PR, or release claim changed.
+
+**Implementation:** `rust-ui-test-tools/src/main.rs` adds an opt-in
+`isolated-wayland --scenario advanced` route using the existing rootless Weston,
+private D-Bus and temporary synthetic HOME/CLI. Only this scenario launches the
+app with its working directory set to that HOME, matching the Python Advanced
+reference and ensuring GTK's file chooser opens in the fixture home. The
+scenario seeds full defaults plus the 5-minute export preference, synthetic
+valid and empty import documents, and a synthetic autostart file. Export
+requires the exact app-PID/title/visible chooser; because GTK omits the default
+filename entry from AT-SPI, the scenario invokes only the unique visible
+same-PID Save button and then verifies the expected absolute HOME file, version
+1 portable JSON, and seeded preference. The success screenshot shows the
+Advanced page's visible “Preferences exported.” status.
+
+Import selection is deliberately stricter than the generic chooser fallback:
+it requires one exact visible same-PID row, selects it through the parent's
+AT-SPI Selection interface, and verifies selected state before the visible
+Import action. If the row is absent, it may select the exact visible Home place
+and use only a unique `activate` action on that selected row. It never invokes
+`item.visit`, never falls back to row navigation, and fails closed otherwise.
+Private Weston globals are captured for input-route diagnosis. Screenshot
+artifacts are
+[`export-result.png`](screenshots/advanced-private-weston-export-result.png) and
+[`import-chooser-blocked.png`](screenshots/advanced-private-weston-import-blocked.png).
+
+**Observed runtime and blocker:** final attempt used native application binary
+SHA-256 `0a9c759a5e8049f6c01ebc0479b1784a157938bdf5e99a0ff6a31852677ee6ed`,
+tool binary SHA-256 `626bb92cae2ab087bb262fe03a7679dd6ef1fc3f87c7081cbf226bad66c01155`,
+app PID `728790`, and an exact visible `Export preferences` chooser. Save action
+identity was `728790:app/2/1/0/0/2/1`; exact output path validation and portable
+JSON checks passed before the scenario continued. The next visible `Import
+preferences` chooser displayed Recent and the exported file. No exact row for
+`synthetic-preferences-import.json` was exposed. AT-SPI selected the exact
+same-PID Home place; that node exposed `actions=[]`, so no navigation action was
+invoked. Private `wayland-info` listed neither `zwp_virtual_keyboard_manager_v1`
+nor `weston_test`; no keyboard input was attempted against the host compositor.
+No valid/empty import, Plugins refresh, reset cancel/confirm, full post-import
+maps, or autostart-retention result is claimed. The scenario exited 1 at this
+boundary.
+
+**Checks and cleanup:** independent `CARGO_TARGET_DIR=/tmp/codexbar-advanced-target`
+builds of `rust-gtk` and `rust-ui-test-tools` completed with `CARGO_BUILD_JOBS=1`
+and `-j 1`. `cargo test --manifest-path rust-ui-test-tools/Cargo.toml --locked
+-j 1` passed 18 tests (3 library, 15 binary); strict all-target Clippy passed
+with `-D warnings`; formatting and `git diff --check` passed. The final private
+run reaped the app and Weston, removed its synthetic HOME and private Wayland
+socket, and the outer private D-Bus socket was absent after exit. No host
+session bus/desktop, credentials, authentication, provider network, or other
+scenario was used.
+
+**Next:** resolve exact import-row access or a compositor-supported keyboard
+route inside private Weston, preserving app PID/title/visibility/identity
+checks and avoiding `item.visit`; then rerun Advanced to prove valid and empty
+imports, Plugins refresh, reset cancel/confirm, full map comparisons, unchanged
+autostart and cleanup. Keep this task partial until that complete runtime pass.
+
+### E224 — 2026-11-18: BUILD117 Advanced Recent-row parity and full pass
+
+**Owner/base/status:** local scoped follow-up on `t3/native-ui-test-tools`,
+based on the requested clean `33d6a54` branch state. The Rust UI test tool and
+this handoff/audit documentation are the only changed source scope. No build
+metadata, workflow, push, PR, or Python reference source changed. Python
+Advanced coverage remains available until root integration.
+
+**Implementation:** before app startup, the Rust runner writes a private
+`recently-used.xbel` under the temporary `XDG_DATA_HOME`. Each fixture receives
+an absolute encoded `file://` URI, ISO-8601 UTC timestamps, required freedesktop
+MIME metadata and a bookmark application record. The actual chooser exposes
+GTK4 `row` records and `grid cell` filename children. Exact-row matching now
+supports those GTK4 roles as well as the previous table roles. Selection remains
+scoped to the exact visible same-PID chooser, uses the parent AT-SPI Selection
+interface, verifies selected state, then verifies the uniquely selected exact
+row again before invoking the visible app-owned Import action. No generic
+`item.visit`, physical input, host compositor, or host session was used.
+
+**Advanced runtime:** native app and test tool were built with
+`cargo build --locked --manifest-path rust-gtk/Cargo.toml --bin
+codexbar-gtk-native` and
+`cargo build --locked --manifest-path rust-ui-test-tools/Cargo.toml --bin
+codexbar-ui-test-tool`. The final invocation of
+`rust-ui-test-tools/target/debug/codexbar-ui-test-tool isolated-wayland
+--binary rust-gtk/target/debug/codexbar-gtk-native --scenario advanced
+--artifact-dir /tmp/codexbar-advanced-recent-final` completed with exit 0.
+`evidence.json` reports `status=passed`, with six Advanced actions: export,
+valid import, empty import, reset cancel, reset confirm, and selected Advanced
+page. Captured `runner-output.log` records exact selection and Import actions
+for `synthetic-preferences-import.json` and
+`synthetic-empty-preferences-import.json`. The scenario verified portable
+export JSON and seeded `refreshFrequency=5m`; the valid import's complete map,
+ignored unknown key and Plugins refresh; the empty import's unchanged complete
+map and Plugins refresh; reset cancellation and the full default map after
+confirmation; and unchanged synthetic autostart bytes. The evidence cleanup
+record confirms app and Weston reaped, private HOME, runner state, logs and
+D-Bus socket removed. Artifacts are in
+`/tmp/codexbar-advanced-recent-final/` (`evidence.json`, `runner-output.log`,
+and four screenshots). This covers GTK/AT-SPI behavior under private Weston,
+not KDE placement, physical input, or UG acceptance.
+
+**Checks:** `cargo fmt --manifest-path rust-core/Cargo.toml -- --check`,
+`cargo fmt --manifest-path rust-backend/Cargo.toml -- --check`,
+`cargo fmt --manifest-path rust-gtk/Cargo.toml -- --check`, and
+`cargo fmt --manifest-path rust-ui-test-tools/Cargo.toml -- --check` passed.
+Locked tests passed: core 92; backend 103 across unit/integration tests; GTK
+39 library plus 1 main and 1 Python-free linkage test; UI tools 3 library plus
+16 binary tests. GTK's four display/negative-precondition tests were ignored as
+declared. Strict Clippy passed with `-D warnings` for core
+(`--all-targets --all-features`), backend (same), GTK (`--all-targets`), and UI
+tools (`--all-targets`). `git diff --check` passed.
+
+**Next:** root reviews and integrates this scoped commit. Keep Python coverage
+intact until then. This test-tool result does not change UG or C gate status.
+
+### E225 — 2026-11-18: BUILD120 Rust private-Weston CI scenarios
+
+**Owner/base/status:** local branch `t3/native-ui-test-tools`; reconciled onto
+verified `origin/main` build-119 commit `37ee8b9fafbd3ab622e7ec0ab9174b6810d28dfc`
+(PR #119). The requested starting commit was `6925aa4`. `gh pr list --state
+open` returned no open pull requests before editing. BUILD120 is a scoped local
+candidate for root review. No push, PR, CI/exact-head result, merge, or gate
+acceptance is claimed. VERSION is `0.82.0 (120)`.
+
+**Workflow change:** the existing `matrix`, `advanced`, `settings-residual`,
+and `page-state` six-minute private-Weston steps now invoke the built
+`rust-ui-test-tools/target/debug/codexbar-ui-test-tool isolated-wayland` binary.
+The same scenario names, per-scenario artifact directories, command nonzero
+failure behavior, and four `if: always()` artifact uploads remain. CI now runs
+locked Rust UI-tool tests and build, rustfmt check, and strict all-target/all-
+features Clippy (`-D warnings`). Workflow path filters cover the UI tool crate
+and continue covering the Python runner and chooser/AT-SPI helpers. Python
+scripts, wrappers, packages and all top-level Python harness regression tests
+remain in place; only these four CI scenario invocations changed.
+
+**Runner review:** the tool launches its nested run with cleared environment
+and private HOME/XDG state, starts `dbus-run-session`, creates a rootless
+Weston compositor/socket, checks the runtime and socket modes as 0700/0600,
+and scopes application AT-SPI actions to exact same-PID visible controls. The
+scenario runner deadline is 210 seconds, nested private-bus process deadline
+240 seconds, and CI step deadline remains six minutes. App and Weston owned
+children are reaped, scratch state is removed, and successful evidence records
+cleanup. Captures are confined to each new mode-0700 scenario artifact
+ directory. Failure remains nonzero; diagnostic logs/evidence remain available
+for the existing always-upload step. The test tool uses only the synthetic
+`fake-codexbar` CLI and seeded preferences/session/cost/hooks fixtures. No
+production provider call, host desktop/session bus, credentials or
+authentication was used.
+
+**Exact local checks:**
+
+- `cargo fmt --manifest-path rust-ui-test-tools/Cargo.toml -- --check` — passed.
+- `cargo test --manifest-path rust-ui-test-tools/Cargo.toml --locked` — passed:
+  3 library tests and 16 binary tests, no failures; doc tests 0.
+- `cargo clippy --manifest-path rust-ui-test-tools/Cargo.toml --locked
+  --all-targets --all-features -- -D warnings` — passed.
+- `cargo build --manifest-path rust-ui-test-tools/Cargo.toml --locked --bin
+  codexbar-ui-test-tool` — passed.
+- `cargo build --manifest-path rust-gtk/Cargo.toml --locked --bin
+  codexbar-gtk-native` — passed.
+- `./scripts/test-native-harness-units.sh` — passed across all four retained
+  top-level Python Wayland harness modules, including the original runner
+  failure/timeout/environment regressions.
+
+The four scenario commands were run separately against the newly built local
+native app and Rust tool, each with a fresh artifact directory:
+
+1. `rust-ui-test-tools/target/debug/codexbar-ui-test-tool isolated-wayland
+   --binary rust-gtk/target/debug/codexbar-gtk-native --scenario matrix
+   --artifact-dir /tmp/codexbar-build120-matrix` — exit 0;
+   `evidence.json` status `passed`. Dashboard, Settings, Spend, Hooks and
+   Sessions loading/success/empty/error captures were retained.
+2. `rust-ui-test-tools/target/debug/codexbar-ui-test-tool isolated-wayland
+   --scenario advanced --binary rust-gtk/target/debug/codexbar-gtk-native
+   --artifact-dir /tmp/codexbar-build120-advanced` — exit 0; status `passed`.
+   Export, exact valid/empty chooser-row imports, reset and cleanup evidence
+   were retained.
+3. `rust-ui-test-tools/target/debug/codexbar-ui-test-tool isolated-wayland
+   --scenario settings-residual --binary rust-gtk/target/debug/codexbar-gtk-native
+   --artifact-dir /tmp/codexbar-build120-settings-residual` — exit 0; status
+   `passed`; three switch captures retained.
+4. `rust-ui-test-tools/target/debug/codexbar-ui-test-tool isolated-wayland
+   --scenario page-state --binary rust-gtk/target/debug/codexbar-gtk-native
+   --artifact-dir /tmp/codexbar-build120-page-state` — exit 0; status `passed`;
+   page navigation and retained Spend error captures retained.
+
+All four `evidence.json` files record `native_app_reaped`, `weston_reaped`,
+`private_home_removed`, `private_dbus_socket_removed`,
+`private_runner_state_removed`, and `private_logs_removed` as true. Each test
+used its own synthetic HOME, fake CLI, private session bus and private Weston
+socket. The host has desktop portal services installed; their activation
+warnings and `A connection to the bus can't be made` teardown messages appeared
+on the private bus during/after runs. They did not change any scenario result;
+all private socket and process cleanup fields were true. This is local
+scenario-tool evidence, not CI, KDE shell/input parity, UG acceptance, or a
+C-gate result.
+
+**Next:** root reviews and integrates this candidate, then observes CI on its
+exact published head. Keep Python automation and UG **NOT PASSED**; C01–CG
+remain unaccepted.
+
+PR #121 CI run 44375828857 stopped at the backend cancellation fixture
+with spawn errno 26 (ETXTBSY), before any Wayland scenario ran. The test
+now runs the system shell with the fixture path as an argument, avoiding
+direct execution of the temporary script. Cancellation and process exit
+assertions are unchanged. The locked backend suite passed locally (99 unit,
+4 integration), along with formatting and diff checks.

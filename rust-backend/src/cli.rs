@@ -956,21 +956,22 @@ mod tests {
     async fn cancellation_kills_and_reaps_child() {
         let _guard = PROCESS_TEST_LOCK.lock().await;
         let fixture = Fixture::new("echo $$ > {DIR}/child.pid; sleep 10");
-        let service = CliService::new(&fixture.executable, None);
+        // Execute the system shell and pass the temporary fixture as data.
+        // Parallel tests can briefly inherit a writable fixture descriptor
+        // across fork, which can make direct execution fail with ETXTBSY.
+        let shell = Path::new("/bin/sh");
+        let service = CliService::new(shell, None);
+        let args = [fixture.executable.clone().into_os_string()];
         let (sender, receiver) = watch::channel(false);
         let cancellation = Cancellation { receiver };
         let mut task = tokio::spawn(async move {
             service
-                .run(&[], Duration::from_secs(10), Some(cancellation))
+                .run(&args, Duration::from_secs(10), Some(cancellation))
                 .await
         });
-        let pid = wait_for_fixture_pid_or_task(
-            &fixture.dir.join("child.pid"),
-            &fixture.executable,
-            &mut task,
-        )
-        .await
-        .unwrap_or_else(|error| panic!("{}", fixture_pid_wait_message(error)));
+        let pid = wait_for_fixture_pid_or_task(&fixture.dir.join("child.pid"), shell, &mut task)
+            .await
+            .unwrap_or_else(|error| panic!("{}", fixture_pid_wait_message(error)));
         let _cleanup = ProcessGroupCleanup(Some(pid as u32));
         sender.send_replace(true);
         let error = task.await.unwrap().unwrap_err();

@@ -9,10 +9,10 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Field | Current checkpoint |
 | --- | --- |
 | Goal | Fully native Rust GTK4/libadwaita application with verified packaging and legacy runtime removal. |
-| Current phase | BUILD119 X11 smoke fixture migration. UG remains **NOT PASSED** and C01–CG remain unaccepted. |
+| Current phase | BUILD120 Rust UI-test-tool CI integration. UG remains **NOT PASSED** and C01–CG remain unaccepted. |
 | Last observed merge | PR #119 merged at `ff107d0f2761be8ec403358e12a43d4045fcb97a`; head `d60cd8772ce2c137c713cf5dace0ce72357b68ba` passed all three checks in run 44156297105. |
-| Active implementation | BUILD119/E222 on `t3/rust-smoke-test-tools`. Rust X11 fixtures and two private Settings smoke passes. |
-| Next | Verify CI for BUILD119 and continue the native Wayland runner ports before retiring Python harness coverage. |
+| Active implementation | BUILD120/E225 on `t3/native-ui-test-tools`, reconciled with BUILD119 `origin/main` `37ee8b9`. Four CI Wayland scenarios switched to Rust; four local private-Weston runs and helper checks passed. |
+| Next | Root reviews the scoped BUILD120 candidate and publishes it. Keep Python scenario scripts/tests and standalone wrappers until each corresponding coverage migration is independently complete. |
 
 ### BUILD118/E221 — Python-free Rust CI helper wiring
 
@@ -38,6 +38,34 @@ AUDIT E221. The helper’s actual process-level integration tests cover Cargo
 artifact resolution, strict command-target parsing, wrong-hash/install-failure/
 runtime-absence rejection, required-action failure, child cleanup, and data
 validation. No UG or C gate is accepted by CI helper coverage.
+
+### BUILD120/E225 — Rust private-Weston CI scenarios
+
+**Owner/base/status:** local implementation on `t3/native-ui-test-tools`,
+reconciled onto BUILD119 `origin/main` `37ee8b9` (PR #119). BUILD120 is
+provisional for root review. No push, PR, exact-head CI result or gate claim.
+
+**Scope:** switch only the existing `matrix`, `advanced`,
+`settings-residual`, and `page-state` private-Weston workflow invocations to
+`rust-ui-test-tools/target/debug/codexbar-ui-test-tool`. Add its locked build,
+tests, formatting and strict all-target Clippy. Preserve all four scenario
+names, six-minute job-step timeouts, evidence directories, failure exit
+behavior and `if: always()` uploads. Retain the Python runner, its standalone
+scenario wrappers, helper modules and harness unit regressions, including
+coverage still exercised only there. No UG acceptance is inferred.
+
+**Runner review:** the Rust runner clears inherited process environment for
+its private child, supplies private HOME/XDG directories, starts a private
+`dbus-run-session`, enforces 210-second inner and 240-second outer deadlines,
+uses a private Weston socket with checked 0700 runtime / 0600 socket modes, and
+owns/reaps app and compositor children. Capture output stays in the per-scenario
+artifact directory with private permissions. Failure returns nonzero and
+retains diagnostic logs for the unchanged always-upload artifact step. The
+local scenario commands and results, cleanup observations, capture scopes and
+any blockers are appended in AUDIT E225.
+
+**Next:** root reviews and integrates this scoped candidate, then observes
+exact-head CI. Keep UG **NOT PASSED** and C01–CG unaccepted.
 
 ### BUILD119/E222 — Rust X11 smoke fixtures
 

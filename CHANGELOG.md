@@ -1,3 +1,13 @@
+## 0.82.0 (120) — 2026-11-18
+
+Run the four existing isolated Weston CI scenarios with the Rust
+`codexbar-ui-test-tool`. Add locked tool build/tests, formatting and strict
+Clippy. Keep Python Wayland tools and harness regressions for their standalone
+coverage. This tooling migration does not establish new UI acceptance or pass
+UG/C gates.
+
+- See migration audit E225 for runner review, exact local checks and limits.
+
 ## 0.82.0 (119) — 2026-11-17
 
 Move X11 smoke fixtures to Rust and exercise Settings import through the visible GTK file chooser. Check complete preference maps after import and reset. Retain the existing Python Wayland checks. See migration audit E222.

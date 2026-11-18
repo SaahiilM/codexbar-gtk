@@ -8,6 +8,7 @@ on:
       - "rust-core/**"
       - "rust-backend/**"
       - "rust-gtk/**"
+      - "rust-ui-test-tools/**"
       - "rust-ci-tools/**"
       - "rust-smoke-fixtures/**"
       - "scripts/build-rust-smoke-fixtures.sh"
@@ -81,6 +82,7 @@ jobs:
           cargo fmt --manifest-path rust-core/Cargo.toml -- --check
           cargo fmt --manifest-path rust-backend/Cargo.toml -- --check
           cargo fmt --manifest-path rust-gtk/Cargo.toml -- --check
+          cargo fmt --manifest-path rust-ui-test-tools/Cargo.toml -- --check
       - name: Run Rust core tests
         run: cargo test --manifest-path rust-core/Cargo.toml --locked
       - name: Run headless backend contract tests
@@ -102,6 +104,11 @@ jobs:
           cargo clippy --manifest-path rust-core/Cargo.toml --all-targets --all-features -- -D warnings
           cargo clippy --manifest-path rust-backend/Cargo.toml --all-targets --all-features -- -D warnings
           cargo clippy --manifest-path rust-gtk/Cargo.toml --all-targets -- -D warnings
+          cargo clippy --manifest-path rust-ui-test-tools/Cargo.toml --locked --all-targets --all-features -- -D warnings
+      - name: Test Rust UI automation tool
+        run: cargo test --manifest-path rust-ui-test-tools/Cargo.toml --locked
+      - name: Build Rust UI automation tool
+        run: cargo build --manifest-path rust-ui-test-tools/Cargo.toml --locked --bin codexbar-ui-test-tool
       - name: Build native GTK application
         run: cargo build --manifest-path rust-gtk/Cargo.toml --locked --bin codexbar-gtk-native
       - name: Exercise Gio routing and async in-flight shutdown
@@ -116,14 +123,14 @@ jobs:
         timeout-minutes: 6
         run: |
           mkdir -m 700 -p "$RUNNER_TEMP/native-wayland-evidence"
-          /usr/bin/python3 scripts/test-native-wayland-isolated.py \
+          rust-ui-test-tools/target/debug/codexbar-ui-test-tool isolated-wayland \
             --binary rust-gtk/target/debug/codexbar-gtk-native \
             --artifact-dir "$RUNNER_TEMP/native-wayland-evidence"
       - name: Exercise native Settings advanced actions on private Weston Wayland
         timeout-minutes: 6
         run: |
           mkdir -m 700 -p "$RUNNER_TEMP/native-wayland-advanced-evidence"
-          /usr/bin/python3 scripts/test-native-wayland-isolated.py \
+          rust-ui-test-tools/target/debug/codexbar-ui-test-tool isolated-wayland \
             --scenario advanced \
             --binary rust-gtk/target/debug/codexbar-gtk-native \
             --artifact-dir "$RUNNER_TEMP/native-wayland-advanced-evidence"
@@ -131,7 +138,7 @@ jobs:
         timeout-minutes: 6
         run: |
           mkdir -m 700 -p "$RUNNER_TEMP/native-wayland-settings-residual-evidence"
-          /usr/bin/python3 scripts/test-native-wayland-isolated.py \
+          rust-ui-test-tools/target/debug/codexbar-ui-test-tool isolated-wayland \
             --scenario settings-residual \
             --binary rust-gtk/target/debug/codexbar-gtk-native \
             --artifact-dir "$RUNNER_TEMP/native-wayland-settings-residual-evidence"
@@ -139,7 +146,7 @@ jobs:
         timeout-minutes: 6
         run: |
           mkdir -m 700 -p "$RUNNER_TEMP/native-wayland-page-state-evidence"
-          /usr/bin/python3 scripts/test-native-wayland-isolated.py \
+          rust-ui-test-tools/target/debug/codexbar-ui-test-tool isolated-wayland \
             --scenario page-state \
             --binary rust-gtk/target/debug/codexbar-gtk-native \
             --artifact-dir "$RUNNER_TEMP/native-wayland-page-state-evidence"

@@ -638,6 +638,7 @@ case "${1:-}" in
   cost)
     if [ -n "${NATIVE_COST_MODE_FILE:-}" ] && [ "$(cat "$NATIVE_COST_MODE_FILE")" = error ]; then
       n=0; [ -f "$NATIVE_COST_ERROR_COUNT_FILE" ] && n=$(cat "$NATIVE_COST_ERROR_COUNT_FILE")
+      printf '%s\n' "cost-fixture-error-$*" >> "$NATIVE_CLI_LOG"
       n=$((n+1)); printf '%s\n' "$n" > "$NATIVE_COST_ERROR_COUNT_FILE"
       if [ "$n" -eq 3 ]; then printf '%s\n' cost-fixture-error-done >> "$NATIVE_CLI_LOG"; fi
       printf 'synthetic cost scan failure\n' >&2; exit 7
@@ -813,11 +814,11 @@ esac
         let run_result=async {
             wait_for_name(Duration::from_secs(25)).await?;
             if scenario == "page-state" {
-                run_page_state(pid, &home, &cli, &envs, &runtime, &screenshot, artifacts).await?;
+                run_page_state(pid, &home, binary, &envs, &runtime, &screenshot, artifacts).await?;
                 return Ok(());
             }
             if scenario == "settings-residual" {
-                run_settings_residual(pid, &home, &prefs, &envs, &runtime, &screenshot, artifacts).await?;
+                run_settings_residual(pid, &home, binary, &prefs, &envs, &runtime, &screenshot, artifacts).await?;
                 return Ok(());
             }
             let before_map: serde_json::Value = serde_json::from_slice(&fs::read(&prefs).map_err(|e|e.to_string())?).map_err(|e|format!("invalid initial preferences: {e}"))?;
@@ -1461,7 +1462,7 @@ async fn route_visible(
 async fn run_page_state(
     pid: u32,
     home: &Path,
-    _cli: &Path,
+    native_binary: &Path,
     envs: &std::collections::BTreeMap<String, String>,
     runtime: &Path,
     screenshot: &Path,
@@ -1536,6 +1537,18 @@ async fn run_page_state(
     if attempts != 3 {
         return Err(format!(
             "Spend fallback expected three failed CLI attempts, observed {attempts}"
+        ));
+    }
+    let failed_attempts: Vec<_> = fs::read_to_string(&calls)
+        .map_err(|e| e.to_string())?
+        .lines()
+        .filter(|line| line.starts_with("cost-fixture-error-cost"))
+        .map(str::to_owned)
+        .collect();
+    if failed_attempts.len() != 3 {
+        return Err(format!(
+            "Spend fallback expected three logged synthetic CLI attempts, observed {}",
+            failed_attempts.len()
         ));
     }
     let (error, error_id, _) = wait_named_text_in_context(
@@ -1663,10 +1676,14 @@ async fn run_page_state(
         )
         .await?,
     );
-    let evidence = serde_json::json!({"scenario":"page-state","status":"passed","app_pid":pid,
+    let evidence = enrich_scenario_evidence(
+        serde_json::json!({"scenario":"page-state","status":"passed","app_pid":pid,
         "routes":routes,"spend_success":{"total":total,"identity":total_id},
-        "spend_retained_error":{"error":error,"error_identity":error_id,"retained_total":"$12.50 · partial","retained_identity":retained_id,"session_cost":session_cost,"session_cost_identity":session_cost_id,"tokens":tokens,"tokens_identity":token_id,"coverage":coverage,"coverage_identity":coverage_id,"failed_cli_attempts":attempts,"fixture_completion_marker":"cost-fixture-error-done","same_pid":true},
-        "limits":["AT-SPI actions verify visible app controls, not physical input or KDE shell parity.","Private Weston does not establish host compositor or portal parity."]});
+        "spend_retained_error":{"error":error,"error_identity":error_id,"retained_total":"$12.50 · partial","retained_identity":retained_id,"session_cost":session_cost,"session_cost_identity":session_cost_id,"tokens":tokens,"tokens_identity":token_id,"coverage":coverage,"coverage_identity":coverage_id,"failed_cli_attempts":attempts,"completed_cli_attempts":failed_attempts,"fixture_completion_marker":"cost-fixture-error-done","same_pid":true},
+        "limits":["AT-SPI actions verify visible app controls, not physical input or KDE shell parity.","Private Weston does not establish host compositor or portal parity."]}),
+        "page-state",
+        native_binary,
+    )?;
     let out = artifacts.join("evidence.json");
     fs::write(
         &out,
@@ -1677,9 +1694,11 @@ async fn run_page_state(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn run_settings_residual(
     pid: u32,
     home: &Path,
+    native_binary: &Path,
     prefs: &Path,
     envs: &std::collections::BTreeMap<String, String>,
     runtime: &Path,
@@ -1788,7 +1807,11 @@ async fn run_settings_residual(
     if fs::read(&autostart).map_err(|e| e.to_string())? != autostart_before {
         return Err("Settings toggles changed synthetic autostart bytes".into());
     }
-    let evidence = serde_json::json!({"scenario":"settings-residual","status":"passed","app_pid":pid,"actions":actions,"persisted_preferences":expected,"autostart_bytes_unchanged":true,"limits":["AT-SPI actions verify visible app controls, not physical input or KDE shell parity.","Private Weston does not establish KDE shell behavior."]});
+    let evidence = enrich_scenario_evidence(
+        serde_json::json!({"scenario":"settings-residual","status":"passed","app_pid":pid,"actions":actions,"persisted_preferences":expected,"autostart_bytes_unchanged":true,"limits":["AT-SPI actions verify visible app controls, not physical input or KDE shell behavior.","Private Weston does not establish KDE shell behavior."]}),
+        "settings-residual",
+        native_binary,
+    )?;
     let out = artifacts.join("evidence.json");
     fs::write(
         &out,
@@ -1819,6 +1842,30 @@ async fn wait_preferences_equal(
     Err(format!(
         "preference map did not reach expected full map: {last}"
     ))
+}
+
+fn enrich_scenario_evidence(
+    mut record: serde_json::Value,
+    scenario: &str,
+    native_binary: &Path,
+) -> Result<serde_json::Value, String> {
+    let runner_source = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/main.rs");
+    let metadata = serde_json::json!({
+        "runner_commit": git_head()?,
+        "runner_sha256": sha256(&runner_source)?,
+        "native_binary_sha256": sha256(native_binary)?,
+        "private_bus": "dbus-run-session",
+        "gdk_backend": "wayland",
+        "synthetic_fixtures_only": true,
+        "scenario": scenario,
+    });
+    let object = record
+        .as_object_mut()
+        .ok_or("scenario evidence must be a JSON object")?;
+    for (key, value) in metadata.as_object().expect("metadata object") {
+        object.insert(key.clone(), value.clone());
+    }
+    Ok(record)
 }
 
 fn gaction(args: &[&str]) -> Result<(), String> {

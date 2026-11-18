@@ -745,6 +745,18 @@ esac
         );
     }
     envs.insert("PATH".into(), env::var("PATH").unwrap_or_default());
+    if scenario == "advanced" {
+        let data_home = PathBuf::from(&envs["XDG_DATA_HOME"]);
+        fs::create_dir_all(&data_home).map_err(|e| e.to_string())?;
+        set_private_dir(&data_home)?;
+        write_synthetic_recent_bookmarks(
+            &data_home,
+            &[
+                home.join("synthetic-preferences-import.json"),
+                home.join("synthetic-empty-preferences-import.json"),
+            ],
+        )?;
+    }
     let config_file = scratch.join("weston.ini");
     fs::write(
         &config_file,
@@ -1915,7 +1927,7 @@ async fn run_advanced(
         return Err("valid import changed synthetic autostart bytes".into());
     }
     wait_for_log_prefix(cli_log, "plugins", plugins_before, Duration::from_secs(8)).await?;
-    actions.push(serde_json::json!({"control":"Import…","identity":import_control,"path":imported,"file_identity":"exact editable absolute path verified before accept","full_preferences_overlay":persisted,"unknown_key_omitted":true,"plugins_refresh":true,"autostart_unchanged":true}));
+    actions.push(serde_json::json!({"control":"Import…","identity":import_control,"path":imported,"file_identity":"exact same-PID Recent row selected and reverified before visible Import action","full_preferences_overlay":persisted,"unknown_key_omitted":true,"plugins_refresh":true,"autostart_unchanged":true}));
 
     let empty = home.join("synthetic-empty-preferences-import.json");
     let unchanged = persisted.clone();
@@ -1951,7 +1963,7 @@ async fn run_advanced(
     if fs::read(autostart).map_err(|e| e.to_string())? != autostart_bytes {
         return Err("empty import changed synthetic autostart bytes".into());
     }
-    actions.push(serde_json::json!({"control":"Import…","path":empty,"full_preferences_map_unchanged":true,"plugins_refresh":true,"autostart_unchanged":true}));
+    actions.push(serde_json::json!({"control":"Import…","path":empty,"file_identity":"exact same-PID Recent row selected and reverified before visible Import action","full_preferences_map_unchanged":true,"plugins_refresh":true,"autostart_unchanged":true}));
 
     let reset_title = "Reset all preferences?";
     let before_cancel: serde_json::Value =
@@ -2000,7 +2012,7 @@ async fn run_advanced(
         return Err("Reset Confirm changed synthetic autostart".into());
     }
     actions.push(serde_json::json!({"control":"Reset…","dialog":reset_id,"response":"Reset","identity":reset_button_id,"full_default_map":final_map,"autostart_unchanged":true}));
-    let record = serde_json::json!({"scenario":"advanced","status":"passed","coverage":"visible app-owned export; valid and empty imports; Plugins refresh after both imports; reset cancel and confirm; complete preference maps; unchanged synthetic autostart","app_pid":pid,"actions":actions,"portable_export":export_doc,"autostart_sha256":format!("{:x}",Sha256::digest(&autostart_bytes)),"private_bus":"dbus-run-session","gdk_backend":"wayland","host_session_variables_removed":true,"limits":["Chooser import uses exact same-PID focused EditableText path verification and visible app-owned accept action; chooser row actions are not invoked.","Private Weston does not establish KDE shell or physical input parity."]});
+    let record = serde_json::json!({"scenario":"advanced","status":"passed","coverage":"visible app-owned export; valid and empty imports; Plugins refresh after both imports; reset cancel and confirm; complete preference maps; unchanged synthetic autostart","app_pid":pid,"actions":actions,"portable_export":export_doc,"autostart_sha256":format!("{:x}",Sha256::digest(&autostart_bytes)),"private_bus":"dbus-run-session","gdk_backend":"wayland","host_session_variables_removed":true,"limits":["Chooser imports use exact same-PID Recent rows, AT-SPI Selection, selected-state recheck and visible app-owned Import action; no row action or physical input is used.","Private Weston does not establish KDE shell or physical input parity."]});
     let output = artifacts.join("evidence.json");
     fs::write(
         &output,
@@ -2975,6 +2987,83 @@ fn set_private_file(path: &Path) -> Result<(), String> {
     use std::os::unix::fs::PermissionsExt;
     fs::set_permissions(path, fs::Permissions::from_mode(0o600)).map_err(|e| e.to_string())
 }
+
+fn write_synthetic_recent_bookmarks(data_home: &Path, paths: &[PathBuf]) -> Result<(), String> {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| e.to_string())?
+        .as_secs();
+    let timestamp = format!("{}Z", chrono_free_timestamp(now));
+    let mut bookmarks = String::new();
+    for path in paths {
+        let path = path
+            .canonicalize()
+            .map_err(|e| format!("resolve Recent fixture {}: {e}", path.display()))?;
+        let uri_path = path.to_string_lossy();
+        let uri = format!("file://{}", percent_encode_uri_path(uri_path.as_bytes()));
+        let name = path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .ok_or("Recent fixture filename is not UTF-8")?;
+        bookmarks.push_str(&format!(
+            "<bookmark href=\"{}\" added=\"{}\" modified=\"{}\" visited=\"{}\"><title>{}</title><info><metadata owner=\"http://freedesktop.org\"><mime:mime-type type=\"application/json\"/><bookmark:applications><bookmark:application name=\"CodexBar GTK Native Test Fixture\" exec=\"codexbar-gtk-native %u\" modified=\"{}\" count=\"1\"/></bookmark:applications></metadata></info></bookmark>",
+            xml_escape(&uri), timestamp, timestamp, timestamp, xml_escape(name), timestamp
+        ));
+    }
+    let document = format!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?><xbel version=\"1.0\" xmlns:bookmark=\"http://www.freedesktop.org/standards/desktop-bookmarks\" xmlns:mime=\"http://www.freedesktop.org/standards/shared-mime-info\">{bookmarks}</xbel>\n"
+    );
+    let target = data_home.join("recently-used.xbel");
+    let temporary = data_home.join(".recently-used.xbel.tmp");
+    fs::write(&temporary, document)
+        .map_err(|e| format!("write private GTK Recent bookmarks: {e}"))?;
+    set_private_file(&temporary)?;
+    fs::rename(&temporary, &target)
+        .map_err(|e| format!("install private GTK Recent bookmarks: {e}"))?;
+    set_private_file(&target)?;
+    Ok(())
+}
+
+fn percent_encode_uri_path(path: &[u8]) -> String {
+    let mut encoded = String::with_capacity(path.len());
+    for byte in path {
+        if byte.is_ascii_alphanumeric() || matches!(*byte, b'-' | b'.' | b'_' | b'~' | b'/') {
+            encoded.push(*byte as char);
+        } else {
+            encoded.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    encoded
+}
+
+fn xml_escape(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&apos;")
+}
+
+fn chrono_free_timestamp(seconds: u64) -> String {
+    // Convert Unix seconds to UTC calendar fields without adding a date crate.
+    let days = seconds / 86_400;
+    let day_seconds = seconds % 86_400;
+    let z = days as i64 + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let mut year = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = mp + if mp < 10 { 3 } else { -9 };
+    year += i64::from(month <= 2);
+    let hour = day_seconds / 3_600;
+    let minute = (day_seconds % 3_600) / 60;
+    let second = day_seconds % 60;
+    format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}")
+}
 #[cfg(not(unix))]
 fn set_private_file(_path: &Path) -> Result<(), String> {
     Ok(())
@@ -3675,7 +3764,11 @@ async fn exact_rows(
             continue;
         }
         let access = proxy(conn, row.object.clone()).await?;
-        if access.get_role_name().await.as_deref() != Ok("table row") {
+        let row_role = access.get_role_name().await.unwrap_or_default();
+        if !matches!(
+            row_role.as_str(),
+            "table row" | "row" | "list item" | "tree item"
+        ) {
             continue;
         }
         let row_state = state(conn, &row.object).await?;
@@ -3685,7 +3778,8 @@ async fn exact_rows(
         {
             continue;
         }
-        let mut exact = false;
+        let row_name = access.name().await.unwrap_or_default();
+        let mut exact = row_name == filename;
         for cell in nodes
             .iter()
             .filter(|n| n.identity.starts_with(&(row.identity.clone() + "/")))
@@ -3695,7 +3789,7 @@ async fn exact_rows(
             }
             let cell_access = proxy(conn, cell.object.clone()).await?;
             let role = cell_access.get_role_name().await.unwrap_or_default();
-            if !matches!(role.as_str(), "label" | "table cell") {
+            if !matches!(role.as_str(), "label" | "table cell" | "grid cell") {
                 continue;
             }
             let s = state(conn, &cell.object).await?;
@@ -4117,8 +4211,9 @@ mod tests {
     use super::{
         accessible_context_matches, atspi_route_target_guard, atspi_target_guard,
         chooser_dialog_guard, chooser_visit_action_index, cleanup_confirmed, encode_bounded_json,
-        expected_toggled_map, is_within_tree, next_chooser_fallback_place, record_window_candidate,
-        ChooserActionSample, ChooserDialogSample, Command, PrivateRunnerState, WINDOW_ROLES,
+        expected_toggled_map, is_within_tree, next_chooser_fallback_place, percent_encode_uri_path,
+        record_window_candidate, write_synthetic_recent_bookmarks, ChooserActionSample,
+        ChooserDialogSample, Command, PrivateRunnerState, WINDOW_ROLES,
     };
 
     #[test]
@@ -4499,6 +4594,14 @@ mod tests {
         assert!(advanced.contains("select_exact_file_row("));
         assert!(!advanced.contains("select_file("));
         assert!(!advanced.contains("item.visit"));
+        let exact_rows_start = source.find("async fn exact_rows(").unwrap();
+        let exact_rows_end = source[exact_rows_start..]
+            .find("async fn visit_place(")
+            .unwrap()
+            + exact_rows_start;
+        let exact_rows = &source[exact_rows_start..exact_rows_end];
+        assert!(exact_rows.contains("\"row\""));
+        assert!(exact_rows.contains("\"grid cell\""));
         let home_start = source.find("async fn activate_home_place_safely(").unwrap();
         let home_end = source[home_start..]
             .find("#[allow(clippy::too_many_arguments)]")
@@ -4507,5 +4610,33 @@ mod tests {
         let home_route = &source[home_start..home_end];
         assert!(home_route.contains("\"activate\""));
         assert!(!home_route.contains("item.visit"));
+    }
+
+    #[test]
+    fn recent_bookmarks_use_private_valid_xbel_and_encoded_file_uris() {
+        let root = std::env::temp_dir().join(format!(
+            "codexbar-recent-bookmark-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir(&root).unwrap();
+        super::set_private_dir(&root).unwrap();
+        let fixture = root.join("fixture with space.json");
+        std::fs::write(&fixture, b"synthetic").unwrap();
+        write_synthetic_recent_bookmarks(&root, std::slice::from_ref(&fixture)).unwrap();
+        let xbel = std::fs::read_to_string(root.join("recently-used.xbel")).unwrap();
+        assert!(xbel.contains("file:///"));
+        assert!(xbel.contains("fixture%20with%20space.json"));
+        assert!(xbel
+            .contains("xmlns:bookmark=\"http://www.freedesktop.org/standards/desktop-bookmarks\""));
+        assert!(
+            xbel.contains("xmlns:mime=\"http://www.freedesktop.org/standards/shared-mime-info\"")
+        );
+        assert!(xbel.contains("type=\"application/json\""));
+        assert_eq!(percent_encode_uri_path(b"/tmp/a b/%"), "/tmp/a%20b/%25");
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

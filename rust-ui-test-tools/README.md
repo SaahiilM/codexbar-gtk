@@ -28,15 +28,15 @@ flow under private D-Bus and rootless Weston. It verifies the app-owned export
 chooser and portable JSON, valid and empty imports through exact same-PID
 AT-SPI Selection rows, Plugins refresh after each import, Reset cancel and
 confirm, complete preference maps, and unchanged synthetic autostart bytes.
-When needed, it navigates from Recent to the exact visible Home place only
-through its selected `activate` action. It never invokes the chooser's unsafe
-generic `item.visit` action. If GTK does not expose the exact row or safe Home
-action, it fails closed; the implementation records private Weston globals and
-does not send input to the host compositor.
-The current local run is partial: the app-owned export was verified, but the
-import chooser opened on Recent and the selected Home place exposed no safe
-activation action. Private Weston advertised no virtual keyboard or test-input
-global. E221 records the blocker; import and reset behavior is not claimed.
+Before app startup it writes the exact valid and empty fixtures to
+`$XDG_DATA_HOME/recently-used.xbel` with encoded file URIs and freedesktop MIME
+and application metadata. GTK4 exposes these as exact `row` records with
+`grid cell` filenames; selection checks the exact same-PID visible row, uses
+the parent's AT-SPI Selection interface, verifies selected state, then invokes
+only the visible app-owned Import action. It never invokes `item.visit` or
+sends input to the host compositor. If GTK does not expose an exact row, it
+fails closed unless the exact Home place offers a unique safe `activate` action.
+E222 records the complete local Advanced pass and artifacts.
 
 `isolated-wayland --scenario matrix-core` is a deliberately bounded live Rust
 scenario. It launches the supplied native binary under private D-Bus and

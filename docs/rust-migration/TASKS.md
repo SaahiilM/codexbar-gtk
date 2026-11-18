@@ -11,32 +11,32 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Goal | Fully native Rust GTK4/libadwaita application with verified packaging and legacy runtime removal. |
 | Current phase | BUILD117 final source cleanup; UG remains **NOT PASSED**, and C01–CG remain unaccepted. |
 | Last observed merge | PR #117 merged at `677135c4bcffcdf56c5bd5c913c11ee294e229fc`; exact head `f45c01a9139a891e54495b4b62e6f7ee89a95c2a` passed all three required checks in run `44125566585`. |
-| Active implementation | Local Advanced private-Weston Rust UI-test-tools subtask on `t3/native-ui-test-tools`, based on requested clean `1d53b1b`. Scenario implementation is partial: export passes; chooser import/reset tail fails closed because exact import rows are not exposed and private Weston advertises no virtual-keyboard/test-input protocol. |
+| Active implementation | Advanced private-Weston Rust UI-test-tools subtask on `t3/native-ui-test-tools`, based on clean `33d6a54`. Full Advanced scenario now passes locally; root review/integration remains. Python coverage/reference is unchanged. |
 | Previous slice integration | Cherry-picked root-reviewed peer commit `1d368dcc402b26d9e2206d3adc450716f0e1ac63` as local commit `7b00677`; its tools-only scope does not overlap the archive removal. |
-| Next | Resolve safe private-Weston navigation to the synthetic HOME import rows without `item.visit`, then rerun Advanced end to end. Do not claim a full scenario pass until valid/empty import, Plugins refresh, reset cancel/confirm, full maps, autostart, and cleanup all pass. |
+| Next | Root reviews and integrates the scoped test-tool commit. Keep the Python runner coverage until root integration; no UI acceptance or migration gate is inferred from this test-tool result. |
 
 ### Rust UI test tools — Advanced private-Weston subtask
 
-**Owner/base/status:** local partial implementation on `t3/native-ui-test-tools`,
-requested base `1d53b1b`. No release metadata, workflow, push, or PR changes.
+**Owner/base/status:** local completed implementation on `t3/native-ui-test-tools`,
+based on clean requested commit `33d6a54`. No release metadata, workflow, push,
+or PR changes.
 The normal migration checkpoint below remains historical context for this
 isolated test-tool task.
 
-**Verified subset:** the native Advanced Settings route opens under private
-Weston/D-Bus with synthetic HOME and CLI. The app-owned Export chooser displayed
-its default `preferences-export.json`; its same-PID Save action created that
-exact file under synthetic HOME, and versioned JSON contained seeded
-`refreshFrequency=5m`. Full Rust unit tests, strict Clippy, format, native app
-build, and private-process cleanup passed. Screenshots and exact blocker are in
-AUDIT E221.
+**Verified:** private `recently-used.xbel` is written before app startup under
+the temporary `XDG_DATA_HOME`, with encoded file URIs and freedesktop MIME and
+application metadata. The chooser exposes both exact import fixtures as GTK4
+`row` records with `grid cell` filenames. Each row is selected only through
+same-PID AT-SPI Selection, selected state is rechecked, and the visible
+app-owned Import action is invoked; no `item.visit` or host input is used.
+Advanced passed export, valid and empty import, Plugins refresh after both,
+reset cancel and confirm, complete preference maps, unchanged autostart, and
+owned cleanup. Rust tests, strict Clippy and formatting passed. E222 records
+exact commands, outputs and artifact paths.
 
-**Blocker/next:** Import opened on Recent, not Home. No exact import table row
-was exposed there. AT-SPI safely selected the same-PID Home place, but it had no
-action names. Private `wayland-info` exposed neither `zwp_virtual_keyboard`
-nor `weston_test`; no host input route was attempted. Continue only with a
-private-compositor-supported route or another exact accessible selection
-method, never the GTK-crashing generic `item.visit` action. Import, Plugins,
-reset, and autostart assertions remain unverified in this run.
+**Next:** root review and integration. Preserve the Python Advanced coverage
+until root integration and do not treat this isolated harness result as UG or
+KDE input/placement parity.
 
 ### BUILD117/E220 — retired Python source and debug-tool cleanup
 

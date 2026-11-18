@@ -8206,3 +8206,59 @@ route inside private Weston, preserving app PID/title/visibility/identity
 checks and avoiding `item.visit`; then rerun Advanced to prove valid and empty
 imports, Plugins refresh, reset cancel/confirm, full map comparisons, unchanged
 autostart and cleanup. Keep this task partial until that complete runtime pass.
+
+### E222 — 2026-11-18: BUILD117 Advanced Recent-row parity and full pass
+
+**Owner/base/status:** local scoped follow-up on `t3/native-ui-test-tools`,
+based on the requested clean `33d6a54` branch state. The Rust UI test tool and
+this handoff/audit documentation are the only changed source scope. No build
+metadata, workflow, push, PR, or Python reference source changed. Python
+Advanced coverage remains available until root integration.
+
+**Implementation:** before app startup, the Rust runner writes a private
+`recently-used.xbel` under the temporary `XDG_DATA_HOME`. Each fixture receives
+an absolute encoded `file://` URI, ISO-8601 UTC timestamps, required freedesktop
+MIME metadata and a bookmark application record. The actual chooser exposes
+GTK4 `row` records and `grid cell` filename children. Exact-row matching now
+supports those GTK4 roles as well as the previous table roles. Selection remains
+scoped to the exact visible same-PID chooser, uses the parent AT-SPI Selection
+interface, verifies selected state, then verifies the uniquely selected exact
+row again before invoking the visible app-owned Import action. No generic
+`item.visit`, physical input, host compositor, or host session was used.
+
+**Advanced runtime:** native app and test tool were built with
+`cargo build --locked --manifest-path rust-gtk/Cargo.toml --bin
+codexbar-gtk-native` and
+`cargo build --locked --manifest-path rust-ui-test-tools/Cargo.toml --bin
+codexbar-ui-test-tool`. The final invocation of
+`rust-ui-test-tools/target/debug/codexbar-ui-test-tool isolated-wayland
+--binary rust-gtk/target/debug/codexbar-gtk-native --scenario advanced
+--artifact-dir /tmp/codexbar-advanced-recent-final` completed with exit 0.
+`evidence.json` reports `status=passed`, with six Advanced actions: export,
+valid import, empty import, reset cancel, reset confirm, and selected Advanced
+page. Captured `runner-output.log` records exact selection and Import actions
+for `synthetic-preferences-import.json` and
+`synthetic-empty-preferences-import.json`. The scenario verified portable
+export JSON and seeded `refreshFrequency=5m`; the valid import's complete map,
+ignored unknown key and Plugins refresh; the empty import's unchanged complete
+map and Plugins refresh; reset cancellation and the full default map after
+confirmation; and unchanged synthetic autostart bytes. The evidence cleanup
+record confirms app and Weston reaped, private HOME, runner state, logs and
+D-Bus socket removed. Artifacts are in
+`/tmp/codexbar-advanced-recent-final/` (`evidence.json`, `runner-output.log`,
+and four screenshots). This covers GTK/AT-SPI behavior under private Weston,
+not KDE placement, physical input, or UG acceptance.
+
+**Checks:** `cargo fmt --manifest-path rust-core/Cargo.toml -- --check`,
+`cargo fmt --manifest-path rust-backend/Cargo.toml -- --check`,
+`cargo fmt --manifest-path rust-gtk/Cargo.toml -- --check`, and
+`cargo fmt --manifest-path rust-ui-test-tools/Cargo.toml -- --check` passed.
+Locked tests passed: core 92; backend 103 across unit/integration tests; GTK
+39 library plus 1 main and 1 Python-free linkage test; UI tools 3 library plus
+16 binary tests. GTK's four display/negative-precondition tests were ignored as
+declared. Strict Clippy passed with `-D warnings` for core
+(`--all-targets --all-features`), backend (same), GTK (`--all-targets`), and UI
+tools (`--all-targets`). `git diff --check` passed.
+
+**Next:** root reviews and integrates this scoped commit. Keep Python coverage
+intact until then. This test-tool result does not change UG or C gate status.

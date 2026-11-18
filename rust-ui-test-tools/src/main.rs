@@ -106,6 +106,7 @@ fn chooser_dialog_guard(
         && sample.geometry[1] > 0
 }
 
+#[allow(clippy::too_many_arguments)]
 fn atspi_target_guard(
     actual_pid: u32,
     expected_pid: u32,
@@ -125,6 +126,7 @@ fn atspi_target_guard(
         && sensitive
         && has_action
 }
+#[allow(clippy::too_many_arguments)]
 fn atspi_route_target_guard(
     actual_pid: u32,
     expected_pid: u32,
@@ -237,7 +239,12 @@ impl Drop for PrivateRunnerState {
 }
 
 fn accessible_context_matches(identity: &str, context: Option<&str>) -> bool {
-    context.is_none_or(|expected| identity.contains(&format!(":{expected}/")))
+    context.is_none_or(|expected| {
+        expected.strip_prefix("path-fragment:").map_or_else(
+            || identity.contains(&format!(":{expected}/")),
+            |fragment| identity.contains(fragment),
+        )
+    })
 }
 fn record_window_candidate(candidates: &mut Vec<String>, identity: &str, role: &str, name: &str) {
     const MAX_WINDOW_CANDIDATES: usize = 24;
@@ -366,7 +373,10 @@ async fn isolated_wayland(args: &[String]) -> Result<u8, String> {
             env::temp_dir().join(format!("codexbar-native-wayland-{}", std::process::id()))
         });
     if scenario == "matrix-core" || scenario == "matrix" {
-        return isolated_wayland_matrix(binary, artifact_dir, scenario == "matrix").await;
+        return isolated_wayland_matrix(binary, artifact_dir, scenario.clone()).await;
+    }
+    if scenario == "page-state" {
+        return isolated_wayland_matrix(binary, artifact_dir, scenario).await;
     }
     if scenario != "settings-combo-diagnostic" {
         return Err(format!("isolated-wayland {scenario:?} runner is incomplete; refusing to report captures or pass status"));
@@ -448,7 +458,7 @@ async fn isolated_wayland(args: &[String]) -> Result<u8, String> {
 async fn isolated_wayland_matrix(
     binary: String,
     artifacts: PathBuf,
-    full: bool,
+    scenario: String,
 ) -> Result<u8, String> {
     let binary = PathBuf::from(binary)
         .canonicalize()
@@ -475,12 +485,7 @@ async fn isolated_wayland_matrix(
         let mut cmd = tokio::process::Command::new("dbus-run-session");
         cmd.args(["--"])
             .arg(exe)
-            .args([
-                "isolated-wayland",
-                "--scenario",
-                if full { "matrix" } else { "matrix-core" },
-                "--binary",
-            ])
+            .args(["isolated-wayland", "--scenario", &scenario, "--binary"])
             .arg(&binary)
             .args(["--artifact-dir"])
             .arg(&artifacts)
@@ -564,14 +569,15 @@ async fn isolated_wayland_matrix(
             }
         }
     }
-    match timeout(Duration::from_secs(210), run_matrix_private(&binary, &artifacts, full)).await {
+    match timeout(Duration::from_secs(210), run_matrix_private(&binary, &artifacts, &scenario)).await {
         Ok(result) => result?,
         Err(_) => return Err("private Wayland matrix exceeded its 210 second runtime deadline; owned child guards performed cleanup".into()),
     }
     Ok(0)
 }
 
-async fn run_matrix_private(binary: &Path, artifacts: &Path, full: bool) -> Result<(), String> {
+async fn run_matrix_private(binary: &Path, artifacts: &Path, scenario: &str) -> Result<(), String> {
+    let full = scenario == "matrix";
     let scratch = env::temp_dir().join(format!(
         "codexbar-ui-test-{}-{}",
         std::process::id(),
@@ -610,19 +616,30 @@ async fn run_matrix_private(binary: &Path, artifacts: &Path, full: bool) -> Resu
     let sessions_mode = home.join("sessions-mode");
     let cli_log = home.join("cli-calls.log");
     let hooks_state = home.join("hooks-enabled");
+    let cost_mode = home.join("cost-mode");
+    let cost_error_count = home.join("cost-error-count");
     fs::write(&sessions_mode, "success\n").map_err(|e| e.to_string())?;
     fs::write(&hooks_state, "true\n").map_err(|e| e.to_string())?;
+    fs::write(&cost_mode, "success\n").map_err(|e| e.to_string())?;
+    fs::write(&cost_error_count, "0\n").map_err(|e| e.to_string())?;
     let cli_script = r##"#!/bin/sh
 if [ -n "${NATIVE_CLI_LOG:-}" ]; then printf '%s\n' "$*" >> "$NATIVE_CLI_LOG"; fi
 case "${1:-}" in
   --version) printf 'synthetic CodexBar\n' ;;
   usage) printf '%s\n' '[{"provider":"codex","source":"synthetic","usage":{"updatedAt":"2026-11-01T12:00:00Z","primary":{"usedPercent":42,"resetsAt":"2026-11-01T18:00:00Z","windowMinutes":300}}}]' ;;
   cost)
+    if [ -n "${NATIVE_COST_MODE_FILE:-}" ] && [ "$(cat "$NATIVE_COST_MODE_FILE")" = error ]; then
+      n=0; [ -f "$NATIVE_COST_ERROR_COUNT_FILE" ] && n=$(cat "$NATIVE_COST_ERROR_COUNT_FILE")
+      n=$((n+1)); printf '%s\n' "$n" > "$NATIVE_COST_ERROR_COUNT_FILE"
+      if [ "$n" -eq 3 ]; then printf '%s\n' cost-fixture-error-done >> "$NATIVE_CLI_LOG"; fi
+      printf 'synthetic cost scan failure\n' >&2; exit 7
+    fi
     if [ -n "${NATIVE_SESSIONS_MODE_FILE:-}" ]; then
       printf '%s\n' '[{"provider":"codex","currencyCode":"USD","totalCost":12.5,"totalTokens":1200,"sessionCostUSD":1.25,"sessionTokens":100,"last30DaysCostUSD":12.5,"last30DaysTokens":1200,"coverage":{"priced":3,"unpriced":1},"provenance":"synthetic_history","daily":[{"date":"2026-11-09","totalCost":3.25,"totalTokens":800}],"projects":[],"models":[]}]'
     else
       printf '%s\n' '[{"provider":"codex","currencyCode":"USD","totalCost":12.5,"totalTokens":1200,"sessionCostUSD":1.25,"sessionTokens":100,"last30DaysCostUSD":12.5,"last30DaysTokens":1200,"coverage":{"priced":3,"unpriced":1},"provenance":"synthetic_history","daily":[],"projects":[],"models":[]}]'
-    fi ;;
+    fi
+    if [ -n "${NATIVE_COST_MODE_FILE:-}" ]; then printf '%s\n' cost-fixture-success-done >> "$NATIVE_CLI_LOG"; fi ;;
   hooks)
     case "${2:-}" in
       disable) printf 'false\n' > "$NATIVE_HOOKS_STATE_FILE" ;;
@@ -683,7 +700,7 @@ esac
     envs.insert("GTK_A11Y".into(), "atspi".into());
     envs.insert("GTK_USE_PORTAL".into(), "0".into());
     envs.insert("CODEXBAR_CLI".into(), cli.display().to_string());
-    if full {
+    if full || scenario == "page-state" {
         envs.insert(
             "NATIVE_SESSIONS_MODE_FILE".into(),
             sessions_mode.display().to_string(),
@@ -692,6 +709,14 @@ esac
         envs.insert(
             "NATIVE_HOOKS_STATE_FILE".into(),
             hooks_state.display().to_string(),
+        );
+        envs.insert(
+            "NATIVE_COST_MODE_FILE".into(),
+            cost_mode.display().to_string(),
+        );
+        envs.insert(
+            "NATIVE_COST_ERROR_COUNT_FILE".into(),
+            cost_error_count.display().to_string(),
         );
     }
     envs.insert("PATH".into(), env::var("PATH").unwrap_or_default());
@@ -774,11 +799,15 @@ esac
         let app_log_path=artifacts.join("native-app.log");
         let app_log=fs::File::create(&app_log_path).map_err(|e|e.to_string())?;
         set_private_file(&app_log_path)?;
-        let mut appcmd=Command::new(binary); appcmd.env_clear().envs(&envs).stdout(Stdio::from(app_log.try_clone().map_err(|e|e.to_string())?)).stderr(Stdio::from(app_log));
+        let mut appcmd=Command::new(binary); if scenario == "page-state" { appcmd.args(["--page", "sessions"]); } appcmd.env_clear().envs(&envs).stdout(Stdio::from(app_log.try_clone().map_err(|e|e.to_string())?)).stderr(Stdio::from(app_log));
         #[cfg(unix)] { use std::os::unix::process::CommandExt; appcmd.process_group(0); }
         let mut app=OwnedChild::spawn(&mut appcmd).map_err(|e|format!("start native app: {e}"))?; let pid=app.id();
         let run_result=async {
             wait_for_name(Duration::from_secs(25)).await?;
+            if scenario == "page-state" {
+                run_page_state(pid, &home, &cli, &envs, &runtime, &screenshot, artifacts).await?;
+                return Ok(());
+            }
             let before_map: serde_json::Value = serde_json::from_slice(&fs::read(&prefs).map_err(|e|e.to_string())?).map_err(|e|format!("invalid initial preferences: {e}"))?;
             if before_map.get("refreshAllProvidersOnMenuOpen") != Some(&serde_json::Value::Bool(false)) { return Err(format!("synthetic initial Settings state is not false: {before_map}")); }
             gaction(&["dashboard"])?;
@@ -951,6 +980,36 @@ async fn wait_named_text(
     ))
 }
 
+async fn wait_named_text_in_context(
+    pid: u32,
+    name: &str,
+    context: &str,
+    duration: Duration,
+) -> Result<(String, String, bool), String> {
+    let end = Instant::now() + duration;
+    let mut last = String::new();
+    while Instant::now() < end {
+        match find_accessible_matching(
+            pid,
+            name,
+            &["label", "text", "static"],
+            false,
+            Some(context),
+            false,
+        )
+        .await
+        {
+            Ok(found) => return Ok(found),
+            Err(error) => last = error,
+        }
+        sleep(Duration::from_millis(100)).await;
+    }
+    Err(format!(
+        "PID {pid} did not expose visible text {name:?} in {context:?}: {last}"
+    ))
+}
+
+#[allow(clippy::too_many_arguments)]
 async fn run_full_matrix(
     pid: u32,
     home: &Path,
@@ -1352,6 +1411,260 @@ async fn run_full_matrix(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
+async fn route_visible(
+    pid: u32,
+    from: &str,
+    control_name: &str,
+    to: &str,
+    screenshot_name: &str,
+    screenshot: &Path,
+    runtime: &Path,
+    envs: &std::collections::BTreeMap<String, String>,
+) -> Result<serde_json::Value, String> {
+    let (control, identity, _) = wait_accessible_scoped(
+        pid,
+        control_name,
+        &["button", "push button", "toggle button", "page tab", "tab"],
+        true,
+        None,
+        Duration::from_secs(12),
+        Some(from),
+    )
+    .await?;
+    click_atspi(pid, &control, &identity).await?;
+    let target = wait_window(pid, to, Duration::from_secs(12)).await?;
+    take_screenshot(screenshot, runtime, envs, &PathBuf::from(screenshot_name))?;
+    let capture = Path::new(screenshot_name)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("capture.png");
+    Ok(
+        serde_json::json!({"from":from,"control":control_name,"to":to,
+        "identity":identity,"target_identity":target,"same_pid":true,
+        "action":"AT-SPI AccessibleAction.DoAction","capture":capture}),
+    )
+}
+
+async fn run_page_state(
+    pid: u32,
+    home: &Path,
+    _cli: &Path,
+    envs: &std::collections::BTreeMap<String, String>,
+    runtime: &Path,
+    screenshot: &Path,
+    artifacts: &Path,
+) -> Result<(), String> {
+    let sessions = "CodexBar GTK — Sessions";
+    let spend = "CodexBar GTK — Usage & Spend";
+    let dashboard = "CodexBar GTK — Dashboard";
+    let settings = "CodexBar Settings";
+    let about = "About CodexBar GTK";
+    let calls = home.join("cli-calls.log");
+    wait_log_line(
+        &calls,
+        "cost-fixture-success-done",
+        0,
+        Duration::from_secs(20),
+    )
+    .await?;
+    let mut routes = Vec::new();
+    routes.push(
+        route_visible(
+            pid,
+            sessions,
+            "Spend",
+            spend,
+            &artifacts
+                .join("page-state-spend-success.png")
+                .to_string_lossy(),
+            screenshot,
+            runtime,
+            envs,
+        )
+        .await?,
+    );
+    let (total, total_id, _) = wait_accessible_scoped(
+        pid,
+        "$12.50 · partial",
+        &["label", "text", "static"],
+        false,
+        None,
+        Duration::from_secs(10),
+        Some(spend),
+    )
+    .await?;
+    let mode = home.join("cost-mode");
+    let count = home.join("cost-error-count");
+    fs::write(&mode, "error\n").map_err(|e| e.to_string())?;
+    fs::write(&count, "0\n").map_err(|e| e.to_string())?;
+    let (refresh, refresh_id, _) = wait_accessible_scoped(
+        pid,
+        "Refresh",
+        &["button", "push button"],
+        true,
+        None,
+        Duration::from_secs(10),
+        Some("path-fragment:CodexBar GTK — Usage & Spend/generic[0]:/group[0]:"),
+    )
+    .await?;
+    click_atspi(pid, &refresh, &refresh_id).await?;
+    wait_log_line(
+        &calls,
+        "cost-fixture-error-done",
+        0,
+        Duration::from_secs(25),
+    )
+    .await?;
+    let attempts = fs::read_to_string(&count)
+        .map_err(|e| e.to_string())?
+        .trim()
+        .parse::<u32>()
+        .map_err(|e| e.to_string())?;
+    if attempts != 3 {
+        return Err(format!(
+            "Spend fallback expected three failed CLI attempts, observed {attempts}"
+        ));
+    }
+    let (error, error_id, _) = wait_named_text_in_context(
+        pid,
+        "The usage refresh returned unreadable data.",
+        spend,
+        Duration::from_secs(10),
+    )
+    .await?;
+    let (_, retained_id, _) = wait_accessible_scoped(
+        pid,
+        "$12.50 · partial",
+        &["label", "text", "static"],
+        false,
+        None,
+        Duration::from_secs(10),
+        Some(spend),
+    )
+    .await?;
+    let (session_cost, session_cost_id, _) = wait_accessible_scoped(
+        pid,
+        "$1.25 · partial",
+        &["label", "text", "static"],
+        false,
+        None,
+        Duration::from_secs(10),
+        Some(spend),
+    )
+    .await?;
+    let (tokens, token_id, _) = wait_accessible_scoped(
+        pid,
+        "1.2K tokens",
+        &["label", "text", "static"],
+        false,
+        None,
+        Duration::from_secs(10),
+        Some("path-fragment:CodexBar GTK — Usage & Spend/generic[1]:/generic[0]:/generic[0]:/group[0]:/generic[7]"),
+    )
+    .await?;
+    let (coverage, coverage_id, _) = wait_accessible_scoped(
+        pid,
+        "3 priced · 1 unpriced",
+        &["label", "text", "static"],
+        false,
+        None,
+        Duration::from_secs(10),
+        Some(spend),
+    )
+    .await?;
+    if !error_id.contains(spend) || !retained_id.contains(spend) {
+        return Err(
+            "retained Spend error and total did not belong to the same visible Spend window".into(),
+        );
+    }
+    take_screenshot(
+        screenshot,
+        runtime,
+        envs,
+        &artifacts.join("page-state-spend-retained-error.png"),
+    )?;
+    routes.push(
+        route_visible(
+            pid,
+            spend,
+            "Sessions",
+            sessions,
+            &artifacts.join("page-state-sessions.png").to_string_lossy(),
+            screenshot,
+            runtime,
+            envs,
+        )
+        .await?,
+    );
+    routes.push(
+        route_visible(
+            pid,
+            sessions,
+            "Dashboard",
+            dashboard,
+            &artifacts.join("page-state-dashboard.png").to_string_lossy(),
+            screenshot,
+            runtime,
+            envs,
+        )
+        .await?,
+    );
+    routes.push(
+        route_visible(
+            pid,
+            dashboard,
+            "Settings",
+            settings,
+            &artifacts.join("page-state-settings.png").to_string_lossy(),
+            screenshot,
+            runtime,
+            envs,
+        )
+        .await?,
+    );
+    routes.push(
+        route_visible(
+            pid,
+            settings,
+            "Return to dashboard",
+            dashboard,
+            &artifacts
+                .join("page-state-dashboard-after-settings.png")
+                .to_string_lossy(),
+            screenshot,
+            runtime,
+            envs,
+        )
+        .await?,
+    );
+    routes.push(
+        route_visible(
+            pid,
+            dashboard,
+            "About",
+            about,
+            &artifacts.join("page-state-about.png").to_string_lossy(),
+            screenshot,
+            runtime,
+            envs,
+        )
+        .await?,
+    );
+    let evidence = serde_json::json!({"scenario":"page-state","status":"passed","app_pid":pid,
+        "routes":routes,"spend_success":{"total":total,"identity":total_id},
+        "spend_retained_error":{"error":error,"error_identity":error_id,"retained_total":"$12.50 · partial","retained_identity":retained_id,"session_cost":session_cost,"session_cost_identity":session_cost_id,"tokens":tokens,"tokens_identity":token_id,"coverage":coverage,"coverage_identity":coverage_id,"failed_cli_attempts":attempts,"fixture_completion_marker":"cost-fixture-error-done","same_pid":true},
+        "limits":["AT-SPI actions verify visible app controls, not physical input or KDE shell parity.","Private Weston does not establish host compositor or portal parity."]});
+    let out = artifacts.join("evidence.json");
+    fs::write(
+        &out,
+        encode_bounded_json(&evidence, MAX_MATRIX_EVIDENCE_BYTES)?,
+    )
+    .map_err(|e| e.to_string())?;
+    set_private_file(&out)?;
+    Ok(())
+}
+
 fn gaction(args: &[&str]) -> Result<(), String> {
     let output = Command::new("gapplication")
         .arg("action")
@@ -1382,31 +1695,29 @@ fn terminate_owned_group(pid: u32) {
         let _ = pid;
     }
 }
-fn wait_for_name(_duration: Duration) -> impl std::future::Future<Output = Result<(), String>> {
-    async move {
-        let deadline = Instant::now() + Duration::from_secs(25);
-        loop {
-            let o = Command::new("gdbus")
-                .args([
-                    "call",
-                    "--session",
-                    "--dest",
-                    "org.freedesktop.DBus",
-                    "--object-path",
-                    "/org/freedesktop/DBus",
-                    "--method",
-                    "org.freedesktop.DBus.NameHasOwner",
-                    "com.steipete.CodexBarGTK",
-                ])
-                .output();
-            if o.is_ok_and(|r| String::from_utf8_lossy(&r.stdout).contains("true")) {
-                return Ok(());
-            }
-            if Instant::now() > deadline {
-                return Err("native app did not acquire its private-bus name".into());
-            }
-            sleep(Duration::from_millis(100)).await
+async fn wait_for_name(_duration: Duration) -> Result<(), String> {
+    let deadline = Instant::now() + Duration::from_secs(25);
+    loop {
+        let o = Command::new("gdbus")
+            .args([
+                "call",
+                "--session",
+                "--dest",
+                "org.freedesktop.DBus",
+                "--object-path",
+                "/org/freedesktop/DBus",
+                "--method",
+                "org.freedesktop.DBus.NameHasOwner",
+                "com.steipete.CodexBarGTK",
+            ])
+            .output();
+        if o.is_ok_and(|r| String::from_utf8_lossy(&r.stdout).contains("true")) {
+            return Ok(());
         }
+        if Instant::now() > deadline {
+            return Err("native app did not acquire its private-bus name".into());
+        }
+        sleep(Duration::from_millis(100)).await
     }
 }
 async fn wait_for_path(path: &Path, duration: Duration) -> Result<(), String> {
@@ -1441,7 +1752,7 @@ async fn wait_control(
 ) -> Result<(String, String, bool), String> {
     let end = Instant::now() + duration;
     while Instant::now() < end {
-        if let Ok(v) = find_accessible(pid, name, &roles, true, None).await {
+        if let Ok(v) = find_accessible(pid, name, roles, true, None).await {
             return Ok(v);
         }
         sleep(Duration::from_millis(100)).await
@@ -3244,6 +3555,10 @@ mod tests {
         assert!(!accessible_context_matches(
             "app[0]/NotificationsExtra/control",
             Some("Notifications")
+        ));
+        assert!(accessible_context_matches(
+            "app[0]/window[1]:CodexBar GTK — Usage & Spend/generic[0]:/group[0]:Refresh",
+            Some("path-fragment:CodexBar GTK — Usage & Spend/generic[0]:/group[0]:")
         ));
         assert!(accessible_context_matches(identity, None));
     }

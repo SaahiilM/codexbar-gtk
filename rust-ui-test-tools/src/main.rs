@@ -375,7 +375,7 @@ async fn isolated_wayland(args: &[String]) -> Result<u8, String> {
     if scenario == "matrix-core" || scenario == "matrix" {
         return isolated_wayland_matrix(binary, artifact_dir, scenario.clone()).await;
     }
-    if scenario == "page-state" {
+    if scenario == "page-state" || scenario == "settings-residual" {
         return isolated_wayland_matrix(binary, artifact_dir, scenario).await;
     }
     if scenario != "settings-combo-diagnostic" {
@@ -601,6 +601,11 @@ async fn run_matrix_private(binary: &Path, artifacts: &Path, scenario: &str) -> 
     before["refreshAllProvidersOnMenuOpen"] = serde_json::Value::Bool(false);
     before["showTray"] = serde_json::Value::Bool(false);
     before["preferredCurrencyCode"] = serde_json::Value::String("USD".into());
+    if scenario == "settings-residual" {
+        before["usageBarsShowUsed"] = serde_json::Value::Bool(false);
+        before["quotaBurndownEnabled"] = serde_json::Value::Bool(true);
+        before["costUsageEnabled"] = serde_json::Value::Bool(true);
+    }
     if full {
         for key in [
             "sessionQuotaNotificationsEnabled",
@@ -618,10 +623,13 @@ async fn run_matrix_private(binary: &Path, artifacts: &Path, scenario: &str) -> 
     let hooks_state = home.join("hooks-enabled");
     let cost_mode = home.join("cost-mode");
     let cost_error_count = home.join("cost-error-count");
+    let autostart = home.join(".config/autostart/codexbar-gtk.desktop");
     fs::write(&sessions_mode, "success\n").map_err(|e| e.to_string())?;
     fs::write(&hooks_state, "true\n").map_err(|e| e.to_string())?;
     fs::write(&cost_mode, "success\n").map_err(|e| e.to_string())?;
     fs::write(&cost_error_count, "0\n").map_err(|e| e.to_string())?;
+    fs::create_dir_all(autostart.parent().expect("autostart parent")).map_err(|e| e.to_string())?;
+    fs::write(&autostart, b"synthetic-autostart-fixture\n").map_err(|e| e.to_string())?;
     let cli_script = r##"#!/bin/sh
 if [ -n "${NATIVE_CLI_LOG:-}" ]; then printf '%s\n' "$*" >> "$NATIVE_CLI_LOG"; fi
 case "${1:-}" in
@@ -806,6 +814,10 @@ esac
             wait_for_name(Duration::from_secs(25)).await?;
             if scenario == "page-state" {
                 run_page_state(pid, &home, &cli, &envs, &runtime, &screenshot, artifacts).await?;
+                return Ok(());
+            }
+            if scenario == "settings-residual" {
+                run_settings_residual(pid, &home, &prefs, &envs, &runtime, &screenshot, artifacts).await?;
                 return Ok(());
             }
             let before_map: serde_json::Value = serde_json::from_slice(&fs::read(&prefs).map_err(|e|e.to_string())?).map_err(|e|format!("invalid initial preferences: {e}"))?;
@@ -1663,6 +1675,150 @@ async fn run_page_state(
     .map_err(|e| e.to_string())?;
     set_private_file(&out)?;
     Ok(())
+}
+
+async fn run_settings_residual(
+    pid: u32,
+    home: &Path,
+    prefs: &Path,
+    envs: &std::collections::BTreeMap<String, String>,
+    runtime: &Path,
+    screenshot: &Path,
+    artifacts: &Path,
+) -> Result<(), String> {
+    let autostart = home.join(".config/autostart/codexbar-gtk.desktop");
+    let autostart_before = fs::read(&autostart).map_err(|e| e.to_string())?;
+    let mut expected: serde_json::Value =
+        serde_json::from_slice(&fs::read(prefs).map_err(|e| e.to_string())?)
+            .map_err(|e| e.to_string())?;
+    let cases = [
+        (
+            "Display",
+            "Show used instead of remaining",
+            "usageBarsShowUsed",
+            false,
+        ),
+        (
+            "Display",
+            "Project usage at reset",
+            "quotaBurndownEnabled",
+            true,
+        ),
+        (
+            "Usage & Spend",
+            "Enable local cost scans",
+            "costUsageEnabled",
+            true,
+        ),
+    ];
+    gaction(&["settings"])?;
+    wait_window(pid, "CodexBar Settings", Duration::from_secs(12)).await?;
+    let mut actions = Vec::new();
+    let mut active = "General";
+    for (page, label, key, initial) in cases {
+        if active != page {
+            let (tab, tab_id, _) = wait_accessible(
+                pid,
+                page,
+                &["page tab", "tab", "button"],
+                true,
+                None,
+                Duration::from_secs(12),
+            )
+            .await?;
+            click_atspi(pid, &tab, &tab_id).await?;
+            let (_, _, selected) = wait_accessible(
+                pid,
+                page,
+                &["page tab", "tab", "button"],
+                true,
+                Some(true),
+                Duration::from_secs(8),
+            )
+            .await?;
+            if !selected {
+                return Err(format!("Settings page {page} did not become selected"));
+            }
+            active = page;
+        }
+        let (control, identity, before) = wait_accessible_scoped(
+            pid,
+            label,
+            &["switch", "check box"],
+            true,
+            Some(initial),
+            Duration::from_secs(10),
+            Some(page),
+        )
+        .await?;
+        click_atspi(pid, &control, &identity).await?;
+        let (_after_control, after_identity, after) = wait_accessible_scoped(
+            pid,
+            label,
+            &["switch", "check box"],
+            true,
+            Some(!initial),
+            Duration::from_secs(8),
+            Some(page),
+        )
+        .await?;
+        if before != initial || after == initial {
+            return Err(format!(
+                "{label} did not toggle from the expected visible state"
+            ));
+        }
+        expected[key] = serde_json::Value::Bool(!initial);
+        let actual = wait_preferences_equal(prefs, &expected, Duration::from_secs(6)).await?;
+        if actual != expected {
+            return Err(format!(
+                "{key} changed an unexpected field in the full preferences map"
+            ));
+        }
+        wait_named_text_in_context(
+            pid,
+            "Settings applied; a refresh was queued.",
+            page,
+            Duration::from_secs(8),
+        )
+        .await?;
+        let capture = artifacts.join(format!("settings-{}.png", key));
+        take_screenshot(screenshot, runtime, envs, &capture)?;
+        actions.push(serde_json::json!({"page":page,"control":label,"key":key,"before":before,"after":after,"identity_before":identity,"identity_after":after_identity,"same_pid":true,"full_map_match":true,"capture":format!("settings-{key}.png")}));
+    }
+    if fs::read(&autostart).map_err(|e| e.to_string())? != autostart_before {
+        return Err("Settings toggles changed synthetic autostart bytes".into());
+    }
+    let evidence = serde_json::json!({"scenario":"settings-residual","status":"passed","app_pid":pid,"actions":actions,"persisted_preferences":expected,"autostart_bytes_unchanged":true,"limits":["AT-SPI actions verify visible app controls, not physical input or KDE shell parity.","Private Weston does not establish KDE shell behavior."]});
+    let out = artifacts.join("evidence.json");
+    fs::write(
+        &out,
+        encode_bounded_json(&evidence, MAX_MATRIX_EVIDENCE_BYTES)?,
+    )
+    .map_err(|e| e.to_string())?;
+    set_private_file(&out)?;
+    Ok(())
+}
+
+async fn wait_preferences_equal(
+    path: &Path,
+    expected: &serde_json::Value,
+    duration: Duration,
+) -> Result<serde_json::Value, String> {
+    let deadline = Instant::now() + duration;
+    let mut last = String::new();
+    while Instant::now() < deadline {
+        match fs::read(path).map_err(|e| e.to_string()).and_then(|bytes| {
+            serde_json::from_slice::<serde_json::Value>(&bytes).map_err(|e| e.to_string())
+        }) {
+            Ok(actual) if &actual == expected => return Ok(actual),
+            Ok(actual) => last = format!("observed {actual}"),
+            Err(error) => last = error,
+        }
+        sleep(Duration::from_millis(80)).await;
+    }
+    Err(format!(
+        "preference map did not reach expected full map: {last}"
+    ))
 }
 
 fn gaction(args: &[&str]) -> Result<(), String> {

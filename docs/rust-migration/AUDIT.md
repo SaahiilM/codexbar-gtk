@@ -8523,3 +8523,10 @@ C-gate result.
 **Next:** root reviews and integrates this candidate, then observes CI on its
 exact published head. Keep Python automation and UG **NOT PASSED**; C01–CG
 remain unaccepted.
+
+PR #121 CI run 44375828857 stopped at the backend cancellation fixture
+with spawn errno 26 (ETXTBSY), before any Wayland scenario ran. The test
+now runs the system shell with the fixture path as an argument, avoiding
+direct execution of the temporary script. Cancellation and process exit
+assertions are unchanged. The locked backend suite passed locally (99 unit,
+4 integration), along with formatting and diff checks.

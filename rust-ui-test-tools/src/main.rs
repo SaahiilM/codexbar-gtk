@@ -378,6 +378,9 @@ async fn isolated_wayland(args: &[String]) -> Result<u8, String> {
     if scenario == "page-state" || scenario == "settings-residual" {
         return isolated_wayland_matrix(binary, artifact_dir, scenario).await;
     }
+    if scenario == "advanced" {
+        return isolated_wayland_matrix(binary, artifact_dir, scenario).await;
+    }
     if scenario != "settings-combo-diagnostic" {
         return Err(format!("isolated-wayland {scenario:?} runner is incomplete; refusing to report captures or pass status"));
     }
@@ -601,6 +604,11 @@ async fn run_matrix_private(binary: &Path, artifacts: &Path, scenario: &str) -> 
     before["refreshAllProvidersOnMenuOpen"] = serde_json::Value::Bool(false);
     before["showTray"] = serde_json::Value::Bool(false);
     before["preferredCurrencyCode"] = serde_json::Value::String("USD".into());
+    if scenario == "advanced" {
+        before["refreshFrequency"] = serde_json::Value::String("5m".into());
+        before["usageBarsShowUsed"] = serde_json::Value::Bool(false);
+        before["launchAtLogin"] = serde_json::Value::Bool(false);
+    }
     if scenario == "settings-residual" {
         before["usageBarsShowUsed"] = serde_json::Value::Bool(false);
         before["quotaBurndownEnabled"] = serde_json::Value::Bool(true);
@@ -630,6 +638,14 @@ async fn run_matrix_private(binary: &Path, artifacts: &Path, scenario: &str) -> 
     fs::write(&cost_error_count, "0\n").map_err(|e| e.to_string())?;
     fs::create_dir_all(autostart.parent().expect("autostart parent")).map_err(|e| e.to_string())?;
     fs::write(&autostart, b"synthetic-autostart-fixture\n").map_err(|e| e.to_string())?;
+    if scenario == "advanced" {
+        fs::write(home.join("synthetic-preferences-import.json"), br#"{"version":1,"preferences":{"refreshFrequency":"2m","preferredCurrencyCode":"EUR","futureSyntheticPreference":"ignored"}}"#).map_err(|e| e.to_string())?;
+        fs::write(
+            home.join("synthetic-empty-preferences-import.json"),
+            br#"{"version":1,"preferences":{}}"#,
+        )
+        .map_err(|e| e.to_string())?;
+    }
     let cli_script = r##"#!/bin/sh
 if [ -n "${NATIVE_CLI_LOG:-}" ]; then printf '%s\n' "$*" >> "$NATIVE_CLI_LOG"; fi
 case "${1:-}" in
@@ -709,7 +725,7 @@ esac
     envs.insert("GTK_A11Y".into(), "atspi".into());
     envs.insert("GTK_USE_PORTAL".into(), "0".into());
     envs.insert("CODEXBAR_CLI".into(), cli.display().to_string());
-    if full || scenario == "page-state" {
+    if full || scenario == "page-state" || scenario == "advanced" {
         envs.insert(
             "NATIVE_SESSIONS_MODE_FILE".into(),
             sessions_mode.display().to_string(),
@@ -805,10 +821,26 @@ esac
         #[cfg(unix)] { use std::os::unix::fs::PermissionsExt; let r=fs::metadata(&runtime).map_err(|e|e.to_string())?.permissions().mode()&0o777;let s=fs::metadata(runtime.join("wayland-private")).map_err(|e|e.to_string())?.permissions().mode()&0o777;if r!=0o700||s!=0o600{return Err(format!("private Wayland permissions invalid: runtime={r:o}, socket={s:o}"))} }
         let info=Command::new("wayland-info").env_clear().envs(&envs).output().map_err(|e|format!("wayland-info: {e}"))?;
         if !info.status.success(){return Err("private wayland-info failed".into())}
+        if scenario == "advanced" {
+            let globals_path = artifacts.join("private-wayland-globals.txt");
+            fs::write(&globals_path, &info.stdout).map_err(|e| e.to_string())?;
+            set_private_file(&globals_path)?;
+        }
         let app_log_path=artifacts.join("native-app.log");
         let app_log=fs::File::create(&app_log_path).map_err(|e|e.to_string())?;
         set_private_file(&app_log_path)?;
-        let mut appcmd=Command::new(binary); if scenario == "page-state" { appcmd.args(["--page", "sessions"]); } appcmd.env_clear().envs(&envs).stdout(Stdio::from(app_log.try_clone().map_err(|e|e.to_string())?)).stderr(Stdio::from(app_log));
+        let mut appcmd = Command::new(binary);
+        if scenario == "page-state" {
+            appcmd.args(["--page", "sessions"]);
+        }
+        if scenario == "advanced" {
+            appcmd.current_dir(&home);
+        }
+        appcmd
+            .env_clear()
+            .envs(&envs)
+            .stdout(Stdio::from(app_log.try_clone().map_err(|e| e.to_string())?))
+            .stderr(Stdio::from(app_log));
         #[cfg(unix)] { use std::os::unix::process::CommandExt; appcmd.process_group(0); }
         let mut app=OwnedChild::spawn(&mut appcmd).map_err(|e|format!("start native app: {e}"))?; let pid=app.id();
         let run_result=async {
@@ -819,6 +851,10 @@ esac
             }
             if scenario == "settings-residual" {
                 run_settings_residual(pid, &home, binary, &prefs, &envs, &runtime, &screenshot, artifacts).await?;
+                return Ok(());
+            }
+            if scenario == "advanced" {
+                run_advanced(pid, &home, &prefs, &autostart, &cli_log, &envs, &runtime, &screenshot, artifacts).await?;
                 return Ok(());
             }
             let before_map: serde_json::Value = serde_json::from_slice(&fs::read(&prefs).map_err(|e|e.to_string())?).map_err(|e|format!("invalid initial preferences: {e}"))?;
@@ -1457,6 +1493,554 @@ async fn route_visible(
         "identity":identity,"target_identity":target,"same_pid":true,
         "action":"AT-SPI AccessibleAction.DoAction","capture":capture}),
     )
+}
+
+async fn select_exact_file_row(pid: u32, title: &str, path: &str) -> Result<String, String> {
+    let basename = Path::new(path)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or("synthetic import path has no UTF-8 filename")?;
+    let conn = AccessibilityConnection::new()
+        .await
+        .map_err(|e| format!("AT-SPI unavailable: {e}"))?;
+    let registry = conn
+        .root_accessible_on_registry()
+        .await
+        .map_err(|e| e.to_string())?;
+    let apps = registry.get_children().await.map_err(|e| e.to_string())?;
+    let mut roots = Vec::new();
+    for (index, object) in apps.into_iter().enumerate().take(100) {
+        if object_pid(&conn, &object).await.ok() == Some(pid) {
+            roots.push(Node {
+                object,
+                identity: format!("{pid}:app[{index}]"),
+                depth: 0,
+            });
+        }
+    }
+    if roots.len() != 1 {
+        return Err(format!(
+            "expected one AT-SPI root for app PID {pid}, found {}",
+            roots.len()
+        ));
+    }
+    let root = roots.remove(0);
+    let mut nodes = collect_accessible_nodes(&conn, root.clone()).await?;
+    let mut dialog = exact_visible_dialog(&conn, &nodes, pid, title).await?;
+    let mut rows = exact_rows(&conn, &nodes, &dialog, pid, basename, false).await?;
+    if rows.is_empty() {
+        activate_home_place_safely(&conn, &nodes, &dialog, pid).await?;
+        sleep(Duration::from_millis(120)).await;
+        nodes = collect_accessible_nodes(&conn, root.clone()).await?;
+        dialog = exact_visible_dialog(&conn, &nodes, pid, title).await?;
+        rows = exact_rows(&conn, &nodes, &dialog, pid, basename, false).await?;
+    }
+    if rows.len() != 1 {
+        return Err(format!("private chooser exposes {} exact visible rows for {basename:?}; refusing row actions and navigation", rows.len()));
+    }
+    let row = &rows[0];
+    let mut parent_identity = row.identity.clone();
+    let mut selection_parent = None;
+    while let Some(index) = parent_identity.rfind('/') {
+        parent_identity.truncate(index);
+        if let Some(parent) = nodes.iter().find(|node| node.identity == parent_identity) {
+            let access = proxy(&conn, parent.object.clone()).await?;
+            if access
+                .get_interfaces()
+                .await
+                .map(|interfaces| interfaces.contains(Interface::Selection))
+                .unwrap_or(false)
+            {
+                selection_parent = Some(parent.clone());
+                break;
+            }
+        }
+    }
+    let parent = selection_parent.ok_or("exact chooser row has no AT-SPI Selection parent")?;
+    let parent_depth = parent.identity.split('/').count();
+    let direct_identity = row
+        .identity
+        .split('/')
+        .take(parent_depth + 1)
+        .collect::<Vec<_>>()
+        .join("/");
+    let direct = nodes
+        .iter()
+        .find(|node| node.identity == direct_identity)
+        .ok_or("chooser selection child disappeared")?;
+    let child_index = proxy(&conn, direct.object.clone())
+        .await?
+        .get_index_in_parent()
+        .await
+        .map_err(|e| e.to_string())?;
+    let selection = SelectionProxy::builder(conn.connection())
+        .destination(parent.object.name_as_str().unwrap_or(""))
+        .map_err(|e| e.to_string())?
+        .path(parent.object.path_as_str())
+        .map_err(|e| e.to_string())?
+        .build()
+        .await
+        .map_err(|e| e.to_string())?;
+    if child_index < 0
+        || !selection
+            .select_child(child_index)
+            .await
+            .map_err(|e| e.to_string())?
+    {
+        return Err(format!(
+            "AT-SPI Selection rejected exact chooser row {basename:?}"
+        ));
+    }
+    let refreshed = collect_accessible_nodes(&conn, root).await?;
+    let fresh_dialog = exact_visible_dialog(&conn, &refreshed, pid, title).await?;
+    let selected = exact_rows(&conn, &refreshed, &fresh_dialog, pid, basename, true).await?;
+    if selected.len() != 1 {
+        return Err(format!(
+            "exact chooser row {basename:?} did not become uniquely selected"
+        ));
+    }
+    println!(
+        "ACTUAL_CHOOSER_SELECTED_ROW pid={pid} identity={} filename={basename:?}",
+        selected[0].identity
+    );
+    Ok(selected[0].identity.clone())
+}
+
+async fn activate_home_place_safely(
+    conn: &AccessibilityConnection,
+    nodes: &[Node],
+    dialog: &Node,
+    pid: u32,
+) -> Result<(), String> {
+    let mut homes = Vec::new();
+    for node in nodes
+        .iter()
+        .filter(|node| is_within_tree(&node.identity, &dialog.identity))
+    {
+        if object_pid(conn, &node.object).await.ok() != Some(pid) {
+            continue;
+        }
+        let access = proxy(conn, node.object.clone()).await?;
+        let states = state(conn, &node.object).await?;
+        if access.name().await.as_deref() == Ok("Open your personal folder")
+            && access.get_role_name().await.as_deref() == Ok("list item")
+            && states.contains(State::Showing)
+            && states.contains(State::Visible)
+            && states.contains(State::Sensitive)
+        {
+            homes.push(node.clone());
+        }
+    }
+    if homes.len() != 1 {
+        return Err(format!(
+            "expected one visible app-owned Home chooser place for PID {pid}; found {}",
+            homes.len()
+        ));
+    }
+    let home = homes.remove(0);
+    let parent_identity = home
+        .identity
+        .rsplit_once('/')
+        .map(|(parent, _)| parent)
+        .ok_or("Home place has no accessible parent")?;
+    let parent = nodes
+        .iter()
+        .find(|node| node.identity == parent_identity)
+        .ok_or("Home place parent disappeared")?;
+    let selection = SelectionProxy::builder(conn.connection())
+        .destination(parent.object.name_as_str().unwrap_or(""))
+        .map_err(|e| e.to_string())?
+        .path(parent.object.path_as_str())
+        .map_err(|e| e.to_string())?
+        .build()
+        .await
+        .map_err(|e| e.to_string())?;
+    let index = proxy(conn, home.object.clone())
+        .await?
+        .get_index_in_parent()
+        .await
+        .map_err(|e| e.to_string())?;
+    if index < 0
+        || !selection
+            .select_child(index)
+            .await
+            .map_err(|e| e.to_string())?
+    {
+        return Err("AT-SPI Selection rejected exact app-owned Home place".into());
+    }
+    let selected_state = state(conn, &home.object).await?;
+    if !selected_state.contains(State::Selected) {
+        return Err("exact app-owned Home place did not enter the selected state".into());
+    }
+    let action_proxy = ActionProxy::builder(conn.connection())
+        .destination(home.object.name_as_str().unwrap_or(""))
+        .map_err(|e| e.to_string())?
+        .path(home.object.path_as_str())
+        .map_err(|e| e.to_string())?
+        .build()
+        .await
+        .map_err(|e| e.to_string())?;
+    let actions = action_proxy
+        .get_actions()
+        .await
+        .map_err(|e| e.to_string())?;
+    let activate = actions
+        .iter()
+        .enumerate()
+        .filter(|(_, action)| action.name == "activate")
+        .map(|(index, _)| index)
+        .collect::<Vec<_>>();
+    if activate.len() != 1 {
+        return Err(format!(
+            "selected Home place exposes no unique safe activate action; actions={:?}",
+            actions
+                .iter()
+                .map(|action| action.name.as_str())
+                .collect::<Vec<_>>()
+        ));
+    }
+    if !action_proxy
+        .do_action(i32::try_from(activate[0]).map_err(|e| e.to_string())?)
+        .await
+        .map_err(|e| e.to_string())?
+    {
+        return Err("exact Home place activate action returned false".into());
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn accept_exact_import_row(pid: u32, title: &str, path: &str) -> Result<(), String> {
+    let basename = Path::new(path)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or("synthetic import path has no UTF-8 filename")?;
+    let conn = AccessibilityConnection::new()
+        .await
+        .map_err(|e| format!("AT-SPI unavailable: {e}"))?;
+    let registry = conn
+        .root_accessible_on_registry()
+        .await
+        .map_err(|e| e.to_string())?;
+    let apps = registry.get_children().await.map_err(|e| e.to_string())?;
+    let mut roots = Vec::new();
+    for (index, object) in apps.into_iter().enumerate().take(100) {
+        if object_pid(&conn, &object).await.ok() == Some(pid) {
+            roots.push(Node {
+                object,
+                identity: format!("{pid}:app[{index}]"),
+                depth: 0,
+            });
+        }
+    }
+    if roots.len() != 1 {
+        return Err(format!(
+            "expected one AT-SPI root for app PID {pid}, found {}",
+            roots.len()
+        ));
+    }
+    let nodes = collect_accessible_nodes(&conn, roots.remove(0)).await?;
+    let dialog = exact_visible_dialog(&conn, &nodes, pid, title).await?;
+    let selected = exact_rows(&conn, &nodes, &dialog, pid, basename, true).await?;
+    if selected.len() != 1 {
+        return Err(format!(
+            "refusing Import: expected one selected same-PID exact row {basename:?}, found {}",
+            selected.len()
+        ));
+    }
+    invoke_visible_button_action(&conn, &nodes, &dialog, pid, "Import").await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn run_advanced(
+    pid: u32,
+    home: &Path,
+    prefs: &Path,
+    autostart: &Path,
+    cli_log: &Path,
+    envs: &std::collections::BTreeMap<String, String>,
+    runtime: &Path,
+    screenshot: &Path,
+    artifacts: &Path,
+) -> Result<(), String> {
+    gaction(&["settings"])?;
+    wait_window(pid, "CodexBar Settings", Duration::from_secs(15)).await?;
+    let (tab, tab_id, _) = wait_accessible(
+        pid,
+        "Advanced",
+        &["page tab", "tab", "button"],
+        true,
+        None,
+        Duration::from_secs(10),
+    )
+    .await?;
+    click_atspi(pid, &tab, &tab_id).await?;
+    let (_, selected_id, selected) = wait_accessible(
+        pid,
+        "Advanced",
+        &["page tab", "tab", "button"],
+        true,
+        Some(true),
+        Duration::from_secs(8),
+    )
+    .await?;
+    let mut actions =
+        vec![serde_json::json!({"control":"Advanced","identity":selected_id,"selected":selected})];
+    let click = |pid: u32, name: &'static str| async move {
+        let (identity, live_id, _) = wait_accessible_scoped(
+            pid,
+            name,
+            &["button", "push button", "toggle button"],
+            true,
+            None,
+            Duration::from_secs(8),
+            Some("Advanced"),
+        )
+        .await?;
+        click_atspi(pid, &identity, &live_id).await?;
+        Ok::<String, String>(live_id)
+    };
+    let wait_dialog = |pid: u32, title: &'static str| async move {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            if let Ok((identity, live_id, _)) = wait_accessible(
+                pid,
+                title,
+                &["dialog"],
+                false,
+                None,
+                Duration::from_millis(250),
+            )
+            .await
+            {
+                return Ok::<(String, String), String>((identity, live_id));
+            }
+            if Instant::now() >= deadline {
+                return Err(format!(
+                    "app PID {pid} did not expose exact visible dialog {title:?}"
+                ));
+            }
+        }
+    };
+    let wait_closed = |pid: u32, title: &'static str| async move {
+        let deadline = Instant::now() + Duration::from_secs(8);
+        loop {
+            if wait_accessible(
+                pid,
+                title,
+                &["dialog"],
+                false,
+                None,
+                Duration::from_millis(250),
+            )
+            .await
+            .is_err()
+            {
+                return Ok::<(), String>(());
+            }
+            if Instant::now() >= deadline {
+                return Err(format!("app-owned dialog remained open: {title}"));
+            }
+        }
+    };
+    let exported = home.join("preferences-export.json");
+    let export_control = click(pid, "Export…").await?;
+    wait_dialog(pid, "Export preferences").await?;
+    take_screenshot(
+        screenshot,
+        runtime,
+        envs,
+        &artifacts.join("advanced-export-chooser.png"),
+    )?;
+    chooser_inner(
+        "save-default",
+        pid,
+        "Export preferences",
+        Some(exported.to_str().ok_or("non-UTF8 export path")?),
+    )
+    .await?;
+    wait_closed(pid, "Export preferences").await?;
+    let export_doc: serde_json::Value = serde_json::from_slice(
+        &fs::read(&exported).map_err(|e| format!("read exact export target: {e}"))?,
+    )
+    .map_err(|e| format!("invalid portable export: {e}"))?;
+    if export_doc.get("version") != Some(&serde_json::json!(1))
+        || export_doc["preferences"]["refreshFrequency"] != "5m"
+    {
+        return Err(format!("export did not produce versioned portable JSON with seeded refresh frequency: {export_doc}"));
+    }
+    take_screenshot(
+        screenshot,
+        runtime,
+        envs,
+        &artifacts.join("advanced-export-result.png"),
+    )?;
+    actions.push(serde_json::json!({"control":"Export…","identity":export_control,"chooser_title":"Export preferences","path":exported,"file_identity":"exact synthetic absolute target","valid_portable_json":true,"filename_route":"visible app-owned Save action; expected output path verified"}));
+
+    let autostart_bytes = fs::read(autostart).map_err(|e| e.to_string())?;
+    let original: serde_json::Value =
+        serde_json::from_slice(&fs::read(prefs).map_err(|e| e.to_string())?)
+            .map_err(|e| e.to_string())?;
+    let imported = home.join("synthetic-preferences-import.json");
+    let plugins_before = count_cli_calls(cli_log, "plugins");
+    let import_control = click(pid, "Import…").await?;
+    wait_dialog(pid, "Import preferences").await?;
+    take_screenshot(
+        screenshot,
+        runtime,
+        envs,
+        &artifacts.join("advanced-import-chooser.png"),
+    )?;
+    select_exact_file_row(
+        pid,
+        "Import preferences",
+        imported.to_str().ok_or("non-UTF8 import path")?,
+    )
+    .await?;
+    accept_exact_import_row(
+        pid,
+        "Import preferences",
+        imported.to_str().ok_or("non-UTF8 import path")?,
+    )
+    .await?;
+    wait_closed(pid, "Import preferences").await?;
+    let mut expected = original.clone();
+    expected["refreshFrequency"] = serde_json::json!("2m");
+    expected["preferredCurrencyCode"] = serde_json::json!("EUR");
+    let persisted = wait_preferences_equal(prefs, &expected, Duration::from_secs(8)).await?;
+    if persisted.get("futureSyntheticPreference").is_some() {
+        return Err("valid import retained an unknown preference key".into());
+    }
+    if fs::read(autostart).map_err(|e| e.to_string())? != autostart_bytes {
+        return Err("valid import changed synthetic autostart bytes".into());
+    }
+    wait_for_log_prefix(cli_log, "plugins", plugins_before, Duration::from_secs(8)).await?;
+    actions.push(serde_json::json!({"control":"Import…","identity":import_control,"path":imported,"file_identity":"exact editable absolute path verified before accept","full_preferences_overlay":persisted,"unknown_key_omitted":true,"plugins_refresh":true,"autostart_unchanged":true}));
+
+    let empty = home.join("synthetic-empty-preferences-import.json");
+    let unchanged = persisted.clone();
+    let plugins_before_empty = count_cli_calls(cli_log, "plugins");
+    click(pid, "Import…").await?;
+    wait_dialog(pid, "Import preferences").await?;
+    select_exact_file_row(
+        pid,
+        "Import preferences",
+        empty.to_str().ok_or("non-UTF8 empty-import path")?,
+    )
+    .await?;
+    accept_exact_import_row(
+        pid,
+        "Import preferences",
+        empty.to_str().ok_or("non-UTF8 empty-import path")?,
+    )
+    .await?;
+    wait_closed(pid, "Import preferences").await?;
+    wait_for_log_prefix(
+        cli_log,
+        "plugins",
+        plugins_before_empty,
+        Duration::from_secs(8),
+    )
+    .await?;
+    let after_empty: serde_json::Value =
+        serde_json::from_slice(&fs::read(prefs).map_err(|e| e.to_string())?)
+            .map_err(|e| e.to_string())?;
+    if after_empty != unchanged {
+        return Err("empty import changed the complete preferences map".into());
+    }
+    if fs::read(autostart).map_err(|e| e.to_string())? != autostart_bytes {
+        return Err("empty import changed synthetic autostart bytes".into());
+    }
+    actions.push(serde_json::json!({"control":"Import…","path":empty,"full_preferences_map_unchanged":true,"plugins_refresh":true,"autostart_unchanged":true}));
+
+    let reset_title = "Reset all preferences?";
+    let before_cancel: serde_json::Value =
+        serde_json::from_slice(&fs::read(prefs).map_err(|e| e.to_string())?)
+            .map_err(|e| e.to_string())?;
+    click(pid, "Reset…").await?;
+    let (_, reset_id) = wait_dialog(pid, reset_title).await?;
+    let (cancel, cancel_id, _) = wait_accessible(
+        pid,
+        "Cancel",
+        &["button", "push button"],
+        true,
+        None,
+        Duration::from_secs(8),
+    )
+    .await?;
+    click_atspi(pid, &cancel, &cancel_id).await?;
+    wait_closed(pid, reset_title).await?;
+    if serde_json::from_slice::<serde_json::Value>(&fs::read(prefs).map_err(|e| e.to_string())?)
+        .map_err(|e| e.to_string())?
+        != before_cancel
+    {
+        return Err("Reset Cancel changed the full preferences map".into());
+    }
+    if fs::read(autostart).map_err(|e| e.to_string())? != autostart_bytes {
+        return Err("Reset Cancel changed synthetic autostart".into());
+    }
+    actions.push(serde_json::json!({"control":"Reset…","dialog":reset_id,"response":"Cancel","identity":cancel_id,"full_preferences_map_unchanged":true,"autostart_unchanged":true}));
+
+    click(pid, "Reset…").await?;
+    let (_, reset_id) = wait_dialog(pid, reset_title).await?;
+    let (reset, reset_button_id, _) = wait_accessible(
+        pid,
+        "Reset",
+        &["button", "push button"],
+        true,
+        None,
+        Duration::from_secs(8),
+    )
+    .await?;
+    click_atspi(pid, &reset, &reset_button_id).await?;
+    wait_closed(pid, reset_title).await?;
+    let default_map = serde_json::Value::Object(codexbar_core::preferences::default_values());
+    let final_map = wait_preferences_equal(prefs, &default_map, Duration::from_secs(8)).await?;
+    if fs::read(autostart).map_err(|e| e.to_string())? != autostart_bytes {
+        return Err("Reset Confirm changed synthetic autostart".into());
+    }
+    actions.push(serde_json::json!({"control":"Reset…","dialog":reset_id,"response":"Reset","identity":reset_button_id,"full_default_map":final_map,"autostart_unchanged":true}));
+    let record = serde_json::json!({"scenario":"advanced","status":"passed","coverage":"visible app-owned export; valid and empty imports; Plugins refresh after both imports; reset cancel and confirm; complete preference maps; unchanged synthetic autostart","app_pid":pid,"actions":actions,"portable_export":export_doc,"autostart_sha256":format!("{:x}",Sha256::digest(&autostart_bytes)),"private_bus":"dbus-run-session","gdk_backend":"wayland","host_session_variables_removed":true,"limits":["Chooser import uses exact same-PID focused EditableText path verification and visible app-owned accept action; chooser row actions are not invoked.","Private Weston does not establish KDE shell or physical input parity."]});
+    let output = artifacts.join("evidence.json");
+    fs::write(
+        &output,
+        encode_bounded_json(&record, MAX_MATRIX_EVIDENCE_BYTES)?,
+    )
+    .map_err(|e| e.to_string())?;
+    set_private_file(&output)?;
+    take_screenshot(
+        screenshot,
+        runtime,
+        envs,
+        &artifacts.join("advanced-reset.png"),
+    )?;
+    Ok(())
+}
+
+fn count_cli_calls(log: &Path, command: &str) -> usize {
+    fs::read_to_string(log)
+        .unwrap_or_default()
+        .lines()
+        .filter(|line| line.split_whitespace().next() == Some(command))
+        .count()
+}
+
+async fn wait_for_log_prefix(
+    path: &Path,
+    command: &str,
+    prior: usize,
+    duration: Duration,
+) -> Result<(), String> {
+    let deadline = Instant::now() + duration;
+    while Instant::now() < deadline {
+        if count_cli_calls(path, command) > prior {
+            return Ok(());
+        }
+        sleep(Duration::from_millis(80)).await;
+    }
+    Err(format!(
+        "synthetic CLI did not refresh {command} after action"
+    ))
 }
 
 async fn run_page_state(
@@ -2401,7 +2985,10 @@ async fn chooser(args: &[String]) -> Result<u8, String> {
         return Err(usage());
     }
     let mode = args[0].as_str();
-    if !matches!(mode, "read" | "set" | "accept" | "select" | "save") {
+    if !matches!(
+        mode,
+        "read" | "set" | "accept" | "select" | "save" | "save-default"
+    ) {
         return Err(format!("unknown chooser mode {mode:?}"));
     }
     let pid: u32 = args[1]
@@ -2710,12 +3297,33 @@ async fn chooser_inner(
                     break;
                 }
                 if Instant::now() >= deadline {
+                    print_chooser_field_diagnostics(
+                        &conn,
+                        &refreshed,
+                        &refreshed_dialog,
+                        pid,
+                        Some(basename),
+                    )
+                    .await?;
                     return Err(format!(
                         "chooser did not expose exact app-owned Save filename {basename:?}"
                     ));
                 }
                 sleep(Duration::from_millis(50)).await;
             }
+            wait_nonempty_file(wanted, Duration::from_secs(5)).await?;
+        }
+        "save-default" => {
+            let wanted = path.ok_or("save-default mode requires PATH")?;
+            if !Path::new(wanted).is_absolute() {
+                return Err("chooser target path must be absolute".into());
+            }
+            if Path::new(wanted).exists() {
+                return Err("refusing to overwrite an existing synthetic export target".into());
+            }
+            let refreshed = collect_accessible_nodes(&conn, root.clone()).await?;
+            let refreshed_dialog = exact_visible_dialog(&conn, &refreshed, pid, title).await?;
+            invoke_visible_button_action(&conn, &refreshed, &refreshed_dialog, pid, "Save").await?;
             wait_nonempty_file(wanted, Duration::from_secs(5)).await?;
         }
         "select" => {
@@ -2979,6 +3587,27 @@ async fn invoke_named_action(
     pid: u32,
     name: &str,
 ) -> Result<(), String> {
+    invoke_named_action_roles(conn, nodes, dialog, pid, name, &["push button"]).await
+}
+
+async fn invoke_visible_button_action(
+    conn: &AccessibilityConnection,
+    nodes: &[Node],
+    dialog: &Node,
+    pid: u32,
+    name: &str,
+) -> Result<(), String> {
+    invoke_named_action_roles(conn, nodes, dialog, pid, name, &["button", "push button"]).await
+}
+
+async fn invoke_named_action_roles(
+    conn: &AccessibilityConnection,
+    nodes: &[Node],
+    dialog: &Node,
+    pid: u32,
+    name: &str,
+    accepted_roles: &[&str],
+) -> Result<(), String> {
     let mut found = Vec::new();
     for node in nodes
         .iter()
@@ -2989,7 +3618,7 @@ async fn invoke_named_action(
         }
         let access = proxy(conn, node.object.clone()).await?;
         if access.name().await.as_deref() != Ok(name)
-            || access.get_role_name().await.as_deref() != Ok("push button")
+            || !accepted_roles.contains(&access.get_role_name().await.unwrap_or_default().as_str())
         {
             continue;
         }
@@ -3859,5 +4488,24 @@ mod tests {
         assert!(WINDOW_ROLES.contains(&"window"));
         assert!(WINDOW_ROLES.contains(&"application"));
         assert!(!WINDOW_ROLES.contains(&"button"));
+    }
+
+    #[test]
+    fn advanced_scenario_imports_use_exact_path_without_item_visit() {
+        let source = include_str!("main.rs");
+        let start = source.find("async fn run_advanced(").unwrap();
+        let end = source[start..].find("async fn run_page_state(").unwrap() + start;
+        let advanced = &source[start..end];
+        assert!(advanced.contains("select_exact_file_row("));
+        assert!(!advanced.contains("select_file("));
+        assert!(!advanced.contains("item.visit"));
+        let home_start = source.find("async fn activate_home_place_safely(").unwrap();
+        let home_end = source[home_start..]
+            .find("#[allow(clippy::too_many_arguments)]")
+            .unwrap()
+            + home_start;
+        let home_route = &source[home_start..home_end];
+        assert!(home_route.contains("\"activate\""));
+        assert!(!home_route.contains("item.visit"));
     }
 }

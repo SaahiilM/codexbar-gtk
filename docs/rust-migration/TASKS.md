@@ -11,9 +11,32 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Goal | Fully native Rust GTK4/libadwaita application with verified packaging and legacy runtime removal. |
 | Current phase | BUILD117 final source cleanup; UG remains **NOT PASSED**, and C01–CG remain unaccepted. |
 | Last observed merge | PR #117 merged at `677135c4bcffcdf56c5bd5c913c11ee294e229fc`; exact head `f45c01a9139a891e54495b4b62e6f7ee89a95c2a` passed all three required checks in run `44125566585`. |
-| Active implementation | Local BUILD117/E220 cleanup on `t3/delete-python-reference-archive`, based on verified `origin/main` `677135c4bcffcdf56c5bd5c913c11ee294e229fc`. Deletes the 58-file/16,911-line retired Python reference archive and four manual debug tools (349 lines), total 62 Python files / 17,260 lines. Active Python test and script harnesses remain. |
+| Active implementation | Local Advanced private-Weston Rust UI-test-tools subtask on `t3/native-ui-test-tools`, based on requested clean `1d53b1b`. Scenario implementation is partial: export passes; chooser import/reset tail fails closed because exact import rows are not exposed and private Weston advertises no virtual-keyboard/test-input protocol. |
 | Previous slice integration | Cherry-picked root-reviewed peer commit `1d368dcc402b26d9e2206d3adc450716f0e1ac63` as local commit `7b00677`; its tools-only scope does not overlap the archive removal. |
-| Next | Root reviews and publishes this focused cleanup PR. Do not mark UG or any C gate passed because source archives were removed. |
+| Next | Resolve safe private-Weston navigation to the synthetic HOME import rows without `item.visit`, then rerun Advanced end to end. Do not claim a full scenario pass until valid/empty import, Plugins refresh, reset cancel/confirm, full maps, autostart, and cleanup all pass. |
+
+### Rust UI test tools — Advanced private-Weston subtask
+
+**Owner/base/status:** local partial implementation on `t3/native-ui-test-tools`,
+requested base `1d53b1b`. No release metadata, workflow, push, or PR changes.
+The normal migration checkpoint below remains historical context for this
+isolated test-tool task.
+
+**Verified subset:** the native Advanced Settings route opens under private
+Weston/D-Bus with synthetic HOME and CLI. The app-owned Export chooser displayed
+its default `preferences-export.json`; its same-PID Save action created that
+exact file under synthetic HOME, and versioned JSON contained seeded
+`refreshFrequency=5m`. Full Rust unit tests, strict Clippy, format, native app
+build, and private-process cleanup passed. Screenshots and exact blocker are in
+AUDIT E221.
+
+**Blocker/next:** Import opened on Recent, not Home. No exact import table row
+was exposed there. AT-SPI safely selected the same-PID Home place, but it had no
+action names. Private `wayland-info` exposed neither `zwp_virtual_keyboard`
+nor `weston_test`; no host input route was attempted. Continue only with a
+private-compositor-supported route or another exact accessible selection
+method, never the GTK-crashing generic `item.visit` action. Import, Plugins,
+reset, and autostart assertions remain unverified in this run.
 
 ### BUILD117/E220 — retired Python source and debug-tool cleanup
 

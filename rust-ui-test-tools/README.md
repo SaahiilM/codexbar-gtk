@@ -23,6 +23,21 @@ nonempty file; if GTK does not expose that field through AT-SPI, it fails before
 invoking Save. `isolated-wayland --scenario settings-combo-diagnostic`
 preserves the static unsupported result and exit 3.
 
+`isolated-wayland --scenario advanced` runs the native Advanced preferences
+flow under private D-Bus and rootless Weston. It verifies the app-owned export
+chooser and portable JSON, valid and empty imports through exact same-PID
+AT-SPI Selection rows, Plugins refresh after each import, Reset cancel and
+confirm, complete preference maps, and unchanged synthetic autostart bytes.
+When needed, it navigates from Recent to the exact visible Home place only
+through its selected `activate` action. It never invokes the chooser's unsafe
+generic `item.visit` action. If GTK does not expose the exact row or safe Home
+action, it fails closed; the implementation records private Weston globals and
+does not send input to the host compositor.
+The current local run is partial: the app-owned export was verified, but the
+import chooser opened on Recent and the selected Home place exposed no safe
+activation action. Private Weston advertised no virtual keyboard or test-input
+global. E221 records the blocker; import and reset behavior is not claimed.
+
 `isolated-wayland --scenario matrix-core` is a deliberately bounded live Rust
 scenario. It launches the supplied native binary under private D-Bus and
 rootless Weston with a synthetic HOME/CLI and `GDK_BACKEND=wayland`, then uses
@@ -31,7 +46,7 @@ General switch and full preference-map persistence, and Spend's pressed
 7-day selection. It captures those three states and checks private process and
 HOME cleanup. It is not the legacy `matrix`: Notifications, Hooks, heatmap
 modes and Sessions coverage remain unported. The legacy Python matrix stays
-available as the evidence reference. `matrix`, Advanced, residual Settings,
+available as the evidence reference. `matrix`, residual Settings,
 page-state, Settings, Spend, and update-check native runner routes continue to
 fail closed; the unsupported combo diagnostic remains exit 3.
 

@@ -8145,3 +8145,64 @@ update-check actions), KDE input/placement/keyboard parity, and repeatable
 local panel focus/SNI evidence; the exact row-by-row status remains in
 [`UG_GATE.md`](UG_GATE.md). C01–CG remain unaccepted. Root reviews and publishes
 this focused BUILD117 cleanup; no BUILD118 is allocated by this slice.
+
+### E221 — BUILD117 Advanced private-Weston Rust harness (partial)
+
+**Owner/base/status:** local partial implementation on `t3/native-ui-test-tools`,
+requested clean base `1d53b1b544cebd158ed7de069e58870c7588ad3b`. This is a test-tool
+subtask; no version metadata, workflow, push, PR, or release claim changed.
+
+**Implementation:** `rust-ui-test-tools/src/main.rs` adds an opt-in
+`isolated-wayland --scenario advanced` route using the existing rootless Weston,
+private D-Bus and temporary synthetic HOME/CLI. Only this scenario launches the
+app with its working directory set to that HOME, matching the Python Advanced
+reference and ensuring GTK's file chooser opens in the fixture home. The
+scenario seeds full defaults plus the 5-minute export preference, synthetic
+valid and empty import documents, and a synthetic autostart file. Export
+requires the exact app-PID/title/visible chooser; because GTK omits the default
+filename entry from AT-SPI, the scenario invokes only the unique visible
+same-PID Save button and then verifies the expected absolute HOME file, version
+1 portable JSON, and seeded preference. The success screenshot shows the
+Advanced page's visible “Preferences exported.” status.
+
+Import selection is deliberately stricter than the generic chooser fallback:
+it requires one exact visible same-PID row, selects it through the parent's
+AT-SPI Selection interface, and verifies selected state before the visible
+Import action. If the row is absent, it may select the exact visible Home place
+and use only a unique `activate` action on that selected row. It never invokes
+`item.visit`, never falls back to row navigation, and fails closed otherwise.
+Private Weston globals are captured for input-route diagnosis. Screenshot
+artifacts are
+[`export-result.png`](screenshots/advanced-private-weston-export-result.png) and
+[`import-chooser-blocked.png`](screenshots/advanced-private-weston-import-blocked.png).
+
+**Observed runtime and blocker:** final attempt used native application binary
+SHA-256 `0a9c759a5e8049f6c01ebc0479b1784a157938bdf5e99a0ff6a31852677ee6ed`,
+tool binary SHA-256 `626bb92cae2ab087bb262fe03a7679dd6ef1fc3f87c7081cbf226bad66c01155`,
+app PID `728790`, and an exact visible `Export preferences` chooser. Save action
+identity was `728790:app/2/1/0/0/2/1`; exact output path validation and portable
+JSON checks passed before the scenario continued. The next visible `Import
+preferences` chooser displayed Recent and the exported file. No exact row for
+`synthetic-preferences-import.json` was exposed. AT-SPI selected the exact
+same-PID Home place; that node exposed `actions=[]`, so no navigation action was
+invoked. Private `wayland-info` listed neither `zwp_virtual_keyboard_manager_v1`
+nor `weston_test`; no keyboard input was attempted against the host compositor.
+No valid/empty import, Plugins refresh, reset cancel/confirm, full post-import
+maps, or autostart-retention result is claimed. The scenario exited 1 at this
+boundary.
+
+**Checks and cleanup:** independent `CARGO_TARGET_DIR=/tmp/codexbar-advanced-target`
+builds of `rust-gtk` and `rust-ui-test-tools` completed with `CARGO_BUILD_JOBS=1`
+and `-j 1`. `cargo test --manifest-path rust-ui-test-tools/Cargo.toml --locked
+-j 1` passed 18 tests (3 library, 15 binary); strict all-target Clippy passed
+with `-D warnings`; formatting and `git diff --check` passed. The final private
+run reaped the app and Weston, removed its synthetic HOME and private Wayland
+socket, and the outer private D-Bus socket was absent after exit. No host
+session bus/desktop, credentials, authentication, provider network, or other
+scenario was used.
+
+**Next:** resolve exact import-row access or a compositor-supported keyboard
+route inside private Weston, preserving app PID/title/visibility/identity
+checks and avoiding `item.visit`; then rerun Advanced to prove valid and empty
+imports, Plugins refresh, reset cancel/confirm, full map comparisons, unchanged
+autostart and cleanup. Keep this task partial until that complete runtime pass.

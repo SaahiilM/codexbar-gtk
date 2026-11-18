@@ -24,6 +24,7 @@ use tokio::time::{sleep, timeout, Instant};
 const MAX_NODES: usize = 10_000;
 const MAX_CHILDREN: usize = 4_096;
 const MAX_DEPTH: usize = 40;
+const MAX_MATRIX_EVIDENCE_BYTES: usize = 128 * 1024;
 const WINDOW_ROLES: &[&str] = &["frame", "window", "application"];
 const CHOOSER_FALLBACK_PLACES: &[&str] = &["Recent", "Open your personal folder"];
 
@@ -124,8 +125,119 @@ fn atspi_target_guard(
         && sensitive
         && has_action
 }
+fn atspi_route_target_guard(
+    actual_pid: u32,
+    expected_pid: u32,
+    actual_identity: &str,
+    expected_identity: &str,
+    role: &str,
+    showing: bool,
+    visible: bool,
+    sensitive: bool,
+    has_action: bool,
+) -> bool {
+    atspi_target_guard(
+        actual_pid,
+        expected_pid,
+        actual_identity,
+        expected_identity,
+        role,
+        showing,
+        visible,
+        sensitive,
+        has_action,
+    ) || (actual_pid == expected_pid
+        && actual_identity == expected_identity
+        && matches!(role, "page tab" | "tab" | "button")
+        && showing
+        && visible
+        && sensitive
+        && has_action)
+}
 fn cleanup_confirmed(app_reaped: bool, weston_reaped: bool, home_removed: bool) -> bool {
     app_reaped && weston_reaped && home_removed
+}
+fn encode_bounded_json(value: &serde_json::Value, max_bytes: usize) -> Result<Vec<u8>, String> {
+    let bytes = serde_json::to_vec_pretty(value).map_err(|e| e.to_string())?;
+    if bytes.len() > max_bytes {
+        return Err(format!(
+            "evidence is {} bytes, exceeding the {max_bytes}-byte cap",
+            bytes.len()
+        ));
+    }
+    Ok(bytes)
+}
+
+struct PrivateRunnerState {
+    root: PathBuf,
+    home: PathBuf,
+    runtime: PathBuf,
+    config: PathBuf,
+    data: PathBuf,
+    cache: PathBuf,
+}
+
+impl PrivateRunnerState {
+    fn create() -> Result<Self, String> {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|e| e.to_string())?
+            .as_nanos();
+        let root =
+            env::temp_dir().join(format!("codexbar-ui-runner-{}-{nonce}", std::process::id()));
+        fs::create_dir(&root).map_err(|e| e.to_string())?;
+        let state = Self {
+            home: root.join("home"),
+            runtime: root.join("runtime"),
+            config: root.join("config"),
+            data: root.join("data"),
+            cache: root.join("cache"),
+            root,
+        };
+        set_private_dir(&state.root)?;
+        for path in [
+            &state.home,
+            &state.runtime,
+            &state.config,
+            &state.data,
+            &state.cache,
+        ] {
+            fs::create_dir(path).map_err(|e| e.to_string())?;
+            set_private_dir(path)?;
+        }
+        Ok(state)
+    }
+
+    fn configure(&self, command: &mut Command) {
+        command
+            .env_clear()
+            .env("HOME", &self.home)
+            .env("XDG_RUNTIME_DIR", &self.runtime)
+            .env("XDG_CONFIG_HOME", &self.config)
+            .env("XDG_DATA_HOME", &self.data)
+            .env("XDG_CACHE_HOME", &self.cache);
+    }
+
+    fn cleanup(&mut self) -> bool {
+        for _ in 0..40 {
+            match fs::remove_dir_all(&self.root) {
+                Ok(()) => return true,
+                Err(_) if !self.root.exists() => return true,
+                Err(_) => std::thread::sleep(Duration::from_millis(50)),
+            }
+        }
+        !self.root.exists()
+    }
+}
+
+impl Drop for PrivateRunnerState {
+    fn drop(&mut self) {
+        let _ = self.cleanup();
+    }
+}
+
+fn accessible_context_matches(identity: &str, context: Option<&str>) -> bool {
+    context.is_none_or(|expected| identity.contains(&format!(":{expected}/")))
 }
 fn record_window_candidate(candidates: &mut Vec<String>, identity: &str, role: &str, name: &str) {
     const MAX_WINDOW_CANDIDATES: usize = 24;
@@ -234,7 +346,7 @@ fn unavailable_runner(name: &str, args: &[String]) -> Result<u8, String> {
 
 async fn isolated_wayland(args: &[String]) -> Result<u8, String> {
     if args.iter().any(|a| a == "--help" || a == "-h") {
-        println!("isolated-wayland --binary PATH [--scenario matrix-core|matrix|advanced|settings-residual|page-state|settings-combo-diagnostic] [--artifact-dir DIR]");
+        println!("isolated-wayland --binary PATH [--scenario matrix|matrix-core|advanced|settings-residual|page-state|settings-combo-diagnostic] [--artifact-dir DIR]");
         return Ok(0);
     }
     let value = |flag: &str, default: Option<&str>| -> Result<Option<String>, String> {
@@ -253,8 +365,8 @@ async fn isolated_wayland(args: &[String]) -> Result<u8, String> {
         .unwrap_or_else(|| {
             env::temp_dir().join(format!("codexbar-native-wayland-{}", std::process::id()))
         });
-    if scenario == "matrix-core" {
-        return isolated_wayland_matrix_core(binary, artifact_dir).await;
+    if scenario == "matrix-core" || scenario == "matrix" {
+        return isolated_wayland_matrix(binary, artifact_dir, scenario == "matrix").await;
     }
     if scenario != "settings-combo-diagnostic" {
         return Err(format!("isolated-wayland {scenario:?} runner is incomplete; refusing to report captures or pass status"));
@@ -331,10 +443,13 @@ async fn isolated_wayland(args: &[String]) -> Result<u8, String> {
     Ok(3)
 }
 
-// Deliberately bounded first native vertical slice. The legacy `matrix` name
-// remains unsupported until Notifications, Hooks, heatmap, and Sessions are
-// ported as well.
-async fn isolated_wayland_matrix_core(binary: String, artifacts: PathBuf) -> Result<u8, String> {
+// The full matrix extends the independently useful, compatibility-preserved
+// matrix-core route with the remaining legacy matrix interactions.
+async fn isolated_wayland_matrix(
+    binary: String,
+    artifacts: PathBuf,
+    full: bool,
+) -> Result<u8, String> {
     let binary = PathBuf::from(binary)
         .canonicalize()
         .map_err(|e| format!("native binary: {e}"))?;
@@ -355,17 +470,23 @@ async fn isolated_wayland_matrix_core(binary: String, artifacts: PathBuf) -> Res
     fs::create_dir_all(&artifacts).map_err(|e| e.to_string())?;
     set_private_dir(&artifacts)?;
     if env::var_os("CODEXBAR_UI_TEST_PRIVATE_BUS").is_none() {
+        let runner_state = PrivateRunnerState::create()?;
         let exe = env::current_exe().map_err(|e| e.to_string())?;
         let mut cmd = tokio::process::Command::new("dbus-run-session");
         cmd.args(["--"])
             .arg(exe)
-            .args(["isolated-wayland", "--scenario", "matrix-core", "--binary"])
+            .args([
+                "isolated-wayland",
+                "--scenario",
+                if full { "matrix" } else { "matrix-core" },
+                "--binary",
+            ])
             .arg(&binary)
             .args(["--artifact-dir"])
             .arg(&artifacts)
             .arg("--private-bus");
-        cmd.env_clear();
-        for key in ["PATH", "HOME", "LANG", "LC_ALL"] {
+        runner_state.configure(cmd.as_std_mut());
+        for key in ["PATH", "LANG", "LC_ALL"] {
             if let Some(value) = env::var_os(key) {
                 cmd.env(key, value);
             }
@@ -403,20 +524,30 @@ async fn isolated_wayland_matrix_core(binary: String, artifacts: PathBuf) -> Res
                 if !removed {
                     return Err("private D-Bus socket remained after dbus-run-session exit".into());
                 }
+                let mut runner_state = runner_state;
+                let runner_state_removed = runner_state.cleanup();
+                drop(runner_state);
+                if !runner_state_removed {
+                    return Err(
+                        "private automation HOME/XDG state remained after runner exit".into(),
+                    );
+                }
                 let evidence_path = artifacts.join("evidence.json");
                 let mut evidence: serde_json::Value =
                     serde_json::from_slice(&fs::read(&evidence_path).map_err(|e| e.to_string())?)
                         .map_err(|e| e.to_string())?;
                 evidence["cleanup"]["private_dbus_socket_removed"] = serde_json::Value::Bool(true);
+                evidence["cleanup"]["private_runner_state_removed"] =
+                    serde_json::Value::Bool(runner_state_removed);
                 fs::write(
                     &evidence_path,
-                    serde_json::to_vec_pretty(&evidence).map_err(|e| e.to_string())?,
+                    encode_bounded_json(&evidence, MAX_MATRIX_EVIDENCE_BYTES)?,
                 )
                 .map_err(|e| e.to_string())?;
                 set_private_file(&evidence_path)?;
                 return Ok(0);
             }
-            Ok(Ok(status)) => return Err(format!("private matrix-core runner exited {status}")),
+            Ok(Ok(status)) => return Err(format!("private matrix runner exited {status}")),
             Ok(Err(e)) => return Err(format!("wait for private runner: {e}")),
             Err(_) => {
                 #[cfg(unix)]
@@ -427,20 +558,20 @@ async fn isolated_wayland_matrix_core(binary: String, artifacts: PathBuf) -> Res
                 }
                 let _ = timeout(Duration::from_secs(3), child.wait()).await;
                 return Err(
-                    "matrix-core exceeded 240 second deadline; private process group terminated"
+                    "private matrix exceeded 240 second deadline; private process group terminated"
                         .into(),
                 );
             }
         }
     }
-    match timeout(Duration::from_secs(210), run_matrix_core_private(&binary, &artifacts)).await {
+    match timeout(Duration::from_secs(210), run_matrix_private(&binary, &artifacts, full)).await {
         Ok(result) => result?,
-        Err(_) => return Err("matrix-core exceeded its 210 second runtime deadline; owned child guards performed cleanup".into()),
+        Err(_) => return Err("private Wayland matrix exceeded its 210 second runtime deadline; owned child guards performed cleanup".into()),
     }
     Ok(0)
 }
 
-async fn run_matrix_core_private(binary: &Path, artifacts: &Path) -> Result<(), String> {
+async fn run_matrix_private(binary: &Path, artifacts: &Path, full: bool) -> Result<(), String> {
     let scratch = env::temp_dir().join(format!(
         "codexbar-ui-test-{}-{}",
         std::process::id(),
@@ -464,9 +595,52 @@ async fn run_matrix_core_private(binary: &Path, artifacts: &Path) -> Result<(), 
     before["refreshAllProvidersOnMenuOpen"] = serde_json::Value::Bool(false);
     before["showTray"] = serde_json::Value::Bool(false);
     before["preferredCurrencyCode"] = serde_json::Value::String("USD".into());
+    if full {
+        for key in [
+            "sessionQuotaNotificationsEnabled",
+            "quotaWarningNotificationsEnabled",
+            "limitResetNotificationsEnabled",
+            "predictivePaceNotificationsEnabled",
+        ] {
+            before[key] = serde_json::Value::Bool(false);
+        }
+    }
     fs::write(&prefs, serde_json::to_vec(&before).unwrap()).map_err(|e| e.to_string())?;
     let cli = scratch.join("fake-codexbar");
-    fs::write(&cli, "#!/bin/sh\ncase \"$1\" in --version) echo 'synthetic CodexBar';; usage) echo '[{\"provider\":\"codex\",\"source\":\"synthetic\",\"usage\":{\"updatedAt\":\"2026-11-01T12:00:00Z\",\"primary\":{\"usedPercent\":42,\"resetsAt\":\"2026-11-01T18:00:00Z\",\"windowMinutes\":300}}}]';; cost) echo '[{\"provider\":\"codex\",\"currencyCode\":\"USD\",\"totalCost\":12.5,\"totalTokens\":1200,\"sessionCostUSD\":1.25,\"sessionTokens\":100,\"last30DaysCostUSD\":12.5,\"last30DaysTokens\":1200,\"coverage\":{\"priced\":3,\"unpriced\":1},\"provenance\":\"synthetic_history\",\"daily\":[],\"projects\":[],\"models\":[]}]';; *) echo '[]';; esac\n").map_err(|e|e.to_string())?;
+    let sessions_mode = home.join("sessions-mode");
+    let cli_log = home.join("cli-calls.log");
+    let hooks_state = home.join("hooks-enabled");
+    fs::write(&sessions_mode, "success\n").map_err(|e| e.to_string())?;
+    fs::write(&hooks_state, "true\n").map_err(|e| e.to_string())?;
+    let cli_script = r##"#!/bin/sh
+if [ -n "${NATIVE_CLI_LOG:-}" ]; then printf '%s\n' "$*" >> "$NATIVE_CLI_LOG"; fi
+case "${1:-}" in
+  --version) printf 'synthetic CodexBar\n' ;;
+  usage) printf '%s\n' '[{"provider":"codex","source":"synthetic","usage":{"updatedAt":"2026-11-01T12:00:00Z","primary":{"usedPercent":42,"resetsAt":"2026-11-01T18:00:00Z","windowMinutes":300}}}]' ;;
+  cost)
+    if [ -n "${NATIVE_SESSIONS_MODE_FILE:-}" ]; then
+      printf '%s\n' '[{"provider":"codex","currencyCode":"USD","totalCost":12.5,"totalTokens":1200,"sessionCostUSD":1.25,"sessionTokens":100,"last30DaysCostUSD":12.5,"last30DaysTokens":1200,"coverage":{"priced":3,"unpriced":1},"provenance":"synthetic_history","daily":[{"date":"2026-11-09","totalCost":3.25,"totalTokens":800}],"projects":[],"models":[]}]'
+    else
+      printf '%s\n' '[{"provider":"codex","currencyCode":"USD","totalCost":12.5,"totalTokens":1200,"sessionCostUSD":1.25,"sessionTokens":100,"last30DaysCostUSD":12.5,"last30DaysTokens":1200,"coverage":{"priced":3,"unpriced":1},"provenance":"synthetic_history","daily":[],"projects":[],"models":[]}]'
+    fi ;;
+  hooks)
+    case "${2:-}" in
+      disable) printf 'false\n' > "$NATIVE_HOOKS_STATE_FILE" ;;
+      enable) printf 'true\n' > "$NATIVE_HOOKS_STATE_FILE" ;;
+      list) printf '{"enabled":%s,"events":[]}\n' "$(cat "$NATIVE_HOOKS_STATE_FILE")" ;;
+    esac ;;
+  sessions)
+    mode=$(cat "$NATIVE_SESSIONS_MODE_FILE")
+    case "$mode" in
+      loading) printf '%s\n' "sessions-fixture-$mode-start" >> "$NATIVE_CLI_LOG"; sleep 15; printf '%s\n' "sessions-fixture-$mode-done" >> "$NATIVE_CLI_LOG"; printf '%s\n' '[{"id":"fixture-session","provider":"codex","state":"running","projectName":"synthetic","cwd":"/tmp/synthetic","pid":10,"host":"fixture"}]' ;;
+      success) printf '%s\n' "sessions-fixture-$mode-start" "sessions-fixture-$mode-done" >> "$NATIVE_CLI_LOG"; printf '%s\n' '[{"id":"fixture-session","provider":"codex","state":"running","projectName":"synthetic","cwd":"/tmp/synthetic","pid":10,"host":"fixture"}]' ;;
+      empty) printf '%s\n' "sessions-fixture-$mode-start" "sessions-fixture-$mode-done" >> "$NATIVE_CLI_LOG"; printf '[]\n' ;;
+      error) printf '%s\n' "sessions-fixture-$mode-start" "sessions-fixture-$mode-done" >> "$NATIVE_CLI_LOG"; printf 'synthetic session scan failure\n' >&2; exit 7 ;;
+    esac ;;
+  *) printf '[]\n' ;;
+esac
+"##;
+    fs::write(&cli, cli_script).map_err(|e| e.to_string())?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -509,6 +683,17 @@ async fn run_matrix_core_private(binary: &Path, artifacts: &Path) -> Result<(), 
     envs.insert("GTK_A11Y".into(), "atspi".into());
     envs.insert("GTK_USE_PORTAL".into(), "0".into());
     envs.insert("CODEXBAR_CLI".into(), cli.display().to_string());
+    if full {
+        envs.insert(
+            "NATIVE_SESSIONS_MODE_FILE".into(),
+            sessions_mode.display().to_string(),
+        );
+        envs.insert("NATIVE_CLI_LOG".into(), cli_log.display().to_string());
+        envs.insert(
+            "NATIVE_HOOKS_STATE_FILE".into(),
+            hooks_state.display().to_string(),
+        );
+    }
     envs.insert("PATH".into(), env::var("PATH").unwrap_or_default());
     let config_file = scratch.join("weston.ini");
     fs::write(
@@ -520,7 +705,9 @@ async fn run_matrix_core_private(binary: &Path, artifacts: &Path) -> Result<(), 
         ),
     )
     .map_err(|e| e.to_string())?;
-    let log = fs::File::create(artifacts.join("weston.log")).map_err(|e| e.to_string())?;
+    let weston_log_path = artifacts.join("weston.log");
+    let log = fs::File::create(&weston_log_path).map_err(|e| e.to_string())?;
+    set_private_file(&weston_log_path)?;
     let mut west = Command::new(&weston);
     west.args([
         "--backend=headless",
@@ -584,7 +771,9 @@ async fn run_matrix_core_private(binary: &Path, artifacts: &Path) -> Result<(), 
         #[cfg(unix)] { use std::os::unix::fs::PermissionsExt; let r=fs::metadata(&runtime).map_err(|e|e.to_string())?.permissions().mode()&0o777;let s=fs::metadata(runtime.join("wayland-private")).map_err(|e|e.to_string())?.permissions().mode()&0o777;if r!=0o700||s!=0o600{return Err(format!("private Wayland permissions invalid: runtime={r:o}, socket={s:o}"))} }
         let info=Command::new("wayland-info").env_clear().envs(&envs).output().map_err(|e|format!("wayland-info: {e}"))?;
         if !info.status.success(){return Err("private wayland-info failed".into())}
-        let app_log=fs::File::create(artifacts.join("native-app.log")).map_err(|e|e.to_string())?;
+        let app_log_path=artifacts.join("native-app.log");
+        let app_log=fs::File::create(&app_log_path).map_err(|e|e.to_string())?;
+        set_private_file(&app_log_path)?;
         let mut appcmd=Command::new(binary); appcmd.env_clear().envs(&envs).stdout(Stdio::from(app_log.try_clone().map_err(|e|e.to_string())?)).stderr(Stdio::from(app_log));
         #[cfg(unix)] { use std::os::unix::process::CommandExt; appcmd.process_group(0); }
         let mut app=OwnedChild::spawn(&mut appcmd).map_err(|e|format!("start native app: {e}"))?; let pid=app.id();
@@ -612,8 +801,17 @@ async fn run_matrix_core_private(binary: &Path, artifacts: &Path) -> Result<(), 
             let (range,range_id,pressed)=wait_control(pid,"7 days", &["toggle button"],Duration::from_secs(10)).await?;
             if !pressed {return Err("Spend 7 days control lacks pressed state".into())}
             let pshot=artifacts.join("spend-7-days.png"); take_screenshot(&screenshot,&runtime,&envs,&pshot)?;
-            let record=serde_json::json!({"scenario":"matrix-core","status":"passed","coverage":"dashboard route; Settings General AT-SPI switch and exact full preference-map persistence; Spend route and 7-day pressed selection","source_commit":git_head().unwrap_or_default(),"binary_sha256":sha256(binary)?,"private_bus":"dbus-run-session","gdk_backend":"wayland","runtime_permissions":"0700","wayland_socket_permissions":"0600","host_session_variables_removed":true,"app_pid":pid,"settings_general":{"selected":true},"settings_control":{"name":control,"identity":identity,"checked_before":false,"checked_after":true,"persisted_full_map":persisted},"dashboard":{"window":dashboard,"capture":"dashboard-initial.png"},"settings":{"window":settings,"capture":"settings-after-toggle.png"},"spend":{"window":spend,"selected_control":range,"identity":range_id,"pressed":pressed,"capture":"spend-7-days.png"},"limits":["This named matrix-core slice does not cover Notifications, Hooks, heatmap modes, or Sessions; the legacy Python matrix remains intact.","AT-SPI actions do not establish physical Wayland input or KDE parity."]});
-            let out=artifacts.join("evidence.json"); fs::write(&out,serde_json::to_vec_pretty(&record).map_err(|e|e.to_string())?).map_err(|e|e.to_string())?; set_private_file(&out)?;
+            let full_matrix=if full { Some(run_full_matrix(pid,&home,&prefs,&cli,&envs,&runtime,&screenshot,artifacts).await?) } else { None };
+            let scenario=if full {"matrix"} else {"matrix-core"};
+            let limits=if full {vec!["This synthetic full matrix is not overall UG acceptance; AT-SPI actions do not establish physical Wayland input or KDE parity.","Private Weston does not establish KDE shell placement, portal input, or host compositor parity."]} else {vec!["This named matrix-core slice does not cover Notifications, Hooks, heatmap modes, or Sessions; the legacy Python matrix remains intact.","AT-SPI actions do not establish physical Wayland input or KDE parity."]};
+            let record=serde_json::json!({"scenario":scenario,"status":"passed","coverage":"dashboard route; Settings General; full matrix adds four notification preferences, tray, Hooks disable, all Spend ranges, heatmap modes and explicit Daily return, Sessions loading/success/empty/error","source_commit":git_head().unwrap_or_default(),"source_sha256":sha256(Path::new(concat!(env!("CARGO_MANIFEST_DIR"),"/src/main.rs")))?,"binary_sha256":sha256(binary)?,"private_bus":"dbus-run-session","gdk_backend":"wayland","runtime_permissions":"0700","wayland_socket_permissions":"0600","host_session_variables_removed":true,"app_pid":pid,"settings_general":{"selected":true},"settings_control":{"name":control,"identity":identity,"checked_before":false,"checked_after":true,"persisted_full_map":persisted},"dashboard":{"window":dashboard,"capture":"dashboard-initial.png"},"settings":{"window":settings,"capture":"settings-after-toggle.png"},"spend":{"window":spend,"selected_control":range,"identity":range_id,"pressed":pressed,"capture":"spend-7-days.png"},"full_matrix":full_matrix,"limits":limits});
+            let out = artifacts.join("evidence.json");
+            fs::write(
+                &out,
+                encode_bounded_json(&record, MAX_MATRIX_EVIDENCE_BYTES)?,
+            )
+            .map_err(|e| e.to_string())?;
+            set_private_file(&out)?;
             Ok(())
         }.await;
         let status=app.terminate().map_err(|e|format!("reap native app: {e}"))?; app_reaped=app.reaped;
@@ -624,11 +822,14 @@ async fn run_matrix_core_private(binary: &Path, artifacts: &Path) -> Result<(), 
     let weston_reaped = compositor.reaped;
     let _ = fs::remove_dir_all(&scratch);
     if result.is_ok() {
+        fs::remove_file(&weston_log_path).map_err(|e| format!("remove private Weston log: {e}"))?;
+        fs::remove_file(artifacts.join("native-app.log"))
+            .map_err(|e| format!("remove private app log: {e}"))?;
         let p = artifacts.join("evidence.json");
         let mut ev: serde_json::Value =
             serde_json::from_slice(&fs::read(&p).map_err(|e| e.to_string())?)
                 .map_err(|e| e.to_string())?;
-        ev["cleanup"] = serde_json::json!({"native_app_reaped":app_reaped,"weston_reaped":weston_reaped,"private_home_removed":!scratch.exists()});
+        ev["cleanup"] = serde_json::json!({"native_app_reaped":app_reaped,"weston_reaped":weston_reaped,"private_home_removed":!scratch.exists(),"private_logs_removed":!weston_log_path.exists() && !artifacts.join("native-app.log").exists()});
         if !cleanup_confirmed(app_reaped, weston_reaped, !scratch.exists()) {
             return Err("private process or HOME cleanup was not verified".into());
         }
@@ -640,6 +841,515 @@ async fn run_matrix_core_private(binary: &Path, artifacts: &Path) -> Result<(), 
         set_private_file(&p)?;
     }
     result
+}
+
+async fn wait_accessible(
+    pid: u32,
+    name: &str,
+    roles: &[&str],
+    actionable: bool,
+    expected: Option<bool>,
+    duration: Duration,
+) -> Result<(String, String, bool), String> {
+    wait_accessible_scoped(pid, name, roles, actionable, expected, duration, None).await
+}
+
+async fn wait_accessible_scoped(
+    pid: u32,
+    name: &str,
+    roles: &[&str],
+    actionable: bool,
+    expected: Option<bool>,
+    duration: Duration,
+    context: Option<&str>,
+) -> Result<(String, String, bool), String> {
+    let end = Instant::now() + duration;
+    let mut last = String::new();
+    while Instant::now() < end {
+        match find_accessible(pid, name, roles, actionable, context).await {
+            Ok(found) if expected.is_none_or(|value| found.2 == value) => return Ok(found),
+            Ok(found) => last = format!("state mismatch: {:?}", found.2),
+            Err(error) => last = error,
+        }
+        sleep(Duration::from_millis(120)).await;
+    }
+    Err(format!(
+        "PID {pid} did not expose {name:?} with expected state {expected:?}: {last}"
+    ))
+}
+
+async fn wait_unique_selected(
+    pid: u32,
+    controls: &[&str],
+    selected: &str,
+    context: Option<&str>,
+    duration: Duration,
+) -> Result<Vec<(String, String, bool)>, String> {
+    let mut observed = Vec::with_capacity(controls.len());
+    for name in controls {
+        let current = wait_accessible_scoped(
+            pid,
+            name,
+            &["toggle button"],
+            true,
+            Some(*name == selected),
+            duration,
+            context,
+        )
+        .await?;
+        observed.push(current);
+    }
+    if observed.iter().filter(|(_, _, pressed)| *pressed).count() != 1 {
+        return Err("expected exactly one selected control in the group".into());
+    }
+    Ok(observed)
+}
+
+async fn wait_log_line(
+    path: &Path,
+    line: &str,
+    prior: usize,
+    duration: Duration,
+) -> Result<usize, String> {
+    let end = Instant::now() + duration;
+    while Instant::now() < end {
+        let lines = fs::read_to_string(path).unwrap_or_default();
+        let count = lines.lines().filter(|entry| *entry == line).count();
+        if count > prior {
+            return Ok(count);
+        }
+        sleep(Duration::from_millis(80)).await;
+    }
+    Err(format!("synthetic CLI marker {line:?} was not observed"))
+}
+
+async fn wait_named_text(
+    pid: u32,
+    name: &str,
+    duration: Duration,
+) -> Result<(String, String, bool), String> {
+    let end = Instant::now() + duration;
+    let mut last = String::new();
+    while Instant::now() < end {
+        match find_accessible_matching(
+            pid,
+            name,
+            &["label", "text", "static"],
+            false,
+            Some("CodexBar GTK — Sessions"),
+            false,
+        )
+        .await
+        {
+            Ok(found) => return Ok(found),
+            Err(error) => last = error,
+        }
+        sleep(Duration::from_millis(100)).await;
+    }
+    Err(format!(
+        "PID {pid} did not expose visible text containing {name:?}: {last}"
+    ))
+}
+
+async fn run_full_matrix(
+    pid: u32,
+    home: &Path,
+    prefs: &Path,
+    cli: &Path,
+    envs: &std::collections::BTreeMap<String, String>,
+    runtime: &Path,
+    screenshot: &Path,
+    artifacts: &Path,
+) -> Result<serde_json::Value, String> {
+    let mut actions = Vec::new();
+    let notification_keys = [
+        (
+            "Session quota notifications",
+            "sessionQuotaNotificationsEnabled",
+        ),
+        (
+            "Quota warning notifications",
+            "quotaWarningNotificationsEnabled",
+        ),
+        (
+            "Limit reset notifications",
+            "limitResetNotificationsEnabled",
+        ),
+        ("Pace warnings", "predictivePaceNotificationsEnabled"),
+    ];
+    gaction(&["settings"])?;
+    wait_window(pid, "CodexBar Settings", Duration::from_secs(10)).await?;
+    let (tab, tab_id, _) = wait_accessible(
+        pid,
+        "Notifications",
+        &["page tab", "tab", "button"],
+        true,
+        None,
+        Duration::from_secs(10),
+    )
+    .await?;
+    click_atspi(pid, &tab, &tab_id).await?;
+    wait_accessible(
+        pid,
+        "Notifications",
+        &["page tab", "tab", "button"],
+        true,
+        Some(true),
+        Duration::from_secs(5),
+    )
+    .await?;
+    let mut expected: serde_json::Value =
+        serde_json::from_slice(&fs::read(prefs).map_err(|e| e.to_string())?)
+            .map_err(|e| e.to_string())?;
+    let mut notification_actions = Vec::new();
+    for (label, key) in notification_keys {
+        let (control, identity, checked) = wait_accessible_scoped(
+            pid,
+            label,
+            &["switch", "check box"],
+            true,
+            Some(false),
+            Duration::from_secs(10),
+            Some("Notifications"),
+        )
+        .await?;
+        click_atspi(pid, &control, &identity).await?;
+        let (after_control, after_id, after) = wait_accessible_scoped(
+            pid,
+            label,
+            &["switch", "check box"],
+            true,
+            Some(true),
+            Duration::from_secs(5),
+            Some("Notifications"),
+        )
+        .await?;
+        expected = expected_toggled_map(&expected, key)?;
+        let persisted: serde_json::Value =
+            serde_json::from_slice(&fs::read(prefs).map_err(|e| e.to_string())?)
+                .map_err(|e| e.to_string())?;
+        if persisted != expected {
+            return Err(format!(
+                "notification {key} changed unexpected preference map"
+            ));
+        }
+        notification_actions.push(serde_json::json!({"label":label,"key":key,"identity_before":identity,"identity_after":after_id,"visible_checked_before":checked,"visible_checked_after":after,"same_control":control==after_control,"full_preference_map_match":true}));
+    }
+    actions
+        .push(serde_json::json!({"page":"Notifications","controls":notification_actions.clone()}));
+
+    let (menu, menu_id, _) = wait_accessible(
+        pid,
+        "Menu Bar",
+        &["page tab", "tab", "button"],
+        true,
+        None,
+        Duration::from_secs(10),
+    )
+    .await?;
+    click_atspi(pid, &menu, &menu_id).await?;
+    wait_accessible(
+        pid,
+        "Menu Bar",
+        &["page tab", "tab", "button"],
+        true,
+        Some(true),
+        Duration::from_secs(5),
+    )
+    .await?;
+    let (tray, tray_id, tray_before) = wait_accessible_scoped(
+        pid,
+        "Show the tray icon",
+        &["switch", "check box"],
+        true,
+        Some(false),
+        Duration::from_secs(10),
+        Some("Menu Bar"),
+    )
+    .await?;
+    click_atspi(pid, &tray, &tray_id).await?;
+    let (_, tray_after_id, tray_after) = wait_accessible_scoped(
+        pid,
+        "Show the tray icon",
+        &["switch", "check box"],
+        true,
+        Some(true),
+        Duration::from_secs(5),
+        Some("Menu Bar"),
+    )
+    .await?;
+    expected = expected_toggled_map(&expected, "showTray")?;
+    let persisted: serde_json::Value =
+        serde_json::from_slice(&fs::read(prefs).map_err(|e| e.to_string())?)
+            .map_err(|e| e.to_string())?;
+    if persisted != expected {
+        return Err("tray visibility changed unexpected preference map".into());
+    }
+    actions.push(serde_json::json!({"page":"Menu Bar","control":"Show the tray icon","identity_before":tray_id,"identity_after":tray_after_id,"checked_before":tray_before,"checked_after":tray_after,"full_preference_map_match":true}));
+
+    let (hooks_tab, hooks_tab_id, _) = wait_accessible(
+        pid,
+        "Hooks",
+        &["page tab", "tab", "button"],
+        true,
+        None,
+        Duration::from_secs(10),
+    )
+    .await?;
+    click_atspi(pid, &hooks_tab, &hooks_tab_id).await?;
+    wait_accessible(
+        pid,
+        "Hooks",
+        &["page tab", "tab", "button"],
+        true,
+        Some(true),
+        Duration::from_secs(5),
+    )
+    .await?;
+    take_screenshot(
+        screenshot,
+        runtime,
+        envs,
+        &artifacts.join("settings-hooks.png"),
+    )?;
+    let (hooks, hooks_id, hooks_before) = wait_accessible_scoped(
+        pid,
+        "Enable hooks",
+        &["switch", "check box"],
+        true,
+        Some(true),
+        Duration::from_secs(10),
+        Some("Hooks"),
+    )
+    .await?;
+    let cli_log = home.join("cli-calls.log");
+    let prior = fs::read_to_string(&cli_log)
+        .unwrap_or_default()
+        .lines()
+        .filter(|line| *line == "hooks disable")
+        .count();
+    click_atspi(pid, &hooks, &hooks_id).await?;
+    let (_, hooks_after_id, hooks_after) = wait_accessible_scoped(
+        pid,
+        "Enable hooks",
+        &["switch", "check box"],
+        true,
+        Some(false),
+        Duration::from_secs(10),
+        Some("Hooks"),
+    )
+    .await?;
+    let calls = wait_log_line(&cli_log, "hooks disable", prior, Duration::from_secs(10)).await?;
+    if calls - prior != 1 {
+        return Err(format!(
+            "Hooks disable exact CLI call count was {}, expected 1",
+            calls - prior
+        ));
+    }
+    let output = Command::new(cli)
+        .args(["hooks", "list", "--format", "json"])
+        .envs(envs)
+        .output()
+        .map_err(|e| e.to_string())?;
+    if !output.status.success()
+        || serde_json::from_slice::<serde_json::Value>(&output.stdout).ok()
+            != Some(serde_json::json!({"enabled":false,"events":[]}))
+    {
+        return Err("synthetic hooks list postcondition was not disabled".into());
+    }
+    let after_prefs: serde_json::Value =
+        serde_json::from_slice(&fs::read(prefs).map_err(|e| e.to_string())?)
+            .map_err(|e| e.to_string())?;
+    if after_prefs != expected {
+        return Err("Hooks disable modified preferences".into());
+    }
+    actions.push(serde_json::json!({"page":"Hooks","control":"Enable hooks","identity_before":hooks_id,"identity_after":hooks_after_id,"checked_before":hooks_before,"checked_after":hooks_after,"cli_calls":["hooks disable"],"cli_call_count":calls-prior,"cli_postcondition":{"enabled":false,"events":[]},"preferences_unchanged":true}));
+
+    gaction(&["page", "'spend'"])?;
+    let spend_title = "CodexBar GTK — Usage & Spend";
+    let spend_window = wait_window(pid, spend_title, Duration::from_secs(10)).await?;
+    let mut range_actions = Vec::new();
+    let range_names = ["7 days", "30 days", "90 days", "All"];
+    for range in range_names {
+        gaction(&["spend-range", &format!("'{range}'")])?;
+        let observed = wait_unique_selected(
+            pid,
+            &range_names,
+            range,
+            Some(spend_title),
+            Duration::from_secs(10),
+        )
+        .await?;
+        let (name, identity, pressed) = observed
+            .into_iter()
+            .find(|(_, live, _)| live.ends_with(&format!(":toggle button:{range}")))
+            .ok_or("selected Spend range identity disappeared")?;
+        range_actions.push(serde_json::json!({"value":range,"control":name,"identity":identity,"pressed":pressed,"pid":pid,"exactly_one_range_selected":true}));
+        if range == "7 days" {
+            take_screenshot(
+                screenshot,
+                runtime,
+                envs,
+                &artifacts.join("spend-7-days.png"),
+            )?;
+        }
+    }
+    actions.push(serde_json::json!({"page":"Spend","window":spend_window,"ranges":range_actions}));
+    let mut modes = Vec::new();
+    let heatmap_names = ["Daily", "Weekly", "Cumulative"];
+    for mode in heatmap_names {
+        let (name, identity, pressed) = wait_accessible(
+            pid,
+            mode,
+            &["toggle button"],
+            true,
+            None,
+            Duration::from_secs(10),
+        )
+        .await?;
+        let changed = !pressed;
+        if changed {
+            click_atspi(pid, &name, &identity).await?;
+        }
+        let observed = wait_unique_selected(
+            pid,
+            &heatmap_names,
+            mode,
+            Some(spend_title),
+            Duration::from_secs(10),
+        )
+        .await?;
+        let (_, after_id, after) = observed
+            .into_iter()
+            .find(|(_, live, _)| live.ends_with(&format!(":toggle button:{mode}")))
+            .ok_or("selected heatmap control identity disappeared")?;
+        modes.push(serde_json::json!({"mode":mode,"identity":after_id,"pressed":after,"changed_by_action":changed}));
+    }
+    let (daily, daily_id, daily_before) = wait_accessible(
+        pid,
+        "Daily",
+        &["toggle button"],
+        true,
+        Some(false),
+        Duration::from_secs(5),
+    )
+    .await?;
+    click_atspi(pid, &daily, &daily_id).await?;
+    let daily_observed = wait_unique_selected(
+        pid,
+        &heatmap_names,
+        "Daily",
+        Some(spend_title),
+        Duration::from_secs(10),
+    )
+    .await?;
+    let (_, daily_after_id, daily_after) = daily_observed
+        .into_iter()
+        .find(|(_, live, _)| live.ends_with(":toggle button:Daily"))
+        .ok_or("Daily return control identity disappeared")?;
+    modes.push(serde_json::json!({"mode":"Daily","explicit_return":true,"identity_before":daily_id,"identity_after":daily_after_id,"changed":daily_before!=daily_after,"pressed_after":daily_after}));
+    if daily_id != daily_after_id || daily_before || !daily_after {
+        return Err("explicit Daily return was not observed on the same selected control".into());
+    }
+    actions.push(serde_json::json!({"page":"Spend","heatmap_modes":modes}));
+
+    gaction(&["page", "'sessions'"])?;
+    let sessions_window =
+        wait_window(pid, "CodexBar GTK — Sessions", Duration::from_secs(10)).await?;
+    let sessions_cases = [
+        (
+            "loading",
+            "Refreshing · showing the last successful result",
+            Duration::from_secs(15),
+        ),
+        (
+            "success",
+            "1 running of 1 known sessions",
+            Duration::from_secs(20),
+        ),
+        (
+            "empty",
+            "The last successful scan found no agent sessions.",
+            Duration::from_secs(20),
+        ),
+        (
+            "error",
+            "Session scan failed · showing the last successful result",
+            Duration::from_secs(20),
+        ),
+    ];
+    let mut sessions_results = Vec::new();
+    for (mode, status, deadline) in sessions_cases {
+        let mode_path = home.join("sessions-mode");
+        let tmp = home.join("sessions-mode.tmp");
+        fs::write(&tmp, format!("{mode}\n")).map_err(|e| e.to_string())?;
+        fs::rename(&tmp, &mode_path).map_err(|e| e.to_string())?;
+        let log = fs::read_to_string(&cli_log).unwrap_or_default();
+        let before_call = log
+            .lines()
+            .filter(|line| *line == "sessions --json-v2")
+            .count();
+        let before_start = log
+            .lines()
+            .filter(|line| *line == format!("sessions-fixture-{mode}-start"))
+            .count();
+        gaction(&["refresh"])?;
+        wait_log_line(
+            &cli_log,
+            &format!("sessions-fixture-{mode}-start"),
+            before_start,
+            Duration::from_secs(10),
+        )
+        .await?;
+        let (_, status_id, _) = wait_named_text(pid, status, deadline).await?;
+        if mode == "loading" {
+            take_screenshot(
+                screenshot,
+                runtime,
+                envs,
+                &artifacts.join("sessions-loading.png"),
+            )?;
+        }
+        let done = format!("sessions-fixture-{mode}-done");
+        wait_log_line(&cli_log, &done, 0, Duration::from_secs(25)).await?;
+        if mode != "loading" {
+            take_screenshot(
+                screenshot,
+                runtime,
+                envs,
+                &artifacts.join(format!("sessions-{mode}.png")),
+            )?;
+        }
+        let after = fs::read_to_string(&cli_log).unwrap_or_default();
+        let after_call = after
+            .lines()
+            .filter(|line| *line == "sessions --json-v2")
+            .count();
+        if after_call - before_call != 1 {
+            return Err(format!(
+                "Sessions {mode} refresh issued {} CLI calls, expected exactly one",
+                after_call - before_call
+            ));
+        }
+        let mut result = serde_json::json!({"mode":mode,"visible_status":status,"accessible_identity":status_id,"pid":pid,"refresh_cli":"sessions --json-v2","refresh_cli_count":after_call-before_call,"fixture_completed":true});
+        if mode == "error" {
+            let (_, err_id, _) = wait_named_text(
+                pid,
+                "Existing rows remain available",
+                Duration::from_secs(5),
+            )
+            .await?;
+            result["visible_error"] = "Existing rows remain available".into();
+            result["visible_error_identity"] = err_id.into();
+        }
+        sessions_results.push(result);
+    }
+    actions.push(
+        serde_json::json!({"page":"Sessions","window":sessions_window,"states":sessions_results}),
+    );
+    Ok(
+        serde_json::json!({"notifications":notification_actions,"actions":actions,"preferences_after_settings_matrix":expected,"captures":["settings-hooks.png","spend-7-days.png","sessions-loading.png","sessions-success.png","sessions-empty.png","sessions-error.png"],"synthetic_only":true}),
+    )
 }
 
 fn gaction(args: &[&str]) -> Result<(), String> {
@@ -713,7 +1423,7 @@ async fn wait_window(pid: u32, title: &str, duration: Duration) -> Result<String
     let end = Instant::now() + duration;
     let mut last_error = String::new();
     while Instant::now() < end {
-        match find_accessible(pid, title, WINDOW_ROLES, false).await {
+        match find_accessible(pid, title, WINDOW_ROLES, false, None).await {
             Ok((_, id, _)) => return Ok(id),
             Err(error) => last_error = error,
         }
@@ -731,7 +1441,7 @@ async fn wait_control(
 ) -> Result<(String, String, bool), String> {
     let end = Instant::now() + duration;
     while Instant::now() < end {
-        if let Ok(v) = find_accessible(pid, name, &roles, true).await {
+        if let Ok(v) = find_accessible(pid, name, &roles, true, None).await {
             return Ok(v);
         }
         sleep(Duration::from_millis(100)).await
@@ -745,6 +1455,18 @@ async fn find_accessible(
     name: &str,
     roles: &[&str],
     actionable: bool,
+    context: Option<&str>,
+) -> Result<(String, String, bool), String> {
+    find_accessible_matching(pid, name, roles, actionable, context, true).await
+}
+
+async fn find_accessible_matching(
+    pid: u32,
+    name: &str,
+    roles: &[&str],
+    actionable: bool,
+    context: Option<&str>,
+    exact_name: bool,
 ) -> Result<(String, String, bool), String> {
     let conn = AccessibilityConnection::new()
         .await
@@ -783,8 +1505,12 @@ async fn find_accessible(
             if !role.is_empty() || !nm.is_empty() {
                 record_window_candidate(&mut window_candidates, &n.identity, &role, &nm);
             }
-            if nm == name
-                && roles.contains(&role.as_str())
+            if (if exact_name {
+                nm == name
+            } else {
+                nm.contains(name)
+            }) && roles.contains(&role.as_str())
+                && accessible_context_matches(&n.identity, context)
                 && st.contains(State::Showing)
                 && st.contains(State::Visible)
                 && st.contains(State::Sensitive)
@@ -801,13 +1527,20 @@ async fn find_accessible(
                     Err(_) => false,
                 };
                 if !actionable || has_action {
-                    found.push((
-                        n.identity.clone(),
-                        format!("{}:{}:{}:{}", pid, n.identity, role, nm),
-                        st.contains(State::Checked)
-                            || st.contains(State::Pressed)
-                            || st.contains(State::Selected),
-                    ));
+                    let object_path = n.object.path_as_str().to_owned();
+                    if !found
+                        .iter()
+                        .any(|row: &(String, String, bool, String)| row.3 == object_path)
+                    {
+                        found.push((
+                            n.identity.clone(),
+                            format!("{}:{}:{}:{}", pid, n.identity, role, nm),
+                            st.contains(State::Checked)
+                                || st.contains(State::Pressed)
+                                || st.contains(State::Selected),
+                            object_path,
+                        ));
+                    }
                 }
             }
             for i in 0..a
@@ -817,9 +1550,10 @@ async fn find_accessible(
                 .clamp(0, MAX_CHILDREN as i32)
             {
                 if let Ok(c) = a.get_child_at_index(i).await {
+                    let parent_name: String = nm.chars().take(160).collect();
                     q.push(Node {
                         object: c,
-                        identity: format!("{}/{}", n.identity, i),
+                        identity: format!("{}/{}[{}]:{}", n.identity, role, i, parent_name),
                         depth: n.depth + 1,
                     });
                 }
@@ -828,11 +1562,12 @@ async fn find_accessible(
     }
     if found.len() != 1 {
         return Err(format!(
-            "expected one visible actionable AT-SPI node {name:?} for PID {pid}, found {}; same-PID accessible sample: {window_candidates:?}",
-            found.len(),
+            "expected one visible actionable AT-SPI node {name:?} for PID {pid}, found {}; matches: {:?}; same-PID accessible sample: {window_candidates:?}",
+            found.len(), found.iter().take(8).map(|row| (&row.1, &row.3)).collect::<Vec<_>>(),
         ));
     }
-    Ok(found.remove(0))
+    let (tree_identity, live_identity, active, _object_path) = found.remove(0);
+    Ok((tree_identity, live_identity, active))
 }
 async fn click_atspi(pid: u32, _control: &str, identity: &str) -> Result<(), String> {
     let conn = AccessibilityConnection::new()
@@ -872,9 +1607,10 @@ async fn click_atspi(pid: u32, _control: &str, identity: &str) -> Result<(), Str
                 .clamp(0, MAX_CHILDREN as i32)
             {
                 if let Ok(c) = a.get_child_at_index(i).await {
+                    let parent_name: String = name.chars().take(160).collect();
                     q.push(Node {
                         object: c,
-                        identity: format!("{}/{}", n.identity, i),
+                        identity: format!("{}/{}[{}]:{}", n.identity, role, i, parent_name),
                         depth: n.depth + 1,
                     })
                 }
@@ -907,7 +1643,7 @@ async fn click_atspi(pid: u32, _control: &str, identity: &str) -> Result<(), Str
         .await
         .map_err(|e| e.to_string())?
         .is_empty();
-    if !atspi_target_guard(
+    if !atspi_route_target_guard(
         object_pid(&conn, &found[0].object).await.unwrap_or(0),
         pid,
         &live_identity,
@@ -2236,9 +2972,10 @@ async fn wait_nonempty_file(path: &str, duration: Duration) -> Result<(), String
 #[cfg(test)]
 mod tests {
     use super::{
-        atspi_target_guard, chooser_dialog_guard, chooser_visit_action_index, cleanup_confirmed,
+        accessible_context_matches, atspi_route_target_guard, atspi_target_guard,
+        chooser_dialog_guard, chooser_visit_action_index, cleanup_confirmed, encode_bounded_json,
         expected_toggled_map, is_within_tree, next_chooser_fallback_place, record_window_candidate,
-        ChooserActionSample, ChooserDialogSample, WINDOW_ROLES,
+        ChooserActionSample, ChooserDialogSample, Command, PrivateRunnerState, WINDOW_ROLES,
     };
 
     #[test]
@@ -2409,6 +3146,106 @@ mod tests {
             0,
             600
         ));
+    }
+
+    #[test]
+    fn matrix_route_guard_allows_routes_and_toggles_with_pid_and_visibility_guards() {
+        for role in [
+            "page tab",
+            "tab",
+            "button",
+            "switch",
+            "check box",
+            "toggle button",
+        ] {
+            assert!(atspi_route_target_guard(
+                41, 41, "same", "same", role, true, true, true, true
+            ));
+        }
+        assert!(!atspi_route_target_guard(
+            42, 41, "same", "same", "button", true, true, true, true
+        ));
+        assert!(!atspi_route_target_guard(
+            41, 41, "same", "same", "button", false, true, true, true
+        ));
+        assert!(!atspi_route_target_guard(
+            41, 41, "same", "same", "label", true, true, true, true
+        ));
+    }
+
+    #[test]
+    fn matrix_runner_uses_private_home_and_xdg_paths_without_host_desktop_variables() {
+        let state = PrivateRunnerState::create().unwrap();
+        let root = state.root.clone();
+        let mut command = Command::new("true");
+        command.env("DISPLAY", ":0");
+        command.env("DBUS_SESSION_BUS_ADDRESS", "unix:path=/host/session-bus");
+        command.env("XDG_CACHE_HOME", "/host/cache");
+        state.configure(&mut command);
+        let values = command
+            .get_envs()
+            .filter_map(|(key, value)| {
+                value.map(|value| {
+                    (
+                        key.to_string_lossy().into_owned(),
+                        value.to_string_lossy().into_owned(),
+                    )
+                })
+            })
+            .collect::<std::collections::HashMap<_, _>>();
+        assert_eq!(values["HOME"], state.home.display().to_string());
+        assert_eq!(
+            values["XDG_RUNTIME_DIR"],
+            state.runtime.display().to_string()
+        );
+        assert_eq!(
+            values["XDG_CONFIG_HOME"],
+            state.config.display().to_string()
+        );
+        assert_eq!(values["XDG_DATA_HOME"], state.data.display().to_string());
+        assert_eq!(values["XDG_CACHE_HOME"], state.cache.display().to_string());
+        for key in ["DISPLAY", "WAYLAND_DISPLAY", "DBUS_SESSION_BUS_ADDRESS"] {
+            assert!(!values.contains_key(key), "unexpected inherited {key}");
+        }
+        drop(state);
+        assert!(!root.exists());
+    }
+
+    #[test]
+    fn matrix_preference_toggle_preserves_every_other_setting() {
+        let original = serde_json::json!({"sessionQuotaNotificationsEnabled":false,"futureKey":"retained","showTray":false});
+        let after_notice =
+            expected_toggled_map(&original, "sessionQuotaNotificationsEnabled").unwrap();
+        assert_eq!(
+            after_notice,
+            serde_json::json!({"sessionQuotaNotificationsEnabled":true,"futureKey":"retained","showTray":false})
+        );
+        let after_tray = expected_toggled_map(&after_notice, "showTray").unwrap();
+        assert_eq!(after_tray["futureKey"], "retained");
+        assert_eq!(after_tray.as_object().unwrap().len(), 3);
+    }
+
+    #[test]
+    fn matrix_evidence_encoder_enforces_byte_limit() {
+        let evidence = serde_json::json!({"synthetic_only":true,"status":"passed"});
+        let encoded = encode_bounded_json(&evidence, 128).unwrap();
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&encoded).unwrap(),
+            evidence
+        );
+        assert!(encode_bounded_json(&evidence, 1).is_err());
+    }
+
+    #[test]
+    fn matrix_accessibility_context_requires_an_ancestor_boundary() {
+        let identity = "app[0]/window[1]:Settings/tab panel[0]:Notifications/group[0]:test";
+        assert!(accessible_context_matches(identity, Some("Notifications")));
+        assert!(!accessible_context_matches(identity, Some("Hooks")));
+        assert!(!accessible_context_matches(
+            "app[0]/NotificationsExtra/control",
+            Some("Notifications")
+        ));
+        assert!(accessible_context_matches(identity, None));
     }
 
     #[test]

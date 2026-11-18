@@ -8,6 +8,11 @@ on:
       - "rust-core/**"
       - "rust-backend/**"
       - "rust-gtk/**"
+      - "rust-ui-test-tools/**"
+      - "rust-ci-tools/**"
+      - "rust-smoke-fixtures/**"
+      - "scripts/build-rust-smoke-fixtures.sh"
+      - "scripts/smoke-native-panel-parity.sh"
       - "assets/provider_icons/**"
       - "scripts/smoke-native-gtk.sh"
       - "scripts/smoke-native-dashboard.sh"
@@ -25,6 +30,7 @@ on:
       - "scripts/install-native.sh"
       - "scripts/smoke-native-install.sh"
       - "scripts/native/**"
+      - "scripts/native/no-python/cargo-artifact"
       - "rust-gtk/tests/python_free_linkage.rs"
       - "rust-gtk/tests/svg_loader_negative.rs"
       - "scripts/native/render_activation.sh"
@@ -55,15 +61,28 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+      - name: Check CI helper formatting
+        run: cargo fmt --manifest-path rust-ci-tools/Cargo.toml -- --check
+      - name: Test CI helper behavior
+        run: cargo test --manifest-path rust-ci-tools/Cargo.toml --locked
+      - name: Lint CI helper strictly
+        run: cargo clippy --manifest-path rust-ci-tools/Cargo.toml --all-targets --all-features -- -D warnings
       - name: Install native GTK build and smoke dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends libgtk-4-dev libadwaita-1-dev librsvg2-common xvfb xauth xdotool x11-utils x11-apps xfwm4 ffmpeg libglib2.0-bin dbus-daemon python3-dbus python3-gi weston wayland-utils at-spi2-core gir1.2-atspi-2.0
+      - name: Check Rust smoke fixtures
+        run: |
+          cargo fmt --manifest-path rust-smoke-fixtures/Cargo.toml -- --check
+          cargo test --manifest-path rust-smoke-fixtures/Cargo.toml --locked
+          cargo clippy --manifest-path rust-smoke-fixtures/Cargo.toml --locked --all-targets -- -D warnings
+          ./scripts/build-rust-smoke-fixtures.sh
       - name: Check Rust formatting
         run: |
           cargo fmt --manifest-path rust-core/Cargo.toml -- --check
           cargo fmt --manifest-path rust-backend/Cargo.toml -- --check
           cargo fmt --manifest-path rust-gtk/Cargo.toml -- --check
+          cargo fmt --manifest-path rust-ui-test-tools/Cargo.toml -- --check
       - name: Run Rust core tests
         run: cargo test --manifest-path rust-core/Cargo.toml --locked
       - name: Run headless backend contract tests
@@ -85,6 +104,11 @@ jobs:
           cargo clippy --manifest-path rust-core/Cargo.toml --all-targets --all-features -- -D warnings
           cargo clippy --manifest-path rust-backend/Cargo.toml --all-targets --all-features -- -D warnings
           cargo clippy --manifest-path rust-gtk/Cargo.toml --all-targets -- -D warnings
+          cargo clippy --manifest-path rust-ui-test-tools/Cargo.toml --locked --all-targets --all-features -- -D warnings
+      - name: Test Rust UI automation tool
+        run: cargo test --manifest-path rust-ui-test-tools/Cargo.toml --locked
+      - name: Build Rust UI automation tool
+        run: cargo build --manifest-path rust-ui-test-tools/Cargo.toml --locked --bin codexbar-ui-test-tool
       - name: Build native GTK application
         run: cargo build --manifest-path rust-gtk/Cargo.toml --locked --bin codexbar-gtk-native
       - name: Exercise Gio routing and async in-flight shutdown
@@ -99,14 +123,14 @@ jobs:
         timeout-minutes: 6
         run: |
           mkdir -m 700 -p "$RUNNER_TEMP/native-wayland-evidence"
-          /usr/bin/python3 scripts/test-native-wayland-isolated.py \
+          rust-ui-test-tools/target/debug/codexbar-ui-test-tool isolated-wayland \
             --binary rust-gtk/target/debug/codexbar-gtk-native \
             --artifact-dir "$RUNNER_TEMP/native-wayland-evidence"
       - name: Exercise native Settings advanced actions on private Weston Wayland
         timeout-minutes: 6
         run: |
           mkdir -m 700 -p "$RUNNER_TEMP/native-wayland-advanced-evidence"
-          /usr/bin/python3 scripts/test-native-wayland-isolated.py \
+          rust-ui-test-tools/target/debug/codexbar-ui-test-tool isolated-wayland \
             --scenario advanced \
             --binary rust-gtk/target/debug/codexbar-gtk-native \
             --artifact-dir "$RUNNER_TEMP/native-wayland-advanced-evidence"
@@ -114,7 +138,7 @@ jobs:
         timeout-minutes: 6
         run: |
           mkdir -m 700 -p "$RUNNER_TEMP/native-wayland-settings-residual-evidence"
-          /usr/bin/python3 scripts/test-native-wayland-isolated.py \
+          rust-ui-test-tools/target/debug/codexbar-ui-test-tool isolated-wayland \
             --scenario settings-residual \
             --binary rust-gtk/target/debug/codexbar-gtk-native \
             --artifact-dir "$RUNNER_TEMP/native-wayland-settings-residual-evidence"
@@ -122,7 +146,7 @@ jobs:
         timeout-minutes: 6
         run: |
           mkdir -m 700 -p "$RUNNER_TEMP/native-wayland-page-state-evidence"
-          /usr/bin/python3 scripts/test-native-wayland-isolated.py \
+          rust-ui-test-tools/target/debug/codexbar-ui-test-tool isolated-wayland \
             --scenario page-state \
             --binary rust-gtk/target/debug/codexbar-gtk-native \
             --artifact-dir "$RUNNER_TEMP/native-wayland-page-state-evidence"
@@ -175,6 +199,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - name: Build CI resolver for the Ubuntu 24.04 runtime ABI
+        run: |
+          cargo build --manifest-path rust-ci-tools/Cargo.toml --locked --release --bin codexbar-ci-tool
+          printf 'CODEXBAR_CI_TOOL=%s/rust-ci-tools/target/release/codexbar-ci-tool\n' "$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
       - name: Install native build dependencies
         run: |
           sudo apt-get update
@@ -183,14 +211,14 @@ jobs:
         run: |
           cargo build --manifest-path rust-gtk/Cargo.toml --locked --bin codexbar-gtk-native --message-format=json-render-diagnostics > "$RUNNER_TEMP/native-debug.json"
           cargo build --manifest-path rust-gtk/Cargo.toml --locked --release --bin codexbar-gtk-native --message-format=json-render-diagnostics > "$RUNNER_TEMP/native-release.json"
-          native_debug="$(python3 scripts/native/no-python/cargo-artifact.py --json "$RUNNER_TEMP/native-debug.json" --target codexbar-gtk-native)"
+          native_debug="$(scripts/native/no-python/cargo-artifact --json "$RUNNER_TEMP/native-debug.json" --target codexbar-gtk-native)"
           printf 'NATIVE_DEBUG=%s\n' "$native_debug" >> "$GITHUB_ENV"
-          native_release="$(python3 scripts/native/no-python/cargo-artifact.py --json "$RUNNER_TEMP/native-release.json" --target codexbar-gtk-native)"
+          native_release="$(scripts/native/no-python/cargo-artifact --json "$RUNNER_TEMP/native-release.json" --target codexbar-gtk-native)"
           printf 'NATIVE_RELEASE=%s\n' "$native_release" >> "$GITHUB_ENV"
       - name: Build SVG accessibility test executable without running host GUI
         run: |
           cargo test --manifest-path rust-gtk/Cargo.toml --locked --test a11y_assets --no-run --message-format=json-render-diagnostics > "$RUNNER_TEMP/a11y-assets.json"
-          svg_test_binary="$(python3 scripts/native/no-python/cargo-artifact.py --json "$RUNNER_TEMP/a11y-assets.json" --target a11y_assets)"
+          svg_test_binary="$(scripts/native/no-python/cargo-artifact --json "$RUNNER_TEMP/a11y-assets.json" --target a11y_assets)"
           printf 'SVG_TEST_BINARY=%s\n' "$svg_test_binary" >> "$GITHUB_ENV"
       - name: Run installed-prefix and Python-free runtime proof in Docker
         run: |

@@ -75,6 +75,10 @@ if [ -e "$EVIDENCE_DIR/run.log" ]; then echo "evidence directory already contain
 mkdir -p "$EVIDENCE_DIR"
 WORK="$EVIDENCE_DIR/work"
 mkdir -p "$WORK/home/.config/codexbar-gtk" "$WORK/home/.local/bin"
+CI_TOOL_DIR="$WORK/ci-tools-target"
+cargo build --locked --offline --manifest-path "$REPO_ROOT/rust-ci-tools/Cargo.toml" --target-dir "$CI_TOOL_DIR" --bin codexbar-ci-tool
+CI_TOOL="$CI_TOOL_DIR/debug/codexbar-ci-tool"
+cp "$CI_TOOL" "$WORK/ci-tool"
 HOME_DIR="$WORK/home"
 LOGFILE="$EVIDENCE_DIR/run.log"
 exec > >(tee "$LOGFILE") 2>&1
@@ -108,7 +112,7 @@ note "expected sha256: $EXPECTED_SHA"
 note "primary artifact sha256: $(sha256sum "$ARTIFACT" | awk '{print $1}')"
 note "harness source sha256: $(sha256sum "$0" | awk '{print $1}')"
 note "container runner source sha256: $(sha256sum "$REPO_ROOT/scripts/native/no-python/docker/run-container.sh" | awk '{print $1}')"
-note "Cargo artifact resolver source sha256: $(sha256sum "$REPO_ROOT/scripts/native/no-python/cargo-artifact.py" | awk '{print $1}')"
+note "Rust CI tool source sha256: $(find "$REPO_ROOT/rust-ci-tools/src" -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum | awk '{print $1}')"
 printf -v ORIGINAL_INVOCATION '%q ' "$0" "${ORIGINAL_ARGS[@]}"
 note "invocation: ${ORIGINAL_INVOCATION% }"
 [ -z "$DEBUG_ARTIFACT" ] || note "debug artifact sha256: $(sha256sum "$DEBUG_ARTIFACT" | awk '{print $1}')"
@@ -198,31 +202,7 @@ if [ -n "$CONTAINER_NAME" ] && [ $KEEP -ne 1 ]; then
   docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
 fi
 if [ -f "$WORK/home/.config/codexbar-gtk/settings.json" ] && [ -f "$WORK/home/.config/codexbar-gtk/history.jsonl" ]; then
-  if ! python3 - "$WORK/home/.config/codexbar-gtk/settings.json" "$WORK/home/.config/codexbar-gtk/history.jsonl" "$WORK/expected-settings.json" <<'PY'
-import json, math, sys
-settings_path, history_path, expected_path = sys.argv[1:]
-with open(settings_path, encoding="utf-8") as f:
-    settings = json.load(f)
-with open(expected_path, encoding="utf-8") as f:
-    expected_settings = json.load(f)
-assert isinstance(settings, dict), "settings must remain a JSON object"
-assert settings == expected_settings, f"settings changed from seeded values/keys: {settings!r}"
-records = []
-with open(history_path, encoding="utf-8") as f:
-    for number, line in enumerate(f, 1):
-        record = json.loads(line)
-        assert isinstance(record, dict), f"history line {number} must be an object"
-        assert isinstance(record.get("t"), (int, float)) and math.isfinite(record["t"]), f"history line {number} timestamp invalid"
-        assert isinstance(record.get("p"), str) and record["p"], f"history line {number} provider invalid"
-        assert isinstance(record.get("w"), str) and record["w"], f"history line {number} window invalid"
-        assert isinstance(record.get("u"), (int, float)) and math.isfinite(record["u"]), f"history line {number} usage invalid"
-        records.append(record)
-seed = {"t": 1794009600.0, "p": "synthetic", "w": "primary", "u": 0.0}
-assert seed in records, "seeded history sample was not semantically preserved"
-assert all(row["p"] == "synthetic" for row in records if row != seed), "appended history must remain synthetic"
-print(f"EVIDENCE:runtime-data-semantic-validation=PASS history-records={len(records)} settings-keys={','.join(sorted(settings))}")
-PY
-  then fail "settings/history semantic validation failed"; fi
+  if ! grep -q '^EVIDENCE:runtime-data-semantic-validation=PASS ' "$WORK/container.log"; then fail "Python-free container semantic validation proof missing"; fi
 else
   fail "runtime settings or history missing for semantic preservation check"
 fi

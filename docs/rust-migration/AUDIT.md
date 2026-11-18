@@ -8146,7 +8146,182 @@ local panel focus/SNI evidence; the exact row-by-row status remains in
 [`UG_GATE.md`](UG_GATE.md). C01–CG remain unaccepted. Root reviews and publishes
 this focused BUILD117 cleanup; no BUILD118 is allocated by this slice.
 
-### E221 — BUILD117 Advanced private-Weston Rust harness (partial)
+### E221 — BUILD118 Rust CI helper and Python resolver migration
+
+**Owner/base/status:** local branch `t3/rust-ci-no-python`, based on fetched
+`origin/main` `93695ac062818a21f7f38ef67765c0c6fc55774e` (PR #118; prior
+exact head `f796b968670e7bbcc28081ba110414f13c405a19`, run `44130179179`, all
+three required checks passed, no reviews/comments/threads). This local BUILD118
+candidate is unpushed and unmerged. No result for its future PR exact head is
+claimed. BUILD118 metadata is `0.82.0 (118)`.
+
+**Implementation:** added the locked `rust-ci-tools` crate, its compiled
+`codexbar-ci-tool` integration tests and the shell wrapper
+`scripts/native/no-python/cargo-artifact`. The three CI Cargo artifact lookups
+now call that wrapper instead of the deleted Python resolver. The
+Python-free-runtime job builds the helper on Ubuntu 24.04 before resolver use,
+then exports its path for the wrapper. This keeps the helper ABI aligned with
+the pinned Ubuntu 24.04 Docker proof image; it is not a general portable-binary
+claim. Rust helper formatting, locked tests, and strict all-target/all-feature
+Clippy are now CI steps, and the push path filter includes `rust-ci-tools/**`
+and the resolver wrapper. Existing Python-free runtime proof, SVG decode,
+settings/history validation, activation command-target proof, retained X11 and
+private Wayland smokes, and artifact upload steps are preserved. All four
+remaining Python harness modules continue to run through
+`scripts/test-native-harness-units.sh`; they remain automation dependencies
+until the corresponding UI automation ports land. No UI files or other Rust
+crates changed in this slice.
+
+**Observed local checks:**
+
+- `cargo fmt --manifest-path rust-ci-tools/Cargo.toml -- --check` — passed.
+- `cargo test --manifest-path rust-ci-tools/Cargo.toml --locked` — 8 actual
+  process-level integration tests passed. They exercised exact Cargo artifact
+  selection, malformed/missing/duplicate artifact rejection, quoted desktop
+  and service target parsing (including paths with spaces), wrong-hash,
+  install-failure and absent-runtime rejection, required-action failure,
+  bounded child cleanup/reaping, and synthetic settings/history validation.
+- `cargo clippy --manifest-path rust-ci-tools/Cargo.toml --all-targets
+  --all-features -- -D warnings` — passed.
+- `bash -n` on the wrapper, service target adapter, Docker container runner,
+  no-Python smoke and service smoke — passed. `git diff --check` passed.
+- Workflow YAML parsing and structural assertions passed: exactly three
+  resolver wrapper calls, Rust helper path filter, and format/test/Clippy CI
+  commands are present; no deleted Python resolver invocation remains in the
+  workflow. The version metadata regression test on root build 118 passed 1/1.
+- `scripts/test-native-harness-units.sh` — all four remaining top-level Python
+  harness modules passed. No deleted Python test module was restored or called.
+
+**Docker proof on the BUILD118 candidate:** the first local
+`smoke-native-no-python.sh` invocation used relative artifact paths and failed
+before Docker could mount/start the container; that attempt is not counted as
+runtime evidence. The rerun with absolute paths passed in
+`/tmp/codexbar-build118-no-python-evidence-2` using image
+`sha256:ff4f45f1f807ee64baa9129c49cd9182e29d5b267337d6bbd8b8dfdd6a96a3ff`.
+The locally built BUILD118 debug artifact hash was
+`a4cff635ab1f7008cc0cc0cc94d8a0d6e3a8a28e92f9c3d91d2896bebc7b461b`; release
+hash was `ff968abf9405c3a2bf77525bdf755b5cf7a0947c86fe890fc9068f9c51373cf6`.
+The Rust helper source digest recorded by the runner was
+`f6ebfc44f1c4a4e585e13c91e83c5a0cbfd722400efcb7c427ff6d1725a1f98b`.
+Docker observed same-hash debug install/runtime, release install/runtime, and
+debug rollback; app D-Bus owner/PID/path/hash, refresh and clean quit; no
+Python/libpython/PyO3/Rust-core linkage; the installed SVG loader and an actual
+host-built SVG decode/dimension test; and exact synthetic settings plus
+semantically valid seeded history. `result.txt` says PASS for this local
+installed-prefix prototype. The container used `--network none`, Xvfb and
+private D-Bus. It does not claim C02 acceptance.
+
+The separately rerun activation proof passed in
+`/tmp/codexbar-build118-service-evidence`: **build 99 → build 118 → build 99**.
+Build-99 source is `41d2fcf982aef52cd86a64cb769176b494abb63c`; its release
+artifact hash was `2d89ca304cd014bc4e94338185c2ee967678cd5b3125beb5ea0aad337d1c0520`.
+The BUILD118 candidate app was built from base commit
+`93695ac062818a21f7f38ef67765c0c6fc55774e`, with local source-tree digest
+`ed2468bd05694b8357a1c2f08a095b36dee67606b9b78f2afb48a5a67d4cda45`, local
+diff digest `111b9e08d2bf5122ee1ab5663b1d69fe2bf0e5a96f6ba605e509797b8af4c5c9`,
+and release artifact hash `ff968abf9405c3a2bf77525bdf755b5cf7a0947c86fe890fc9068f9c51373cf6`.
+Both activation targets were parsed and launched with observed PID/executable/
+hash, refresh and clean quit; rollback restored the build-99 desktop target,
+retained a user-edited service file, restored synthetic activation backup, and
+preserved settings/history bytes. The private container had no systemd manager:
+this verifies command-target/installer behavior, not service-manager lifecycle.
+The exact source/artifact identities are in that evidence directory's
+`source-sha256.txt`.
+
+These Docker runs are new local BUILD118 runtime evidence because the app was
+rebuilt with version 118 and the changed Rust helper was exercised. They are
+not CI, merge, host GUI, live Wayland, KDE, real systemd, provider/network,
+authentication, UG, or C-gate results. The retained workflow UI jobs were not
+rerun locally in this helper slice; their prior merged evidence remains
+historical for the app revisions it tested. No private Weston or host GUI was
+used. A remaining Python harness dependency is the four active unit modules;
+continue migrating those only with their UI automation ports. Precise next step:
+root reviews this scoped candidate, publishes it, and observes exact-head CI;
+keep UG **NOT PASSED** and C01–CG unaccepted.
+### E222 — 2026-11-17: private X11 Settings smoke chooser and map assertions
+
+**Owner/base/status:** local branch `t3/rust-smoke-test-tools`, starting at
+`459452d2dec30403bbec2883cd0627eaef07bbd7`. This scoped smoke-tooling change
+is locally committed for root review only. No push, PR, CI claim, release
+metadata change, workflow change, UI runtime edit, or gate acceptance is made.
+
+**Chooser behavior:** `scripts/smoke-native-settings.sh` no longer depends on
+the absent peer `rust-ui-test-tools` checkout or the AT-SPI chooser selector.
+After verifying the visible chooser XID belongs to the running app PID and is
+focused, it uses GTK's normal Ctrl+L location control to open the synthetic
+HOME folder. It verifies the complete sorted set of visible top-level JSON
+files, focuses the file list, and chooses the exact fixture row using `Home`
+and the expected number of `Down` keypresses. The exact valid fixture row was
+visually highlighted with an enabled Import button; the empty fixture row was
+visually highlighted separately. The selected files were proven by exact
+post-import behavior: the valid map matched the entire baseline map with only
+the three intended imported keys changed and the unknown key absent; empty
+imports matched a byte-independent complete JSON map snapshot; reset matched
+the Rust `default_values()` map. GTK closed each chooser through the normal
+Return response. No `item.visit` action or direct chooser file setter is used.
+The historical `scripts/select-native-file-chooser.py` is untouched and is not
+invoked by this smoke.
+
+**Assertions and race diagnosis:** `codexbar-smoke-fixtures` now provides
+complete JSON-map equality, complete import-overlay, and complete default-map
+assertions. The X11 script snapshots the baseline before valid import, checks
+the entire resulting map, proves each empty import preserves the entire map,
+proves reset cancel preserves the imported map, and proves confirmed reset
+matches all current Rust defaults. A failed exploratory full run recorded
+`config disable --provider codex` and fixture state `false`, but no subsequent
+enable action; the CLI marker preceded GTK draining its asynchronous Settings
+response. A 350 ms response-settle interval before the next guarded click fixed
+the provider toggle. The same timing issue then appeared on the Hooks toggle;
+the matching bounded settle was added there. Both later full runs recorded
+provider disable/enable and Hooks disable/enable successfully.
+
+**Local checks and full smokes:**
+
+- `bash -n scripts/smoke-native-settings.sh scripts/build-rust-smoke-fixtures.sh`
+  and ShellCheck — passed.
+- `cargo fmt --manifest-path rust-smoke-fixtures/Cargo.toml -- --check` —
+  passed after formatting the new helper code.
+- `CARGO_TARGET_DIR=/tmp/codexbar-settings-smoke-target cargo build --offline
+  --locked --release --manifest-path rust-smoke-fixtures/Cargo.toml` — passed.
+- Two complete runs of `scripts/smoke-native-settings.sh` passed using separate
+  temporary HOME/runtime roots, each with private Xvfb and private D-Bus. Both
+  ran with a PATH containing no Python executable. An `LD_PRELOAD` socket guard
+  refused non-loopback IPv4/IPv6 bind/connect/sendto/sendmsg operations while
+  allowing the smoke's private loopback `VERSION` fixture; no public provider
+  HTTP, credentials, authentication, host desktop, host bus, host input, or
+  real configuration was used. Logs are
+  `/tmp/codexbar-settings-full-smoke-1.log` and
+  `/tmp/codexbar-settings-full-smoke-2.log`; selected-row captures from the
+  first passing run are `/tmp/codexbar-full1-import-selected.png` and
+  `/tmp/codexbar-full1-empty-selected.png`.
+- A kernel network namespace could not be created (`unshare -n` returned
+  `Operation not permitted`), so external socket use was denied by the
+  process-level loopback guard instead; the only permitted TCP endpoint was
+  the private update fixture on 127.0.0.1.
+- The implementation and smokes use `/tmp/codexbar-settings-smoke-target`,
+  separate from the app's and other checkouts' Cargo targets. Xvfb and xdotool
+  packages were extracted under `/tmp` because they were absent from the host;
+  no system package installation or host desktop interaction occurred.
+- `git diff --check` — passed.
+
+**Limits and next step:** These are local X11 Settings-smoke results, not KDE
+Wayland physical-input parity, UI gate acceptance, exact-head CI, or migration
+completion. The app-owned location field accepts the private HOME path, and
+the visible file list confirms the exact fixture selection before GTK accepts
+it. Root reviews the local commit; UG remains **NOT PASSED** and C01–CG remain
+unaccepted.
+
+Root reconciled this slice onto BUILD118 main at `ff107d0` and allocated
+BUILD119 in VERSION, README and CHANGELOG. The test workflow adds the
+fixture crate's locked build, tests, formatting and strict Clippy while
+retaining all existing Wayland scenarios. After reconciliation, fixture tests
+passed (5 unit, 1 process lifecycle), strict Clippy and formatting passed,
+and workflow YAML, shell syntax, focused ShellCheck and diff checks passed.
+The broader ShellCheck scan reported existing SC2016 and SC2015 findings in
+the GTK routing and panel scripts. Both earlier full Settings logs reached
+the success marker before D-Bus teardown diagnostics. Those runs predate the
+BUILD119 metadata and workflow update. Fresh CI is pending.
+### E223 — BUILD117 Advanced private-Weston Rust harness (partial)
 
 **Owner/base/status:** local partial implementation on `t3/native-ui-test-tools`,
 requested clean base `1d53b1b544cebd158ed7de069e58870c7588ad3b`. This is a test-tool
@@ -8207,7 +8382,7 @@ checks and avoiding `item.visit`; then rerun Advanced to prove valid and empty
 imports, Plugins refresh, reset cancel/confirm, full map comparisons, unchanged
 autostart and cleanup. Keep this task partial until that complete runtime pass.
 
-### E222 — 2026-11-18: BUILD117 Advanced Recent-row parity and full pass
+### E224 — 2026-11-18: BUILD117 Advanced Recent-row parity and full pass
 
 **Owner/base/status:** local scoped follow-up on `t3/native-ui-test-tools`,
 based on the requested clean `33d6a54` branch state. The Rust UI test tool and
@@ -8262,3 +8437,89 @@ tools (`--all-targets`). `git diff --check` passed.
 
 **Next:** root reviews and integrates this scoped commit. Keep Python coverage
 intact until then. This test-tool result does not change UG or C gate status.
+
+### E225 — 2026-11-18: BUILD120 Rust private-Weston CI scenarios
+
+**Owner/base/status:** local branch `t3/native-ui-test-tools`; reconciled onto
+verified `origin/main` build-119 commit `37ee8b9fafbd3ab622e7ec0ab9174b6810d28dfc`
+(PR #119). The requested starting commit was `6925aa4`. `gh pr list --state
+open` returned no open pull requests before editing. BUILD120 is a scoped local
+candidate for root review. No push, PR, CI/exact-head result, merge, or gate
+acceptance is claimed. VERSION is `0.82.0 (120)`.
+
+**Workflow change:** the existing `matrix`, `advanced`, `settings-residual`,
+and `page-state` six-minute private-Weston steps now invoke the built
+`rust-ui-test-tools/target/debug/codexbar-ui-test-tool isolated-wayland` binary.
+The same scenario names, per-scenario artifact directories, command nonzero
+failure behavior, and four `if: always()` artifact uploads remain. CI now runs
+locked Rust UI-tool tests and build, rustfmt check, and strict all-target/all-
+features Clippy (`-D warnings`). Workflow path filters cover the UI tool crate
+and continue covering the Python runner and chooser/AT-SPI helpers. Python
+scripts, wrappers, packages and all top-level Python harness regression tests
+remain in place; only these four CI scenario invocations changed.
+
+**Runner review:** the tool launches its nested run with cleared environment
+and private HOME/XDG state, starts `dbus-run-session`, creates a rootless
+Weston compositor/socket, checks the runtime and socket modes as 0700/0600,
+and scopes application AT-SPI actions to exact same-PID visible controls. The
+scenario runner deadline is 210 seconds, nested private-bus process deadline
+240 seconds, and CI step deadline remains six minutes. App and Weston owned
+children are reaped, scratch state is removed, and successful evidence records
+cleanup. Captures are confined to each new mode-0700 scenario artifact
+ directory. Failure remains nonzero; diagnostic logs/evidence remain available
+for the existing always-upload step. The test tool uses only the synthetic
+`fake-codexbar` CLI and seeded preferences/session/cost/hooks fixtures. No
+production provider call, host desktop/session bus, credentials or
+authentication was used.
+
+**Exact local checks:**
+
+- `cargo fmt --manifest-path rust-ui-test-tools/Cargo.toml -- --check` — passed.
+- `cargo test --manifest-path rust-ui-test-tools/Cargo.toml --locked` — passed:
+  3 library tests and 16 binary tests, no failures; doc tests 0.
+- `cargo clippy --manifest-path rust-ui-test-tools/Cargo.toml --locked
+  --all-targets --all-features -- -D warnings` — passed.
+- `cargo build --manifest-path rust-ui-test-tools/Cargo.toml --locked --bin
+  codexbar-ui-test-tool` — passed.
+- `cargo build --manifest-path rust-gtk/Cargo.toml --locked --bin
+  codexbar-gtk-native` — passed.
+- `./scripts/test-native-harness-units.sh` — passed across all four retained
+  top-level Python Wayland harness modules, including the original runner
+  failure/timeout/environment regressions.
+
+The four scenario commands were run separately against the newly built local
+native app and Rust tool, each with a fresh artifact directory:
+
+1. `rust-ui-test-tools/target/debug/codexbar-ui-test-tool isolated-wayland
+   --binary rust-gtk/target/debug/codexbar-gtk-native --scenario matrix
+   --artifact-dir /tmp/codexbar-build120-matrix` — exit 0;
+   `evidence.json` status `passed`. Dashboard, Settings, Spend, Hooks and
+   Sessions loading/success/empty/error captures were retained.
+2. `rust-ui-test-tools/target/debug/codexbar-ui-test-tool isolated-wayland
+   --scenario advanced --binary rust-gtk/target/debug/codexbar-gtk-native
+   --artifact-dir /tmp/codexbar-build120-advanced` — exit 0; status `passed`.
+   Export, exact valid/empty chooser-row imports, reset and cleanup evidence
+   were retained.
+3. `rust-ui-test-tools/target/debug/codexbar-ui-test-tool isolated-wayland
+   --scenario settings-residual --binary rust-gtk/target/debug/codexbar-gtk-native
+   --artifact-dir /tmp/codexbar-build120-settings-residual` — exit 0; status
+   `passed`; three switch captures retained.
+4. `rust-ui-test-tools/target/debug/codexbar-ui-test-tool isolated-wayland
+   --scenario page-state --binary rust-gtk/target/debug/codexbar-gtk-native
+   --artifact-dir /tmp/codexbar-build120-page-state` — exit 0; status `passed`;
+   page navigation and retained Spend error captures retained.
+
+All four `evidence.json` files record `native_app_reaped`, `weston_reaped`,
+`private_home_removed`, `private_dbus_socket_removed`,
+`private_runner_state_removed`, and `private_logs_removed` as true. Each test
+used its own synthetic HOME, fake CLI, private session bus and private Weston
+socket. The host has desktop portal services installed; their activation
+warnings and `A connection to the bus can't be made` teardown messages appeared
+on the private bus during/after runs. They did not change any scenario result;
+all private socket and process cleanup fields were true. This is local
+scenario-tool evidence, not CI, KDE shell/input parity, UG acceptance, or a
+C-gate result.
+
+**Next:** root reviews and integrates this candidate, then observes CI on its
+exact published head. Keep Python automation and UG **NOT PASSED**; C01–CG
+remain unaccepted.

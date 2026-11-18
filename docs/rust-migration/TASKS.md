@@ -9,34 +9,81 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Field | Current checkpoint |
 | --- | --- |
 | Goal | Fully native Rust GTK4/libadwaita application with verified packaging and legacy runtime removal. |
-| Current phase | BUILD117 final source cleanup; UG remains **NOT PASSED**, and C01–CG remain unaccepted. |
-| Last observed merge | PR #117 merged at `677135c4bcffcdf56c5bd5c913c11ee294e229fc`; exact head `f45c01a9139a891e54495b4b62e6f7ee89a95c2a` passed all three required checks in run `44125566585`. |
-| Active implementation | Advanced private-Weston Rust UI-test-tools subtask on `t3/native-ui-test-tools`, based on clean `33d6a54`. Full Advanced scenario now passes locally; root review/integration remains. Python coverage/reference is unchanged. |
-| Previous slice integration | Cherry-picked root-reviewed peer commit `1d368dcc402b26d9e2206d3adc450716f0e1ac63` as local commit `7b00677`; its tools-only scope does not overlap the archive removal. |
-| Next | Root reviews and integrates the scoped test-tool commit. Keep the Python runner coverage until root integration; no UI acceptance or migration gate is inferred from this test-tool result. |
+| Current phase | BUILD120 Rust UI-test-tool CI integration. UG remains **NOT PASSED** and C01–CG remain unaccepted. |
+| Last observed merge | PR #119 merged at `ff107d0f2761be8ec403358e12a43d4045fcb97a`; head `d60cd8772ce2c137c713cf5dace0ce72357b68ba` passed all three checks in run 44156297105. |
+| Active implementation | BUILD120/E225 on `t3/native-ui-test-tools`, reconciled with BUILD119 `origin/main` `37ee8b9`. Four CI Wayland scenarios switched to Rust; four local private-Weston runs and helper checks passed. |
+| Next | Root reviews the scoped BUILD120 candidate and publishes it. Keep Python scenario scripts/tests and standalone wrappers until each corresponding coverage migration is independently complete. |
 
-### Rust UI test tools — Advanced private-Weston subtask
+### BUILD118/E221 — Python-free Rust CI helper wiring
 
-**Owner/base/status:** local completed implementation on `t3/native-ui-test-tools`,
-based on clean requested commit `33d6a54`. No release metadata, workflow, push,
-or PR changes.
-The normal migration checkpoint below remains historical context for this
-isolated test-tool task.
+**Owner/base/status:** branch `t3/rust-ci-no-python`, based on the normal
+`origin/main` commit `93695ac062818a21f7f38ef67765c0c6fc55774e` (PR #118).
+BUILD118 metadata is reserved for root review. This local slice is not pushed;
+no PR or exact-head CI result is claimed.
 
-**Verified:** private `recently-used.xbel` is written before app startup under
-the temporary `XDG_DATA_HOME`, with encoded file URIs and freedesktop MIME and
-application metadata. The chooser exposes both exact import fixtures as GTK4
-`row` records with `grid cell` filenames. Each row is selected only through
-same-PID AT-SPI Selection, selected state is rechecked, and the visible
-app-owned Import action is invoked; no `item.visit` or host input is used.
-Advanced passed export, valid and empty import, Plugins refresh after both,
-reset cancel and confirm, complete preference maps, unchanged autostart, and
-owned cleanup. Rust tests, strict Clippy and formatting passed. E222 records
-exact commands, outputs and artifact paths.
+**Scope:** add `rust-ci-tools/` as a locked Rust helper crate, wire strict
+format/test/Clippy CI, and replace the three deleted Python Cargo-artifact
+resolver calls with `scripts/native/no-python/cargo-artifact`. CI builds the
+resolver on Ubuntu 24.04 before use, matching the pinned runtime Docker image
+ABI; the executable is not claimed to be portable across arbitrary hosts.
+Existing X11, private Wayland, Docker-installed runtime, SVG, settings/history,
+activation, cleanup and proof-artifact steps remain. Keep the four other active
+Python harness modules running until corresponding UI automation ports land.
+No UI files or other crates are included.
 
-**Next:** root review and integration. Preserve the Python Advanced coverage
-until root integration and do not treat this isolated harness result as UG or
-KDE input/placement parity.
+**Prior evidence provenance:** PR #117 source head `f45c01a9139a891e54495b4b62e6f7ee89a95c2a` passed all three required checks in run `44125566585`. Its BUILD116 runtime evidence remains historical. E221 separately records the rerun BUILD118 Docker-installed runtime, SVG/data validation, and build-99 → build-118 → build-99 activation command-target proof with exact artifact/source hashes. Those are local candidate results, not merged CI or gate acceptance.
+
+**Checks, runtime scope and limits:** exact BUILD118 results are appended in
+AUDIT E221. The helper’s actual process-level integration tests cover Cargo
+artifact resolution, strict command-target parsing, wrong-hash/install-failure/
+runtime-absence rejection, required-action failure, child cleanup, and data
+validation. No UG or C gate is accepted by CI helper coverage.
+
+### BUILD120/E225 — Rust private-Weston CI scenarios
+
+**Owner/base/status:** local implementation on `t3/native-ui-test-tools`,
+reconciled onto BUILD119 `origin/main` `37ee8b9` (PR #119). BUILD120 is
+provisional for root review. No push, PR, exact-head CI result or gate claim.
+
+**Scope:** switch only the existing `matrix`, `advanced`,
+`settings-residual`, and `page-state` private-Weston workflow invocations to
+`rust-ui-test-tools/target/debug/codexbar-ui-test-tool`. Add its locked build,
+tests, formatting and strict all-target Clippy. Preserve all four scenario
+names, six-minute job-step timeouts, evidence directories, failure exit
+behavior and `if: always()` uploads. Retain the Python runner, its standalone
+scenario wrappers, helper modules and harness unit regressions, including
+coverage still exercised only there. No UG acceptance is inferred.
+
+**Runner review:** the Rust runner clears inherited process environment for
+its private child, supplies private HOME/XDG directories, starts a private
+`dbus-run-session`, enforces 210-second inner and 240-second outer deadlines,
+uses a private Weston socket with checked 0700 runtime / 0600 socket modes, and
+owns/reaps app and compositor children. Capture output stays in the per-scenario
+artifact directory with private permissions. Failure returns nonzero and
+retains diagnostic logs for the unchanged always-upload artifact step. The
+local scenario commands and results, cleanup observations, capture scopes and
+any blockers are appended in AUDIT E225.
+
+**Next:** root reviews and integrates this scoped candidate, then observes
+exact-head CI. Keep UG **NOT PASSED** and C01–CG unaccepted.
+
+### BUILD119/E222 — Rust X11 smoke fixtures
+
+**Owner/base/status:** `t3/rust-smoke-test-tools`, reconciled with
+BUILD118 main at `ff107d0`. BUILD119 adds the Rust smoke fixture build,
+formatting, tests, and Clippy to the existing CI test job. The two local
+Settings smoke passes preceded the release metadata and workflow update.
+
+**Scope and evidence:** `scripts/smoke-native-settings.sh` now uses the live
+app-owned GTK chooser's location control to enter the private HOME folder,
+checks the exact visible JSON fixture set, and selects the target row with
+guarded keyboard input. `rust-smoke-fixtures` checks the complete import
+overlay, empty-import no-op, canceled-reset map, and Rust default map. The two
+full smokes ran with Python absent from `PATH`, private Xvfb and D-Bus, and a
+loopback-only socket guard for the local update fixture. Exact commands and
+limits are recorded in audit E222.
+
+**Next:** verify the BUILD119 PR checks and continue the Rust Wayland ports.
 
 ### BUILD117/E220 — retired Python source and debug-tool cleanup
 

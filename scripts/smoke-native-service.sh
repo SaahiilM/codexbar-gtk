@@ -11,11 +11,14 @@ if [[ $# -gt 1 ]]; then echo 'usage: smoke-native-service.sh [PREVIOUS_ARTIFACT]
 if [[ $# == 1 ]]; then PREVIOUS_ARTIFACT=$1; fi
 mkdir -p "$EVIDENCE_DIR/work" "$EVIDENCE_DIR/work/installer/scripts/native/stage"
 WORK="$EVIDENCE_DIR/work"
+CI_TOOL_TARGET="$WORK/ci-tools-target"
+cargo build --locked --offline --manifest-path "$ROOT/rust-ci-tools/Cargo.toml" --target-dir "$CI_TOOL_TARGET" --bin codexbar-ci-tool
+CI_TOOL="$CI_TOOL_TARGET/debug/codexbar-ci-tool"
 CURRENT_TARGET="$WORK/current-target"
 CURRENT_JSON="$WORK/current-cargo.json"
 CARGO_NET_OFFLINE=true cargo build --locked --release --manifest-path "$ROOT/rust-gtk/Cargo.toml" \
   --target-dir "$CURRENT_TARGET" --bin codexbar-gtk-native --message-format=json-render-diagnostics > "$CURRENT_JSON"
-CURRENT_ARTIFACT=$(python3 "$ROOT/scripts/native/no-python/cargo-artifact.py" --json "$CURRENT_JSON" --target codexbar-gtk-native)
+CURRENT_ARTIFACT=$("$CI_TOOL" cargo-artifact --json "$CURRENT_JSON" --target codexbar-gtk-native)
 if [[ -z "$PREVIOUS_ARTIFACT" ]]; then
   PREVIOUS_SOURCE="$WORK/previous-source"
   mkdir -p "$PREVIOUS_SOURCE"
@@ -23,7 +26,7 @@ if [[ -z "$PREVIOUS_ARTIFACT" ]]; then
   CARGO_NET_OFFLINE=true cargo build --locked --release \
     --manifest-path "$PREVIOUS_SOURCE/rust-gtk/Cargo.toml" \
     --target-dir "$WORK/previous-target" --bin codexbar-gtk-native --message-format=json-render-diagnostics > "$WORK/previous-cargo.json"
-  PREVIOUS_ARTIFACT=$(python3 "$ROOT/scripts/native/no-python/cargo-artifact.py" --json "$WORK/previous-cargo.json" --target codexbar-gtk-native)
+  PREVIOUS_ARTIFACT=$("$CI_TOOL" cargo-artifact --json "$WORK/previous-cargo.json" --target codexbar-gtk-native)
 fi
 for input in "$CURRENT_ARTIFACT" "$PREVIOUS_ARTIFACT"; do [[ -x "$input" ]] || { echo "not executable: $input" >&2; exit 3; }; done
 PREVIOUS_ARTIFACT=$(realpath "$PREVIOUS_ARTIFACT")
@@ -32,6 +35,7 @@ CURRENT_ARTIFACT=$(realpath "$CURRENT_ARTIFACT")
 cp "$ROOT/scripts/install-native.sh" "$WORK/installer/scripts/install-native.sh"
 cp "$ROOT/scripts/native/render_activation.sh" "$WORK/installer/scripts/native/render_activation.sh"
 cp "$ROOT/scripts/native/stage/native.desktop" "$ROOT/scripts/native/stage/native.service" "$WORK/installer/scripts/native/stage/"
+cp "$CI_TOOL" "$WORK/ci-tool"
 cp "$ROOT/scripts/native/no-python/service-targets.sh" "$WORK/service-targets.sh"
 cp "$ROOT/scripts/native/no-python/service-proof-lib.sh" "$WORK/service-proof-lib.sh"
 cp "$ROOT/scripts/native/no-python/docker/service-proof.sh" "$WORK/service-proof.sh"

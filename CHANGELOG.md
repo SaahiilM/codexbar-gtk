@@ -6,8 +6,12 @@ timeout process-group cleanup, preserve synthetic CLI fixture state coverage,
 and run the Rust update-check Wayland smoke in CI with a bounded timeout and
 retained evidence. KDE portal, bridge, physical-input and inspect-only behavior
 is retired without an equivalent KDE coverage claim; UG remains **NOT PASSED**.
+Make the X11 Settings import smoke click the visible Import action after
+selecting the exact fixture row; preserve exact preference-map assertions and
+app-owned chooser input guards.
 
-- See migration audit E226 for exact scope, checks, and evidence limits.
+- See migration audits E226 and E227 for exact scope, checks, and evidence
+  limits.
 
 ## 0.82.0 (121) — 2026-11-19
 

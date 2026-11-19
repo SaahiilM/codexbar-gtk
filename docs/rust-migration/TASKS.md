@@ -11,9 +11,9 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Goal | Fully native Rust GTK4/libadwaita application with verified packaging and legacy runtime removal. |
 | Current phase | BUILD122 Rust UI automation retirement and update-check smoke. UG remains **NOT PASSED** and C01–CG remain unaccepted. |
 | Last observed merge | PR #121 at `77d03a5`, per the current main handoff. |
-| Active implementation | BUILD122/E226 on `t3/rust-update-check`, based on `origin/main` PR #121 merge `77d03a5`; includes cherry-pick `67a36c5` for Settings/Spend wrapper ports. |
-| Local runtime | Rust Settings/Spend wrappers, update-check, and full/advanced/residual/page-state scenarios passed under private Weston, private D-Bus and synthetic HOME/XDG. Cleanup evidence recorded at E226; no KDE parity claimed. |
-| Next | Root reviews the local BUILD122 commit and publishes it. Confirm exact-head workflow, especially the bounded update-check scenario and always-upload evidence artifact. |
+| Active implementation | BUILD122/E226 plus the X11 Import chooser CI follow-up on `t3/rust-update-check`, starting at `1505ebe` (PR #123 head before this fix). |
+| Local runtime | E226 private-Weston evidence remains as recorded. The X11 Import chooser fix passed the full private Xvfb/D-Bus Settings smoke and a second import-only run; exact preference/import assertions and app-owned window guards remain enabled. No host GUI/session or KDE parity claim. |
+| Next | Root reviews and publishes the local fix. Observe exact-head CI, especially the X11 Settings smoke and bounded update-check scenario/artifact. |
 
 ### BUILD122/E226 — retire Python UI automation
 
@@ -61,6 +61,20 @@ Clippy pass for all six crates. Native app/tool builds, workflow YAML parsing,
 locked tool metadata, active caller/Python-file scans, and `git diff --check`
 pass. Exact commands and private Weston cleanup evidence are in AUDIT E226.
 No host GUI smoke or release/gate acceptance is claimed.
+
+### BUILD122 — X11 Import chooser CI follow-up
+
+PR #123 run `44556626540` passed private Wayland update-check and Spend, but
+failed in the X11 Settings smoke after selecting the exact synthetic
+`preferences-import.json` row: the chooser closed, while
+`refreshFrequency=2m` never replaced the expected `5m`. The smoke now clicks
+the visible Import action using chooser-relative coordinates after rechecking
+the visible title, app PID, map state and focus; pointer input remains guarded
+by the existing chooser-window-tree check. Complete preference-map and import
+overlay assertions are unchanged. Full Xvfb/D-Bus Settings smoke and focused
+import-only smoke passed locally. See AUDIT E227 for evidence and limitations.
+No version metadata was changed per the task instruction. Root reviews and
+publishes this local follow-up; exact-head CI remains pending.
 
 ### BUILD121 — scope Rust UI test-runner signals
 

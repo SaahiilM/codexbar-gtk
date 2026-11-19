@@ -8621,3 +8621,45 @@ claimed. The exact next step is root review, then publish and observe CI.
 
 Reconciled onto PR #122 merge `1ccf360` for BUILD122. Kept its bounded process-group signal implementation.
 All 34 locked Rust UI tool tests, formatting, and diff checks passed on the combined source.
+
+### E227 — 2026-11-19: make X11 Settings import acceptance explicit
+
+**Owner/base/status:** local follow-up on `t3/rust-update-check`, starting from
+clean PR #123 head `1505ebe` (full head `1505ebe6bd00411966c596bcee973ca06b98b767`).
+No version metadata change, push, PR, or exact-head CI result is claimed; the
+request explicitly excludes a version increment. Root review and publication
+are the next steps.
+
+**CI diagnosis:** PR #123 workflow run `44556626540` passed private Wayland
+update-check and Spend, while its X11 Settings step failed after the chooser
+reported the exact synthetic `preferences-import.json` row selected (visible
+HOME JSON row 2). The chooser closed after Return, but the saved
+`refreshFrequency` stayed at `5m` through the existing eight-second persistence
+wait; the exact assertion reported `expected 2m, observed 5m`. The log does not
+prove which GTK response Return dispatched. The likely failure was that Return
+from the focused file list activated the row without reliably invoking the
+visible Import action under Xfwm/Xvfb.
+
+**Change:** `scripts/smoke-native-settings.sh` now selects the same exact sorted
+filename and clicks the visible rightmost Import action at chooser-relative
+coordinates. Immediately before input, it rechecks the visible dialog title,
+app PID, map state and focus. The pointer helper checks the destination is
+inside the chooser window tree before guarded XTest button input. The existing
+exact `refreshFrequency=2m` persistence wait and complete import-overlay map
+assertion remain unchanged. No Python source or helper was added.
+
+**Local checks:**
+
+- `bash -n scripts/smoke-native-settings.sh` — passed.
+- `shellcheck scripts/smoke-native-settings.sh` — passed.
+- Full `PATH=/tmp/codexbar-private-x11-root/usr/bin:$PATH LD_LIBRARY_PATH=/tmp/codexbar-private-x11-root/usr/lib/x86_64-linux-gnu${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH} ./scripts/smoke-native-settings.sh` — passed under private Xvfb and private D-Bus with synthetic HOME/CLI/preferences; this exercised the complete Settings surface, valid import, empty imports, full preference persistence/import/reset assertions and lifecycle cleanup.
+- `PATH=/tmp/codexbar-private-x11-root/usr/bin:$PATH LD_LIBRARY_PATH=/tmp/codexbar-private-x11-root/usr/lib/x86_64-linux-gnu${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH} NATIVE_SETTINGS_CHOOSER_ONLY=import ./scripts/smoke-native-settings.sh` — passed a second time, including the exact imported map and app-owned chooser path.
+- `git diff --check` — passed.
+
+The private D-Bus session activated desktop portal services from the host's
+standard activation directories during both local runs; no portal input/action
+or host GUI/window/input was used. This local result is X11/Xvfb evidence only,
+not KDE/Wayland parity or exact-head CI. No release/gate acceptance is claimed.
+Precise next step: root reviews and publishes the local fix, then observes the
+new exact-head CI result, including X11 Settings and the otherwise passing
+update-check and Spend jobs.

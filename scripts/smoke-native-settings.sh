@@ -825,11 +825,34 @@ select_chooser_path() {
         fi
         printf 'native chooser selected exact sorted fixture row: folder=%s filename=%s row=%s\n' \
             "$HOME" "$target_name" "$target_index"
-        xdotool key --clearmodifiers Return
+        # Return while the file list is focused can activate the selected row
+        # without consistently dispatching GtkNativeDialog's Import response
+        # under Xfwm/Xvfb. Click the visible rightmost action button instead,
+        # after rechecking the exact app-owned dialog and its focus. The point
+        # is relative to the chooser, and the pointer helper verifies it stays
+        # within that window tree before XTest input is sent.
+        assert_import_chooser_focused
+        local chooser_size chooser_width chooser_height import_x import_y
+        chooser_size=$(window_size "$chooser") || {
+            echo "native Import chooser has no readable geometry before accept" >&2
+            exit 1
+        }
+        read -r chooser_width chooser_height <<<"$chooser_size"
+        import_x=$((chooser_width - 55))
+        import_y=$((chooser_height - 28))
+        (( import_x > 0 && import_y > 0 )) || {
+            echo "native Import chooser is too small for its visible action button" >&2
+            exit 1
+        }
+        move_pointer_to_window_point "$chooser" "$import_x" "$import_y" "visible Import action"
+        sleep 0.05
+        xdotool mousedown --clearmodifiers 1
+        sleep 0.05
+        xdotool mouseup 1
         if [[ "$target_name" == "preferences-import.json" ]]; then
-            echo "native chooser selected the valid synthetic fixture by exact basename"
+            echo "native chooser accepted the valid synthetic fixture by visible Import button"
         else
-            echo "native chooser selected the empty synthetic fixture by exact basename"
+            echo "native chooser accepted the empty synthetic fixture by visible Import button"
         fi
         if [[ -n "${NATIVE_SETTINGS_CHOOSER_AFTER_SCREENSHOT:-}" ]]; then
             capture_root_debug "$NATIVE_SETTINGS_CHOOSER_AFTER_SCREENSHOT"

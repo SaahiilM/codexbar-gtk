@@ -509,14 +509,12 @@ async fn isolated_wayland_matrix(
         let mut child = cmd
             .spawn()
             .map_err(|e| format!("start private D-Bus: {e}"))?;
-        let runner_pid = child.id().unwrap_or_default();
+        let runner_pid = child.id().ok_or("private runner has no process ID")?;
         let interrupt = tokio::spawn(async move {
             if tokio::signal::ctrl_c().await.is_ok() {
                 #[cfg(unix)]
                 {
-                    let _ = Command::new("kill")
-                        .args(["-INT", &format!("-{runner_pid}")])
-                        .status();
+                    signal_owned_group("-INT", runner_pid);
                 }
             }
         });
@@ -560,9 +558,7 @@ async fn isolated_wayland_matrix(
             Err(_) => {
                 #[cfg(unix)]
                 {
-                    let _ = Command::new("kill")
-                        .args(["-TERM", &format!("-{}", child.id().unwrap_or_default())])
-                        .status();
+                    signal_owned_group("-TERM", runner_pid);
                 }
                 let _ = timeout(Duration::from_secs(3), child.wait()).await;
                 return Err(
@@ -2481,13 +2477,31 @@ fn gaction(args: &[&str]) -> Result<(), String> {
         ))
     }
 }
+#[cfg(unix)]
+fn signal_owned_group(signal: &str, pid: u32) {
+    // Without "--", procps kill can interpret a negative PID as a broadcast.
+    // PIDs 0 and 1 also have special meanings when passed to kill as targets.
+    if let Some(mut command) = owned_group_signal_command(signal, pid) {
+        let _ = command.status();
+    }
+}
+
+#[cfg(unix)]
+fn owned_group_signal_command(signal: &str, pid: u32) -> Option<Command> {
+    if !(2..=i32::MAX as u32).contains(&pid) {
+        return None;
+    }
+    let mut command = Command::new("kill");
+    command.args([signal, "--", &format!("-{pid}")]);
+    Some(command)
+}
+
 fn terminate_owned_group(pid: u32) {
     #[cfg(unix)]
     {
-        let group = format!("-{pid}");
-        let _ = Command::new("kill").args(["-TERM", &group]).status();
+        signal_owned_group("-TERM", pid);
         std::thread::sleep(Duration::from_millis(150));
-        let _ = Command::new("kill").args(["-KILL", &group]).status();
+        signal_owned_group("-KILL", pid);
     }
     #[cfg(not(unix))]
     {
@@ -4551,6 +4565,19 @@ mod tests {
         );
         let changed = serde_json::json!({"refreshAllProvidersOnMenuOpen":true,"showTray":true,"refreshFrequency":"5m","opaquePreference":{"future":true}});
         assert_ne!(changed, expected);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn group_signals_disambiguate_negative_pid_and_reject_special_targets() {
+        for signal in ["-INT", "-TERM", "-KILL"] {
+            let command = super::owned_group_signal_command(signal, 12345).unwrap();
+            assert_eq!(command.get_program(), "kill");
+            assert!(command.get_args().eq([signal, "--", "-12345"]));
+        }
+        for pid in [0, 1, u32::MAX] {
+            assert!(super::owned_group_signal_command("-TERM", pid).is_none());
+        }
     }
 
     #[test]

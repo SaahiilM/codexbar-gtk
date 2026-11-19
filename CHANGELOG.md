@@ -1,3 +1,7 @@
+## 0.82.0 (121) — 2026-11-19
+
+Fix isolated Wayland test-runner cleanup so it signals only the private process group and preserves the desktop session.
+
 ## 0.82.0 (120) — 2026-11-18
 
 Run the four existing isolated Weston CI scenarios with the Rust

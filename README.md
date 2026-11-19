@@ -165,7 +165,7 @@ preserving the remaining automation harnesses. BUILD119 moves X11 smoke fixtures
 Rust. BUILD120 moves four isolated Weston scenarios to the Rust UI test tool,
 with the final six Python UI automation scripts and four harness test modules
 retired, runner failure/timeout and synthetic-fixture policy checks in Rust,
-and the Rust update-check Wayland scenario added to CI (BUILD121).
+and the Rust update-check Wayland scenario added to CI (BUILD122).
 These scoped changes do not pass
 UG or C gates; see the explicit
 [gate ledger](docs/rust-migration/UG_GATE.md).
@@ -306,7 +306,7 @@ The GTK front-end uses the version pair in the root `VERSION` file:
   this client is feature-compatible with (`0.82.0`).
 * `CURRENT_PROJECT_VERSION` is the build number of the Linux front-end.
 * Native Rust metadata turns the pair into the macOS-style
-  `"0.82.0 (121)"` string shown under Settings → About, in the tray menu and by
+  `"0.82.0 (122)"` string shown under Settings → About, in the tray menu and by
   `./run.sh --about`.
 
 Increment `CURRENT_PROJECT_VERSION` for each merge-approved PR; the native test

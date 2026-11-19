@@ -2638,10 +2638,19 @@ fn gaction(args: &[&str]) -> Result<(), String> {
 fn signal_owned_group(signal: &str, pid: u32) {
     // Without "--", procps kill can interpret a negative PID as a broadcast.
     // PIDs 0 and 1 also have special meanings when passed to kill as targets.
-    if pid > 1 {
-        let group = format!("-{pid}");
-        let _ = Command::new("kill").args([signal, "--", &group]).status();
+    if let Some(mut command) = owned_group_signal_command(signal, pid) {
+        let _ = command.status();
     }
+}
+
+#[cfg(unix)]
+fn owned_group_signal_command(signal: &str, pid: u32) -> Option<Command> {
+    if !(2..=i32::MAX as u32).contains(&pid) {
+        return None;
+    }
+    let mut command = Command::new("kill");
+    command.args([signal, "--", &format!("-{pid}")]);
+    Some(command)
 }
 
 fn terminate_owned_group(pid: u32) {
@@ -4795,6 +4804,19 @@ mod tests {
         );
         let changed = serde_json::json!({"refreshAllProvidersOnMenuOpen":true,"showTray":true,"refreshFrequency":"5m","opaquePreference":{"future":true}});
         assert_ne!(changed, expected);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn group_signals_disambiguate_negative_pid_and_reject_special_targets() {
+        for signal in ["-INT", "-TERM", "-KILL"] {
+            let command = super::owned_group_signal_command(signal, 12345).unwrap();
+            assert_eq!(command.get_program(), "kill");
+            assert!(command.get_args().eq([signal, "--", "-12345"]));
+        }
+        for pid in [0, 1, u32::MAX] {
+            assert!(super::owned_group_signal_command("-TERM", pid).is_none());
+        }
     }
 
     #[test]

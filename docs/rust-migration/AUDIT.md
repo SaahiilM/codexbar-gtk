@@ -8531,12 +8531,27 @@ direct execution of the temporary script. Cancellation and process exit
 assertions are unchanged. The locked backend suite passed locally (99 unit,
 4 integration), along with formatting and diff checks.
 
+### BUILD121 — scope Wayland test-runner cleanup signals
+
+The procps kill utility can parse a negative PID without an option
+terminator as a broadcast to processes owned by the caller. Supply `--`
+for every private process-group signal in the Rust runner, including
+interrupt forwarding, runner timeout, and app/Weston cleanup. Require a
+valid runner PID and reject special or out-of-range process identifiers.
+
+Local verification passed for the locked UI test-tool suite (20 tests),
+formatting, and strict Clippy. The new regression checks argv for SIGINT,
+SIGTERM, and SIGKILL and rejects invalid targets. A traced cleanup fixture
+on the local worktree verified that only its own test group was signaled.
+The private Weston scenarios are covered by the PR workflow and were
+not rerun locally for this commit. Next, verify the PR checks and merge
+the scoped repair.
 ### E226 — 2026-11-19: retire Python UI harnesses and run Rust update smoke
 
 **Owner/base/status:** branch `t3/rust-update-check`, based on PR #121 merge
 `77d03a5`. Cherry-picked Settings/Spend wrapper port is `67a36c5`, resolving
 the `main.rs` dispatch conflict by keeping Rust Settings/Spend routes and the
-already-ported Rust update-check route. BUILD121 is committed locally for root
+already-ported Rust update-check route. BUILD122 is committed locally for root
 review; this entry does not claim a push, PR, merge, exact-head CI result, or
 gate pass.
 
@@ -8603,3 +8618,6 @@ portal activation. This does not change the KDE coverage limit above.
 No full app X11 smoke, Docker runtime proof, host desktop test, KDE test,
 exact-head CI result, publication, UG acceptance, or C-gate acceptance is
 claimed. The exact next step is root review, then publish and observe CI.
+
+Reconciled onto PR #122 merge `1ccf360` for BUILD122. Kept its bounded process-group signal implementation.
+All 34 locked Rust UI tool tests, formatting, and diff checks passed on the combined source.

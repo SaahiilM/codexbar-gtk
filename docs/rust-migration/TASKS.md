@@ -14,6 +14,13 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Active implementation | BUILD120/E225 on `t3/native-ui-test-tools`, reconciled with BUILD119 `origin/main` `37ee8b9`. Four CI Wayland scenarios switched to Rust; four local private-Weston runs and helper checks passed. |
 | Next | Root reviews the scoped BUILD120 candidate and publishes it. Keep Python scenario scripts/tests and standalone wrappers until each corresponding coverage migration is independently complete. |
 
+### BUILD121 — scope Rust UI test-runner signals
+
+Branch `fix/scope-ui-runner-signals` starts from merged PR #121
+(`77d03a5`). Scope interrupt, timeout, and cleanup signals to the private
+runner, app, or Weston process group. See the corresponding audit entry for
+verification. Next, verify the PR checks and merge the scoped fix.
+
 ### BUILD118/E221 — Python-free Rust CI helper wiring
 
 **Owner/base/status:** branch `t3/rust-ci-no-python`, based on the normal

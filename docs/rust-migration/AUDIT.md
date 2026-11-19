@@ -8530,3 +8530,19 @@ now runs the system shell with the fixture path as an argument, avoiding
 direct execution of the temporary script. Cancellation and process exit
 assertions are unchanged. The locked backend suite passed locally (99 unit,
 4 integration), along with formatting and diff checks.
+
+### BUILD121 — scope Wayland test-runner cleanup signals
+
+The procps kill utility can parse a negative PID without an option
+terminator as a broadcast to processes owned by the caller. Supply `--`
+for every private process-group signal in the Rust runner, including
+interrupt forwarding, runner timeout, and app/Weston cleanup. Require a
+valid runner PID and reject special or out-of-range process identifiers.
+
+Local verification passed for the locked UI test-tool suite (20 tests),
+formatting, and strict Clippy. The new regression checks argv for SIGINT,
+SIGTERM, and SIGKILL and rejects invalid targets. A traced cleanup fixture
+on the local worktree verified that only its own test group was signaled.
+The private Weston scenarios are covered by the PR workflow and were
+not rerun locally for this commit. Next, verify the PR checks and merge
+the scoped repair.

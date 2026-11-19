@@ -1,3 +1,14 @@
+## 0.82.0 (121) — 2026-11-19
+
+Retire the remaining six Python UI automation scripts and four harness test
+modules. Add Rust regressions for private runner environment isolation and
+timeout process-group cleanup, preserve synthetic CLI fixture state coverage,
+and run the Rust update-check Wayland smoke in CI with a bounded timeout and
+retained evidence. KDE portal, bridge, physical-input and inspect-only behavior
+is retired without an equivalent KDE coverage claim; UG remains **NOT PASSED**.
+
+- See migration audit E226 for exact scope, checks, and evidence limits.
+
 ## 0.82.0 (120) — 2026-11-18
 
 Run the four existing isolated Weston CI scenarios with the Rust

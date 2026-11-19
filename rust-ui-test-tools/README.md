@@ -45,16 +45,30 @@ the Rust AT-SPI proxies to assert the Dashboard route, selected Settings
 General switch and full preference-map persistence, and Spend's pressed
 7-day selection. It captures those three states and checks private process and
 HOME cleanup. It is not the legacy `matrix`: Notifications, Hooks, heatmap
-modes and Sessions coverage remain unported. The legacy Python matrix stays
-available as the evidence reference. `matrix`, residual Settings,
-page-state, Settings, Spend, and update-check native runner routes continue to
-fail closed; the unsupported combo diagnostic remains exit 3.
+modes and Sessions coverage remain unported. BUILD121 connects the standalone
+`settings-wayland` wrapper modes (`general`, `residual`, `advanced`, `matrix`)
+and `spend-wayland` modes (`ranges`, `retained-error`, `matrix`) to Rust-owned
+scenarios. The `update-check` scenario exercises the explicit Gio action
+against a loopback-only synthetic VERSION fixture; CI runs it with a six-minute
+timeout and retains its evidence.
+
+Run the update-check wrapper locally with a fresh artifact directory:
+
+```sh
+rust-ui-test-tools/target/debug/codexbar-ui-test-tool update-check-wayland \
+  --binary rust-gtk/target/debug/codexbar-gtk-native \
+  --artifact-dir /tmp/native-wayland-update-check
+```
+
+The `evidence.json` result includes private D-Bus socket, Weston, app, HOME and
+runner-state cleanup fields.
 
 ## Source and hash provenance
 
-The Python parity sources below were inspected at BUILD117 base
+The retired Python source snapshot below was inspected at BUILD117 base
 `93695ac062818a21f7f38ef67765c0c6fc55774e`. SHA-256 values make the exact
-reference snapshot auditable; those files remain present and were not edited.
+reference snapshot auditable; those files have since been removed from the
+active tree. Their deletion does not establish behavior equivalence.
 
 | Reference source | SHA-256 |
 | --- | --- |
@@ -69,11 +83,14 @@ reference snapshot auditable; those files remain present and were not edited.
 | `tests/test_wayland_spend_guard.py` | `934fe240763c7d5be00e537ffc6d6fd517ecae2835e5c8289eae2da5b5e902a3` |
 | `tests/test_update_check_wayland_harness.py` | `3d351c9eef22501a83de8e80393affb8b1dc4a4f6c19a965611be63eee799803` |
 
-The Rust unit tests replace only the pure exact-row, window-bound, and fresh
-KWin guard predicates so far. They do not represent a full port of the named
-Python unit modules or their runner behavior.
+Rust checks cover exact-row, window-bound and fresh-target predicates,
+private-runner environment isolation, child process-group cleanup, synthetic
+cost fixture success/partial/empty/failure states, wrapper scenario routing,
+and update fixture policy. They do not represent a full port of every assertion
+in the named Python modules.
 
 AT-SPI actions are named accessible GTK operations. They do not prove physical
-Wayland input or KDE shell parity. The isolated Wayland runner must emit
-synthetic capture and cleanup evidence before the Python runner is retired.
-The settings combo diagnostic keeps its unsupported result at exit code 3.
+Wayland input or KDE shell parity. Legacy KDE portal, bridge, `--inspect-only`,
+and related helper modes were retired without direct verification in this Rust
+migration; no equivalent KDE coverage is claimed. The settings combo
+diagnostic keeps its unsupported result at exit code 3.

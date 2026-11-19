@@ -24,9 +24,8 @@ peer-owned GTK UI tool.
 ## Handoff
 
 - The Settings entrypoint uses private X11 keyboard automation without the
-  Python chooser probe or the peer-owned GTK UI tool. The separate historical
-  `scripts/select-native-file-chooser.py` file remains untouched and is not
-  called by this smoke.
+  Python chooser probe or the peer-owned GTK UI tool. BUILD121 later retired
+  `scripts/select-native-file-chooser.py`; it was not called by this smoke.
 - Two fresh-HOME full Settings smokes passed with Python absent from PATH and
   non-loopback IPv4/IPv6 socket operations blocked. GTK selected the exact
   valid and empty fixture rows; complete-map import/empty/reset assertions,

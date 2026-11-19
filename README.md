@@ -142,8 +142,8 @@ external `codexbar` CLI. Project version metadata comes only from [`VERSION`](VE
 the native GTK test suite checks its parsed version against README's display.
 Historical Python code and parity assertions have been removed from the current
 tree. The prior source snapshot remains in Git history, not as an execution or
-rollback path. Active Python harnesses under `tests/` and `scripts/` automate
-native application checks only. Rollback uses a previous verified native
+rollback path. Native application and UI automation checks are Rust-owned.
+Rollback uses a previous verified native
 build/commit with the ownership-aware native installer. UG remains **NOT
 PASSED**; archive removal does not claim UG or C01–CG acceptance.
 
@@ -163,7 +163,9 @@ BUILD117 removed its retired source archive after native coverage review.
 BUILD118 replaces the retired Python CI resolvers with a Rust helper while
 preserving the remaining automation harnesses. BUILD119 moves X11 smoke fixtures to
 Rust. BUILD120 moves four isolated Weston scenarios to the Rust UI test tool,
-while retaining the standalone Python Wayland tools and harness regressions.
+with the final six Python UI automation scripts and four harness test modules
+retired, runner failure/timeout and synthetic-fixture policy checks in Rust,
+and the Rust update-check Wayland scenario added to CI (BUILD121).
 These scoped changes do not pass
 UG or C gates; see the explicit
 [gate ledger](docs/rust-migration/UG_GATE.md).
@@ -304,7 +306,7 @@ The GTK front-end uses the version pair in the root `VERSION` file:
   this client is feature-compatible with (`0.82.0`).
 * `CURRENT_PROJECT_VERSION` is the build number of the Linux front-end.
 * Native Rust metadata turns the pair into the macOS-style
-  `"0.82.0 (120)"` string shown under Settings → About, in the tray menu and by
+  `"0.82.0 (121)"` string shown under Settings → About, in the tray menu and by
   `./run.sh --about`.
 
 Increment `CURRENT_PROJECT_VERSION` for each merge-approved PR; the native test
@@ -320,37 +322,30 @@ through a watch channel.
 
 ```sh
 ./run.sh                                  # run the native app from the checkout
-./scripts/test-native-harness-units.sh    # retained native automation harnesses
+cargo test --manifest-path rust-ui-test-tools/Cargo.toml --locked
 cargo test --manifest-path rust-core/Cargo.toml --locked
 cargo test --manifest-path rust-backend/Cargo.toml --locked
 cargo test --manifest-path rust-gtk/Cargo.toml --locked
 ```
 
-### Python UI automation dependencies
+### Native Rust UI automation
 
-The app does not need Python typelibs. Python UI harnesses that inspect GTK
-through AT-SPI use these packages on Ubuntu/KDE neon:
-
-```sh
-sudo apt update
-sudo apt install python3-gi python3-cairo gir1.2-gtk-4.0 gir1.2-adw-1 libadwaita-1-0
-```
-
-Verify the test tooling interpreter can import both namespaces:
+`rust-ui-test-tools/` provides the Rust AT-SPI runner for the native GTK
+application. Its isolated Wayland scenarios use private Weston, private D-Bus,
+synthetic HOME/XDG directories, and synthetic CLI fixtures. They do not use
+the host desktop, bus, portal, or real configuration, and do not establish
+KDE-specific behavior. Build and run the loopback update check with
+`cargo build --manifest-path rust-ui-test-tools/Cargo.toml --locked` followed
+by:
 
 ```sh
-python3 - <<'PY'
-import gi
-gi.require_version("Gtk", "4.0")
-gi.require_version("Adw", "1")
-from gi.repository import Gtk, Adw
-print("GTK", Gtk.get_major_version(), "ready; libadwaita ready")
-PY
+rust-ui-test-tools/target/debug/codexbar-ui-test-tool update-check-wayland \
+  --binary rust-gtk/target/debug/codexbar-gtk-native \
+  --artifact-dir /tmp/native-wayland-update-check
 ```
 
-Python scripts under `scripts/` provide isolated native UI automation and
-runtime-proof tooling. They are test harnesses; the application itself has no
-Python runtime dependency. Use synthetic CLI data when capturing previews.
+The resulting `evidence.json` records scenario status and private process,
+socket, HOME, and runner-state cleanup.
 
 ### Native Rust GTK bootstrap
 

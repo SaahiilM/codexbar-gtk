@@ -180,6 +180,8 @@ struct PrivateRunnerState {
     config: PathBuf,
     data: PathBuf,
     cache: PathBuf,
+    bus_config: PathBuf,
+    bus_services: PathBuf,
 }
 
 impl PrivateRunnerState {
@@ -197,6 +199,8 @@ impl PrivateRunnerState {
             config: root.join("config"),
             data: root.join("data"),
             cache: root.join("cache"),
+            bus_config: root.join("dbus-session.conf"),
+            bus_services: root.join("dbus-services"),
             root,
         };
         set_private_dir(&state.root)?;
@@ -210,6 +214,23 @@ impl PrivateRunnerState {
             fs::create_dir(path).map_err(|e| e.to_string())?;
             set_private_dir(path)?;
         }
+        fs::create_dir(&state.bus_services).map_err(|e| e.to_string())?;
+        set_private_dir(&state.bus_services)?;
+        fs::write(
+            state.bus_services.join("org.a11y.Bus.service"),
+            "[D-BUS Service]\nName=org.a11y.Bus\nExec=/usr/libexec/at-spi-bus-launcher\n",
+        )
+        .map_err(|e| e.to_string())?;
+        fs::write(
+            &state.bus_config,
+            format!(
+                "<busconfig><type>session</type><listen>unix:tmpdir={}</listen><servicedir>{}</servicedir><policy context=\"default\"><allow own=\"*\"/><allow send_destination=\"*\"/><allow receive_sender=\"*\"/></policy></busconfig>\n",
+                state.runtime.display(),
+                state.bus_services.display()
+            ),
+        )
+        .map_err(|e| e.to_string())?;
+        set_private_file(&state.bus_config)?;
         Ok(state)
     }
 
@@ -362,21 +383,6 @@ fn synthetic_update_version_body() -> Result<Vec<u8>, String> {
         .checked_add(1)
         .ok_or("VERSION build cannot be incremented")?;
     Ok(format!("MARKETING_VERSION={marketing}\nCURRENT_PROJECT_VERSION={build}\n").into_bytes())
-}
-
-fn unavailable_runner(name: &str, args: &[String]) -> Result<u8, String> {
-    if args.is_empty() {
-        return Err(format!(
-            "{name} requires its preserved CLI options; see --help"
-        ));
-    }
-    if args.iter().any(|arg| arg == "--help" || arg == "-h") {
-        println!("{name}: native runner is not yet ported; Python implementation remains the evidence reference");
-        return Ok(0);
-    }
-    Err(format!(
-        "{name} native runner is incomplete; refusing to emit a passing evidence record"
-    ))
 }
 
 async fn update_check_wayland(args: &[String]) -> Result<u8, String> {
@@ -540,13 +546,17 @@ async fn isolated_wayland_matrix(
         let runner_state = PrivateRunnerState::create()?;
         let exe = env::current_exe().map_err(|e| e.to_string())?;
         let mut cmd = tokio::process::Command::new("dbus-run-session");
-        cmd.args(["--"])
-            .arg(exe)
-            .args(["isolated-wayland", "--scenario", &scenario, "--binary"])
-            .arg(&binary)
-            .args(["--artifact-dir"])
-            .arg(&artifacts)
-            .arg("--private-bus");
+        cmd.arg(format!(
+            "--config-file={}",
+            runner_state.bus_config.display()
+        ))
+        .arg("--")
+        .arg(exe)
+        .args(["isolated-wayland", "--scenario", &scenario, "--binary"])
+        .arg(&binary)
+        .args(["--artifact-dir"])
+        .arg(&artifacts)
+        .arg("--private-bus");
         runner_state.configure(cmd.as_std_mut());
         for key in ["PATH", "LANG", "LC_ALL"] {
             if let Some(value) = env::var_os(key) {
@@ -563,14 +573,12 @@ async fn isolated_wayland_matrix(
         let mut child = cmd
             .spawn()
             .map_err(|e| format!("start private D-Bus: {e}"))?;
-        let runner_pid = child.id().unwrap_or_default();
+        let runner_pid = child.id().ok_or("private runner has no process ID")?;
         let interrupt = tokio::spawn(async move {
             if tokio::signal::ctrl_c().await.is_ok() {
                 #[cfg(unix)]
                 {
-                    let _ = Command::new("kill")
-                        .args(["-INT", &format!("-{runner_pid}")])
-                        .status();
+                    signal_owned_group("-INT", runner_pid);
                 }
             }
         });
@@ -614,9 +622,7 @@ async fn isolated_wayland_matrix(
             Err(_) => {
                 #[cfg(unix)]
                 {
-                    let _ = Command::new("kill")
-                        .args(["-TERM", &format!("-{}", child.id().unwrap_or_default())])
-                        .status();
+                    signal_owned_group("-TERM", runner_pid);
                 }
                 let _ = timeout(Duration::from_secs(3), child.wait()).await;
                 return Err(
@@ -2628,13 +2634,22 @@ fn gaction(args: &[&str]) -> Result<(), String> {
         ))
     }
 }
+#[cfg(unix)]
+fn signal_owned_group(signal: &str, pid: u32) {
+    // Without "--", procps kill can interpret a negative PID as a broadcast.
+    // PIDs 0 and 1 also have special meanings when passed to kill as targets.
+    if pid > 1 {
+        let group = format!("-{pid}");
+        let _ = Command::new("kill").args([signal, "--", &group]).status();
+    }
+}
+
 fn terminate_owned_group(pid: u32) {
     #[cfg(unix)]
     {
-        let group = format!("-{pid}");
-        let _ = Command::new("kill").args(["-TERM", &group]).status();
+        signal_owned_group("-TERM", pid);
         std::thread::sleep(Duration::from_millis(150));
-        let _ = Command::new("kill").args(["-KILL", &group]).status();
+        signal_owned_group("-KILL", pid);
     }
     #[cfg(not(unix))]
     {
@@ -4404,10 +4419,10 @@ mod tests {
     use super::{
         accessible_context_matches, atspi_route_target_guard, atspi_target_guard,
         chooser_dialog_guard, chooser_visit_action_index, cleanup_confirmed, encode_bounded_json,
-        expected_toggled_map, is_loopback_update_url, is_within_tree, next_chooser_fallback_place,
-        percent_encode_uri_path, record_window_candidate, synthetic_update_version_body,
-        write_synthetic_recent_bookmarks, ChooserActionSample, ChooserDialogSample, Command,
-        PrivateRunnerState, WINDOW_ROLES,
+        expected_toggled_map, is_loopback_update_url, is_within_tree, isolated_wayland_matrix,
+        next_chooser_fallback_place, percent_encode_uri_path, record_window_candidate,
+        synthetic_update_version_body, write_synthetic_recent_bookmarks, ChooserActionSample,
+        ChooserDialogSample, Command, PrivateRunnerState, WINDOW_ROLES,
     };
 
     #[test]
@@ -4788,6 +4803,111 @@ mod tests {
         assert!(!cleanup_confirmed(false, true, true));
         assert!(!cleanup_confirmed(true, false, true));
         assert!(!cleanup_confirmed(true, true, false));
+    }
+
+    #[tokio::test]
+    async fn isolated_runner_rejects_a_missing_native_binary_before_launch() {
+        let root = std::env::temp_dir().join(format!(
+            "codexbar-ui-missing-binary-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir(&root).unwrap();
+        let missing_binary = root.join("not-a-native-binary");
+        let result = isolated_wayland_matrix(
+            missing_binary.display().to_string(),
+            root.join("artifacts"),
+            "matrix-core".into(),
+        )
+        .await;
+        assert!(result.is_err());
+        assert!(!root.join("artifacts").exists());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn private_runner_environment_drops_host_display_and_bus_handles() {
+        let state = PrivateRunnerState::create().unwrap();
+        let mut command = Command::new("true");
+        command
+            .env("DISPLAY", ":99")
+            .env("DBUS_SESSION_BUS_ADDRESS", "host");
+        state.configure(&mut command);
+        let configured = command
+            .get_envs()
+            .collect::<std::collections::HashMap<_, _>>();
+        assert!(!configured.contains_key(std::ffi::OsStr::new("DISPLAY")));
+        assert!(!configured.contains_key(std::ffi::OsStr::new("DBUS_SESSION_BUS_ADDRESS")));
+        assert_eq!(
+            configured[std::ffi::OsStr::new("HOME")],
+            Some(state.home.as_os_str())
+        );
+        assert_eq!(
+            configured[std::ffi::OsStr::new("XDG_RUNTIME_DIR")],
+            Some(state.runtime.as_os_str())
+        );
+        let bus_config = std::fs::read_to_string(&state.bus_config).unwrap();
+        assert!(!bus_config.contains("standard_session_servicedirs"));
+        assert!(!bus_config.contains("/usr/share/dbus-1/services"));
+        assert!(bus_config.contains("receive_sender=\"*\""));
+        assert!(bus_config.contains("own=\"*\""));
+        let a11y_service =
+            std::fs::read_to_string(state.bus_services.join("org.a11y.Bus.service")).unwrap();
+        assert!(a11y_service.contains("org.a11y.Bus"));
+        assert!(!a11y_service.contains("SystemdService"));
+        assert!(!a11y_service.contains("portal"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn owned_timeout_cleanup_terminates_fixture_process_group() {
+        use std::{os::unix::process::CommandExt, thread, time::Duration};
+
+        let root = std::env::temp_dir().join(format!(
+            "codexbar-ui-timeout-fixture-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir(&root).unwrap();
+        let pid_file = root.join("grandchild.pid");
+        let mut command = Command::new("sh");
+        command
+            .arg("-c")
+            .arg("sleep 60 & echo $! > \"$1\"; wait")
+            .arg("timeout-fixture")
+            .arg(&pid_file);
+        command.process_group(0);
+        let mut child = super::OwnedChild::spawn(&mut command).unwrap();
+        for _ in 0..100 {
+            if pid_file.exists() {
+                break;
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+        assert!(pid_file.exists(), "synthetic child fixture did not start");
+        let descendant: u32 = std::fs::read_to_string(&pid_file)
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
+        child.terminate().unwrap();
+        assert!(child.reaped);
+        let proc_stat = std::path::PathBuf::from(format!("/proc/{descendant}/stat"));
+        if proc_stat.exists() {
+            let state = std::fs::read_to_string(proc_stat).unwrap();
+            assert_eq!(
+                state.split_whitespace().nth(2),
+                Some("Z"),
+                "fixture descendant is still running"
+            );
+        }
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

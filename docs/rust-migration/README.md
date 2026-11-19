@@ -1,23 +1,24 @@
 # Native Rust migration
 
-## Current status — BUILD118 Rust CI helper migration
+## Current status — BUILD121 Rust UI automation retirement
 
 BUILD116 retired the active Python application runtime, PyO3 bridge, and Python
 launch/install/build paths. BUILD117 removed the retired Python source archive.
 BUILD118 replaces Python artifact/service/runtime proof resolvers with the
-`rust-ci-tools` binary and shell wrapper. The four remaining active Python
-harness modules continue to run until their UI automation ports are complete.
-The tool is built on Ubuntu 24.04, matching the pinned Docker proof image ABI;
-this is not a general portable-binary claim. Synthetic fixtures remain in
-`tests/fixtures/`. See E221 for checks, runtime proof provenance and limits.
+`rust-ci-tools` binary and shell wrapper. BUILD121 retires the last six Python
+UI automation scripts, four associated test modules, and the Python harness
+unit launcher after Rust runner checks and private-Weston runtime coverage were
+added. The Rust CI helper is built on Ubuntu 24.04, matching the pinned Docker
+proof image ABI; this is not a general portable-binary claim. Synthetic
+fixtures remain in `tests/fixtures/`. See E221 and E226 for evidence and limits.
 
 PR #117 merged at `677135c4bcffcdf56c5bd5c913c11ee294e229fc`; exact head
 `f45c01a9139a891e54495b4b62e6f7ee89a95c2a` passed all three required checks
 (run `44125566585`), with no reviews, comments, or review threads. The verified
 X11/Wayland, installer and Python-free runtime evidence belongs to PR #117 and
 BUILD116; deleting the archive does not establish new runtime behavior or pass
-UG, C01, C02, C03, or CG. See current handoff and E221. Prior runtime evidence belongs to earlier commits
-and is not new BUILD118 runtime evidence. Remaining migration history below is
+UG, C01, C02, C03, or CG. See current handoff and E226. Prior runtime evidence belongs to earlier commits
+and is not new BUILD121 runtime evidence. Remaining migration history below is
 preserved as historical evidence.
 
 **Approved destination:** a Rust GTK4/libadwaita application with no Python
@@ -357,7 +358,7 @@ cargo clippy --manifest-path rust-backend/Cargo.toml --all-targets --all-feature
 cargo clippy --manifest-path rust-gtk/Cargo.toml --all-targets -- -D warnings
 ./scripts/build-native.sh
 ./scripts/test-native-tray-dbus.sh
-./scripts/test-native-harness-units.sh
+cargo test --manifest-path rust-ui-test-tools/Cargo.toml --locked
 ./scripts/smoke-native-gtk.sh
 ./scripts/smoke-native-install.sh
 ./scripts/smoke-native-no-python.sh --help

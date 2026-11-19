@@ -8530,3 +8530,76 @@ now runs the system shell with the fixture path as an argument, avoiding
 direct execution of the temporary script. Cancellation and process exit
 assertions are unchanged. The locked backend suite passed locally (99 unit,
 4 integration), along with formatting and diff checks.
+
+### E226 — 2026-11-19: retire Python UI harnesses and run Rust update smoke
+
+**Owner/base/status:** branch `t3/rust-update-check`, based on PR #121 merge
+`77d03a5`. Cherry-picked Settings/Spend wrapper port is `67a36c5`, resolving
+the `main.rs` dispatch conflict by keeping Rust Settings/Spend routes and the
+already-ported Rust update-check route. BUILD121 is committed locally for root
+review; this entry does not claim a push, PR, merge, exact-head CI result, or
+gate pass.
+
+**Changes:** removed the six Python UI automation scripts
+(`scripts/native_atspi_rows.py`, `scripts/select-native-file-chooser.py`, and
+the Settings, Spend, update-check and isolated-Wayland scenario scripts), the
+four Python harness modules under `tests/`, and
+`scripts/test-native-harness-units.sh`. The remaining source tree contains no
+Python files. The Rust tool now tests rejection of a missing native binary,
+private environment and D-Bus service isolation, process-group timeout cleanup
+including a child process, wrapper scenario mappings, and synthetic cost
+success/partial/empty/failure fixture states. The update-check smoke now runs
+as `update-check-wayland` in CI with a six-minute timeout and an `if: always()`
+upload of its synthetic evidence. CI no longer installs the Python D-Bus/GI/
+AT-SPI bindings or watches deleted Python harness paths. VERSION/README/
+CHANGELOG are synchronized at 0.82.0 (121).
+
+**Retired behavior and safety boundary:** KDE portal/RemoteDesktop, bridge,
+physical pointer, `--inspect-only`, coordinate overrides and their associated
+helper modes were not carried forward or directly verified in this migration.
+Private Weston AT-SPI evidence is not KDE compositor, portal, physical input,
+or helper-mode parity. Do not claim equivalent KDE coverage. UG remains
+**NOT PASSED** and C01–CG remain unaccepted.
+
+**Runtime runs:** the Settings `general` and `advanced` wrappers, Spend
+`ranges` and `retained-error` wrappers, Rust update-check wrapper, and the
+existing `matrix`, `advanced`, `settings-residual`, and `page-state` scenarios
+all returned exit 0 under private Weston. Each had an isolated private
+HOME/XDG tree, private D-Bus session, synthetic CLI fixtures, and private
+Wayland socket. Update-check contacted only its loopback fixture. All nine
+retained `evidence.json` records reported status `passed`, app and Weston
+reaped, private socket removed, and private HOME/runner state removed. The
+temporary captures and logs were inspected locally under
+`/tmp/codexbar-build121-evidence/`; they are not committed artifacts. The
+workflow upload makes the CI update-check evidence durable. No host desktop
+window, real configuration, credential, provider, or KDE portal action was
+used in the accepted runs.
+
+**Discarded attempt:** one preliminary private Weston run used the default
+D-Bus session service directories. Its private-bus logs showed portal service
+activation, so its output was excluded and the artifact directory removed. No
+KDE RemoteDesktop consent, portal input, or preference action occurred in
+that run. The runner was changed to pass a private D-Bus config with only the
+accessibility activation directory and no standard session service dirs; all
+accepted runs used that restricted configuration and their logs contained no
+portal activation. This does not change the KDE coverage limit above.
+
+**Checks:** all requested local Rust checks passed:
+
+- `cargo fmt -- --check` for `rust-core`, `rust-backend`, `rust-gtk`,
+  `rust-ci-tools`, `rust-smoke-fixtures`, and `rust-ui-test-tools`.
+- Locked tests: core 92; backend 99 unit plus 4 integration; GTK 39 library
+  plus 1 main and 1 linkage test, with three GTK library tests, one AT-SPI
+  asset test and one SVG negative-precondition test intentionally ignored; CI
+  tools 8; smoke fixtures 5 unit plus 1 integration; UI tools 3 library plus
+  30 binary tests.
+- Strict all-target Clippy with warnings denied for all six crates, using the
+  corresponding CI feature flags.
+- Debug builds of `codexbar-gtk-native` and `codexbar-ui-test-tool` passed.
+- Ruby parsed `.github/workflows/rust-core.yml`; locked Cargo metadata passed;
+  `git diff --check` passed; the current worktree scan found no Python source
+  files or remaining active harness callers.
+
+No full app X11 smoke, Docker runtime proof, host desktop test, KDE test,
+exact-head CI result, publication, UG acceptance, or C-gate acceptance is
+claimed. The exact next step is root review, then publish and observe CI.

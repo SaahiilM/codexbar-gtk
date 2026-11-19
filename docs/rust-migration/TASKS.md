@@ -9,10 +9,72 @@ history. A checked box means **verified and merged**, not merely implemented.
 | Field | Current checkpoint |
 | --- | --- |
 | Goal | Fully native Rust GTK4/libadwaita application with verified packaging and legacy runtime removal. |
-| Current phase | BUILD120 Rust UI-test-tool CI integration. UG remains **NOT PASSED** and C01–CG remain unaccepted. |
-| Last observed merge | PR #119 merged at `ff107d0f2761be8ec403358e12a43d4045fcb97a`; head `d60cd8772ce2c137c713cf5dace0ce72357b68ba` passed all three checks in run 44156297105. |
-| Active implementation | BUILD120/E225 on `t3/native-ui-test-tools`, reconciled with BUILD119 `origin/main` `37ee8b9`. Four CI Wayland scenarios switched to Rust; four local private-Weston runs and helper checks passed. |
-| Next | Root reviews the scoped BUILD120 candidate and publishes it. Keep Python scenario scripts/tests and standalone wrappers until each corresponding coverage migration is independently complete. |
+| Current phase | BUILD122 Rust UI automation retirement and update-check smoke. UG remains **NOT PASSED** and C01–CG remain unaccepted. |
+| Last observed merge | PR #121 at `77d03a5`, per the current main handoff. |
+| Active implementation | BUILD122/E226 plus the X11 Import chooser CI follow-up on `t3/rust-update-check`, starting at `1505ebe` (PR #123 head before this fix). |
+| Local runtime | E226 private-Weston evidence remains as recorded. The X11 Import chooser fix passed the full private Xvfb/D-Bus Settings smoke and a second import-only run; exact preference/import assertions and app-owned window guards remain enabled. No host GUI/session or KDE parity claim. |
+| Next | Root reviews and publishes the local fix. Observe exact-head CI, especially the X11 Settings smoke and bounded update-check scenario/artifact. |
+
+### BUILD122/E226 — retire Python UI automation
+
+**Owner/base/status:** branch `t3/rust-update-check`, based on merged PR #121
+at `77d03a5`. The Settings/Spend wrapper port was cherry-picked as
+`67a36c5`. BUILD122 is local and committed for root review; no push, PR, or
+exact-head CI result is claimed.
+
+**Scope:** delete the six scripts `native_atspi_rows.py`,
+`select-native-file-chooser.py`, and the four `test-native-*-wayland.py`
+scenario runners; delete their four Python harness test modules and the Python
+harness unit launcher. Preserve the Rust Settings and Spend wrapper routes,
+add isolated runner environment and process-group timeout checks, retain
+synthetic cost fixture success/partial/empty/failure coverage, and run the Rust
+update-check Wayland scenario in CI with a six-minute timeout and an
+always-upload artifact. Remove Python-only packages and harness path filters
+from workflow configuration. Historical references below this entry record
+prior behavior and are not executable guidance.
+
+**Retired behavior and limits:** the old KDE portal, bridge, physical pointer,
+`--inspect-only`, and coordinate/helper modes are retired. They were not
+directly verified in this Rust migration, and private Weston coverage does not
+replace KDE compositor, portal, bridge, or physical-input evidence. Do not
+claim equivalent KDE coverage. UG remains **NOT PASSED**; C01–CG remain
+unaccepted.
+
+**Local runtime evidence:** Settings `general` and `advanced` wrappers;
+Spend `ranges` and `retained-error` wrappers; update-check wrapper; and existing
+`matrix`, `advanced`, `settings-residual`, and `page-state` isolated scenarios
+all returned success. Runs used the native GTK binary, private Weston, private
+D-Bus configuration with only the accessibility activation directory,
+synthetic HOME/XDG and synthetic CLI/loopback update fixtures. Every accepted
+`evidence.json` recorded app and Weston reaping, private bus socket removal,
+private HOME and runner-state removal. The first exploratory run with default
+D-Bus service directories was discarded after it showed portal service
+activation; subsequent runs used the restricted service directory and had no
+portal activation in logs. No KDE desktop or real configuration was used.
+
+**Checks:** Rust UI tool tests (3 library + 30 binary) and strict Clippy pass;
+locked suites pass for core (92), backend (99 unit + 4 integration), GTK (39
+library + 1 main + 1 linkage; three GTK, one AT-SPI and one SVG precondition
+tests ignored), CI
+tools (8), and smoke fixtures (5 unit + 1 integration). Formatting and strict
+Clippy pass for all six crates. Native app/tool builds, workflow YAML parsing,
+locked tool metadata, active caller/Python-file scans, and `git diff --check`
+pass. Exact commands and private Weston cleanup evidence are in AUDIT E226.
+No host GUI smoke or release/gate acceptance is claimed.
+
+### BUILD122 — X11 Import chooser CI follow-up
+
+PR #123 run `44556626540` passed private Wayland update-check and Spend, but
+failed in the X11 Settings smoke after selecting the exact synthetic
+`preferences-import.json` row: the chooser closed, while
+`refreshFrequency=2m` never replaced the expected `5m`. The smoke now clicks
+the visible Import action using chooser-relative coordinates after rechecking
+the visible title, app PID, map state and focus; pointer input remains guarded
+by the existing chooser-window-tree check. Complete preference-map and import
+overlay assertions are unchanged. Full Xvfb/D-Bus Settings smoke and focused
+import-only smoke passed locally. See AUDIT E227 for evidence and limitations.
+No version metadata was changed per the task instruction. Root reviews and
+publishes this local follow-up; exact-head CI remains pending.
 
 ### BUILD121 — scope Rust UI test-runner signals
 

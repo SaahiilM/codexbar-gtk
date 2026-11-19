@@ -21,6 +21,9 @@ use std::{
 };
 use tokio::time::{sleep, timeout, Instant};
 
+pub mod settings_wayland;
+pub mod spend_wayland;
+
 const MAX_NODES: usize = 10_000;
 const MAX_CHILDREN: usize = 4_096;
 const MAX_DEPTH: usize = 40;
@@ -177,6 +180,8 @@ struct PrivateRunnerState {
     config: PathBuf,
     data: PathBuf,
     cache: PathBuf,
+    bus_config: PathBuf,
+    bus_services: PathBuf,
 }
 
 impl PrivateRunnerState {
@@ -194,6 +199,8 @@ impl PrivateRunnerState {
             config: root.join("config"),
             data: root.join("data"),
             cache: root.join("cache"),
+            bus_config: root.join("dbus-session.conf"),
+            bus_services: root.join("dbus-services"),
             root,
         };
         set_private_dir(&state.root)?;
@@ -207,6 +214,23 @@ impl PrivateRunnerState {
             fs::create_dir(path).map_err(|e| e.to_string())?;
             set_private_dir(path)?;
         }
+        fs::create_dir(&state.bus_services).map_err(|e| e.to_string())?;
+        set_private_dir(&state.bus_services)?;
+        fs::write(
+            state.bus_services.join("org.a11y.Bus.service"),
+            "[D-BUS Service]\nName=org.a11y.Bus\nExec=/usr/libexec/at-spi-bus-launcher\n",
+        )
+        .map_err(|e| e.to_string())?;
+        fs::write(
+            &state.bus_config,
+            format!(
+                "<busconfig><type>session</type><listen>unix:tmpdir={}</listen><servicedir>{}</servicedir><policy context=\"default\"><allow own=\"*\"/><allow send_destination=\"*\"/><allow receive_sender=\"*\"/></policy></busconfig>\n",
+                state.runtime.display(),
+                state.bus_services.display()
+            ),
+        )
+        .map_err(|e| e.to_string())?;
+        set_private_file(&state.bus_config)?;
         Ok(state)
     }
 
@@ -325,35 +349,68 @@ async fn dispatch(args: Vec<String>) -> Result<u8, String> {
     match command {
         "chooser" => chooser(&args[1..]).await,
         "isolated-wayland" => isolated_wayland(&args[1..]).await,
-        "settings-wayland" => unavailable_runner("settings-wayland", &args[1..]),
-        "spend-wayland" => unavailable_runner("spend-wayland", &args[1..]),
-        "update-check-wayland" => unavailable_runner("update-check-wayland", &args[1..]),
+        "settings-wayland" => settings_wayland::run(&args[1..]).await,
+        "spend-wayland" => spend_wayland::run(&args[1..]).await,
+        "update-check-wayland" => update_check_wayland(&args[1..]).await,
         _ => Err(usage()),
     }
 }
 
 fn usage() -> String {
-    "usage: codexbar-ui-test-tool chooser MODE PID TITLE PATH | isolated-wayland --binary PATH [--scenario NAME] [--artifact-dir DIR] | settings-wayland --binary PATH ... | spend-wayland --binary PATH ... | update-check-wayland --binary PATH ...".into()
+    "usage: codexbar-ui-test-tool chooser MODE PID TITLE PATH | isolated-wayland --binary PATH [--scenario NAME] [--artifact-dir DIR] | settings-wayland --binary PATH [--scenario general|residual|advanced|matrix] [--artifact-dir DIR] | spend-wayland --binary PATH [--scenario ranges|retained-error|matrix] [--artifact-dir DIR] | update-check-wayland --binary PATH ...".into()
 }
 
-fn unavailable_runner(name: &str, args: &[String]) -> Result<u8, String> {
-    if args.is_empty() {
-        return Err(format!(
-            "{name} requires its preserved CLI options; see --help"
-        ));
+fn is_loopback_update_url(url: &str) -> bool {
+    url.starts_with("http://127.0.0.1:") || url.starts_with("http://[::1]:")
+}
+
+fn synthetic_update_version_body() -> Result<Vec<u8>, String> {
+    let marker = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../VERSION"));
+    let mut marketing = None;
+    let mut build = None;
+    for line in marker.lines() {
+        if let Some(value) = line.strip_prefix("MARKETING_VERSION=") {
+            marketing = Some(value.trim());
+        } else if let Some(value) = line.strip_prefix("CURRENT_PROJECT_VERSION=") {
+            build = Some(value.trim());
+        }
     }
+    let marketing = marketing.ok_or("VERSION has no MARKETING_VERSION")?;
+    let build = build
+        .ok_or("VERSION has no CURRENT_PROJECT_VERSION")?
+        .parse::<u64>()
+        .map_err(|_| "VERSION build is not an unsigned integer")?
+        .checked_add(1)
+        .ok_or("VERSION build cannot be incremented")?;
+    Ok(format!("MARKETING_VERSION={marketing}\nCURRENT_PROJECT_VERSION={build}\n").into_bytes())
+}
+
+async fn update_check_wayland(args: &[String]) -> Result<u8, String> {
     if args.iter().any(|arg| arg == "--help" || arg == "-h") {
-        println!("{name}: native runner is not yet ported; Python implementation remains the evidence reference");
+        println!("update-check-wayland --binary PATH [--artifact-dir DIR]");
         return Ok(0);
     }
-    Err(format!(
-        "{name} native runner is incomplete; refusing to emit a passing evidence record"
-    ))
+    let value = |flag: &str| -> Result<Option<String>, String> {
+        match args.iter().position(|arg| arg == flag) {
+            Some(index) => args
+                .get(index + 1)
+                .map(|value| Some(value.clone()))
+                .ok_or_else(|| format!("{flag} requires a value")),
+            None => Ok(None),
+        }
+    };
+    let binary = value("--binary")?.ok_or("--binary is required")?;
+    let artifacts = value("--artifact-dir")?
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            env::temp_dir().join(format!("codexbar-update-check-{}", std::process::id()))
+        });
+    isolated_wayland_matrix(binary, artifacts, "update-check".into()).await
 }
 
 async fn isolated_wayland(args: &[String]) -> Result<u8, String> {
     if args.iter().any(|a| a == "--help" || a == "-h") {
-        println!("isolated-wayland --binary PATH [--scenario matrix|matrix-core|advanced|settings-residual|page-state|settings-combo-diagnostic] [--artifact-dir DIR]");
+        println!("isolated-wayland --binary PATH [--scenario matrix|matrix-core|advanced|settings-residual|page-state|update-check|settings-combo-diagnostic] [--artifact-dir DIR]");
         return Ok(0);
     }
     let value = |flag: &str, default: Option<&str>| -> Result<Option<String>, String> {
@@ -379,6 +436,9 @@ async fn isolated_wayland(args: &[String]) -> Result<u8, String> {
         return isolated_wayland_matrix(binary, artifact_dir, scenario).await;
     }
     if scenario == "advanced" {
+        return isolated_wayland_matrix(binary, artifact_dir, scenario).await;
+    }
+    if scenario == "update-check" {
         return isolated_wayland_matrix(binary, artifact_dir, scenario).await;
     }
     if scenario != "settings-combo-diagnostic" {
@@ -486,13 +546,17 @@ async fn isolated_wayland_matrix(
         let runner_state = PrivateRunnerState::create()?;
         let exe = env::current_exe().map_err(|e| e.to_string())?;
         let mut cmd = tokio::process::Command::new("dbus-run-session");
-        cmd.args(["--"])
-            .arg(exe)
-            .args(["isolated-wayland", "--scenario", &scenario, "--binary"])
-            .arg(&binary)
-            .args(["--artifact-dir"])
-            .arg(&artifacts)
-            .arg("--private-bus");
+        cmd.arg(format!(
+            "--config-file={}",
+            runner_state.bus_config.display()
+        ))
+        .arg("--")
+        .arg(exe)
+        .args(["isolated-wayland", "--scenario", &scenario, "--binary"])
+        .arg(&binary)
+        .args(["--artifact-dir"])
+        .arg(&artifacts)
+        .arg("--private-bus");
         runner_state.configure(cmd.as_std_mut());
         for key in ["PATH", "LANG", "LC_ALL"] {
             if let Some(value) = env::var_os(key) {
@@ -684,6 +748,46 @@ esac
         use std::os::unix::fs::PermissionsExt;
         fs::set_permissions(&cli, fs::Permissions::from_mode(0o700)).map_err(|e| e.to_string())?;
     }
+    let mut update_server = None;
+    let update_requested = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let update_url = if scenario == "update-check" {
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .map_err(|e| format!("bind loopback update fixture: {e}"))?;
+        let address = listener.local_addr().map_err(|e| e.to_string())?;
+        let url = format!("http://127.0.0.1:{}/VERSION", address.port());
+        if !is_loopback_update_url(&url) {
+            return Err("update fixture did not bind to IPv4 loopback".into());
+        }
+        let body = synthetic_update_version_body()?;
+        let requested = update_requested.clone();
+        update_server = Some(tokio::spawn(async move {
+            let Ok((mut stream, _)) = listener.accept().await else {
+                return;
+            };
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+            let mut request = [0_u8; 2048];
+            let Ok(size) = stream.read(&mut request).await else {
+                return;
+            };
+            let first_line = String::from_utf8_lossy(&request[..size]);
+            if !first_line.starts_with("GET /VERSION HTTP/1.") {
+                return;
+            }
+            let header = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                body.len()
+            );
+            if stream.write_all(header.as_bytes()).await.is_ok()
+                && stream.write_all(&body).await.is_ok()
+            {
+                requested.store(true, std::sync::atomic::Ordering::SeqCst);
+            }
+        }));
+        Some(url)
+    } else {
+        None
+    };
     let (weston, screenshot, backend, shell, desktop, keyboard) = resolve_private_weston(&scratch)?;
     let bus =
         env::var("DBUS_SESSION_BUS_ADDRESS").map_err(|_| "private session bus unavailable")?;
@@ -721,6 +825,9 @@ esac
     envs.insert("GTK_A11Y".into(), "atspi".into());
     envs.insert("GTK_USE_PORTAL".into(), "0".into());
     envs.insert("CODEXBAR_CLI".into(), cli.display().to_string());
+    if let Some(url) = &update_url {
+        envs.insert("CODEXBAR_NATIVE_TEST_UPDATE_URL".into(), url.clone());
+    }
     if full || scenario == "page-state" || scenario == "advanced" {
         envs.insert(
             "NATIVE_SESSIONS_MODE_FILE".into(),
@@ -853,6 +960,53 @@ esac
         let mut app=OwnedChild::spawn(&mut appcmd).map_err(|e|format!("start native app: {e}"))?; let pid=app.id();
         let run_result=async {
             wait_for_name(Duration::from_secs(25)).await?;
+            if scenario == "update-check" {
+                if update_requested.load(std::sync::atomic::Ordering::SeqCst) {
+                    return Err("update fixture was contacted before the explicit Gio action".into());
+                }
+                gaction(&["check-updates"])?;
+                let heading = wait_accessible_contains(
+                    pid,
+                    "Update available",
+                    &["dialog", "window", "alert"],
+                    Duration::from_secs(20),
+                )
+                .await?;
+                let deadline = Instant::now() + Duration::from_secs(10);
+                while !update_requested.load(std::sync::atomic::Ordering::SeqCst)
+                    && Instant::now() < deadline
+                {
+                    sleep(Duration::from_millis(50)).await;
+                }
+                if !update_requested.load(std::sync::atomic::Ordering::SeqCst) {
+                    return Err("private loopback fixture did not receive GET /VERSION".into());
+                }
+                let update_capture = artifacts.join("update-result.png");
+                take_screenshot(&screenshot, &runtime, &envs, &update_capture)?;
+                gaction(&["quit"])?;
+                wait_for_name_absent(Duration::from_secs(10)).await?;
+                let evidence = enrich_scenario_evidence(
+                    serde_json::json!({
+                        "status":"passed",
+                        "fixture":"synthetic VERSION marker with current build + 1",
+                        "request":"GET /VERSION",
+                        "request_received":true,
+                        "visible_result":"Update available",
+                        "accessible_identity":heading,
+                        "capture":"update-result.png",
+                        "update_host":"127.0.0.1",
+                        "no_public_update_request":true,
+                        "limits":["Private Weston verifies this synthetic action and visible result only; no KDE shell behavior is covered."]
+                    }),
+                    "update-check",
+                    binary,
+                )?;
+                let evidence_path = artifacts.join("evidence.json");
+                fs::write(&evidence_path, encode_bounded_json(&evidence, MAX_MATRIX_EVIDENCE_BYTES)?)
+                    .map_err(|e| e.to_string())?;
+                set_private_file(&evidence_path)?;
+                return Ok(());
+            }
             if scenario == "page-state" {
                 run_page_state(pid, &home, binary, &envs, &runtime, &screenshot, artifacts).await?;
                 return Ok(());
@@ -900,6 +1054,9 @@ esac
             set_private_file(&out)?;
             Ok(())
         }.await;
+        if let Some(server) = update_server.take() {
+            server.abort();
+        }
         let status=app.terminate().map_err(|e|format!("reap native app: {e}"))?; app_reaped=app.reaped;
         let _intentional_exit_status=status;
         run_result
@@ -2533,6 +2690,32 @@ async fn wait_for_name(_duration: Duration) -> Result<(), String> {
         sleep(Duration::from_millis(100)).await
     }
 }
+async fn wait_for_name_absent(duration: Duration) -> Result<(), String> {
+    let deadline = Instant::now() + duration;
+    loop {
+        let output = Command::new("gdbus")
+            .args([
+                "call",
+                "--session",
+                "--dest",
+                "org.freedesktop.DBus",
+                "--object-path",
+                "/org/freedesktop/DBus",
+                "--method",
+                "org.freedesktop.DBus.NameHasOwner",
+                "com.steipete.CodexBarGTK",
+            ])
+            .output()
+            .map_err(|e| e.to_string())?;
+        if output.status.success() && String::from_utf8_lossy(&output.stdout).contains("false") {
+            return Ok(());
+        }
+        if Instant::now() >= deadline {
+            return Err("native app still owns its private-bus name after the quit action".into());
+        }
+        sleep(Duration::from_millis(100)).await;
+    }
+}
 async fn wait_for_path(path: &Path, duration: Duration) -> Result<(), String> {
     let end = Instant::now() + duration;
     while Instant::now() < end {
@@ -2572,6 +2755,26 @@ async fn wait_control(
     }
     Err(format!(
         "app PID {pid} did not expose unique visible actionable {name:?}"
+    ))
+}
+
+async fn wait_accessible_contains(
+    pid: u32,
+    fragment: &str,
+    roles: &[&str],
+    duration: Duration,
+) -> Result<String, String> {
+    let end = Instant::now() + duration;
+    let mut last_error = String::new();
+    while Instant::now() < end {
+        match find_accessible_matching(pid, fragment, roles, false, None, false).await {
+            Ok((_, identity, _)) => return Ok(identity),
+            Err(error) => last_error = error,
+        }
+        sleep(Duration::from_millis(100)).await;
+    }
+    Err(format!(
+        "app PID {pid} did not expose accessible {fragment:?}; last AT-SPI observation: {last_error}"
     ))
 }
 async fn find_accessible(
@@ -4225,10 +4428,46 @@ mod tests {
     use super::{
         accessible_context_matches, atspi_route_target_guard, atspi_target_guard,
         chooser_dialog_guard, chooser_visit_action_index, cleanup_confirmed, encode_bounded_json,
-        expected_toggled_map, is_within_tree, next_chooser_fallback_place, percent_encode_uri_path,
-        record_window_candidate, write_synthetic_recent_bookmarks, ChooserActionSample,
+        expected_toggled_map, is_loopback_update_url, is_within_tree, isolated_wayland_matrix,
+        next_chooser_fallback_place, percent_encode_uri_path, record_window_candidate,
+        synthetic_update_version_body, write_synthetic_recent_bookmarks, ChooserActionSample,
         ChooserDialogSample, Command, PrivateRunnerState, WINDOW_ROLES,
     };
+
+    #[test]
+    fn update_fixture_increments_build_and_uses_only_expected_marker_fields() {
+        let marker = String::from_utf8(synthetic_update_version_body().unwrap()).unwrap();
+        let values = marker
+            .lines()
+            .map(|line| line.split_once('=').unwrap())
+            .collect::<std::collections::HashMap<_, _>>();
+        let root = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../VERSION"));
+        let root_values = root
+            .lines()
+            .filter_map(|line| line.split_once('='))
+            .collect::<std::collections::HashMap<_, _>>();
+        assert_eq!(
+            values["MARKETING_VERSION"],
+            root_values["MARKETING_VERSION"]
+        );
+        assert_eq!(
+            values["CURRENT_PROJECT_VERSION"].parse::<u64>().unwrap(),
+            root_values["CURRENT_PROJECT_VERSION"]
+                .parse::<u64>()
+                .unwrap()
+                + 1
+        );
+        assert_eq!(values.len(), 2);
+    }
+
+    #[test]
+    fn update_fixture_rejects_non_loopback_url_forms() {
+        assert!(is_loopback_update_url("http://127.0.0.1:43123/VERSION"));
+        assert!(is_loopback_update_url("http://[::1]:43123/VERSION"));
+        assert!(!is_loopback_update_url("https://127.0.0.1:43123/VERSION"));
+        assert!(!is_loopback_update_url("http://127.0.0.2:43123/VERSION"));
+        assert!(!is_loopback_update_url("http://example.test:43123/VERSION"));
+    }
 
     #[test]
     fn chooser_missing_row_fallback_checks_recent_then_home_once_each() {
@@ -4586,6 +4825,111 @@ mod tests {
         assert!(!cleanup_confirmed(false, true, true));
         assert!(!cleanup_confirmed(true, false, true));
         assert!(!cleanup_confirmed(true, true, false));
+    }
+
+    #[tokio::test]
+    async fn isolated_runner_rejects_a_missing_native_binary_before_launch() {
+        let root = std::env::temp_dir().join(format!(
+            "codexbar-ui-missing-binary-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir(&root).unwrap();
+        let missing_binary = root.join("not-a-native-binary");
+        let result = isolated_wayland_matrix(
+            missing_binary.display().to_string(),
+            root.join("artifacts"),
+            "matrix-core".into(),
+        )
+        .await;
+        assert!(result.is_err());
+        assert!(!root.join("artifacts").exists());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn private_runner_environment_drops_host_display_and_bus_handles() {
+        let state = PrivateRunnerState::create().unwrap();
+        let mut command = Command::new("true");
+        command
+            .env("DISPLAY", ":99")
+            .env("DBUS_SESSION_BUS_ADDRESS", "host");
+        state.configure(&mut command);
+        let configured = command
+            .get_envs()
+            .collect::<std::collections::HashMap<_, _>>();
+        assert!(!configured.contains_key(std::ffi::OsStr::new("DISPLAY")));
+        assert!(!configured.contains_key(std::ffi::OsStr::new("DBUS_SESSION_BUS_ADDRESS")));
+        assert_eq!(
+            configured[std::ffi::OsStr::new("HOME")],
+            Some(state.home.as_os_str())
+        );
+        assert_eq!(
+            configured[std::ffi::OsStr::new("XDG_RUNTIME_DIR")],
+            Some(state.runtime.as_os_str())
+        );
+        let bus_config = std::fs::read_to_string(&state.bus_config).unwrap();
+        assert!(!bus_config.contains("standard_session_servicedirs"));
+        assert!(!bus_config.contains("/usr/share/dbus-1/services"));
+        assert!(bus_config.contains("receive_sender=\"*\""));
+        assert!(bus_config.contains("own=\"*\""));
+        let a11y_service =
+            std::fs::read_to_string(state.bus_services.join("org.a11y.Bus.service")).unwrap();
+        assert!(a11y_service.contains("org.a11y.Bus"));
+        assert!(!a11y_service.contains("SystemdService"));
+        assert!(!a11y_service.contains("portal"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn owned_timeout_cleanup_terminates_fixture_process_group() {
+        use std::{os::unix::process::CommandExt, thread, time::Duration};
+
+        let root = std::env::temp_dir().join(format!(
+            "codexbar-ui-timeout-fixture-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir(&root).unwrap();
+        let pid_file = root.join("grandchild.pid");
+        let mut command = Command::new("sh");
+        command
+            .arg("-c")
+            .arg("sleep 60 & echo $! > \"$1\"; wait")
+            .arg("timeout-fixture")
+            .arg(&pid_file);
+        command.process_group(0);
+        let mut child = super::OwnedChild::spawn(&mut command).unwrap();
+        for _ in 0..100 {
+            if pid_file.exists() {
+                break;
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+        assert!(pid_file.exists(), "synthetic child fixture did not start");
+        let descendant: u32 = std::fs::read_to_string(&pid_file)
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
+        child.terminate().unwrap();
+        assert!(child.reaped);
+        let proc_stat = std::path::PathBuf::from(format!("/proc/{descendant}/stat"));
+        if proc_stat.exists() {
+            let state = std::fs::read_to_string(proc_stat).unwrap();
+            assert_eq!(
+                state.split_whitespace().nth(2),
+                Some("Z"),
+                "fixture descendant is still running"
+            );
+        }
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

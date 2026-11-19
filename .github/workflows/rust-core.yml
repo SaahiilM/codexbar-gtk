@@ -19,9 +19,6 @@ on:
       - "scripts/smoke-native-wayland-assets.sh"
       - "scripts/smoke-native-usage-pages.sh"
       - "scripts/smoke-native-settings.sh"
-      - "scripts/test-native-wayland-isolated.py"
-      - "scripts/select-native-file-chooser.py"
-      - "scripts/native_atspi_rows.py"
       - "scripts/build-native.sh"
       - "scripts/test-run-native.sh"
       - "run.sh"
@@ -36,7 +33,6 @@ on:
       - "scripts/native/render_activation.sh"
       - "scripts/test-native-activation-renderer.sh"
       - "scripts/capture-native-gtk-wayland.sh"
-      - "scripts/test-native-harness-units.sh"
       - "scripts/test-native-tray-dbus.sh"
       - "tests/**"
       - ".github/workflows/rust-core.yml"
@@ -70,7 +66,7 @@ jobs:
       - name: Install native GTK build and smoke dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libgtk-4-dev libadwaita-1-dev librsvg2-common xvfb xauth xdotool x11-utils x11-apps xfwm4 ffmpeg libglib2.0-bin dbus-daemon python3-dbus python3-gi weston wayland-utils at-spi2-core gir1.2-atspi-2.0
+          sudo apt-get install -y --no-install-recommends libgtk-4-dev libadwaita-1-dev librsvg2-common xvfb xauth xdotool x11-utils x11-apps xfwm4 ffmpeg libglib2.0-bin dbus-daemon weston wayland-utils at-spi2-core
       - name: Check Rust smoke fixtures
         run: |
           cargo fmt --manifest-path rust-smoke-fixtures/Cargo.toml -- --check
@@ -97,8 +93,6 @@ jobs:
         run: xvfb-run -a dbus-run-session -- cargo test --manifest-path rust-gtk/Cargo.toml --locked --lib rendered_dashboard_contains_safe_warning_and_both_quotas -- --ignored
       - name: Verify empty dashboard Settings action on X11
         run: xvfb-run -a dbus-run-session -- cargo test --manifest-path rust-gtk/Cargo.toml --locked --lib empty_dashboard_offers_settings_action -- --ignored
-      - name: Run retained native automation harness unit tests
-        run: ./scripts/test-native-harness-units.sh
       - name: Run Clippy
         run: |
           cargo clippy --manifest-path rust-core/Cargo.toml --all-targets --all-features -- -D warnings
@@ -150,6 +144,13 @@ jobs:
             --scenario page-state \
             --binary rust-gtk/target/debug/codexbar-gtk-native \
             --artifact-dir "$RUNNER_TEMP/native-wayland-page-state-evidence"
+      - name: Exercise native update check with a loopback fixture on private Weston Wayland
+        timeout-minutes: 6
+        run: |
+          mkdir -m 700 -p "$RUNNER_TEMP/native-wayland-update-check-evidence"
+          rust-ui-test-tools/target/debug/codexbar-ui-test-tool update-check-wayland \
+            --binary rust-gtk/target/debug/codexbar-gtk-native \
+            --artifact-dir "$RUNNER_TEMP/native-wayland-update-check-evidence"
       - name: Exercise native Spend and Sessions with synthetic data
         run: ./scripts/smoke-native-usage-pages.sh
       - name: Exercise native Settings interactions with synthetic data
@@ -192,6 +193,13 @@ jobs:
           name: native-wayland-page-state-${{ github.run_id }}
           if-no-files-found: warn
           path: ${{ runner.temp }}/native-wayland-page-state-evidence/
+      - name: Retain synthetic update-check Wayland evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-wayland-update-check-${{ github.run_id }}
+          if-no-files-found: warn
+          path: ${{ runner.temp }}/native-wayland-update-check-evidence/
 
   python-free-runtime-proof:
     # Match the runtime image ABI; do not build against a moving newer distro.

@@ -4,8 +4,8 @@
 required UI action and Wayland evidence is incomplete. By explicit user
 instruction, BUILD110 changes the repository launcher default to native while
 this gate remains unpassed. BUILD116 retired the active Python runtime, and
-BUILD117 removed its historical source archive. Active Python harnesses are
-test automation only; rollback uses a verified native commit/artifact and the
+BUILD117 removed its historical source archive. BUILD121 retired the remaining
+Python UI automation scripts and their harness tests; rollback uses a verified native commit/artifact and the
 ownership-aware installer. The launcher policy does not complete UI acceptance
 or migrate an installed host. The ledger records observed evidence, limits and
 the exact remaining work; backend unit tests do not count as GTK interaction
@@ -122,7 +122,7 @@ surface to accept; it does not treat source or backend tests as runtime proof.
 | Settings — Plugins | **PASS for read-only populated/empty/loading/error states on Xvfb.** The fixture controlled each response state and the smoke waited for the async rows before capture. There is no plugin mutation operation or click requirement. See the four [`u05-build67-plugins-*-xvfb.png`](screenshots/u05-build67-plugins-populated-xvfb.png) captures. | **OPEN.** No Wayland plugin-list state capture. | No plugin mutation action exists to verify. |
 | Settings — Advanced: CLI path, import, export, reset | **PASS on Xvfb.** The visible CLI-path Apply control reconfigured to the same synthetic executable and persisted the path. A visible Save chooser accepted the synthetic export path and the resulting JSON was checked. Valid and empty synthetic fixtures were selected in a visible import chooser; known-key overlay, unrelated preference retention, unknown-key omission and unchanged autostart were verified. Reset cancel/confirm and defaults were checked while preserving autostart. See [`u05-build67-cli-path-actions-xvfb.png`](screenshots/u05-build67-cli-path-actions-xvfb.png), [`u05-build67-export-chooser-xvfb.png`](screenshots/u05-build67-export-chooser-xvfb.png), [`u05-build67-import-selected-xvfb.png`](screenshots/u05-build67-import-selected-xvfb.png), and [`u05-build67-reset-status-xvfb.png`](screenshots/u05-build67-reset-status-xvfb.png). | **PARTIAL — E208 private Weston AT-SPI actions passed.** Actual export Save, selected valid/empty import, and Reset Cancel/Confirm verified portable JSON, exact preference-map results, Plugins reloads and unchanged synthetic autostart. See [sanitized results](screenshots/build105-wayland-advanced/results.json). Runtime used the embedded build-104 binary; this does not establish physical input, KDE/general chooser parity, or the CLI-path Apply action on Wayland. | The Settings actor used a temporary home; real credentials were absent from exported JSON, preferences and logs. |
 | Settings — About, Acknowledgements and central About route | **PASS for capture/navigation.** All pages captured; central About route opened. The build-67 About capture shows `0.82.0 (67)` in [`u05-build67-about-xvfb.png`](screenshots/u05-build67-about-xvfb.png). | **OPEN beyond General capture.** | No additional bus contract. |
-| Update-check action and result | **PASS on Xvfb.** The Gio action fetched the synthetic marker from a loopback-only server, asserted the request arrived and checked the visible “Update available” result. See [`u05-build67-update-result-xvfb.png`](screenshots/u05-build67-update-result-xvfb.png). | **OPEN — harness built (E185, build 85), live evidence pending.** `scripts/test-native-update-check-wayland.py` drives the Gio `check-updates` action on Wayland against a 127.0.0.1-only synthetic VERSION server, asserts the request arrived, and verifies the visible “Update available” state (KWin caption + Spectacle capture at `/tmp/codexbar-wayland-update-result.png`). It needs no portal consent. Not yet run on the intended KDE session, so the row stays OPEN. | No public network request was made. |
+| Update-check action and result | **PASS on Xvfb.** The Gio action fetched the synthetic marker from a loopback-only server, asserted the request arrived and checked the visible “Update available” result. See [`u05-build67-update-result-xvfb.png`](screenshots/u05-build67-update-result-xvfb.png). | **OPEN for KDE.** BUILD121's Rust `update-check-wayland` runner passed in private Weston with a loopback-only synthetic VERSION fixture and cleanup evidence (E226). This does not establish KDE shell, portal, or physical-input behavior. The former Python/KWin harness is retired and was not directly verified in this migration. | No public network request was made. |
 | Login/browser, restart and quit actions outside the tested launch-at-login path | **PARTIAL.** Build 67 exercised synthetic terminal login completion and asserted the GTK result; exact-head CI includes native fake terminal/restart/shutdown coverage; launch-at-login was tested locally. Browser OAuth is not tested with real credentials. | **PARTIAL.** App quit and tray release passed; login/browser/restart interactions were not exercised in Wayland. | Synthetic auth values were ephemeral and absent from captures/logs; native teardown evidence remains E116/E120. |
 
 ### Cross-surface routes and actions
@@ -426,33 +426,13 @@ helper motion; E148 observed cursor changes before any portal request and
 aborted. E149's private KWin virtual backend exposed input protocols, but its
 screenshot API crashed before it could capture consent.
 
-The build-76 runner in `scripts/test-native-settings-wayland.py` keeps portal
-setup and input on one D-Bus connection, requests only nonpersistent pointer
-and keyboard access, and waits for the human-approved named prompt. Its
-allowlisted actions currently cover the refresh-on-panel-open switch, the
-show-panel-on-start switch, the start-at-login switch, the hide-personal-info
-switch (live evidence pending for the latter two; see E163–E164) and, as of
-build 82, the four Notifications preference switches plus the test-notification
-button (live evidence pending; harness-built only). `--inspect-only` captures the active synthetic
-Settings window and exits before any portal request/input. On a live run, the
-operator inspects that baseline and the named prompt before approving; after
-approval the runner activates only the window matching the synthetic app PID
-and “CodexBar Settings” title, checks fresh focus/top-hit/cursor evidence, and
-asserts that only the selected synthetic preference changed. E151 remains the
-only verified portal-driven action; E160 is separate manual Wayland evidence.
-The first build-76 show-on-
-start click left its preference false and changed the synthetic launch-at-login
-setting instead (E157); the next fresh grant aborted before click because a
-fractional KWin origin did not match the integer cursor sample (E158). Both
-target mapping and integer rounding are corrected. A later read-only baseline
-attempt found the synthetic Settings PID active while the pointer was outside
-the window and aborted before requesting portal consent; baseline capture now
-checks exact active PID/focus, while the later click check still requires
-fresh top-hit and cursor agreement (E159). E160 records one manual Wayland
-click after a screenshot confirmed show-on-start was OFF; the isolated JSON
-logged only `showPopupOnStart=false→true`, and the synthetic app was closed.
-That does not test the automated click path. The unit tests do not exercise GTK
-or Wayland input. Other General controls and the broader UG matrix remain open.
+BUILD121 retires the Python/KDE portal runner and its `--inspect-only`, bridge,
+coordinate override, and physical input helper modes. Their historical
+attempts remain in AUDIT, but this migration did not directly verify those
+modes. Rust private-Weston AT-SPI scenarios exercise visible GTK controls and
+synthetic persistence only; they do not establish KDE compositor, portal,
+bridge, or physical-input coverage. UG remains open for those surfaces and
+other listed interactions.
 
 The full `scripts/smoke-native-settings.sh` passed locally earlier in build 76
 (E157), but cannot be rerun in the current shell because `xvfb-run` is absent.
@@ -468,26 +448,10 @@ private headless Pixman compositor and socket, and `wayland-info` connected;
 was verified. A Weston renderer/widget test would not establish KDE portal
 consent, real desktop pointer delivery, or shell parity.
 
-On the intended KDE session, build the native binary and first inspect the
-synthetic Settings baseline without portal access:
-
-```sh
-systemd-run --user --scope \
-  --unit=app-codexbar-gtk-synthetic-wayland-test.scope \
-  python3 scripts/test-native-settings-wayland.py \
-  --binary "$PWD/rust-gtk/target/debug/codexbar-gtk-native" \
-  --action show-panel-on-start --inspect-only
-```
-
-Then start a new run without `--inspect-only`, visually confirm that the KDE
-prompt names `gtk-synthetic-wayland` and requests pointer/keyboard only, and
-ask the user to click Allow. The runner captures the active synthetic Settings
-baseline before requesting consent, reactivates only its Settings PID/title
-after approval, and aborts without a click unless focus, cursor and top-hit
-pass fresh checks. Optional `--switch-x`/`--switch-y` overrides must be
-supplied as a pair and must remain inside the live window. A verified action
-must also persist the selected isolated JSON preference without changing other
-keys. One action is not a full UG pass.
+The retired KDE portal runner is not an active verification procedure. Any
+future KDE input work needs a separately reviewed implementation and fresh
+direct evidence; BUILD121's private Weston artifacts cannot be substituted for
+it.
 
 CI does have native GTK smoke coverage on Xvfb: routing, panel parity,
 dashboard (including 2x scale), Usage & Spend, and Settings, as configured in

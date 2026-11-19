@@ -21,6 +21,9 @@ use std::{
 };
 use tokio::time::{sleep, timeout, Instant};
 
+pub mod settings_wayland;
+pub mod spend_wayland;
+
 const MAX_NODES: usize = 10_000;
 const MAX_CHILDREN: usize = 4_096;
 const MAX_DEPTH: usize = 40;
@@ -325,15 +328,15 @@ async fn dispatch(args: Vec<String>) -> Result<u8, String> {
     match command {
         "chooser" => chooser(&args[1..]).await,
         "isolated-wayland" => isolated_wayland(&args[1..]).await,
-        "settings-wayland" => unavailable_runner("settings-wayland", &args[1..]),
-        "spend-wayland" => unavailable_runner("spend-wayland", &args[1..]),
+        "settings-wayland" => settings_wayland::run(&args[1..]).await,
+        "spend-wayland" => spend_wayland::run(&args[1..]).await,
         "update-check-wayland" => update_check_wayland(&args[1..]).await,
         _ => Err(usage()),
     }
 }
 
 fn usage() -> String {
-    "usage: codexbar-ui-test-tool chooser MODE PID TITLE PATH | isolated-wayland --binary PATH [--scenario NAME] [--artifact-dir DIR] | settings-wayland --binary PATH ... | spend-wayland --binary PATH ... | update-check-wayland --binary PATH ...".into()
+    "usage: codexbar-ui-test-tool chooser MODE PID TITLE PATH | isolated-wayland --binary PATH [--scenario NAME] [--artifact-dir DIR] | settings-wayland --binary PATH [--scenario general|residual|advanced|matrix] [--artifact-dir DIR] | spend-wayland --binary PATH [--scenario ranges|retained-error|matrix] [--artifact-dir DIR] | update-check-wayland --binary PATH ...".into()
 }
 
 fn is_loopback_update_url(url: &str) -> bool {

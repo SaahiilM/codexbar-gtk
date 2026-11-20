@@ -8683,3 +8683,15 @@ No KDE smoke or new migration-gate result is claimed.
 
 The full synthetic Settings smoke also passed on the BUILD123 binary
 under private Xvfb and D-Bus, including import/export, reset, and cleanup.
+
+### E229 — 2026-11-20: dim retained quota after refresh failure
+
+Adapt upstream v0.84.0 stale-meter behavior. Dashboard projection dims quota
+meters for a failed refresh with retained data. Successful refresh restores
+ordinary styling. A successful refresh with partial-cost diagnostics keeps
+its quota tint. Supplemental cost and credit presentation remains independent.
+
+Before reconciliation onto BUILD123, 13 dashboard tests, strict GTK Clippy,
+formatting and diff checks passed. The GTK rendered-meter regression passed
+under private Xvfb and D-Bus with synthetic data. Added that test to CI.
+No full desktop smoke or migration-gate acceptance is claimed.

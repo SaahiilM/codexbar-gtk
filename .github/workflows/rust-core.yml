@@ -95,6 +95,8 @@ jobs:
         run: xvfb-run -a dbus-run-session -- cargo test --manifest-path rust-gtk/Cargo.toml --locked --lib empty_dashboard_offers_settings_action -- --ignored
       - name: Verify Settings picker preserves saved values on X11
         run: xvfb-run -a dbus-run-session -- cargo test --manifest-path rust-gtk/Cargo.toml --locked --bin codexbar-gtk-native picker_preserves_imported_values_and_removes_stale_options -- --ignored
+      - name: Verify stale quota meter tint on X11
+        run: xvfb-run -a dbus-run-session -- cargo test --manifest-path rust-gtk/Cargo.toml --locked --lib rendered_retained_quota_uses_neutral_meter_style -- --ignored
       - name: Run Clippy
         run: |
           cargo clippy --manifest-path rust-core/Cargo.toml --all-targets --all-features -- -D warnings

@@ -16,6 +16,8 @@ use codexbar_core::{
 };
 use serde_json::{Map, Value};
 
+const STALE_PROGRESS_COLOR: &str = "#808892";
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct DashboardModel {
     pub status: String,
@@ -112,6 +114,7 @@ struct ProjectionOptions<'a> {
     reset_style: &'a str,
     preferred_currency: &'a str,
     currencies: &'a CurrencyCatalog,
+    retained_measurement: bool,
 }
 
 pub fn project_dashboard(
@@ -193,6 +196,7 @@ pub fn project_dashboard(
         reset_style: &reset_style,
         preferred_currency: &preferred_currency,
         currencies,
+        retained_measurement: state.status == BackendStatus::Failed,
     };
     let providers = snapshot
         .providers
@@ -465,6 +469,8 @@ fn project_provider(
             });
             let fill_color = if !known {
                 "#808892".to_owned()
+            } else if options.retained_measurement {
+                STALE_PROGRESS_COLOR.to_owned()
             } else {
                 match meter_severity {
                     MeterSeverity::Normal => safe_color(&provider.accent_color),
@@ -1046,6 +1052,89 @@ mod tests {
         assert!(retained.refresh_error.is_some());
         assert_eq!(retained.providers.len(), 1);
         assert!(retained.status.contains("saved data"));
+    }
+
+    #[test]
+    fn retained_quota_tint_tracks_refresh_outcome_and_preserves_supplemental_data() {
+        let mut fixture = provider("alpha", vec![window("primary", true, 15.0)]);
+        fixture.credits_remaining = Some(42.0);
+        fixture.cost = Some(CostInfo {
+            used: 25.0,
+            limit: 100.0,
+            currency: "USD".into(),
+            period: Some("This month".into()),
+            balance: Some(12.0),
+            personal_used: None,
+            resets_at: None,
+        });
+        fixture.credit_events = vec![CreditEvent {
+            id: "synthetic-credit-event".into(),
+            date: "2026-11-20".into(),
+            service: "synthetic".into(),
+            used: 3.0,
+        }];
+        let saved = snapshot(vec![fixture]);
+        let prefs = Map::new();
+        let catalog = CurrencyCatalog::default();
+
+        let current = project_dashboard(
+            &state(BackendStatus::Ready, Some(saved.clone())),
+            &prefs,
+            &catalog,
+            Utc::now(),
+        );
+        let failed = project_dashboard(
+            &state(BackendStatus::Failed, Some(saved.clone())),
+            &prefs,
+            &catalog,
+            Utc::now(),
+        );
+        let recovered = project_dashboard(
+            &state(BackendStatus::Ready, Some(saved)),
+            &prefs,
+            &catalog,
+            Utc::now(),
+        );
+
+        let current_card = &current.providers[0];
+        let failed_card = &failed.providers[0];
+        let recovered_card = &recovered.providers[0];
+        assert_eq!(current_card.windows[0].fill_color, "#5468ff");
+        assert_eq!(failed_card.windows[0].fill_color, STALE_PROGRESS_COLOR);
+        assert_eq!(
+            recovered_card.windows[0].fill_color,
+            current_card.windows[0].fill_color
+        );
+        assert_eq!(failed_card.windows[0].usage, current_card.windows[0].usage);
+
+        // These supplemental values have their own presentation and must keep
+        // the same content and provider styling through a quota refresh error.
+        assert_eq!(failed_card.credits, current_card.credits);
+        assert_eq!(failed_card.spend, current_card.spend);
+        assert_eq!(failed_card.balance, current_card.balance);
+        assert_eq!(failed_card.credit_chart, current_card.credit_chart,);
+    }
+
+    #[test]
+    fn successful_partial_refresh_diagnostic_does_not_stale_quota_tint() {
+        use codexbar_backend::controller::{ControllerError, ControllerErrorKind};
+
+        let mut saved = snapshot(vec![provider("alpha", vec![window("primary", true, 15.0)])]);
+        let diagnostic = ControllerError {
+            kind: ControllerErrorKind::Process,
+            operation: "cli_cost".into(),
+        };
+        saved.last_error = Some(diagnostic.clone());
+        saved.cost_error = Some(diagnostic);
+
+        let model = project_dashboard(
+            &state(BackendStatus::Ready, Some(saved)),
+            &Map::new(),
+            &CurrencyCatalog::default(),
+            Utc::now(),
+        );
+
+        assert_eq!(model.providers[0].windows[0].fill_color, "#5468ff");
     }
 
     #[test]

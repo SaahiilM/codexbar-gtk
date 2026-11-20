@@ -716,6 +716,20 @@ mod display_tests {
         None
     }
 
+    fn find_progress_bar(widget: &gtk::Widget) -> Option<gtk::ProgressBar> {
+        if let Ok(progress) = widget.clone().downcast::<gtk::ProgressBar>() {
+            return Some(progress);
+        }
+        let mut child = widget.first_child();
+        while let Some(current) = child {
+            if let Some(progress) = find_progress_bar(&current) {
+                return Some(progress);
+            }
+            child = current.next_sibling();
+        }
+        None
+    }
+
     #[test]
     #[ignore = "requires a GTK display; run under Xvfb"]
     fn rendered_dashboard_contains_safe_warning_and_both_quotas() {
@@ -795,6 +809,63 @@ mod display_tests {
         assert!(!visible_labels
             .iter()
             .any(|text| text.contains("SYNTHETIC-HOSTILE")));
+        window.close();
+    }
+
+    #[test]
+    #[ignore = "requires a GTK display; run under Xvfb"]
+    fn rendered_retained_quota_uses_neutral_meter_style() {
+        gtk::init().expect("GTK display for rendered dashboard test");
+        let provider = provider_usage_from_value(&json!({
+            "provider": "claude",
+            "source": "synthetic",
+            "usage": {
+                "primary": {"usedPercent": 34, "windowMinutes": 300},
+                "credits": {"remaining": 42, "creditsAvailable": true}
+            }
+        }))
+        .expect("synthetic provider payload is valid")
+        .expect("synthetic provider is present");
+        let snapshot = ControllerSnapshot {
+            revision: 2,
+            version: "synthetic".into(),
+            updated_at: None,
+            last_error: None,
+            cost_error: None,
+            providers: vec![provider],
+            spend: None,
+            sessions: vec![],
+            session_scan_status: None,
+            history: vec![],
+            tray_selection: None,
+        };
+        let model = project_dashboard(
+            &BackendState {
+                sequence: 2,
+                changed_at: SystemTime::now(),
+                status: BackendStatus::Failed,
+                snapshot: Some(Arc::new(snapshot)),
+                last_error: None,
+            },
+            &Map::new(),
+            &CurrencyCatalog::default(),
+            chrono::Utc::now(),
+        );
+        assert_eq!(model.providers[0].windows[0].fill_color, "#808892");
+
+        let view = DashboardView::new();
+        view.render(&model);
+        let window = gtk::Window::new();
+        window.set_default_size(900, 600);
+        window.set_child(Some(&view.widget()));
+        window.present();
+        while gtk::glib::MainContext::default().pending() {
+            gtk::glib::MainContext::default().iteration(false);
+        }
+
+        let meter = find_progress_bar(&window.clone().upcast())
+            .expect("quota meter is rendered as a progress bar");
+        assert!(meter.has_css_class("cb-meter-808892"));
         window.close();
     }
 

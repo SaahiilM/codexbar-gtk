@@ -1,3 +1,7 @@
+## 0.82.0 (124) — 2026-11-20
+
+Dim retained quota meters after a failed refresh and restore their normal colors when fresh data arrives.
+
 ## 0.82.0 (123) — 2026-11-20
 
 Show the saved value in Settings dropdowns when an imported preference is outside the available choices. This also applies to the statistics time zone.

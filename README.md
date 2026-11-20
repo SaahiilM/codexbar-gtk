@@ -306,7 +306,7 @@ The GTK front-end uses the version pair in the root `VERSION` file:
   this client is feature-compatible with (`0.82.0`).
 * `CURRENT_PROJECT_VERSION` is the build number of the Linux front-end.
 * Native Rust metadata turns the pair into the macOS-style
-  `"0.82.0 (122)"` string shown under Settings → About, in the tray menu and by
+  `"0.82.0 (123)"` string shown under Settings → About, in the tray menu and by
   `./run.sh --about`.
 
 Increment `CURRENT_PROJECT_VERSION` for each merge-approved PR; the native test

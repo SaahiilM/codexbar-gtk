@@ -1,3 +1,7 @@
+## 0.82.0 (123) — 2026-11-20
+
+Show the saved value in Settings dropdowns when an imported preference is outside the available choices. This also applies to the statistics time zone.
+
 ## 0.82.0 (122) — 2026-11-19
 
 Retire the remaining six Python UI automation scripts and four harness test

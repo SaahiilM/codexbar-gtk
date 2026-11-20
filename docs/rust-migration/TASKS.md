@@ -6,14 +6,18 @@ history. A checked box means **verified and merged**, not merely implemented.
 
 ## Resume here
 
+**Active parity slice:** `feat/preserve-imported-picker-value` — preserve the
+saved selection in GTK pickers when it is outside the supported options.
+
+
 | Field | Current checkpoint |
 | --- | --- |
 | Goal | Fully native Rust GTK4/libadwaita application with verified packaging and legacy runtime removal. |
-| Current phase | BUILD122 Rust UI automation retirement and update-check smoke. UG remains **NOT PASSED** and C01–CG remain unaccepted. |
-| Last observed merge | PR #121 at `77d03a5`, per the current main handoff. |
-| Active implementation | BUILD122/E226 plus the X11 Import chooser CI follow-up on `t3/rust-update-check`, starting at `1505ebe` (PR #123 head before this fix). |
+| Current phase | BUILD123 macOS feature parity: preserve saved GTK picker values. UG and C01–CG remain open. |
+| Last observed merge | PR #123 at `5acd261`; all three CI jobs passed on `fec0e57`. |
+| Active implementation | BUILD123/E228 on `feat/preserve-imported-picker-value`. |
 | Local runtime | E226 private-Weston evidence remains as recorded. The X11 Import chooser fix passed the full private Xvfb/D-Bus Settings smoke and a second import-only run; exact preference/import assertions and app-owned window guards remain enabled. No host GUI/session or KDE parity claim. |
-| Next | Root reviews and publishes the local fix. Observe exact-head CI, especially the X11 Settings smoke and bounded update-check scenario/artifact. |
+| Next | Verify BUILD123 CI. Review stale quota presentation after refresh failure as a separate parity slice. |
 
 ### BUILD122/E226 — retire Python UI automation
 

@@ -37,7 +37,7 @@ enum PreferenceControl {
     Combo {
         widget: adw::ComboRow,
         handler: glib::SignalHandlerId,
-        values: Vec<String>,
+        options: Rc<ComboOptions>,
     },
     Number {
         widget: gtk::SpinButton,
@@ -48,6 +48,66 @@ enum PreferenceControl {
         widget: adw::EntryRow,
         handler: glib::SignalHandlerId,
     },
+}
+
+struct ComboOptions {
+    model: gtk::StringList,
+    values: Vec<String>,
+    saved: RefCell<Option<String>>,
+}
+
+impl ComboOptions {
+    fn new(options: &[(&str, &str)]) -> Self {
+        let model = gtk::StringList::new(&[]);
+        for (label, _) in options {
+            model.append(label);
+        }
+        Self {
+            model,
+            values: options
+                .iter()
+                .map(|(_, value)| (*value).to_owned())
+                .collect(),
+            saved: RefCell::new(None),
+        }
+    }
+
+    fn sync(&self, row: &adw::ComboRow, current: Option<&str>) {
+        let known_index =
+            current.and_then(|current| self.values.iter().position(|value| value == current));
+        let saved = current.filter(|_| known_index.is_none());
+        let mut previous = self.saved.borrow_mut();
+        if previous.as_deref() != saved {
+            if previous.is_some() {
+                self.model.remove(self.values.len() as u32);
+            }
+            if let Some(value) = saved {
+                let label = if value.is_empty() {
+                    "(Empty saved value)".to_owned()
+                } else {
+                    // GTK strings cannot contain an embedded NUL.
+                    format!("{} (saved)", value.replace('\0', "�"))
+                };
+                self.model.append(&label);
+            }
+            *previous = saved.map(str::to_owned);
+        }
+        row.set_selected(if let Some(index) = known_index {
+            index as u32
+        } else if saved.is_some() {
+            self.values.len() as u32
+        } else {
+            gtk::INVALID_LIST_POSITION
+        });
+    }
+
+    fn selected_value(&self, selected: u32) -> Option<String> {
+        self.values.get(selected as usize).cloned().or_else(|| {
+            (selected as usize == self.values.len())
+                .then(|| self.saved.borrow().clone())
+                .flatten()
+        })
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -87,7 +147,6 @@ pub struct SettingsWindow {
     plugins_group: RefCell<Option<adw::PreferencesGroup>>,
     plugin_rows: RefCell<Vec<adw::PreferencesRow>>,
     launch_switch: RefCell<Option<(gtk::Switch, glib::SignalHandlerId)>>,
-    timezone_values: RefCell<Vec<String>>,
     cli_version_rows: RefCell<Vec<adw::ActionRow>>,
     login_dialog: RefCell<Option<LoginDialog>>,
     claudeplatform_dialog: RefCell<Option<ClaudePlatformDialog>>,
@@ -136,7 +195,6 @@ impl SettingsWindow {
             plugins_group: RefCell::new(None),
             plugin_rows: RefCell::new(Vec::new()),
             launch_switch: RefCell::new(None),
-            timezone_values: RefCell::new(Vec::new()),
             cli_version_rows: RefCell::new(Vec::new()),
             login_dialog: RefCell::new(None),
             claudeplatform_dialog: RefCell::new(None),
@@ -1025,28 +1083,26 @@ impl SettingsWindow {
             .title(title)
             .subtitle(subtitle.unwrap_or_default())
             .build();
-        let model = gtk::StringList::new(&[]);
-        for (label, _) in options {
-            model.append(label);
-        }
-        row.set_model(Some(&model));
-        let values: Vec<String> = options
-            .iter()
-            .map(|(_, value)| (*value).to_owned())
-            .collect();
-        let current = self.preference(key).as_str().unwrap_or_default().to_owned();
-        let selected = values
-            .iter()
-            .position(|value| value == &current)
-            .unwrap_or(0);
-        row.set_selected(selected as u32);
+        let options = Rc::new(ComboOptions::new(options));
+        row.set_model(Some(&options.model));
+        options.sync(&row, self.preference(key).as_str());
         let preference_key = key.to_owned();
-        let values_for_handler = values.clone();
+        let options_for_handler = Rc::clone(&options);
         let weak = Rc::downgrade(self);
         let handler = row.connect_selected_notify(move |row| {
             if let Some(view) = weak.upgrade() {
-                if let Some(value) = values_for_handler.get(row.selected() as usize) {
-                    view.set_preference(&preference_key, json!(value));
+                if let Some(value) = options_for_handler.selected_value(row.selected()) {
+                    if preference_key == "costUsageBucketTimeZone" {
+                        view.request(
+                            SettingsOperation::ReconfigureCli {
+                                cli_path: None,
+                                timezone: Some(value),
+                            },
+                            PendingAction::Timezone,
+                        );
+                    } else {
+                        view.set_preference(&preference_key, json!(value));
+                    }
                 }
             }
         });
@@ -1057,7 +1113,7 @@ impl SettingsWindow {
             .push(PreferenceControl::Combo {
                 widget: row.clone(),
                 handler,
-                values,
+                options,
             });
         group.add(&row);
     }
@@ -1115,65 +1171,16 @@ impl SettingsWindow {
     }
 
     fn timezone_setting(self: &Rc<Self>, group: &adw::PreferencesGroup) {
-        let current = self
-            .preference("costUsageBucketTimeZone")
-            .as_str()
-            .unwrap_or_default()
-            .to_owned();
-        let mut options = vec![("System local time".to_owned(), String::new())];
-        options.extend(
-            available_timezones()
-                .into_iter()
-                .map(|zone| (zone.clone(), zone)),
+        let zones = available_timezones();
+        let mut options = vec![("System local time", "")];
+        options.extend(zones.iter().map(|zone| (zone.as_str(), zone.as_str())));
+        self.combo_setting(
+            group,
+            "costUsageBucketTimeZone",
+            "Statistics time zone",
+            &options,
+            Some("Daily spend buckets use this time zone."),
         );
-        if !current.is_empty() && !options.iter().any(|(_, value)| value == &current) {
-            options.push((format!("{current} (saved)"), current.clone()));
-        }
-        let row = adw::ComboRow::builder()
-            .title("Statistics time zone")
-            .subtitle("Daily spend buckets use this time zone.")
-            .build();
-        let model = gtk::StringList::new(&[]);
-        let values: Vec<String> = options.iter().map(|(_, value)| value.clone()).collect();
-        for (label, _) in &options {
-            model.append(label);
-        }
-        row.set_model(Some(&model));
-        row.set_selected(
-            values
-                .iter()
-                .position(|value| value == &current)
-                .unwrap_or(0) as u32,
-        );
-        self.timezone_values.replace(values.clone());
-        let weak = Rc::downgrade(self);
-        let handler = row.connect_selected_notify(move |row| {
-            if let Some(view) = weak.upgrade() {
-                let timezone = view
-                    .timezone_values
-                    .borrow()
-                    .get(row.selected() as usize)
-                    .cloned()
-                    .unwrap_or_default();
-                view.request(
-                    SettingsOperation::ReconfigureCli {
-                        cli_path: None,
-                        timezone: Some(timezone),
-                    },
-                    PendingAction::Timezone,
-                );
-            }
-        });
-        self.controls
-            .borrow_mut()
-            .entry("costUsageBucketTimeZone".to_owned())
-            .or_default()
-            .push(PreferenceControl::Combo {
-                widget: row.clone(),
-                handler,
-                values,
-            });
-        group.add(&row);
     }
 
     fn populate_snapshot(self: &Rc<Self>, snapshot: SettingsSnapshot) {
@@ -1463,16 +1470,11 @@ impl SettingsWindow {
                     PreferenceControl::Combo {
                         widget,
                         handler,
-                        values,
+                        options,
                     } => {
-                        if let Some(selected) = values
-                            .iter()
-                            .position(|candidate| Some(candidate.as_str()) == value.as_str())
-                        {
-                            widget.block_signal(handler);
-                            widget.set_selected(selected as u32);
-                            widget.unblock_signal(handler);
-                        }
+                        widget.block_signal(handler);
+                        options.sync(widget, value.as_str());
+                        widget.unblock_signal(handler);
                     }
                     PreferenceControl::Number {
                         widget,
@@ -1973,4 +1975,46 @@ fn available_timezones() -> Vec<String> {
         zones.push("UTC".to_owned());
     }
     zones
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[ignore = "requires a private GTK display"]
+    fn picker_preserves_imported_values_and_removes_stale_options() {
+        adw::init().unwrap();
+        let options = ComboOptions::new(&[("Five minutes", "5m"), ("Two minutes", "2m")]);
+        let row = adw::ComboRow::new();
+        row.set_model(Some(&options.model));
+
+        options.sync(&row, Some("15m"));
+        assert_eq!(options.model.string(2).as_deref(), Some("15m (saved)"));
+        assert_eq!(
+            options.selected_value(row.selected()).as_deref(),
+            Some("15m")
+        );
+
+        options.sync(&row, Some("30m"));
+        assert_eq!(options.model.n_items(), 3);
+        assert_eq!(options.model.string(2).as_deref(), Some("30m (saved)"));
+        assert_eq!(
+            options.selected_value(row.selected()).as_deref(),
+            Some("30m")
+        );
+
+        row.set_selected(1);
+        assert_eq!(
+            options.selected_value(row.selected()).as_deref(),
+            Some("2m")
+        );
+        options.sync(&row, Some("2m"));
+        assert_eq!(options.model.n_items(), 2);
+        assert_eq!(row.selected(), 1);
+
+        options.sync(&row, None);
+        assert_eq!(row.selected(), gtk::INVALID_LIST_POSITION);
+        assert_eq!(options.selected_value(row.selected()), None);
+    }
 }

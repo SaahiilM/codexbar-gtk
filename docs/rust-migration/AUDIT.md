@@ -8663,3 +8663,23 @@ not KDE/Wayland parity or exact-head CI. No release/gate acceptance is claimed.
 Precise next step: root reviews and publishes the local fix, then observes the
 new exact-head CI result, including X11 Settings and the otherwise passing
 update-check and Spend jobs.
+
+### E228 — 2026-11-20: preserve off-list Settings picker values
+
+BUILD123 starts GTK feature parity from PR #123 merge `5acd261`. The
+[upstream v0.84.0 picker](https://github.com/steipete/CodexBar/blob/v0.84.0/Sources/CodexBar/Settings/PreferencesMenuPicker.swift)
+preserves an off-list selection. GTK now shows the saved string as an extra
+choice, replacing or removing that choice on subsequent synchronization.
+Programmatic refresh blocks the persistence handler. Known labels and the
+time zone's CLI reconfiguration route retain their existing behavior.
+
+The locked GTK suite passed with 41 tests and 6 expected ignores. The new
+ignored widget regression passed separately under private Xvfb and D-Bus,
+covering the active label and value, repeated imports, and removing a stale
+choice when a supported choice is selected. Strict all-target GTK Clippy,
+formatting, workflow YAML parsing, and diff checks passed. Private D-Bus
+activated portal services using standard activation paths during local testing.
+No KDE smoke or new migration-gate result is claimed.
+
+The full synthetic Settings smoke also passed on the BUILD123 binary
+under private Xvfb and D-Bus, including import/export, reset, and cleanup.
